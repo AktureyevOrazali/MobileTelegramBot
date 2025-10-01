@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+backend/bot.db
+
+# Flutter / Dart
+build/
+.mobile_tool_state*
+.dart_tool/
+.packages
+pubspec.lock
+android/
+ios/
+
+# IDE
+.idea/
+.vscode/

@@ -346,6 +346,19 @@ class ApiClient {
         .toList();
   }
 
+  Future<List<String>> fetchBins({String? query}) async {
+    final queryParams = (query != null && query.trim().isNotEmpty)
+        ? <String, dynamic>{'query': query.trim()}
+        : null;
+    final uri = _buildUri('bins', queryParams);
+    final response = await _sendRequest(
+      () => http.get(uri, headers: _headers),
+      'Не удалось загрузить список БИНов.',
+    );
+    final decoded = jsonDecode(response.body) as List<dynamic>;
+    return decoded.map((item) => item.toString()).toList();
+  }
+
   Future<UserProfile> fetchProfile() async {
     final uri = _buildUri('profile');
     final response = await _sendRequest(
@@ -406,9 +419,15 @@ class ApiClient {
     return session;
   }
 
-  Future<List<ChatSummary>> fetchChats({bool favoritesOnly = false}) async {
-    final query = favoritesOnly ? <String, dynamic>{'favorite_only': true} : null;
-    final uri = _buildUri('chats', query);
+  Future<List<ChatSummary>> fetchChats({bool favoritesOnly = false, String? binQuery}) async {
+    final query = <String, dynamic>{};
+    if (favoritesOnly) {
+      query['favorite_only'] = true;
+    }
+    if (binQuery != null && binQuery.isNotEmpty) {
+      query['bin_query'] = binQuery;
+    }
+    final uri = _buildUri('chats', query.isNotEmpty ? query : null);
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить список диалогов.',
@@ -531,6 +550,19 @@ class ApiClient {
         body: jsonEncode({'sections': sections}),
       ),
       'Не удалось обновить назначенные разделы.',
+    );
+    return UserProfile.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<UserProfile> updateUserBins(int userId, List<String> bins) async {
+    final uri = _buildUri('users/$userId/bins');
+    final response = await _sendRequest(
+      () => http.put(
+        uri,
+        headers: _headers,
+        body: jsonEncode({'bins': bins}),
+      ),
+      'Не удалось обновить назначенные БИНы.',
     );
     return UserProfile.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
@@ -726,6 +758,8 @@ class ApiClient {
         return '«Роль»';
       case 'sections':
         return '«Разделы»';
+      case 'bins':
+        return '«БИНы»';
       default:
         if (raw.isEmpty) {
           return 'поле';
@@ -1021,7 +1055,9 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen> {
   List<ChatSummary> _allChats = [];
   List<Section> _sections = [];
+  List<String> _availableBins = [];
   String? _selectedSection;
+  String? _selectedBin;
   bool _loading = true;
   String? _error;
   int _tabIndex = 0;
@@ -1035,6 +1071,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   void initState() {
     super.initState();
     _loadData();
+    _loadAvailableBins();
     _updatesTimer = Timer.periodic(const Duration(seconds: 5), (_) => _pollUpdates());
   }
 
@@ -1057,7 +1094,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
     try {
       final sections = await widget.apiClient.fetchSections();
-      final chats = await widget.apiClient.fetchChats();
+      final chats = await widget.apiClient.fetchChats(binQuery: _selectedBin);
       final currentUser = widget.apiClient.currentUser ?? widget.session.user;
       final visibleSections = currentUser.isAdmin
           ? sections
@@ -1077,6 +1114,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
         _error = error.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadAvailableBins() async {
+    try {
+      final bins = await widget.apiClient.fetchBins();
+      if (!mounted) return;
+      setState(() {
+        _availableBins = bins;
+      });
+    } catch (error) {
+      debugPrint('Не удалось загрузить БИНы: $error');
     }
   }
 
@@ -1306,6 +1355,29 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   setState(() {
                     _selectedSection = value;
                   });
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                value: _selectedBin,
+                decoration: const InputDecoration(labelText: 'БИН'),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Все БИНы'),
+                  ),
+                  ..._availableBins.map(
+                    (bin) => DropdownMenuItem<String?>(
+                      value: bin,
+                      child: Text(bin),
+                    ),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedBin = value;
+                  });
+                  _loadData(showLoading: false);
                 },
               ),
               const SizedBox(height: 12),
@@ -1552,7 +1624,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 }
-
 class ChatDetailScreen extends StatefulWidget {
   const ChatDetailScreen({required this.apiClient, required this.chat, super.key});
 
@@ -1933,9 +2004,12 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   List<UserProfile> _users = [];
   List<RoleInfo> _roles = [];
   List<Section> _availableSections = [];
+  List<String> _availableBins = [];
   final Set<int> _updatingUserIds = <int>{};
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _binSearchController = TextEditingController();
   Timer? _searchDebounce;
+  Timer? _binSearchDebounce;
   String _searchQuery = '';
 
   @override
@@ -1947,7 +2021,9 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _binSearchDebounce?.cancel();
     _searchController.dispose();
+    _binSearchController.dispose();
     super.dispose();
   }
 
@@ -1967,6 +2043,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       final query = _searchQuery.trim().isEmpty ? null : _searchQuery.trim();
       final users = await widget.apiClient.fetchUsers(query: query);
       final sections = await widget.apiClient.fetchSections();
+      final bins = await widget.apiClient.fetchBins();
       if (!mounted) {
         return;
       }
@@ -1974,6 +2051,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _roles = roles;
         _users = users;
         _availableSections = sections;
+        _availableBins = bins;
         _loading = false;
       });
     } catch (error) {
@@ -1997,6 +2075,21 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _searchQuery = value;
       });
       refreshAdminData(showLoading: false);
+    });
+  }
+
+  void _onBinSearchChanged(String value) {
+    _binSearchDebounce?.cancel();
+    _binSearchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final bins = await widget.apiClient.fetchBins(query: value);
+        if (!mounted) return;
+        setState(() {
+          _availableBins = bins;
+        });
+      } catch (error) {
+        debugPrint('Не удалось загрузить БИНы: $error');
+      }
     });
   }
 
@@ -2073,6 +2166,45 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       showTopMessage(
         context,
         'Не удалось обновить разделы: $error',
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _updateUserBins(UserProfile user, Set<String> bins) async {
+    setState(() {
+      _updatingUserIds.add(user.id);
+      _error = null;
+    });
+    try {
+      final updated = await widget.apiClient.updateUserBins(user.id, bins.toList());
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _users = _users
+            .map((existing) => existing.id == updated.id ? updated : existing)
+            .toList();
+        _updatingUserIds.remove(user.id);
+      });
+      if (!mounted) {
+        return;
+      }
+      showTopMessage(
+        context,
+        'БИНы пользователя "${updated.name}" обновлены.',
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _updatingUserIds.remove(user.id);
+        _error = error.toString();
+      });
+      showTopMessage(
+        context,
+        'Не удалось обновить БИНы: $error',
         isError: true,
       );
     }
@@ -2327,6 +2459,73 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                     updatedSections.remove(section.id);
                                   }
                                   _updateUserSections(user, updatedSections);
+                                }
+                              : null,
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Назначенные БИНы:',
+                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    // Поле поиска и добавления БИНов
+                    TextField(
+                      controller: _binSearchController,
+                      decoration: const InputDecoration(
+                        labelText: 'Поиск БИНов',
+                        prefixIcon: Icon(Icons.search),
+                        suffixIcon: Icon(Icons.add),
+                      ),
+                      onChanged: _onBinSearchChanged,
+                      onSubmitted: (value) {
+                        if (value.trim().isNotEmpty && !user.bins.contains(value.trim())) {
+                          final updatedBins = Set<String>.from(user.bins)..add(value.trim());
+                          _updateUserBins(user, updatedBins);
+                          _binSearchController.clear();
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    // Список доступных БИНов для выбора
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: _availableBins.map((bin) {
+                        final selected = user.bins.contains(bin);
+                        return FilterChip(
+                          label: Text(bin),
+                          selected: selected,
+                          showCheckmark: false,
+                          selectedColor: theme.colorScheme.primaryContainer,
+                          onSelected: (!isUpdating)
+                              ? (value) {
+                                  final updatedBins = Set<String>.from(user.bins);
+                                  if (value) {
+                                    updatedBins.add(bin);
+                                  } else {
+                                    updatedBins.remove(bin);
+                                  }
+                                  _updateUserBins(user, updatedBins);
+                                }
+                              : null,
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 8),
+                    // Текущие назначенные БИНы
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: user.bins.map((bin) {
+                        return Chip(
+                          label: Text(bin),
+                          backgroundColor: theme.colorScheme.primaryContainer,
+                          onDeleted: (!isUpdating)
+                              ? () {
+                                  final updatedBins = Set<String>.from(user.bins)..remove(bin);
+                                  _updateUserBins(user, updatedBins);
                                 }
                               : null,
                         );
@@ -2718,6 +2917,24 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                 ),
               const SizedBox(height: 8),
               Text(
+                'Назначенные БИНы:',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 8),
+              if (_profile!.bins.isEmpty)
+                const Text(
+                  'БИНы ещё не назначены. Обратитесь к администратору.',
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: _profile!.bins.map((bin) {
+                    return Chip(label: Text(bin));
+                  }).toList(),
+                ),
+              const SizedBox(height: 8),
+              Text(
                 'Избранных диалогов: ${_profile!.favoriteChatIds.length}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -2922,8 +3139,10 @@ class UserProfile {
     required this.bio,
     required this.role,
     required List<String> sections,
+    required List<String> bins,
     required Set<int> favoriteChatIds,
   })  : sections = List.unmodifiable(sections),
+        bins = List.unmodifiable(bins),
         favoriteChatIds = Set<int>.unmodifiable(favoriteChatIds);
 
   final int id;
@@ -2936,6 +3155,7 @@ class UserProfile {
   final String bio;
   final String role;
   final List<String> sections;
+  final List<String> bins;
   final Set<int> favoriteChatIds;
 
   bool get canReply => role == 'admin' || role == 'moderator';
@@ -2952,6 +3172,16 @@ class UserProfile {
     return sections.contains(sectionId);
   }
 
+  bool canSeeBin(String? bin) {
+    if (isAdmin) {
+      return true;
+    }
+    if (bin == null || bin.isEmpty) {
+      return false;
+    }
+    return bins.contains(bin);
+  }
+
   UserProfile copyWith({
     String? name,
     String? jobTitle,
@@ -2959,6 +3189,7 @@ class UserProfile {
     String? bio,
     String? role,
     List<String>? sections,
+    List<String>? bins,
     Set<int>? favoriteChatIds,
   }) {
     return UserProfile(
@@ -2972,6 +3203,7 @@ class UserProfile {
       bio: bio ?? this.bio,
       role: role ?? this.role,
       sections: sections ?? this.sections,
+      bins: bins ?? this.bins,
       favoriteChatIds: favoriteChatIds ?? this.favoriteChatIds,
     );
   }
@@ -2988,12 +3220,16 @@ class UserProfile {
       'bio': bio,
       'role': role,
       'sections': sections,
+      'bins': bins,
       'favorite_chat_ids': favoriteChatIds.toList(),
     };
   }
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     final sectionList = (json['sections'] as List<dynamic>? ?? [])
+        .map((item) => item.toString())
+        .toList();
+    final binList = (json['bins'] as List<dynamic>? ?? [])
         .map((item) => item.toString())
         .toList();
     final favorites = (json['favorite_chat_ids'] as List<dynamic>? ?? [])
@@ -3011,6 +3247,7 @@ class UserProfile {
       bio: json['bio'] as String? ?? '',
       role: json['role'] as String? ?? 'viewer',
       sections: sectionList,
+      bins: binList,
       favoriteChatIds: favorites,
     );
   }

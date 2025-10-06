@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 import threading
 from dataclasses import asdict, dataclass
@@ -15,6 +16,25 @@ DB_PATH = Path(__file__).resolve().parent / "bot.db"
 _connection = sqlite3.connect(DB_PATH, check_same_thread=False)
 _connection.row_factory = sqlite3.Row
 _lock = threading.Lock()
+
+USER_COLUMN_NAMES = (
+    "id",
+    "email",
+    "name",
+    "password_hash",
+    "created_at",
+    "job_title",
+    "phone",
+    "bio",
+    "login",
+    "role",
+)
+
+
+def _user_columns(prefix: str | None = None) -> str:
+    if prefix:
+        return ", ".join(f"{prefix}.{column} AS {column}" for column in USER_COLUMN_NAMES)
+    return ", ".join(USER_COLUMN_NAMES)
 
 
 def _init_db() -> None:
@@ -86,6 +106,17 @@ def _init_db() -> None:
         )
         _connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS user_bins (
+                user_id INTEGER NOT NULL,
+                bin TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, bin),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+        _connection.execute(
+            """
             CREATE TABLE IF NOT EXISTS favorites (
                 user_id INTEGER NOT NULL,
                 chat_id INTEGER NOT NULL,
@@ -93,6 +124,18 @@ def _init_db() -> None:
                 PRIMARY KEY (user_id, chat_id),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE
+            )
+            """
+        )
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
             """
         )
@@ -170,6 +213,15 @@ def _ensure_admin_account() -> None:
 
 
 _init_db()
+
+
+def _fetch_user(where_clause: str, *params: object) -> dict | None:
+    with _lock, _connection:
+        row = _connection.execute(
+            f"SELECT {_user_columns('u')} FROM users u WHERE {where_clause}",
+            params,
+        ).fetchone()
+    return _row_to_user(row) if row else None
 
 
 @dataclass
@@ -266,6 +318,7 @@ def list_chats_for_user(
     role: str,
     *,
     favorite_only: bool = False,
+    bin_query: str | None = None,
 ) -> List[dict]:
     query_parts = [
         "SELECT c.chat_id, c.title, c.username, c.type, c.updated_at, c.section, c.bin,",
@@ -277,13 +330,20 @@ def list_chats_for_user(
     filters: List[str] = []
     if role != ROLE_ADMIN:
         allowed_sections = get_user_sections(user_id)
-        if not allowed_sections:
+        assigned_bins = get_user_bins(user_id)
+        if not allowed_sections or not assigned_bins:
             return []
         placeholders = ",".join("?" for _ in allowed_sections)
         filters.append(f"c.section IN ({placeholders})")
         params.extend(allowed_sections)
+        bin_placeholders = ",".join("?" for _ in assigned_bins)
+        filters.append(f"c.bin IN ({bin_placeholders})")
+        params.extend(assigned_bins)
     if favorite_only:
         filters.append("f.user_id IS NOT NULL")
+    if bin_query:
+        filters.append("c.bin LIKE ?")
+        params.append(f"%{bin_query.strip()}%")
     if filters:
         query_parts.append("WHERE " + " AND ".join(filters))
     query_parts.append("ORDER BY c.updated_at DESC")
@@ -299,18 +359,33 @@ def list_chats_for_user(
     return chats
 
 
-def get_messages(chat_id: int, limit: int = 50) -> List[dict]:
+def get_messages(
+    chat_id: int,
+    limit: int = 50,
+    allowed_sections: Optional[Iterable[str]] = None,
+) -> List[dict]:
+    query_parts = [
+        "SELECT id, chat_id, direction, text, message_id, author, created_at, section",
+        "FROM messages",
+        "WHERE chat_id = ?",
+    ]
+    params: List[object] = [chat_id]
+    if allowed_sections is not None:
+        allowed_list = [section for section in allowed_sections if section]
+        if allowed_list:
+            placeholders = ",".join("?" for _ in allowed_list)
+            query_parts.append(
+                f"AND (section IS NULL OR section IN ({placeholders}))"
+            )
+            params.extend(allowed_list)
+        else:
+            query_parts.append("AND section IS NULL")
+    query_parts.append("ORDER BY created_at DESC")
+    query_parts.append("LIMIT ?")
+    params.append(limit)
+    sql = "\n".join(query_parts)
     with _lock, _connection:
-        rows = _connection.execute(
-            """
-            SELECT id, chat_id, direction, text, message_id, author, created_at, section
-            FROM messages
-            WHERE chat_id = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (chat_id, limit),
-        ).fetchall()
+        rows = _connection.execute(sql, params).fetchall()
     messages = []
     for row in rows:
         message = asdict(Message.from_row(row))
@@ -382,6 +457,53 @@ def set_user_sections(user_id: int, sections: Iterable[str]) -> List[str]:
     return get_user_sections(user_id)
 
 
+def get_user_bins(user_id: int) -> List[str]:
+    with _lock, _connection:
+        rows = _connection.execute(
+            "SELECT bin FROM user_bins WHERE user_id = ? ORDER BY bin ASC",
+            (user_id,),
+        ).fetchall()
+    return [row["bin"] for row in rows]
+
+
+def set_user_bins(user_id: int, bins: Iterable[str], *, assigned_by: int | None = None) -> List[str]:
+    normalized = sorted({bin_value.strip() for bin_value in bins if bin_value and bin_value.strip()})
+    now = datetime.utcnow().isoformat()
+    added: List[str] = []
+    with _lock, _connection:
+        existing_rows = _connection.execute(
+            "SELECT bin FROM user_bins WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+        current = {row["bin"] for row in existing_rows}
+        new_values = set(normalized)
+        if new_values:
+            placeholders = ",".join("?" for _ in new_values)
+            _connection.execute(
+                f"DELETE FROM user_bins WHERE user_id = ? AND bin NOT IN ({placeholders})",
+                (user_id, *new_values),
+            )
+        else:
+            _connection.execute("DELETE FROM user_bins WHERE user_id = ?", (user_id,))
+        for bin_value in new_values:
+            _connection.execute(
+                """
+                INSERT OR IGNORE INTO user_bins (user_id, bin, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (user_id, bin_value, now),
+            )
+        added = sorted(new_values - current)
+    for bin_value in added:
+        _create_notification(
+            user_id,
+            "bin_assigned",
+            {"bin": bin_value, "assigned_by": assigned_by},
+            created_at=now,
+        )
+    return sorted(new_values)
+
+
 def list_favorite_chat_ids(user_id: int) -> List[int]:
     with _lock, _connection:
         rows = _connection.execute(
@@ -418,6 +540,70 @@ def is_favorite_chat(user_id: int, chat_id: int) -> bool:
     return row is not None
 
 
+def list_bins(query: str | None = None) -> List[str]:
+    clauses = ["SELECT DISTINCT bin FROM chats WHERE bin IS NOT NULL AND TRIM(bin) != ''"]
+    params: List[object] = []
+    if query:
+        clauses.append("AND bin LIKE ?")
+        params.append(f"%{query.strip()}%")
+    clauses.append("ORDER BY bin ASC")
+    sql = "\n".join(clauses)
+    with _lock, _connection:
+        rows = _connection.execute(sql, params).fetchall()
+    return [row["bin"] for row in rows]
+
+
+def _create_notification(
+    user_id: int,
+    kind: str,
+    payload: Dict[str, object],
+    *,
+    created_at: str | None = None,
+) -> None:
+    timestamp = created_at or datetime.utcnow().isoformat()
+    serialized = json.dumps(payload, ensure_ascii=False)
+    with _lock, _connection:
+        _connection.execute(
+            """
+            INSERT INTO notifications (user_id, kind, payload, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (user_id, kind, serialized, timestamp),
+        )
+
+
+def list_notifications_since(user_id: int, since: Optional[datetime] = None) -> List[dict]:
+    query = [
+        "SELECT id, kind, payload, created_at",
+        "FROM notifications",
+        "WHERE user_id = ?",
+    ]
+    params: List[object] = [user_id]
+    if since is not None:
+        query.append("AND created_at > ?")
+        params.append(since.isoformat())
+    query.append("ORDER BY created_at ASC, id ASC")
+    sql = "\n".join(query)
+    with _lock, _connection:
+        rows = _connection.execute(sql, params).fetchall()
+    notifications: List[dict] = []
+    for row in rows:
+        created_at = datetime.fromisoformat(row["created_at"])
+        try:
+            payload = json.loads(row["payload"])
+        except json.JSONDecodeError:
+            payload = {"raw": row["payload"]}
+        notifications.append(
+            {
+                "id": row["id"],
+                "kind": row["kind"],
+                "payload": payload,
+                "created_at": created_at,
+            }
+        )
+    return notifications
+
+
 def delete_chat(chat_id: int) -> None:
     with _lock, _connection:
         existing = _connection.execute(
@@ -431,7 +617,9 @@ def delete_chat(chat_id: int) -> None:
         _connection.execute("DELETE FROM chats WHERE chat_id = ?", (chat_id,))
 
 
-def _row_to_user(row: sqlite3.Row) -> dict:
+def _row_to_user(row: sqlite3.Row | None) -> dict | None:
+    if row is None:
+        return None
     return {
         "id": row["id"],
         "email": row["email"],
@@ -444,6 +632,28 @@ def _row_to_user(row: sqlite3.Row) -> dict:
         "login": row["login"],
         "role": row["role"],
     }
+
+
+def _sanitize_user_payload(user: dict | None, *, include_sections: bool = True) -> dict:
+    if user is None:
+        raise ValueError("User not found")
+    sanitized = {
+        "id": user["id"],
+        "email": user["email"],
+        "name": user["name"],
+        "created_at": user["created_at"],
+        "job_title": user.get("job_title", ""),
+        "phone": user.get("phone", ""),
+        "bio": user.get("bio", ""),
+        "login": user.get("login", ""),
+        "role": user.get("role", ROLE_VIEWER),
+    }
+    if include_sections:
+        sanitized["sections"] = get_user_sections(user["id"])
+    else:
+        sanitized["sections"] = []
+    sanitized["bins"] = get_user_bins(user["id"])
+    return sanitized
 
 
 def create_user(
@@ -483,48 +693,28 @@ def create_user(
             ),
         )
         user_id = cursor.lastrowid
-    return {
-        "id": user_id,
-        "email": email,
-        "name": name,
-        "created_at": now,
-        "job_title": job_title or "",
-        "phone": phone or "",
-        "bio": bio or "",
-        "login": login_value,
-        "role": role,
-        "sections": [],
-    }
+    return _sanitize_user_payload(
+        {
+            "id": user_id,
+            "email": email,
+            "name": name,
+            "created_at": now,
+            "job_title": job_title or "",
+            "phone": phone or "",
+            "bio": bio or "",
+            "login": login_value,
+            "role": role,
+        },
+        include_sections=False,
+    )
 
 
 def find_user_by_email(email: str) -> Optional[dict]:
-    with _lock, _connection:
-        row = _connection.execute(
-            """
-            SELECT id, email, name, password_hash, created_at, job_title, phone, bio, login, role
-            FROM users
-            WHERE email = ?
-            """,
-            (email,),
-        ).fetchone()
-    if row is None:
-        return None
-    return _row_to_user(row)
+    return _fetch_user("email = ?", email)
 
 
 def find_user_by_login(login: str) -> Optional[dict]:
-    with _lock, _connection:
-        row = _connection.execute(
-            """
-            SELECT id, email, name, password_hash, created_at, job_title, phone, bio, login, role
-            FROM users
-            WHERE login = ?
-            """,
-            (login,),
-        ).fetchone()
-    if row is None:
-        return None
-    return _row_to_user(row)
+    return _fetch_user("login = ?", login)
 
 
 def find_user_by_identifier(identifier: str) -> Optional[dict]:
@@ -536,18 +726,7 @@ def find_user_by_identifier(identifier: str) -> Optional[dict]:
 
 
 def get_user_by_id(user_id: int) -> Optional[dict]:
-    with _lock, _connection:
-        row = _connection.execute(
-            """
-            SELECT id, email, name, password_hash, created_at, job_title, phone, bio, login, role
-            FROM users
-            WHERE id = ?
-            """,
-            (user_id,),
-        ).fetchone()
-    if row is None:
-        return None
-    return _row_to_user(row)
+    return _fetch_user("id = ?", user_id)
 
 
 def verify_user_password(user_id: int, password_hash: str) -> bool:
@@ -575,13 +754,7 @@ def update_user_password(user_id: int, password_hash: str) -> dict:
         if cursor.rowcount == 0:
             raise ValueError("User not found")
         _connection.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-    user = get_user_by_id(user_id)
-    if not user:
-        raise ValueError("User not found")
-    sanitized = dict(user)
-    sanitized.pop("password_hash", None)
-    sanitized["sections"] = get_user_sections(user_id)
-    return sanitized
+    return _sanitize_user_payload(get_user_by_id(user_id))
 
 
 def create_session(user_id: int) -> str:
@@ -598,16 +771,9 @@ def create_session(user_id: int) -> str:
 def get_user_by_session(token: str) -> Optional[dict]:
     with _lock, _connection:
         row = _connection.execute(
-            """
-            SELECT u.id, u.email, u.name, u.password_hash, u.created_at, u.job_title, u.phone, u.bio, u.login, u.role
-            FROM sessions s
-            JOIN users u ON u.id = s.user_id
-            WHERE s.token = ?
-            """,
+            f"SELECT {_user_columns('u')} FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?",
             (token,),
         ).fetchone()
-    if row is None:
-        return None
     return _row_to_user(row)
 
 
@@ -628,23 +794,7 @@ def update_user_profile(
             """,
             (name, job_title, phone, bio, user_id),
         )
-    user = get_user_by_id(user_id)
-    if not user:
-        raise ValueError("User not found")
-    return {
-        k: user[k]
-        for k in (
-            "id",
-            "email",
-            "name",
-            "created_at",
-            "job_title",
-            "phone",
-            "bio",
-            "login",
-            "role",
-        )
-    } | {"sections": get_user_sections(user_id)}
+    return _sanitize_user_payload(get_user_by_id(user_id))
 
 
 def list_users(query: str | None = None) -> List[dict]:
@@ -657,22 +807,15 @@ def list_users(query: str | None = None) -> List[dict]:
         )
         params.extend([normalized, normalized, normalized])
     with _lock, _connection:
-        sql = [
-            "SELECT id, email, name, password_hash, created_at, job_title, phone, bio, login, role",
-            "FROM users",
-        ]
+        sql = [f"SELECT {_user_columns('u')}", "FROM users u"]
         if filters:
             sql.append("WHERE " + " AND ".join(filters))
-        sql.append("ORDER BY created_at ASC")
+        sql.append("ORDER BY u.created_at ASC")
         rows = _connection.execute("\n".join(sql), params).fetchall()
-    users: List[dict] = []
-    for row in rows:
-        user = dict(_row_to_user(row))
-        # remove password hash for API consumers
-        user.pop("password_hash", None)
-        user["sections"] = get_user_sections(user["id"])
-        users.append(user)
-    return users
+    return [
+        _sanitize_user_payload(_row_to_user(row))  # type: ignore[arg-type]
+        for row in rows
+    ]
 
 
 def update_user_role(user_id: int, role: str) -> dict:
@@ -683,13 +826,7 @@ def update_user_role(user_id: int, role: str) -> dict:
             "UPDATE users SET role = ? WHERE id = ?",
             (role, user_id),
         )
-    user = get_user_by_id(user_id)
-    if not user:
-        raise ValueError("User not found")
-    sanitized = dict(user)
-    sanitized.pop("password_hash", None)
-    sanitized["sections"] = get_user_sections(user_id)
-    return sanitized
+    return _sanitize_user_payload(get_user_by_id(user_id))
 
 
 SECTIONS: List[dict] = [
@@ -773,48 +910,76 @@ def user_can_access_chat(user_id: int, role: str, chat_id: int) -> bool:
     if chat is None:
         return False
     section = chat.get("section")
-    if section is None:
+    chat_bin = chat.get("bin")
+    if section is None or chat_bin is None:
         return False
     allowed = set(get_user_sections(user_id))
-    return section in allowed
+    assigned_bins = set(get_user_bins(user_id))
+    return section in allowed and chat_bin in assigned_bins
 
 
-def list_incoming_messages_since(
+def list_updates_since(
     user_id: int,
     role: str,
     since: Optional[datetime] = None,
 ) -> List[dict]:
-    query_parts = [
-        "SELECT m.id, m.chat_id, m.text, m.created_at, m.section, c.title",
-        "FROM messages m",
-        "JOIN chats c ON c.chat_id = m.chat_id",
-        "WHERE m.direction = 'incoming'",
-    ]
-    params: List[object] = []
-    if since is not None:
-        query_parts.append("AND m.created_at > ?")
-        params.append(since.isoformat())
+    allowed_sections: Optional[List[str]] = None
+    assigned_bins: Optional[List[str]] = None
     if role != ROLE_ADMIN:
         allowed_sections = get_user_sections(user_id)
-        if not allowed_sections:
-            return []
-        placeholders = ",".join("?" for _ in allowed_sections)
-        query_parts.append(f"AND m.section IN ({placeholders})")
-        params.extend(allowed_sections)
-    query_parts.append("ORDER BY m.created_at ASC")
-    sql = "\n".join(query_parts)
-    with _lock, _connection:
-        rows = _connection.execute(sql, params).fetchall()
-    notifications: List[dict] = []
-    for row in rows:
-        created_at = datetime.fromisoformat(row["created_at"])
-        notifications.append(
+        assigned_bins = get_user_bins(user_id)
+    updates: List[dict] = []
+    params: List[object] = []
+    if role == ROLE_ADMIN or (allowed_sections and assigned_bins):
+        query_parts = [
+            "SELECT m.id, m.chat_id, m.text, m.created_at, m.section, c.title, c.bin",
+            "FROM messages m",
+            "JOIN chats c ON c.chat_id = m.chat_id",
+            "WHERE m.direction = 'incoming'",
+        ]
+        if since is not None:
+            query_parts.append("AND m.created_at > ?")
+            params.append(since.isoformat())
+        if role != ROLE_ADMIN and allowed_sections and assigned_bins:
+            section_placeholders = ",".join("?" for _ in allowed_sections)
+            query_parts.append(
+                f"AND (m.section IS NULL OR m.section IN ({section_placeholders}))"
+            )
+            params.extend(allowed_sections)
+            bin_placeholders = ",".join("?" for _ in assigned_bins)
+            query_parts.append(f"AND c.bin IN ({bin_placeholders})")
+            params.extend(assigned_bins)
+        query_parts.append("ORDER BY m.created_at ASC")
+        sql = "\n".join(query_parts)
+        with _lock, _connection:
+            rows = _connection.execute(sql, params).fetchall()
+        for row in rows:
+            created_at = datetime.fromisoformat(row["created_at"])
+            updates.append(
+                {
+                    "type": "message",
+                    "chat_id": row["chat_id"],
+                    "chat_title": row["title"],
+                    "text": row["text"],
+                    "created_at": created_at,
+                    "section": row["section"],
+                    "bin": row["bin"],
+                }
+            )
+    notification_rows = list_notifications_since(user_id, since)
+    for entry in notification_rows:
+        payload = entry.get("payload", {}) or {}
+        updates.append(
             {
-                "chat_id": row["chat_id"],
-                "text": row["text"],
-                "created_at": created_at.isoformat(),
-                "section": row["section"],
-                "chat_title": row["title"],
+                "type": entry.get("kind", "notification"),
+                "chat_id": payload.get("chat_id"),
+                "chat_title": payload.get("chat_title"),
+                "text": payload.get("text", ""),
+                "created_at": entry["created_at"],
+                "section": payload.get("section"),
+                "bin": payload.get("bin"),
+                "metadata": payload,
             }
         )
-    return notifications
+    updates.sort(key=lambda item: item["created_at"])
+    return updates

@@ -36,7 +36,7 @@ ROLE_LABELS: Dict[str, str] = {
 class RegisterRequest(BaseModel):
     name: str = Field(min_length=2, max_length=100)
     email: EmailStr
-    password: str = Field(min_length=4, max_length=100)
+    password: str = Field(min_length=5, max_length=100)
 
 
 class LoginRequest(BaseModel):
@@ -60,6 +60,7 @@ class UserResponse(BaseModel):
     bio: str = ""
     role: str
     sections: List[str] = []
+    bins: List[str] = []
     favorite_chat_ids: List[int] = []
 
 
@@ -77,12 +78,16 @@ class SectionsUpdateRequest(BaseModel):
 
 
 class PasswordChangeRequest(BaseModel):
-    current_password: str = Field(min_length=4, max_length=100)
-    new_password: str = Field(min_length=6, max_length=100)
+    current_password: str = Field(min_length=5, max_length=100)
+    new_password: str = Field(min_length=5, max_length=100)
 
 
 class PasswordResetRequest(BaseModel):
-    new_password: str = Field(min_length=6, max_length=100)
+    new_password: str = Field(min_length=5, max_length=100)
+
+
+class BinsUpdateRequest(BaseModel):
+    bins: List[str] = Field(default_factory=list)
 
 
 class MessageResponse(BaseModel):
@@ -109,12 +114,14 @@ class ChatResponse(BaseModel):
 
 
 class NotificationResponse(BaseModel):
-    chat_id: int
-    chat_title: str
+    type: str = Field(default="message")
+    chat_id: int | None = None
+    chat_title: str | None = None
     text: str
     created_at: str
     section: str | None = None
     section_title: str | None = None
+    bin: str | None = None
 
 
 def require_api_token(x_api_token: str | None = Header(default=None, alias="X-Api-Token")) -> None:
@@ -144,6 +151,7 @@ def _sanitize_user(user: Dict[str, object]) -> Dict[str, object]:
     user_id = user["id"]
     sections = user.get("sections") or database.get_user_sections(user_id)
     favorites = database.list_favorite_chat_ids(user_id)
+    bins = user.get("bins") or database.get_user_bins(user_id)
     return {
         "id": user_id,
         "email": user["email"],
@@ -155,6 +163,7 @@ def _sanitize_user(user: Dict[str, object]) -> Dict[str, object]:
         "bio": user.get("bio", ""),
         "role": user.get("role", database.ROLE_VIEWER),
         "sections": sections,
+        "bins": bins,
         "favorite_chat_ids": favorites,
     }
 
@@ -315,6 +324,20 @@ def set_user_sections_endpoint(
     return UserResponse(**sanitized)
 
 
+@router.put("/users/{user_id}/bins", response_model=UserResponse)
+def set_user_bins_endpoint(
+    user_id: int,
+    request: BinsUpdateRequest,
+    current_admin: Dict[str, object] = Depends(require_admin),
+):
+    user = database.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    updated_bins = database.set_user_bins(user_id, request.bins, assigned_by=current_admin["id"])
+    sanitized = _sanitize_user({**user, "bins": updated_bins})
+    return UserResponse(**sanitized)
+
+
 @router.get("/roles")
 def list_roles(_: Dict[str, object] = Depends(require_admin)):
     return [
@@ -328,6 +351,14 @@ def list_sections(_: Dict[str, object] = Depends(get_current_user)):
     return database.SECTIONS
 
 
+@router.get("/bins", response_model=List[str])
+def list_bins_endpoint(
+    query: str | None = None,
+    _: Dict[str, object] = Depends(get_current_user),
+):
+    return database.list_bins(query)
+
+
 @router.get("/faq")
 def list_faq(_: Dict[str, object] = Depends(get_current_user)):
     return database.list_faq()
@@ -336,12 +367,14 @@ def list_faq(_: Dict[str, object] = Depends(get_current_user)):
 @router.get("/chats", response_model=List[ChatResponse])
 def list_chats(
     favorite_only: bool = False,
+    bin_query: str | None = None,
     current_user: Dict[str, object] = Depends(get_current_user),
 ):
     chats = database.list_chats_for_user(
         current_user["id"],
         current_user["role"],
         favorite_only=favorite_only,
+        bin_query=bin_query,
     )
     enriched = []
     for chat in chats:
@@ -363,7 +396,10 @@ def get_chat_messages(
 ):
     if not database.user_can_access_chat(current_user["id"], current_user["role"], chat_id):
         raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
-    messages = database.get_messages(chat_id, limit=limit)
+    allowed_sections = None
+    if current_user["role"] != database.ROLE_ADMIN:
+        allowed_sections = current_user.get("sections") or []
+    messages = database.get_messages(chat_id, limit=limit, allowed_sections=allowed_sections)
     for message in messages:
         section_id = message.get("section")
         if section_id:
@@ -456,27 +492,65 @@ def list_updates(
             since_dt = datetime.fromisoformat(since)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Некорректный формат времени") from exc
-    notifications = database.list_incoming_messages_since(
-        current_user["id"], current_user["role"], since_dt
-    )
+    updates = database.list_updates_since(current_user["id"], current_user["role"], since_dt)
     enriched: List[NotificationResponse] = []
-    for entry in notifications:
-        section_id = entry.get("section")
-        section_title = None
-        if section_id:
-            section = next((s for s in database.SECTIONS if s["id"] == section_id), None)
-            if section:
-                section_title = section["title"]
-        enriched.append(
-            NotificationResponse(
-                chat_id=entry["chat_id"],
-                chat_title=entry["chat_title"],
-                text=entry["text"],
-                created_at=entry["created_at"],
-                section=section_id,
-                section_title=section_title,
+    for entry in updates:
+        created_at_value = entry.get("created_at")
+        if isinstance(created_at_value, datetime):
+            created_at_iso = created_at_value.isoformat()
+        else:
+            created_at_iso = str(created_at_value)
+        entry_type = entry.get("type", "message")
+        if entry_type == "message":
+            section_id = entry.get("section")
+            section_title = None
+            if section_id:
+                section = next((s for s in database.SECTIONS if s["id"] == section_id), None)
+                if section:
+                    section_title = section["title"]
+            enriched.append(
+                NotificationResponse(
+                    type="message",
+                    chat_id=entry.get("chat_id"),
+                    chat_title=entry.get("chat_title"),
+                    text=entry.get("text", ""),
+                    created_at=created_at_iso,
+                    section=section_id,
+                    section_title=section_title,
+                    bin=entry.get("bin"),
+                )
             )
-        )
+            continue
+        if entry_type == "bin_assigned":
+            bin_value = entry.get("bin") or entry.get("metadata", {}).get("bin")
+            message = "Вам назначен новый БИН."
+            if bin_value:
+                message = f"Вам назначен БИН {bin_value}."
+            enriched.append(
+                NotificationResponse(
+                    type="bin_assignment",
+                    chat_id=None,
+                    chat_title=None,
+                    text=message,
+                    created_at=created_at_iso,
+                    section=None,
+                    section_title=None,
+                    bin=bin_value,
+                )
+            )
+        else:
+            enriched.append(
+                NotificationResponse(
+                    type=str(entry_type),
+                    chat_id=entry.get("chat_id"),
+                    chat_title=entry.get("chat_title"),
+                    text=entry.get("text", ""),
+                    created_at=created_at_iso,
+                    section=entry.get("section"),
+                    section_title=None,
+                    bin=entry.get("bin"),
+                )
+            )
     return enriched
 
 

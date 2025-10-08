@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+
+import 'network_exceptions.dart';
 
 const defaultApiBaseUrl =
     'https://exclamatorily-nonaffecting-chelsey.ngrok-free.dev';
@@ -611,10 +612,6 @@ class ApiClient {
       }
       final message = _extractErrorMessage(response) ?? fallbackMessage;
       throw ApiException(message);
-    } on SocketException {
-      throw const ApiException(
-        'Не удалось подключиться к серверу. Проверьте интернет-соединение и адрес API.',
-      );
     } on TimeoutException {
       throw const ApiException(
         'Превышено время ожидания ответа от сервера. Попробуйте снова.',
@@ -624,9 +621,15 @@ class ApiClient {
           ? 'Сетевая ошибка: ${error.message}'
           : fallbackMessage;
       throw ApiException(message);
-    } on ApiException {
-      rethrow;
-    } catch (_) {
+      } catch (error) {
+      if (error is ApiException) {
+        rethrow;
+      }
+      if (isNetworkException(error)) {
+        throw const ApiException(
+          'Не удалось подключиться к серверу. Проверьте интернет-соединение и адрес API.',
+        );
+      }
       throw ApiException(fallbackMessage);
     }
   }

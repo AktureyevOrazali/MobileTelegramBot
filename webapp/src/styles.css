@@ -1,0 +1,349 @@
+:root {
+  color-scheme: light;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background-color: #f6f7fb;
+  color: #1b1d29;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body,
+html,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  background: linear-gradient(180deg, rgba(62, 90, 168, 0.08) 0%, rgba(62, 90, 168, 0) 65%), #f6f7fb;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+.container {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.card {
+  background-color: #fff;
+  border-radius: 16px;
+  box-shadow: 0 16px 32px rgba(20, 33, 61, 0.08);
+  padding: 24px;
+}
+
+.heading {
+  margin: 0;
+  font-weight: 700;
+  color: #253263;
+}
+
+.label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #3e4a7b;
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(62, 90, 168, 0.35);
+  background-color: rgba(255, 255, 255, 0.9);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: #3e5aa8;
+  box-shadow: 0 0 0 3px rgba(62, 90, 168, 0.18);
+}
+
+.button {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 18px;
+  background-color: #3e5aa8;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.button:hover:not(:disabled) {
+  background-color: #324a8a;
+  transform: translateY(-1px);
+}
+
+.button.secondary {
+  background-color: transparent;
+  color: #3e5aa8;
+  border: 1px solid rgba(62, 90, 168, 0.5);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background-color: rgba(62, 90, 168, 0.12);
+  color: #253263;
+  font-size: 0.82rem;
+  gap: 8px;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  justify-content: center;
+}
+
+.tab-button {
+  padding: 12px 24px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(37, 50, 99, 0.1);
+  color: #253263;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.tab-button.active {
+  background-color: #3e5aa8;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.tab-button:hover:not(.active) {
+  background-color: rgba(62, 90, 168, 0.18);
+}
+
+.alert {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background-color: rgba(255, 182, 66, 0.2);
+  color: #9a5b00;
+  margin-bottom: 16px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background-color: rgba(62, 90, 168, 0.2);
+  color: #253263;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.flex {
+  display: flex;
+}
+
+.flex-gap {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.text-muted {
+  color: #636b8a;
+}
+
+.separator {
+  height: 1px;
+  background: rgba(37, 50, 99, 0.1);
+  margin: 24px 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid rgba(37, 50, 99, 0.08);
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 16px;
+  max-width: 70%;
+  box-shadow: 0 8px 24px rgba(20, 33, 61, 0.08);
+}
+
+.message-bubble.incoming {
+  align-self: flex-start;
+  background-color: #ffffff;
+}
+
+.message-bubble.outgoing {
+  align-self: flex-end;
+  background-color: #3e5aa8;
+  color: #fff;
+}
+
+:root{
+  --bg:#f5f7fd; --panel:#ffffff; --text:#1f2a44; --muted:#6b7a99;
+  --brand:#3d56b2; --brand-200:#e8edff; --brand-600:#2f4390; --ring:0 0 0 3px rgba(61,86,178,.2);
+}
+
+/* pill-элементы (селекты как в мобилке) */
+.pill{display:inline-flex;align-items:center;gap:10px;height:44px;padding:0 14px;border-radius:12px;background:#fff;border:1px solid #dfe5ff;color:var(--text);box-shadow:0 1px 0 #eef1ff inset;cursor:pointer;user-select:none;transition:.14s}
+.pill:hover{box-shadow:var(--ring)}
+.pill .label{font-weight:700}
+.pill .value{color:var(--muted)}
+.pill .caret{margin-left:2px;opacity:.7}
+
+/* выпадающее меню к pill */
+.menu{position:absolute;z-index:20;min-width:260px;background:#fff;border:1px solid #e7eaff;border-radius:12px;box-shadow:0 12px 28px rgba(25,39,85,.12);padding:6px;margin-top:6px}
+.menu input[type="text"]{width:100%;height:38px;border:1px solid #e3e8ff;border-radius:10px;padding:0 10px;outline:none;margin-bottom:6px}
+.menu .opt{padding:10px 12px;border-radius:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.menu .opt:hover{background:#f6f8ff}
+.menu .opt .meta{font-size:12px;color:var(--muted)}
+
+/* избранное — звёздочка */
+.star{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;border:1px solid #e5e9ff;background:#fff;cursor:pointer;transition:.14s}
+.star:hover{box-shadow:var(--ring)}
+.star svg{width:16px;height:16px;fill:#cbd3ff}
+.star.active svg{fill:#f5b301}
+
+/* модалка */
+.modal-overlay{position:fixed;inset:0;background:rgba(7,12,29,.45);display:flex;align-items:center;justify-content:center;z-index:40}
+.modal{width:100%;max-width:420px;background:#fff;border:1px solid #e8ecff;border-radius:16px;padding:18px;box-shadow:0 18px 44px rgba(17,23,60,.18)}
+.modal h3{margin:0 0 10px 0}
+.modal .row{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:6px}
+
+/* служебное */
+.sticky-filters{position:sticky;top:12px;z-index:5}
+.badge{font-size:12px;padding:6px 10px;border-radius:999px;background:var(--brand-200);color:var(--brand);border:1px solid #dfe5ff}
+
+/* ... твои стили выше остаются без изменений ... */
+
+/* выравнивание фильтров в одну строку */
+.controls-row{
+  display:flex;
+  gap:12px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+
+/* пилюля-чекбокс для "Только избранные" */
+.check-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  height:44px;
+  padding:0 14px;
+  border-radius:12px;
+  background:#fff;
+  border:1px solid #dfe5ff;
+  color:var(--text);
+  box-shadow:0 1px 0 #eef1ff inset;
+  user-select:none;
+  cursor:pointer;
+}
+.check-pill input{ appearance:none; width:18px; height:18px; border:1px solid #cfd7ff; border-radius:6px; display:inline-block; position:relative; }
+.check-pill input:checked{ background:#3e5aa8; border-color:#3e5aa8; }
+.check-pill input:checked::after{ content:""; position:absolute; inset:3px; background:#fff; border-radius:3px; }
+
+/* иконка-кнопка (крестик в модалке) */
+.icon-btn{
+  width:36px; height:36px; border-radius:12px;
+  border:1px solid #e5e9ff; background:#fff; display:grid; place-items:center;
+  cursor:pointer; transition:.14s;
+}
+.icon-btn:hover{ box-shadow:var(--ring); }
+
+/* на всякий случай фиксируем размер звезды */
+.star{ width:32px; height:32px; }
+.star svg{ width:16px; height:16px; }
+
+/* сетка для разделов */
+.sections-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+/* чип-чекбокс для разделов */
+.check-chip{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 12px; border-radius:999px;
+  background:#f6f8ff; border:1px solid #e2e7ff; color:var(--text);
+  transition:.14s; cursor:pointer; user-select:none;
+}
+.check-chip:hover{ box-shadow:var(--ring); }
+.check-chip input{ appearance:none; width:18px; height:18px; border-radius:6px; border:1px solid #cfd7ff; background:#fff; display:inline-block; position:relative; }
+.check-chip.checked input{ background:#3e5aa8; border-color:#3e5aa8; }
+.check-chip.checked input::after{ content:""; position:absolute; inset:3px; background:#fff; border-radius:3px; }
+
+/* строка добавления/сохранения БИНов */
+.bins-row{ display:flex; gap:10px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
+
+/* чип БИНа + крестик */
+.bin-chip{ display:inline-flex; align-items:center; gap:8px; }
+.chip-x{
+  width:22px; height:22px; border-radius:50%;
+  border:1px solid #dfe5ff; background:#fff;
+  display:grid; place-items:center; line-height:1;
+  font-weight:700; color:#6370a0; cursor:pointer; padding:0;
+}
+.chip-x:hover{ box-shadow:var(--ring); color:#2f4390; }
+
+/* textarea: без ручного ресайза, автоподбор высоты в коде */
+.textarea {
+  resize: none;
+}
+
+/* если вдруг нужно отдельным классом обозначить автогроу */
+.textarea--autogrow {
+  overflow: hidden; /* чтобы не было двойного скролла при авто-высоте */
+}
+

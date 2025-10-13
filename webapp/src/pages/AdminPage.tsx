@@ -47,6 +47,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
 }) => {
   const [selectedRole, setSelectedRole] = useState(user.role);
   const [sectionIds, setSectionIds] = useState<Set<string>>(new Set(user.sections));
+  const [sectionToAdd, setSectionToAdd] = useState<string>('');
   const [assignedBins, setAssignedBins] = useState<string[]>(user.bins);
   const [binToAdd, setBinToAdd] = useState<string>('');
 
@@ -68,13 +69,36 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   useEffect(() => {
     setSelectedRole(user.role);
     setSectionIds(new Set(user.sections));
+    setSectionToAdd('');
     setAssignedBins(user.bins);
+    setBinToAdd('');
   }, [user]);
 
   const roleOptions = useMemo(
     () => roles.map((r) => ({ value: r.id, label: r.title })),
     [roles],
   );
+
+  const sectionOptions = useMemo(() => {
+    return [{ value: '', label: 'Выберите раздел' }].concat(
+      sections
+        .filter((section) => !sectionIds.has(section.id))
+        .map((section) => ({ value: section.id, label: section.title, meta: section.id })),
+    );
+  }, [sections, sectionIds]);
+
+  const assignedSections = useMemo<Section[]>(() => {
+    const mapped = sections.filter((section) => sectionIds.has(section.id));
+    const knownIds = new Set(mapped.map((section) => section.id));
+    Array.from(sectionIds).forEach((id) => {
+      if (!knownIds.has(id)) {
+        mapped.push({ id, title: id });
+      }
+    });
+    return mapped;
+  }, [sections, sectionIds]);
+
+
 
   const binOptions = useMemo(() => {
     const current = new Set(assignedBins);
@@ -137,6 +161,28 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     })();
   }, [binsKey]);
 
+  const addSection = (id: string) => {
+    if (!id) return;
+    setSectionIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    setSectionToAdd('');
+  };
+
+  const removeSection = (id: string) => {
+    setSectionIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+
+
   const addBin = (b: string) => {
     if (!b || assignedBins.includes(b)) return;
     setAssignedBins((prev) => prev.concat(b));
@@ -191,8 +237,8 @@ const AdminUserCard: React.FC<UserCardProps> = ({
           </p>
           <div className="flex-gap" style={{ marginTop: 8 }}>
             <span className="chip">Текущая роль: {roleLabels[user.role] ?? user.role}</span>
-            <span className="chip">Назначено разделов: {user.sections.length}</span>
-            <span className="chip">Назначено БИНов: {user.bins.length}</span>
+            <span className="chip">Назначено разделов: {sectionIds.size}</span>
+            <span className="chip">Назначено БИНов: {assignedBins.length}</span>
           </div>
         </div>
 
@@ -216,25 +262,40 @@ const AdminUserCard: React.FC<UserCardProps> = ({
       {/* Разделы */}
       <div>
         <h4 style={{ marginBottom: 8 }}>Назначенные разделы</h4>
-        <div className="sections-grid">
-          {sections.map((section) => {
-            const checked = sectionIds.has(section.id);
+        <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+          {assignedSections.length === 0 && (
+            <span className="text-muted">Нет назначенных разделов</span>
+          )}
+          {assignedSections.map((section) => {
+            const label = section.title === section.id ? section.title : `${section.title} (${section.id})`;
             return (
-              <label key={section.id} className={`check-chip ${checked ? 'checked' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(e) => {
-                    const next = new Set(sectionIds);
-                    if (e.target.checked) next.add(section.id);
-                    else next.delete(section.id);
-                    setSectionIds(next);
-                  }}
-                />
-                <span>{section.title}</span>
-              </label>
+              <span key={section.id} className="chip bin-chip">
+                {label}
+                <button
+                  className="chip-x"
+                  type="button"
+                  aria-label={`Удалить раздел ${label}`}
+                  onClick={() => removeSection(section.id)}
+                >
+                  ×
+                </button>
+              </span>
             );
           })}
+        </div>
+        <div className="bins-row" style={{ justifyContent: 'flex-start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="label" style={{ fontWeight: 700 }}>Добавить раздел</div>
+            <SelectPill
+              label=""
+              showLabelInside={false}
+              options={sectionOptions}
+              value={sectionToAdd}
+              onChange={(v) => { setSectionToAdd(v); if (v) addSection(v); }}
+              searchable
+              style={{ minWidth: 260 }}
+            />
+          </div>
         </div>
         <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>
           {savingSections ? 'Сохраняем…' : 'Изменения сохраняются автоматически'}

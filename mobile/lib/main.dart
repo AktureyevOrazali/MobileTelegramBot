@@ -597,9 +597,22 @@ class ApiClient {
       'Не удалось получить обновления.',
     );
     final decoded = jsonDecode(response.body) as List<dynamic>;
-    return decoded
-        .map((item) => MessageNotification.fromJson(item as Map<String, dynamic>))
-        .toList();
+    final notifications = <MessageNotification>[];
+    for (final item in decoded) {
+      if (item is! Map<String, dynamic>) {
+        continue;
+      }
+      final notification = MessageNotification.tryParse(item);
+      if (notification != null) {
+        notifications.add(notification);
+      } else {
+        final truncated = item.toString();
+        final printable =
+            truncated.length > 200 ? '${truncated.substring(0, 200)}…' : truncated;
+        debugPrint('Пропущено некорректное обновление: $printable');
+      }
+    }
+    return notifications;
   }
 
   Future<http.Response> _sendRequest(
@@ -2030,9 +2043,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   List<String> _availableBins = [];
   final Set<int> _updatingUserIds = <int>{};
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _binSearchController = TextEditingController();
   Timer? _searchDebounce;
-  Timer? _binSearchDebounce;
   String _searchQuery = '';
 
   @override
@@ -2044,9 +2055,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
-    _binSearchDebounce?.cancel();
     _searchController.dispose();
-    _binSearchController.dispose();
     super.dispose();
   }
 
@@ -2098,21 +2107,6 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _searchQuery = value;
       });
       refreshAdminData(showLoading: false);
-    });
-  }
-
-  void _onBinSearchChanged(String value) {
-    _binSearchDebounce?.cancel();
-    _binSearchDebounce = Timer(const Duration(milliseconds: 300), () async {
-      try {
-        final bins = await widget.apiClient.fetchBins(query: value);
-        if (!mounted) return;
-        setState(() {
-          _availableBins = bins;
-        });
-      } catch (error) {
-        debugPrint('Не удалось загрузить БИНы: $error');
-      }
     });
   }
 
@@ -2459,29 +2453,34 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Доступные разделы:',
+                      'Назначенные разделы:',
                       style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: _availableSections.map((section) {
-                        final selected = user.sections.contains(section.id);
-                        return FilterChip(
-                          label: Text(section.title),
-                          selected: selected,
-                          showCheckmark: false,
-                          selectedColor: theme.colorScheme.primaryContainer,
-                          onSelected: (!isUpdating)
-                              ? (value) {
-                                  final updatedSections = Set<String>.from(user.sections);
-                                  if (value) {
-                                    updatedSections.add(section.id);
-                                  } else {
-                                    updatedSections.remove(section.id);
-                                  }
-                                  _updateUserSections(user, updatedSections);
+                    if (user.sections.isEmpty)
+                      Text(
+                        'Нет назначенных разделов',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: user.sections.map((sectionId) {
+                          final match = _availableSections.firstWhere(
+                            (section) => section.id == sectionId,
+                            orElse: () => Section(id: sectionId, title: sectionId),
+                          );
+                          return Chip(
+                            label: Text(match.title),
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            onDeleted: (!isUpdating)
+                                ? () {
+                                    final updatedSections =
+                                        Set<String>.from(user.sections)..remove(sectionId);
+                                    _updateUserSections(user, updatedSections);
                                 }
                               : null,
                         );
@@ -2489,70 +2488,84 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                     ),
                     const SizedBox(height: 12),
                     Text(
+                      'Добавить раздел',
+                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    _SectionSelectorField(
+                      key: ValueKey('section-selector-${user.id}-${user.sections.length}'),
+                      availableSections: _availableSections
+                          .where((section) => !user.sections.contains(section.id))
+                          .toList(),
+                      enabled: !isUpdating && _availableSections.isNotEmpty,
+                      onSectionSelected: (value) {
+                        if (value.isEmpty || user.sections.contains(value)) {
+                          return;
+                        }
+                        final updatedSections = Set<String>.from(user.sections)..add(value);
+                        _updateUserSections(user, updatedSections);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
                       'Назначенные БИНы:',
                       style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    // Поле поиска и добавления БИНов
-                    TextField(
-                      controller: _binSearchController,
-                      decoration: const InputDecoration(
-                        labelText: 'Поиск БИНов',
-                        prefixIcon: Icon(Icons.search),
-                        suffixIcon: Icon(Icons.add),
+                    // Список доступных БИНов для выбора
+                    if (user.bins.isEmpty)
+                      Text(
+                        'Нет назначенных БИНов',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: user.bins.map((bin) {
+                          return Chip(
+                            label: Text(bin),
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            onDeleted: (!isUpdating)
+                                ? () {
+                                    final updatedBins =
+                                        Set<String>.from(user.bins)..remove(bin);
+                                    _updateUserBins(user, updatedBins);
+                                  }
+                                : null,
+                          );
+                        }).toList(),
                       ),
-                      onChanged: _onBinSearchChanged,
-                      onSubmitted: (value) {
-                        if (value.trim().isNotEmpty && !user.bins.contains(value.trim())) {
-                          final updatedBins = Set<String>.from(user.bins)..add(value.trim());
-                          _updateUserBins(user, updatedBins);
-                          _binSearchController.clear();
+                    const SizedBox(height: 12),
+                    Text(
+                      'Добавить БИН',
+                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    _BinSelectorField(
+                      key: ValueKey('bin-selector-${user.id}-${user.bins.length}'),
+                      availableBins: _availableBins
+                          .where((bin) => !user.bins.contains(bin))
+                          .toList(),
+                      enabled: !isUpdating && _availableBins.isNotEmpty,
+                      onBinSelected: (value) {
+                        if (value.isEmpty || user.bins.contains(value)) {
+                          return;
                         }
+                        final updatedBins = Set<String>.from(user.bins)..add(value);
+                        _updateUserBins(user, updatedBins);
                       },
                     ),
                     const SizedBox(height: 8),
-                    // Список доступных БИНов для выбора
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: _availableBins.map((bin) {
-                        final selected = user.bins.contains(bin);
-                        return FilterChip(
-                          label: Text(bin),
-                          selected: selected,
-                          showCheckmark: false,
-                          selectedColor: theme.colorScheme.primaryContainer,
-                          onSelected: (!isUpdating)
-                              ? (value) {
-                                  final updatedBins = Set<String>.from(user.bins);
-                                  if (value) {
-                                    updatedBins.add(bin);
-                                  } else {
-                                    updatedBins.remove(bin);
-                                  }
-                                  _updateUserBins(user, updatedBins);
-                                }
-                              : null,
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 8),
-                    // Текущие назначенные БИНы
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: user.bins.map((bin) {
-                        return Chip(
-                          label: Text(bin),
-                          backgroundColor: theme.colorScheme.primaryContainer,
-                          onDeleted: (!isUpdating)
-                              ? () {
-                                  final updatedBins = Set<String>.from(user.bins)..remove(bin);
-                                  _updateUserBins(user, updatedBins);
-                                }
-                              : null,
-                        );
-                      }).toList(),
+                    Text(
+                      isUpdating
+                          ? 'Сохраняем изменения…'
+                          : 'Изменения сохраняются автоматически',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     if (isSelf)
                       Padding(
@@ -3009,6 +3022,257 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   }
 }
 
+class _SectionSelectorField extends StatefulWidget {
+  const _SectionSelectorField({
+    required this.availableSections,
+    required this.onSectionSelected,
+    required this.enabled,
+    super.key,
+  });
+
+  final List<Section> availableSections;
+  final ValueChanged<String> onSectionSelected;
+  final bool enabled;
+
+  @override
+  State<_SectionSelectorField> createState() => _SectionSelectorFieldState();
+}
+
+class _SectionSelectorFieldState extends State<_SectionSelectorField> {
+  TextEditingController? _fieldController;
+  FocusNode? _focusNode;
+
+  Iterable<Section> _buildOptions(TextEditingValue value) {
+    if (!widget.enabled) {
+      return const Iterable<Section>.empty();
+    }
+    final query = value.text.trim();
+    if (query.isEmpty) {
+      return widget.availableSections;
+    }
+    final lowerQuery = query.toLowerCase();
+    return widget.availableSections.where(
+      (section) =>
+          section.title.toLowerCase().contains(lowerQuery) ||
+          section.id.toLowerCase().contains(lowerQuery),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _SectionSelectorField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled && oldWidget.enabled) {
+      _fieldController?.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Autocomplete<Section>(
+      optionsBuilder: _buildOptions,
+      displayStringForOption: (option) => option.title,
+      onSelected: (value) {
+        _fieldController?.clear();
+        if (!widget.enabled) {
+          return;
+        }
+        widget.onSectionSelected(value.id);
+        _focusNode?.unfocus();
+      },
+      fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+        _fieldController = textEditingController;
+        _focusNode = focusNode;
+        return TextField(
+          controller: textEditingController,
+          focusNode: focusNode,
+          enabled: widget.enabled,
+          decoration: const InputDecoration(
+            labelText: 'Выберите раздел',
+            hintText: 'Поиск…',
+            prefixIcon: Icon(Icons.search),
+          ),
+          onSubmitted: (value) {
+            if (!widget.enabled) {
+              return;
+            }
+            final trimmed = value.trim();
+            if (trimmed.isEmpty) {
+              return;
+            }
+            final normalized = trimmed.toLowerCase();
+            Section? match;
+            for (final section in widget.availableSections) {
+              final titleMatch = section.title.toLowerCase() == normalized;
+              final idMatch = section.id.toLowerCase() == normalized;
+              if (titleMatch || idMatch) {
+                match = section;
+                break;
+              }
+            }
+            if (match != null) {
+              widget.onSectionSelected(match.id);
+              _fieldController?.clear();
+              focusNode.unfocus();
+            }
+          },
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        final optionList = options.toList();
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240, minWidth: 240),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                itemCount: optionList.length,
+                itemBuilder: (context, index) {
+                  final option = optionList[index];
+                  return ListTile(
+                    title: Text(option.title),
+                    subtitle: Text(option.id),
+                    onTap: () => onSelected(option),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _BinSelectorField extends StatefulWidget {
+  const _BinSelectorField({
+    required this.availableBins,
+    required this.onBinSelected,
+    required this.enabled,
+    super.key,
+  });
+
+  final List<String> availableBins;
+  final ValueChanged<String> onBinSelected;
+  final bool enabled;
+
+  @override
+  State<_BinSelectorField> createState() => _BinSelectorFieldState();
+}
+
+class _BinSelectorFieldState extends State<_BinSelectorField> {
+  TextEditingController? _fieldController;
+  FocusNode? _focusNode;
+
+  Iterable<String> _buildOptions(TextEditingValue value) {
+    if (!widget.enabled) {
+      return const Iterable<String>.empty();
+    }
+    final query = value.text.trim();
+    if (query.isEmpty) {
+      return widget.availableBins;
+    }
+    final lowerQuery = query.toLowerCase();
+    return widget.availableBins.where(
+      (bin) => bin.toLowerCase().contains(lowerQuery),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _BinSelectorField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled && oldWidget.enabled) {
+      _fieldController?.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Autocomplete<String>(
+      optionsBuilder: _buildOptions,
+      displayStringForOption: (option) => option,
+      onSelected: (value) {
+        _fieldController?.clear();
+        if (!widget.enabled) {
+          return;
+        }
+        widget.onBinSelected(value);
+        _focusNode?.unfocus();
+      },
+      fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+        _fieldController = textEditingController;
+        _focusNode = focusNode;
+        return TextField(
+          controller: textEditingController,
+          focusNode: focusNode,
+          enabled: widget.enabled,
+          decoration: const InputDecoration(
+            labelText: 'Выберите БИН',
+            hintText: 'Поиск…',
+            prefixIcon: Icon(Icons.search),
+          ),
+          onSubmitted: (value) {
+            if (!widget.enabled) {
+              return;
+            }
+            final trimmed = value.trim();
+            if (trimmed.isEmpty) {
+              return;
+            }
+            if (widget.availableBins.contains(trimmed)) {
+              widget.onBinSelected(trimmed);
+              _fieldController?.clear();
+              focusNode.unfocus();
+            }
+          },
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        final optionList = options.toList();
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240, minWidth: 240),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                itemCount: optionList.length,
+                itemBuilder: (context, index) {
+                  final option = optionList[index];
+                  return ListTile(
+                    title: Text(option),
+                    onTap: () => onSelected(option),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+int? _parseIntValue(dynamic value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  if (value is String) {
+    return int.tryParse(value);
+  }
+  return int.tryParse(value.toString());
+}
+
 class ChatSummary {
   ChatSummary({
     required this.chatId,
@@ -3049,12 +3313,17 @@ class ChatSummary {
   }
 
   factory ChatSummary.fromJson(Map<String, dynamic> json) {
+    final chatId = _parseIntValue(json['chat_id']) ?? 0;
+    final updatedAtRaw = json['updated_at'] as String?;
+    final updatedAt = updatedAtRaw != null
+        ? DateTime.tryParse(updatedAtRaw) ?? DateTime.now().toUtc()
+        : DateTime.now().toUtc();
     return ChatSummary(
-      chatId: json['chat_id'] as int,
-      title: json['title'] as String,
+      chatId: chatId,
+      title: json['title'] as String? ?? 'Диалог',
       username: json['username'] as String?,
-      type: json['type'] as String,
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      type: json['type'] as String? ?? 'unknown',
+      updatedAt: updatedAt,
       section: json['section'] as String?,
       sectionTitle: json['section_title'] as String?,
       bin: json['bin'] as String?,
@@ -3087,13 +3356,19 @@ class Message {
   String get createdAtLabel => DateFormat('HH:mm').format(createdAt.toLocal());
 
   factory Message.fromJson(Map<String, dynamic> json) {
+    final id = _parseIntValue(json['id']) ?? 0;
+    final chatId = _parseIntValue(json['chat_id']) ?? 0;
+    final createdAtRaw = json['created_at'] as String?;
+    final createdAt = createdAtRaw != null
+        ? DateTime.tryParse(createdAtRaw) ?? DateTime.now().toUtc()
+        : DateTime.now().toUtc();
     return Message(
-      id: json['id'] as int,
-      chatId: json['chat_id'] as int,
-      direction: json['direction'] as String,
-      text: json['text'] as String,
+      id: id,
+      chatId: chatId,
+      direction: json['direction'] as String? ?? 'incoming',
+      text: json['text'] as String? ?? '',
       author: json['author'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: createdAt,
       section: json['section'] as String?,
       sectionTitle: json['section_title'] as String?,
     );
@@ -3119,15 +3394,29 @@ class MessageNotification {
 
   String get createdAtLabel => DateFormat('HH:mm').format(createdAt.toLocal());
 
-  factory MessageNotification.fromJson(Map<String, dynamic> json) {
+  static MessageNotification? tryParse(Map<String, dynamic> json) {
+    final chatId = _parseIntValue(json['chat_id']);
+    final createdAtRaw = json['created_at'] as String?;
+    if (chatId == null || createdAtRaw == null) {
+      return null;
+    }
+    final createdAt = DateTime.tryParse(createdAtRaw) ?? DateTime.now().toUtc();
     return MessageNotification(
-      chatId: json['chat_id'] as int,
-      chatTitle: json['chat_title'] as String,
-      text: json['text'] as String,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      chatId: chatId,
+      chatTitle: json['chat_title'] as String? ?? 'Диалог',
+      text: json['text'] as String? ?? '',
+      createdAt: createdAt,
       section: json['section'] as String?,
       sectionTitle: json['section_title'] as String?,
     );
+  }
+
+  factory MessageNotification.fromJson(Map<String, dynamic> json) {
+    final notification = tryParse(json);
+    if (notification == null) {
+      throw const FormatException('Некорректные данные уведомления');
+    }
+    return notification;
   }
 }
 

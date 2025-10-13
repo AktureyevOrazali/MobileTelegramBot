@@ -1,3 +1,7 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+
 :root {
   color-scheme: light;
   font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -346,4 +350,92 @@ select {
 .textarea--autogrow {
   overflow: hidden; /* чтобы не было двойного скролла при авто-высоте */
 }
+
+/* ====== Шрифт и типографика ====== */
+
+:root{
+  --font-sans: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji','Segoe UI Emoji';
+}
+
+html, body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: .01em;
+}
+
+/* Заголовки чуть плотнее */
+.heading { letter-spacing: .005em; }
+
+/* ====== Профиль в шапке ====== */
+.profile-button{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 12px; border-radius:12px;
+  background:#fff; border:1px solid #dfe4ff;
+  box-shadow: 0 1px 0 rgba(20,26,70,.03);
+  cursor:pointer;
+  transition: box-shadow .15s, transform .06s, border-color .15s;
+}
+.profile-button:hover{
+  box-shadow: 0 6px 18px rgba(30,40,120,.08), 0 2px 6px rgba(30,40,120,.06);
+  border-color:#cfd7ff;
+}
+.profile-button:active{ transform: translateY(1px); }
+
+.profile-button__avatar{
+  width:28px; height:28px; border-radius:50%;
+  display:grid; place-items:center;
+  background:#eef2ff; color:#3e5aa8; font-size:14px;
+  border:1px solid #dfe4ff;
+}
+.profile-button__body{ display:flex; flex-direction:column; line-height:1.15; }
+.profile-button__name{ font-weight:600; }
+.profile-button__role{ font-size:12px; color:#6b7399; }
+
+/* ====== Админ-страница ====== */
+.admin-card { display:flex; flex-direction:column; gap:18px; }
+.admin-card__head{
+  display:grid;
+  grid-template-columns: 1fr minmax(260px, 320px);
+  gap: 20px;
+  align-items:start;
+}
+.admin-field{ display:flex; flex-direction:column; gap:6px; }
+.label.strong{ font-weight:700; }
+.block-title{ font-weight:600; margin-bottom:10px; }
+
+/* Утончил вспомогательные подписи */
+.muted-mini{ font-size:12px; color:#8a92b6; }
+
+/* Остальные классы из предыдущих правок */
+.sections-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap:12px;
+}
+.check-chip{
+  display:flex; align-items:center; gap:10px;
+  padding:12px 14px; border-radius:999px;
+  background:#f6f8ff; border:1px solid #e2e7ff; color:var(--text, #242b50);
+  transition:.14s; cursor:pointer; user-select:none;
+}
+.check-chip:hover{ box-shadow:0 0 0 4px rgba(64,80,160,.08); }
+.check-chip input{
+  appearance:none; width:18px; height:18px; border-radius:6px;
+  border:1px solid #cfd7ff; background:#fff; display:inline-block; position:relative;
+}
+.check-chip.checked input{ background:#3e5aa8; border-color:#3e5aa8; }
+.check-chip.checked input::after{ content:""; position:absolute; inset:3px; background:#fff; border-radius:3px; }
+
+.bins-row{ display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+.bin-chip{ display:inline-flex; align-items:center; gap:8px; }
+.chip-x{
+  width:22px; height:22px; border-radius:50%;
+  border:1px solid #dfe5ff; background:#fff;
+  display:grid; place-items:center; line-height:1;
+  font-weight:700; color:#6370a0; cursor:pointer; padding:0;
+}
+.chip-x:hover{ box-shadow:0 0 0 4px rgba(64,80,160,.08); color:#2f4390; }
+
 

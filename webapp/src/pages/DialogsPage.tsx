@@ -29,6 +29,8 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
   const [deleting, setDeleting] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
+  const pollRef = useRef<number | null>(null);
+  const lastCountRef = useRef<number>(0);
 
   const currentUser = apiClient.currentUser;
   const canReply = Boolean(currentUser?.canReply);
@@ -43,9 +45,8 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
       setLoading(true);
       const data = await apiClient.fetchMessages(chat.chatId, 200);
       setMessages(data);
+      lastCountRef.current = data.length;
       setError(null);
-      // прокрутка вниз после загрузки
-      setTimeout(scrollToBottom, 0);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else if (err instanceof Error) setError(err.message);
@@ -53,9 +54,34 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
     } finally {
       setLoading(false);
     }
-  }, [apiClient, chat.chatId, scrollToBottom]);
+  }, [apiClient, chat.chatId]);
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
+
+  // ВСЕГДА скроллим вниз, когда массив messages обновился (открытие, пуллинг, отправка и т.п.)
+  useEffect(() => {
+    const t = setTimeout(scrollToBottom, 0);
+    return () => clearTimeout(t);
+  }, [messages, scrollToBottom]);
+
+  // Пуллинг новых сообщений, пока модалка открыта
+  useEffect(() => {
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const data = await apiClient.fetchMessages(chat.chatId, 200);
+        if (data.length !== lastCountRef.current) {
+          setMessages(data);
+          lastCountRef.current = data.length;
+        }
+      } catch {
+        /* игнорируем */
+      }
+    }, 1500);
+
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
+  }, [apiClient, chat.chatId]);
 
   // Esc для закрытия
   useEffect(() => {
@@ -70,8 +96,8 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
     try {
       await apiClient.sendMessage(chat.chatId, input.trim());
       setInput('');
+      // моментально обновим список, чтобы сообщение появилось сразу
       await loadMessages();
-      setTimeout(scrollToBottom, 0);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else if (err instanceof Error) setError(err.message);
@@ -190,16 +216,16 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
             placeholder={canReply ? 'Ваш ответ оператору...' : 'У вашей роли нет прав для ответа.'}
             value={input}
             onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
             disabled={!canReply || sending || deleting}
             rows={3}
           />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {/* удаление убрали по требованию; оставлю код на месте, вдруг вернёшь */}
-            {/* {(currentUser?.isAdmin || currentUser?.canReply) && (
-              <button className="button secondary" type="button" onClick={deleteChat} disabled={deleting}>
-                {deleting ? 'Удаляем...' : 'Удалить'}
-              </button>
-            )} */}
             <button className="button" type="button" onClick={handleSend} disabled={!canReply || sending || deleting}>
               {sending ? 'Отправляем...' : 'Отправить'}
             </button>
@@ -346,13 +372,15 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       <div className="card sticky-filters">
         <div className="controls-row">
           <SelectPill
-            label="Раздел"
+            label=""
+            showLabelInside={false}
             options={sectionOptions}
             value={selectedSection ?? ""}
             onChange={(v) => setSelectedSection(v || null)}
           />
           <SelectPill
-            label="БИН"
+            label=""
+            showLabelInside={false}
             options={binOptions}
             value={selectedBin ?? ""}
             onChange={(v) => setSelectedBin(v || null)}
@@ -366,7 +394,6 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
             />
             <span>Только избранные</span>
           </label>
-          {/* кнопки обновления убраны по просьбе */}
         </div>
       </div>
 

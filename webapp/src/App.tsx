@@ -34,21 +34,28 @@ const App: React.FC = () => {
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h1 className="heading" style={{ fontSize: '1.8rem' }}>Telegram Companion Web</h1>
-            <p className="text-muted" style={{ marginTop: 6 }}>
-              Единый веб-интерфейс для операторов Telegram бота
-            </p>
+            <p className="text-muted" style={{ marginTop: 6 }}>Единый веб-интерфейс для операторов Telegram бота</p>
           </div>
-          <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>{currentUser?.name}</div>
-              <div className="text-muted" style={{ fontSize: '0.85rem' }}>
-                {currentUser?.role === 'admin'
-                  ? 'Администратор'
-                  : currentUser?.role === 'moderator'
-                  ? 'Модератор'
-                  : 'Оператор'}
-              </div>
-            </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              type="button"
+              onClick={() => setActiveTab('profile')}
+              className="profile-button"
+              title="Открыть профиль"
+            >
+              <span className="profile-button__avatar">👤</span>
+              <span className="profile-button__body">
+                <span className="profile-button__name">{currentUser?.name}</span>
+                <span className="profile-button__role">
+                  {currentUser?.role === 'admin'
+                    ? 'Администратор'
+                    : currentUser?.role === 'moderator'
+                    ? 'Модератор'
+                    : 'Оператор'}
+                </span>
+              </span>
+            </button>
             <button className="button secondary" type="button" onClick={logout}>Выйти</button>
           </div>
         </div>

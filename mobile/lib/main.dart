@@ -137,6 +137,7 @@ class _TelegramCompanionAppState extends State<TelegramCompanionApp> {
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: colorScheme.surface,
         indicatorColor: colorScheme.primaryContainer.withOpacity(0.6),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         labelTextStyle: MaterialStateProperty.all(
           TextStyle(color: colorScheme.onSurface, fontWeight: FontWeight.w600),
         ),
@@ -873,17 +874,17 @@ class _AuthScreenState extends State<AuthScreen> {
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final minHeight = constraints.maxHeight.isFinite
-                  ? (constraints.maxHeight - 64).clamp(0.0, double.infinity)
-                  : 0.0;
+              final availableHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0.0;
+              final effectiveMinHeight = availableHeight > 48 ? availableHeight - 48 : 0.0;
               return SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 440),
-                    child: Card(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(minHeight: minHeight),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: effectiveMinHeight),
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: Card(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
                           child: Form(
@@ -1303,6 +1304,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
       title: const Text('Профиль оператора'),
       actions: [
         IconButton(
+          tooltip: 'Обновить',
+          icon: const Icon(Icons.refresh),
+          onPressed: () => _profileKey.currentState?.refreshProfile(),
+        ),
+        IconButton(
           tooltip: 'Выход',
           icon: const Icon(Icons.logout),
           onPressed: widget.onLogout,
@@ -1384,25 +1390,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 },
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  FilterChip(
-                    label: const Text('Только избранные'),
-                    selected: _showFavoritesOnly,
-                    showCheckmark: false,
-                    onSelected: (value) {
-                      setState(() {
-                        _showFavoritesOnly = value;
-                      });
-                    },
-                  ),
-                  const Spacer(),
-                  OutlinedButton.icon(
-                    onPressed: () => _loadData(),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Обновить'),
-                  ),
-                ],
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilterChip(
+                  label: const Text('Только избранные'),
+                  selected: _showFavoritesOnly,
+                  showCheckmark: false,
+                  onSelected: (value) {
+                    setState(() {
+                      _showFavoritesOnly = value;
+                    });
+                  },
+                ),
               ),
             ],
           ),
@@ -1610,6 +1609,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         children: tabs,
       ),
       bottomNavigationBar: NavigationBar(
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         selectedIndex: currentIndex,
         onDestinationSelected: (index) {
           final callback = callbacks[index];
@@ -1640,6 +1640,7 @@ class ChatDetailScreen extends StatefulWidget {
 class _ChatDetailScreenState extends State<ChatDetailScreen> {
   late Timer _timer;
   final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   List<Message> _messages = [];
   bool _loading = true;
   String? _error;
@@ -1659,6 +1660,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void dispose() {
     _timer.cancel();
     _messageController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -1690,12 +1692,29 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       await widget.apiClient.sendMessage(widget.chat.chatId, text);
       _messageController.clear();
       await _fetchMessages();
+      _scrollToBottom();
     } catch (error) {
       setState(() {
         _error = error.toString();
         _loading = false;
       });
     }
+  }
+
+  void _scrollToBottom() {
+    if (!mounted) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   Future<void> _toggleFavorite() async {
@@ -1860,6 +1879,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         ),
                       )
                     : ListView.builder(
+                        controller: _scrollController,
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                         itemCount: _messages.length,
                         itemBuilder: (context, index) {
@@ -2832,6 +2852,10 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
+    final profile = _profile;
+    final isAdmin = profile?.isAdmin ?? false;
+
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Form(
@@ -2882,63 +2906,65 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
               maxLines: 4,
             ),
             const SizedBox(height: 16),
-            if (_profile != null)
+            if (profile != null)
               Text(
-                'Аккаунт создан: ${DateFormat('dd.MM.yyyy HH:mm').format(_profile!.createdAt.toLocal())}',
+                'Аккаунт создан: ${DateFormat('dd.MM.yyyy HH:mm').format(profile.createdAt.toLocal())}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
-            if (_profile != null)
+            if (profile != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  'Текущая роль: ${_profile!.roleLabel}',
+                  'Текущая роль: ${profile.roleLabel}',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
-            if (_profile != null) ...[
+            if (profile != null) ...[
               const SizedBox(height: 12),
-              Text(
-                'Назначенные разделы:',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 8),
-              if (_profile!.sections.isEmpty)
-                const Text(
-                  'Разделы ещё не назначены. Обратитесь к администратору.',
-                )
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: _profile!.sections.map((sectionId) {
-                    final match = _sections.firstWhere(
-                      (section) => section.id == sectionId,
-                      orElse: () => Section(id: sectionId, title: sectionId),
-                    );
-                    return Chip(label: Text(match.title));
-                  }).toList(),
+              if (!isAdmin) ...[
+                Text(
+                  'Назначенные разделы:',
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
-              const SizedBox(height: 8),
-              Text(
-                'Назначенные БИНы:',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 8),
-              if (_profile!.bins.isEmpty)
-                const Text(
-                  'БИНы ещё не назначены. Обратитесь к администратору.',
-                )
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: _profile!.bins.map((bin) {
-                    return Chip(label: Text(bin));
-                  }).toList(),
+                const SizedBox(height: 8),
+                if (profile.sections.isEmpty)
+                  const Text(
+                    'Разделы ещё не назначены. Обратитесь к администратору.',
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: profile.sections.map((sectionId) {
+                      final match = _sections.firstWhere(
+                        (section) => section.id == sectionId,
+                        orElse: () => Section(id: sectionId, title: sectionId),
+                      );
+                      return Chip(label: Text(match.title));
+                    }).toList(),
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  'Назначенные БИНы:',
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
+                if (profile.bins.isEmpty)
+                  const Text(
+                    'БИНы ещё не назначены. Обратитесь к администратору.',
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: profile.bins.map((bin) {
+                      return Chip(label: Text(bin));
+                    }).toList(),
+                  ),
+                const SizedBox(height: 8),
+              ],
               Text(
-                'Избранных диалогов: ${_profile!.favoriteChatIds.length}',
+                'Избранных диалогов: ${profile.favoriteChatIds.length}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -2968,11 +2994,6 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Text('Сохранить'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _saving ? null : refreshProfile,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Обновить'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _saving ? null : _changeOwnPassword,

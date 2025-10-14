@@ -75,6 +75,7 @@ select {
   border: 1px solid rgba(62, 90, 168, 0.35);
   background-color: rgba(255, 255, 255, 0.9);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  resize: vertical;
 }
 
 .input:focus,
@@ -257,12 +258,60 @@ select {
 .star svg{width:16px;height:16px;fill:#cbd3ff}
 .star.active svg{fill:#f5b301}
 
-/* модалка */
-.modal-overlay{position:fixed;inset:0;background:rgba(7,12,29,.45);display:flex;align-items:center;justify-content:center;z-index:40}
-.modal{width:100%;max-width:420px;background:#fff;border:1px solid #e8ecff;border-radius:16px;padding:18px;box-shadow:0 18px 44px rgba(17,23,60,.18)}
-.modal h3{margin:0 0 10px 0}
-.modal .row{display:flex;flex-direction:column;gap:6px;margin:10px 0}
-.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:6px}
+/* модальные окна */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 40;
+}
+
+.modal {
+  width: min(560px, 100%);
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.24);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal__title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #253263;
+}
+
+.modal__description {
+  margin: 0;
+  color: #525b7c;
+  line-height: 1.5;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.modal--confirm {
+  max-width: 420px;
+  gap: 16px;
+}
 
 /* служебное */
 .sticky-filters{position:sticky;top:12px;z-index:5}
@@ -439,3 +488,54 @@ html, body {
 .chip-x:hover{ box-shadow:0 0 0 4px rgba(64,80,160,.08); color:#2f4390; }
 
 
+
+.button.danger {
+  background-color: #d14343;
+  border-color: transparent;
+}
+
+.button.danger:hover:not(:disabled) {
+  background-color: #b93636;
+}
+
+.dialog-composer {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.dialog-composer textarea {
+  flex: 1;
+  min-height: 140px;
+  resize: vertical;
+}
+
+.dialog-composer__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.dialog-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assignment-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: start;
+}
+
+.profile-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.modal--dialog {
+  max-width: 900px;
+}

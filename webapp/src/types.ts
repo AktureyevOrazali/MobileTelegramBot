@@ -25,10 +25,13 @@ export interface Section {
 
 export interface ChatSummaryRaw {
   chat_id: number;
+  dialog_id: number;
   title: string;
   username?: string | null;
   type: string;
   updated_at: string;
+  dialog_started_at: string;
+  dialog_closed_at?: string | null;
   section?: string | null;
   section_title?: string | null;
   bin?: string | null;
@@ -44,6 +47,7 @@ export interface MessageRaw {
   created_at: string;
   section?: string | null;
   section_title?: string | null;
+  dialog_id?: number | null;
 }
 
 export interface MessageNotificationRaw {
@@ -55,6 +59,7 @@ export interface MessageNotificationRaw {
   section?: string | null;
   section_title?: string | null;
   bin?: string | null;
+  dialog_id?: number | null;
 }
 
 export interface RoleInfo {
@@ -86,10 +91,13 @@ export interface AuthSession {
 
 export interface ChatSummary {
   chatId: number;
+  dialogId: number;
   title: string;
   username?: string | null;
   type: string;
   updatedAt: Date;
+  dialogStartedAt: Date;
+  dialogClosedAt: Date | null;
   section?: string | null;
   sectionTitle?: string | null;
   bin?: string | null;
@@ -105,6 +113,7 @@ export interface Message {
   createdAt: Date;
   section?: string | null;
   sectionTitle?: string | null;
+  dialogId?: number | null;
 }
 
 export interface MessageNotification {
@@ -116,4 +125,5 @@ export interface MessageNotification {
   section?: string | null;
   sectionTitle?: string | null;
   bin?: string | null;
+  dialogId?: number | null;
 }

@@ -294,24 +294,38 @@ def handle_updates(message: telebot.types.Message) -> None:
             _persist_message(message, direction="incoming", override_text="[ЗАПРОС ОПЕРАТОРА]", section=None)
             return
 
-    # Стандартная логика обработки БИНа и разделов
-    if chat_record and not chat_record.get("bin"):
-        if message.content_type != "text":
-            bot.send_message(chat.id, "Отправьте БИН организации числом из 12 цифр.")
-            _persist_message(message, direction="incoming", override_text=_humanize_message(message), section=None)
-            return
-        if BIN_PATTERN.match(text.strip()):
-            database.set_chat_bin(chat.id, text.strip())
-            bot.send_message(chat.id, f"Спасибо! БИН {text.strip()} сохранён.")
-            bot.send_message(
-                chat.id, 
-                "Теперь выберите подходящий раздел.\n\n"
-                "🤖 AI помощник автоматически включен и готов отвечать на ваши вопросы!",
-                reply_markup=_section_keyboard()
-            )
+    normalized_text = (text or "").strip()
+    is_text_message = message.content_type == "text"
+    is_bin_message = is_text_message and BIN_PATTERN.match(normalized_text)
+
+    # Требуем БИН, если он ещё не указан
+    if chat_record and not chat_record.get("bin") and not is_bin_message:
+        bot.send_message(chat.id, "Отправьте БИН организации числом из 12 цифр.")
+        if is_text_message:
+            _persist_message(message, direction="incoming", section=None)
         else:
-            bot.send_message(chat.id, "БИН должен содержать 12 цифр без пробелов. Попробуйте ещё раз.")
-        _persist_message(message, direction="incoming", section=None)
+            _persist_message(
+                message,
+                direction="incoming",
+                override_text=_humanize_message(message),
+                section=None,
+            )
+        return
+
+    if is_bin_message:
+        was_empty_bin = not chat_record or not chat_record.get("bin")
+        dialog_id = database.set_chat_bin(chat.id, normalized_text)
+        if was_empty_bin:
+            bot.send_message(chat.id, f"Спасибо! БИН {normalized_text} сохранён.")
+        else:
+            bot.send_message(chat.id, f"БИН обновлён. Открыт новый диалог для {normalized_text}.")
+        bot.send_message(
+            chat.id,
+            "Теперь выберите подходящий раздел.\n\n"
+            "🤖 AI помощник автоматически включен и готов отвечать на ваши вопросы!",
+            reply_markup=_section_keyboard(),
+        )
+        _persist_message(message, direction="incoming", section=None, dialog_id=dialog_id)
         return
 
     # Обработка разделов и FAQ
@@ -391,7 +405,8 @@ def _persist_message(
     direction: str,
     override_text: str | None = None,
     section: Optional[str] = None,
-    author: Optional[str] = None
+    author: Optional[str] = None,
+    dialog_id: Optional[int] = None,
 ) -> None:
     chat = message.chat
     text = override_text if override_text is not None else _humanize_message(message)
@@ -410,6 +425,7 @@ def _persist_message(
         username=chat.username,
         chat_type=chat.type,
         section=section,
+        dialog_id=dialog_id,
     )
     logger.info("Stored %s message from chat %s", direction, chat.id)
 

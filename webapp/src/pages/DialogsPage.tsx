@@ -4,6 +4,8 @@ import { AuthSession, ChatSummary, Message, MessageNotification, Section } from 
 import { formatDateTime } from '../utils/date';
 import SelectPill from "../components/SelectPill";
 import StarButton from "../components/StarButton";
+import Modal from "../components/Modal";
+import ConfirmModal from "../components/ConfirmModal";
 
 /* -------------------- Props -------------------- */
 interface DialogsPageProps {
@@ -16,17 +18,24 @@ interface ChatDetailModalProps {
   chat: ChatSummary;
   onClose: () => void;
   onChatUpdated: (chat: ChatSummary) => void;
-  onChatDeleted: (chatId: number) => void;
+  canDeleteDialog: boolean;
+  onDeleteRequest: (chat: ChatSummary) => void;
 }
 
 /* -------------------- Modal -------------------- */
-const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onClose, onChatUpdated, onChatDeleted }) => {
+const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
+  apiClient,
+  chat,
+  onClose,
+  onChatUpdated,
+  canDeleteDialog,
+  onDeleteRequest,
+}) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<number | null>(null);
@@ -43,7 +52,7 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
   const loadMessages = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiClient.fetchMessages(chat.chatId, 200);
+      const data = await apiClient.fetchMessages(chat.chatId, 200, chat.dialogId);
       setMessages(data);
       lastCountRef.current = data.length;
       setError(null);
@@ -54,21 +63,19 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
     } finally {
       setLoading(false);
     }
-  }, [apiClient, chat.chatId]);
+  }, [apiClient, chat.chatId, chat.dialogId]);
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
 
-  // ВСЕГДА скроллим вниз, когда массив messages обновился (открытие, пуллинг, отправка и т.п.)
   useEffect(() => {
     const t = setTimeout(scrollToBottom, 0);
     return () => clearTimeout(t);
   }, [messages, scrollToBottom]);
 
-  // Пуллинг новых сообщений, пока модалка открыта
   useEffect(() => {
     pollRef.current = window.setInterval(async () => {
       try {
-        const data = await apiClient.fetchMessages(chat.chatId, 200);
+        const data = await apiClient.fetchMessages(chat.chatId, 200, chat.dialogId);
         if (data.length !== lastCountRef.current) {
           setMessages(data);
           lastCountRef.current = data.length;
@@ -81,9 +88,8 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
     return () => {
       if (pollRef.current) window.clearInterval(pollRef.current);
     };
-  }, [apiClient, chat.chatId]);
+  }, [apiClient, chat.chatId, chat.dialogId]);
 
-  // Esc для закрытия
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -94,9 +100,8 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
     if (!input.trim()) return;
     setSending(true);
     try {
-      await apiClient.sendMessage(chat.chatId, input.trim());
+      await apiClient.sendMessage(chat.chatId, input.trim(), chat.dialogId);
       setInput('');
-      // моментально обновим список, чтобы сообщение появилось сразу
       await loadMessages();
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
@@ -118,47 +123,21 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
     }
   };
 
-  const deleteChat = async () => {
-    if (!window.confirm('Удалить диалог без возможности восстановления?')) return;
-    setDeleting(true);
-    try {
-      await apiClient.deleteChat(chat.chatId);
-      onChatDeleted(chat.chatId);
-      onClose();
-    } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      else if (err instanceof Error) setError(err.message);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(20, 30, 60, 0.55)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: 24,
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="card" style={{ width: 'min(980px, 100%)', maxHeight: '90vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-        {/* header */}
+    <Modal open onClose={onClose} className="modal--dialog">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '70vh' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div>
             <h2 className="heading" style={{ marginBottom: 6 }}>{chat.title}</h2>
             <div className="text-muted" style={{ fontSize: '0.9rem' }}>
               {chat.username ? `@${chat.username}` : chat.type}
             </div>
-            <div className="flex-gap" style={{ marginTop: 12 }}>
+            <div className="dialog-meta" style={{ marginTop: 12 }}>
               {chat.sectionTitle && <span className="chip">Раздел: {chat.sectionTitle}</span>}
               {chat.bin && <span className="chip">БИН: {chat.bin}</span>}
+              <span className="chip">Начат: {formatDateTime(chat.dialogStartedAt)}</span>
               <span className="chip">Обновлён: {formatDateTime(chat.updatedAt)}</span>
+              {chat.dialogClosedAt && <span className="chip">Закрыт: {formatDateTime(chat.dialogClosedAt)}</span>}
             </div>
           </div>
 
@@ -168,7 +147,15 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
               onToggle={toggleFavorite}
               title={chat.isFavorite ? "Убрать из избранного" : "В избранное"}
             />
-            {/* крестик */}
+            {canDeleteDialog && (
+              <button
+                className="button danger"
+                type="button"
+                onClick={() => onDeleteRequest(chat)}
+              >
+                Удалить
+              </button>
+            )}
             <button
               className="icon-btn"
               type="button"
@@ -186,34 +173,35 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
         <div className="separator" />
         {error && <div className="alert">{error}</div>}
 
-        {loading ? (
-          <div style={{ padding: '24px 0', textAlign: 'center' }}>Загружаем сообщения...</div>
-        ) : (
-          <div className="message-list" ref={listRef}>
-            {messages.length === 0 && <div className="text-muted">Нет сообщений в этом диалоге.</div>}
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`message-bubble ${message.direction}`}
-                style={{ alignSelf: message.direction === 'incoming' ? 'flex-start' : 'flex-end' }}
-              >
-                {message.author && <div style={{ fontWeight: 600, marginBottom: 6, opacity: 0.85 }}>{message.author}</div>}
-                <div>{message.text}</div>
-                <div style={{ marginTop: 6, fontSize: '0.75rem', opacity: 0.7 }}>{formatDateTime(message.createdAt)}</div>
-                {message.sectionTitle && (
-                  <div style={{ marginTop: 6, fontSize: '0.75rem', opacity: 0.7 }}>Раздел: {message.sectionTitle}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          {loading ? (
+            <div style={{ padding: '24px 0', textAlign: 'center' }}>Загружаем сообщения...</div>
+          ) : (
+            <div className="message-list" ref={listRef}>
+              {messages.length === 0 && <div className="text-muted">Нет сообщений в этом диалоге.</div>}
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`message-bubble ${message.direction}`}
+                  style={{ alignSelf: message.direction === 'incoming' ? 'flex-start' : 'flex-end' }}
+                >
+                  {message.author && <div style={{ fontWeight: 600, marginBottom: 6, opacity: 0.85 }}>{message.author}</div>}
+                  <div>{message.text}</div>
+                  <div style={{ marginTop: 6, fontSize: '0.75rem', opacity: 0.7 }}>{formatDateTime(message.createdAt)}</div>
+                  {message.sectionTitle && (
+                    <div style={{ marginTop: 6, fontSize: '0.75rem', opacity: 0.7 }}>Раздел: {message.sectionTitle}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="separator" />
-        {/* footer */}
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div className="dialog-composer">
           <textarea
             className="textarea"
-            placeholder={canReply ? 'Ваш ответ оператору...' : 'У вашей роли нет прав для ответа.'}
+            placeholder={canReply ? 'Ваш ответ клиенту…' : 'У вашей роли нет прав для ответа.'}
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(e) => {
@@ -222,17 +210,17 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ apiClient, chat, onCl
                 handleSend();
               }
             }}
-            disabled={!canReply || sending || deleting}
+            disabled={!canReply || sending}
             rows={3}
           />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button className="button" type="button" onClick={handleSend} disabled={!canReply || sending || deleting}>
-              {sending ? 'Отправляем...' : 'Отправить'}
+          <div className="dialog-composer__actions">
+            <button className="button" type="button" onClick={handleSend} disabled={!canReply || sending || !input.trim()}>
+              {sending ? 'Отправляем…' : 'Отправить'}
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -250,9 +238,12 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
 
   const [banner, setBanner] = useState<string | null>(null);
   const [activeChat, setActiveChat] = useState<ChatSummary | null>(null);
+  const [dialogToDelete, setDialogToDelete] = useState<ChatSummary | null>(null);
+  const [dialogDeleteLoading, setDialogDeleteLoading] = useState(false);
   const [updatesCursor, setUpdatesCursor] = useState<Date | null>(null);
 
   const currentUser = session.user;
+  const canDeleteDialog = currentUser.isAdmin;
 
   const loadSectionsAndChats = useCallback(
     async (withLoading = true, overrides?: { bin?: string | null; favoritesOnly?: boolean }) => {
@@ -364,6 +355,42 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     return list.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   }, [apiClient.currentUser?.favoriteChatIds, chats, selectedSection, showFavoritesOnly]);
 
+  useEffect(() => {
+    if (!activeChat) return;
+    const updated = chats.find((item) => item.dialogId === activeChat.dialogId);
+    if (!updated) {
+      setActiveChat(null);
+      return;
+    }
+    if (updated !== activeChat) {
+      setActiveChat(updated);
+    }
+  }, [activeChat, chats]);
+
+  const handleDialogDelete = useCallback(async () => {
+    if (!dialogToDelete) return;
+    setDialogDeleteLoading(true);
+    try {
+      await apiClient.deleteDialog(dialogToDelete.dialogId);
+      setChats((prev) => prev.filter((item) => item.dialogId !== dialogToDelete.dialogId));
+      if (activeChat?.dialogId === dialogToDelete.dialogId) {
+        setActiveChat(null);
+      }
+      setBanner('Диалог удалён');
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : 'Не удалось удалить диалог.';
+      setBanner(`Ошибка: ${message}`);
+    } finally {
+      setDialogDeleteLoading(false);
+      setDialogToDelete(null);
+    }
+  }, [activeChat, apiClient, dialogToDelete]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
       {banner && (<div className="alert" onAnimationEnd={() => setBanner(null)}>{banner}</div>)}
@@ -412,7 +439,11 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
         </div>
       ) : (
         filteredChats.map((chat) => (
-          <div key={chat.chatId} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div
+            key={`${chat.chatId}-${chat.dialogId}`}
+            className="card"
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -443,20 +474,11 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                 <button className="button" type="button" onClick={() => setActiveChat(chat)}>
                   Открыть диалог
                 </button>
-                {(currentUser.isAdmin || currentUser.canReply) && (
+                {canDeleteDialog && (
                   <button
-                    className="button secondary"
+                    className="button danger"
                     type="button"
-                    onClick={async () => {
-                      if (window.confirm('Удалить диалог?')) {
-                        try {
-                          await apiClient.deleteChat(chat.chatId);
-                          setChats((prev) => prev.filter((item) => item.chatId !== chat.chatId));
-                        } catch (err) {
-                          if (err instanceof ApiError) alert(err.message);
-                        }
-                      }
-                    }}
+                    onClick={() => setDialogToDelete(chat)}
                   >
                     Удалить
                   </button>
@@ -473,15 +495,36 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           chat={activeChat}
           onClose={() => setActiveChat(null)}
           onChatUpdated={(updated) => {
-            setChats((prev) => prev.map((item) => (item.chatId === updated.chatId ? updated : item)));
-            setActiveChat(updated);
+            setChats((prev) =>
+              prev.map((item) => (item.dialogId === updated.dialogId ? updated : item)),
+            );
+            setActiveChat((prev) => (prev && prev.dialogId === updated.dialogId ? updated : prev));
           }}
-          onChatDeleted={(chatId) => {
-            setChats((prev) => prev.filter((item) => item.chatId !== chatId));
-            setActiveChat(null);
-          }}
+          canDeleteDialog={canDeleteDialog}
+          onDeleteRequest={(chat) => setDialogToDelete(chat)}
         />
       )}
+
+      <ConfirmModal
+        open={Boolean(dialogToDelete)}
+        title="Удалить диалог?"
+        description={
+          dialogToDelete
+            ? (
+              <>
+                Диалог с <strong>{dialogToDelete.title}</strong> будет удалён навсегда.
+                Это действие нельзя отменить.
+              </>
+            )
+            : undefined
+        }
+        tone="danger"
+        confirmLabel="Удалить"
+        cancelLabel="Отмена"
+        loading={dialogDeleteLoading}
+        onCancel={() => setDialogToDelete(null)}
+        onConfirm={handleDialogDelete}
+      />
     </div>
   );
 };

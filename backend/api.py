@@ -47,6 +47,7 @@ class LoginRequest(BaseModel):
 class ReplyRequest(BaseModel):
     chat_id: int
     text: str
+    dialog_id: int | None = None
 
 
 class UserResponse(BaseModel):
@@ -99,14 +100,18 @@ class MessageResponse(BaseModel):
     created_at: str
     section: str | None = None
     section_title: str | None = None
+    dialog_id: int | None = None
 
 
 class ChatResponse(BaseModel):
     chat_id: int
+    dialog_id: int
     title: str
     username: str | None
     type: str
     updated_at: str
+    dialog_started_at: str
+    dialog_closed_at: str | None = None
     section: str | None = None
     section_title: str | None = None
     bin: str | None = None
@@ -122,6 +127,7 @@ class NotificationResponse(BaseModel):
     section: str | None = None
     section_title: str | None = None
     bin: str | None = None
+    dialog_id: int | None = None
 
 
 def require_api_token(x_api_token: str | None = Header(default=None, alias="X-Api-Token")) -> None:
@@ -210,6 +216,7 @@ class ProfileUpdateRequest(BaseModel):
     job_title: str | None = Field(default=None, max_length=120)
     phone: str | None = Field(default=None, max_length=50)
     bio: str | None = Field(default=None, max_length=500)
+    email: EmailStr | None = None
 
 
 @router.put("/profile", response_model=UserResponse)
@@ -222,14 +229,19 @@ def update_profile(
         "job_title": request.job_title if request.job_title is not None else current_user.get("job_title", ""),
         "phone": request.phone if request.phone is not None else current_user.get("phone", ""),
         "bio": request.bio if request.bio is not None else current_user.get("bio", ""),
+        "email": request.email if request.email is not None else current_user.get("email"),
     }
-    updated = database.update_user_profile(
-        current_user["id"],
-        name=payload["name"],
-        job_title=payload["job_title"],
-        phone=payload["phone"],
-        bio=payload["bio"],
-    )
+    try:
+        updated = database.update_user_profile(
+            current_user["id"],
+            name=payload["name"],
+            job_title=payload["job_title"],
+            phone=payload["phone"],
+            bio=payload["bio"],
+            email=payload["email"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return UserResponse(**updated)
 
 
@@ -338,6 +350,20 @@ def set_user_bins_endpoint(
     return UserResponse(**sanitized)
 
 
+@router.delete("/users/{user_id}")
+def delete_user_endpoint(
+    user_id: int,
+    current_admin: Dict[str, object] = Depends(require_admin),
+):
+    if user_id == current_admin["id"]:
+        raise HTTPException(status_code=400, detail="Нельзя удалить собственный аккаунт")
+    try:
+        database.delete_user(user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
 @router.get("/roles")
 def list_roles(_: Dict[str, object] = Depends(require_admin)):
     return [
@@ -376,7 +402,14 @@ def list_chats(
         favorite_only=favorite_only,
         bin_query=bin_query,
     )
-    enriched = []
+    enriched: List[ChatResponse] = []
+    def _normalize(value: object, *, fallback: Optional[str] = None) -> str:
+        if value is None:
+            return fallback or datetime.utcnow().isoformat()
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+
     for chat in chats:
         section_id = chat.get("section")
         section_title = None
@@ -384,7 +417,25 @@ def list_chats(
             section = next((s for s in database.SECTIONS if s["id"] == section_id), None)
             if section:
                 section_title = section["title"]
-        enriched.append({**chat, "section_title": section_title})
+        enriched.append(
+            ChatResponse(
+                chat_id=int(chat["chat_id"]),
+                dialog_id=int(chat["dialog_id"]),
+                title=str(chat["title"]),
+                username=chat.get("username"),
+                type=str(chat["type"]),
+                updated_at=_normalize(chat.get("updated_at")),
+                dialog_started_at=_normalize(chat.get("dialog_started_at")),
+                dialog_closed_at=
+                    _normalize(chat.get("dialog_closed_at"))
+                    if chat.get("dialog_closed_at")
+                    else None,
+                section=section_id,
+                section_title=section_title,
+                bin=chat.get("bin"),
+                is_favorite=bool(chat.get("is_favorite")),
+            )
+        )
     return enriched
 
 
@@ -392,28 +443,61 @@ def list_chats(
 def get_chat_messages(
     chat_id: int,
     limit: int = 50,
+    dialog_id: int | None = None,
     current_user: Dict[str, object] = Depends(get_current_user),
 ):
-    if not database.user_can_access_chat(current_user["id"], current_user["role"], chat_id):
+    if dialog_id is not None:
+        dialog = database.get_chat_dialog(dialog_id)
+        if dialog is None or dialog["chat_id"] != chat_id:
+            raise HTTPException(status_code=404, detail="Диалог не найден")
+    if not database.user_can_access_chat(
+        current_user["id"], current_user["role"], chat_id, dialog_id
+    ):
         raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
     allowed_sections = None
     if current_user["role"] != database.ROLE_ADMIN:
         allowed_sections = current_user.get("sections") or []
-    messages = database.get_messages(chat_id, limit=limit, allowed_sections=allowed_sections)
+    messages = database.get_messages(
+        chat_id,
+        limit=limit,
+        allowed_sections=allowed_sections,
+        dialog_id=dialog_id,
+    )
+    result: List[MessageResponse] = []
     for message in messages:
         section_id = message.get("section")
+        section_title = None
         if section_id:
             section = next((s for s in database.SECTIONS if s["id"] == section_id), None)
             if section:
-                message["section_title"] = section["title"]
-    return messages
+                section_title = section["title"]
+        result.append(
+            MessageResponse(
+                id=int(message["id"]),
+                chat_id=int(message["chat_id"]),
+                direction=str(message["direction"]),
+                text=str(message["text"]),
+                author=message.get("author"),
+                created_at=str(message["created_at"]),
+                section=section_id,
+                section_title=section_title,
+                dialog_id=message.get("dialog_id"),
+            )
+        )
+    return result
 
 
 @router.post("/messages/send")
 def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depends(get_current_user)):
     if current_user["role"] not in (database.ROLE_ADMIN, database.ROLE_MODERATOR):
         raise HTTPException(status_code=403, detail="Недостаточно прав для отправки сообщений")
-    if not database.user_can_access_chat(current_user["id"], current_user["role"], request.chat_id):
+    if request.dialog_id is not None:
+        dialog = database.get_chat_dialog(request.dialog_id)
+        if dialog is None or dialog["chat_id"] != request.chat_id:
+            raise HTTPException(status_code=404, detail="Диалог не найден")
+    if not database.user_can_access_chat(
+        current_user["id"], current_user["role"], request.chat_id, request.dialog_id
+    ):
         raise HTTPException(status_code=403, detail="Нет доступа к выбранному диалогу")
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Message text can not be empty")
@@ -426,6 +510,7 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
     section = None
     if chat:
         section = chat.get("section")
+    resolved_dialog_id = request.dialog_id or database.get_active_chat_dialog_id(request.chat_id)
     database.save_message(
         chat_id=request.chat_id,
         direction="outgoing",
@@ -436,8 +521,14 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
         username=sent_message.chat.username,
         chat_type=sent_message.chat.type,
         section=section,
+        dialog_id=resolved_dialog_id,
     )
-    return {"status": "ok", "message_id": sent_message.message_id, "operator": current_user["name"]}
+    return {
+        "status": "ok",
+        "message_id": sent_message.message_id,
+        "operator": current_user["name"],
+        "dialog_id": resolved_dialog_id,
+    }
 
 
 @router.post("/chats/{chat_id}/favorite")
@@ -465,17 +556,25 @@ def unmark_chat_favorite(
 @router.delete("/chats/{chat_id}")
 def delete_chat_endpoint(
     chat_id: int,
-    current_user: Dict[str, object] = Depends(get_current_user),
+    _: Dict[str, object] = Depends(require_admin),
 ):
-    if current_user["role"] not in (database.ROLE_ADMIN, database.ROLE_MODERATOR):
-        raise HTTPException(status_code=403, detail="Недостаточно прав для удаления диалога")
     chat = database.get_chat(chat_id)
     if chat is None:
         raise HTTPException(status_code=404, detail="Диалог не найден")
-    if not database.user_can_access_chat(current_user["id"], current_user["role"], chat_id):
-        raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
     try:
         database.delete_chat(chat_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
+@router.delete("/dialogs/{dialog_id}")
+def delete_dialog_endpoint(
+    dialog_id: int,
+    _: Dict[str, object] = Depends(require_admin),
+):
+    try:
+        database.delete_chat_dialog(dialog_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -518,6 +617,7 @@ def list_updates(
                     section=section_id,
                     section_title=section_title,
                     bin=entry.get("bin"),
+                    dialog_id=entry.get("dialog_id"),
                 )
             )
             continue
@@ -549,6 +649,7 @@ def list_updates(
                     section=entry.get("section"),
                     section_title=None,
                     bin=entry.get("bin"),
+                    dialog_id=entry.get("dialog_id"),
                 )
             )
     return enriched

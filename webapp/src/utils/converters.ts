@@ -43,10 +43,13 @@ export function mapSession(raw: AuthSessionRaw): AuthSession {
 export function mapChatSummary(raw: ChatSummaryRaw): ChatSummary {
   return {
     chatId: raw.chat_id,
+    dialogId: raw.dialog_id,
     title: raw.title,
     username: raw.username ?? null,
     type: raw.type,
     updatedAt: new Date(raw.updated_at),
+    dialogStartedAt: new Date(raw.dialog_started_at),
+    dialogClosedAt: raw.dialog_closed_at ? new Date(raw.dialog_closed_at) : null,
     section: raw.section ?? null,
     sectionTitle: raw.section_title ?? null,
     bin: raw.bin ?? null,
@@ -64,6 +67,7 @@ export function mapMessage(raw: MessageRaw): Message {
     createdAt: new Date(raw.created_at),
     section: raw.section ?? null,
     sectionTitle: raw.section_title ?? null,
+    dialogId: raw.dialog_id ?? null,
   };
 }
 
@@ -77,5 +81,6 @@ export function mapNotification(raw: MessageNotificationRaw): MessageNotificatio
     section: raw.section ?? null,
     sectionTitle: raw.section_title ?? null,
     bin: raw.bin ?? null,
+    dialogId: raw.dialog_id ?? null,
   };
 }

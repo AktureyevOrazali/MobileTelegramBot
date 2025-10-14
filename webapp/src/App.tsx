@@ -5,24 +5,32 @@ import AdminPage from './pages/AdminPage';
 import ProfilePage from './pages/ProfilePage';
 import { useApi } from './context/ApiContext';
 
-const tabs = ['dialogs', 'admin', 'profile'] as const;
-type TabKey = (typeof tabs)[number];
+type TabKey = 'dialogs' | 'admin' | 'profile';
+type NavTabKey = Exclude<TabKey, 'profile'>;
 
 const App: React.FC = () => {
   const { session, apiClient, setSession, logout } = useApi();
   const [activeTab, setActiveTab] = useState<TabKey>('dialogs');
 
   const currentUser = session?.user ?? null;
-  const availableTabs = useMemo(() => {
-    if (!currentUser) return [] as TabKey[];
-    return currentUser.isAdmin ? tabs.slice() : (['dialogs', 'profile'] as TabKey[]);
+  const navigationTabs = useMemo<NavTabKey[]>(() => {
+    if (!currentUser) return [];
+    return currentUser.isAdmin ? ['dialogs', 'admin'] : ['dialogs'];
   }, [currentUser]);
 
   useEffect(() => {
-    if (!availableTabs.includes(activeTab) && availableTabs.length > 0) {
-      setActiveTab(availableTabs[0]);
+    if (activeTab === 'profile') {
+      return;
     }
-  }, [activeTab, availableTabs]);
+    if (navigationTabs.length > 0 && !navigationTabs.includes(activeTab as NavTabKey)) {
+      setActiveTab(navigationTabs[0]);
+    }
+  }, [activeTab, navigationTabs]);
+
+  const tabLabels: Record<NavTabKey, string> = useMemo(
+    () => ({ dialogs: 'Диалоги', admin: 'Администрирование' }),
+    [],
+  );
 
   if (!session) {
     return <AuthPage onAuthenticated={setSession} apiClient={apiClient} />;
@@ -61,16 +69,14 @@ const App: React.FC = () => {
         </div>
 
         <nav className="tab-bar">
-          {availableTabs.map((tab) => (
+          {navigationTabs.map((tab) => (
             <button
               key={tab}
               className={`tab-button ${activeTab === tab ? 'active' : ''}`}
               onClick={() => setActiveTab(tab)}
               type="button"
             >
-              {tab === 'dialogs' && 'Диалоги'}
-              {tab === 'admin' && 'Администрирование'}
-              {tab === 'profile' && 'Профиль'}
+              {tabLabels[tab]}
             </button>
           ))}
         </nav>

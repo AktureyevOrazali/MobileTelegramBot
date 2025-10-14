@@ -4,6 +4,7 @@ import { RoleInfo, Section, UserProfile } from '../types';
 import { formatDateTime } from '../utils/date';
 import SelectPill from '../components/SelectPill';
 import Modal from '../components/Modal';
+import ConfirmModal from '../components/ConfirmModal';
 
 interface AdminPageProps {
   apiClient: ApiClient;
@@ -19,6 +20,8 @@ interface UserCardProps {
   onSectionsSave: (userId: number, sections: string[]) => Promise<void>;
   onBinsSave: (userId: number, bins: string[]) => Promise<void>;
   onPasswordReset: (userId: number, password: string) => Promise<void>;
+  canDeleteUser: boolean;
+  onDeleteRequest: (user: UserProfile) => void;
 }
 
 const roleLabels: Record<string, string> = {
@@ -44,6 +47,8 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   onSectionsSave,
   onBinsSave,
   onPasswordReset,
+  canDeleteUser,
+  onDeleteRequest,
 }) => {
   const [selectedRole, setSelectedRole] = useState(user.role);
   const [sectionIds, setSectionIds] = useState<Set<string>>(new Set(user.sections));
@@ -225,8 +230,14 @@ const AdminUserCard: React.FC<UserCardProps> = ({
 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Верхняя строка карточки */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr minmax(320px, 360px)', gap: 24, alignItems: 'start' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(280px, 1fr) minmax(220px, 260px)',
+          gap: 24,
+          alignItems: 'start',
+        }}
+      >
         <div>
           <h3 style={{ margin: 0 }}>{user.name}</h3>
           <p className="text-muted" style={{ margin: '4px 0' }}>
@@ -242,48 +253,89 @@ const AdminUserCard: React.FC<UserCardProps> = ({
           </div>
         </div>
 
-        {/* Роль: заголовок отдельно, в пилюле только значение */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div className="label" style={{ fontWeight: 700 }}>Роль</div>
-          <SelectPill
-            label=""                 // скрываем внутреннюю метку
-            showLabelInside={false}  // чтобы в пилюле был только value
-            options={roleOptions}
-            value={selectedRole}
-            onChange={(v) => setSelectedRole(v)}
-            style={{ minWidth: 240 }}
-          />
-          <div className="text-muted" style={{ fontSize: 12 }}>
-            {savingRole ? 'Сохраняем…' : 'Изменения сохраняются автоматически'}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <div className="label" style={{ fontWeight: 700 }}>Роль</div>
+            <SelectPill
+              label=""
+              showLabelInside={false}
+              options={roleOptions}
+              value={selectedRole}
+              onChange={(v) => setSelectedRole(v)}
+              style={{ minWidth: 220 }}
+            />
           </div>
+          {savingRole && <div className="text-muted" style={{ fontSize: 12 }}>Сохраняем…</div>}
+          {canDeleteUser && (
+            <button className="button danger" type="button" onClick={() => onDeleteRequest(user)}>
+              Удалить аккаунт
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Разделы */}
-      <div>
-        <h4 style={{ marginBottom: 8 }}>Назначенные разделы</h4>
-        <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
-          {assignedSections.length === 0 && (
-            <span className="text-muted">Нет назначенных разделов</span>
-          )}
-          {assignedSections.map((section) => {
-            const label = section.title === section.id ? section.title : `${section.title} (${section.id})`;
-            return (
-              <span key={section.id} className="chip bin-chip">
-                {label}
+      <div className="assignment-grid">
+        <div>
+          <h4 style={{ marginBottom: 8 }}>Назначенные БИНы</h4>
+          <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+            {assignedBins.length === 0 && <span className="text-muted">Нет назначенных БИНов</span>}
+            {assignedBins.map((b) => (
+              <span key={b} className="chip bin-chip">
+                {b}
                 <button
                   className="chip-x"
                   type="button"
-                  aria-label={`Удалить раздел ${label}`}
-                  onClick={() => removeSection(section.id)}
+                  aria-label={`Удалить БИН ${b}`}
+                  onClick={() => removeBin(b)}
                 >
                   ×
                 </button>
               </span>
-            );
-          })}
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="label" style={{ fontWeight: 700 }}>Добавить БИН</div>
+            <SelectPill
+              label=""
+              showLabelInside={false}
+              options={binOptions}
+              value={binToAdd}
+              onChange={(v) => {
+                setBinToAdd(v);
+                if (v) addBin(v);
+              }}
+              searchable
+              style={{ minWidth: 240 }}
+            />
+          </div>
+          {savingBins && (
+            <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>
+          )}
         </div>
-        <div className="bins-row" style={{ justifyContent: 'flex-start' }}>
+
+        <div>
+          <h4 style={{ marginBottom: 8 }}>Назначенные разделы</h4>
+          <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+            {assignedSections.length === 0 && (
+              <span className="text-muted">Нет назначенных разделов</span>
+            )}
+            {assignedSections.map((section) => {
+              const label = section.title || section.id;
+              return (
+                <span key={section.id} className="chip bin-chip">
+                  {label}
+                  <button
+                    className="chip-x"
+                    type="button"
+                    aria-label={`Удалить раздел ${label}`}
+                    onClick={() => removeSection(section.id)}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div className="label" style={{ fontWeight: 700 }}>Добавить раздел</div>
             <SelectPill
@@ -291,56 +343,17 @@ const AdminUserCard: React.FC<UserCardProps> = ({
               showLabelInside={false}
               options={sectionOptions}
               value={sectionToAdd}
-              onChange={(v) => { setSectionToAdd(v); if (v) addSection(v); }}
+              onChange={(v) => {
+                setSectionToAdd(v);
+                if (v) addSection(v);
+              }}
               searchable
-              style={{ minWidth: 260 }}
+              style={{ minWidth: 240 }}
             />
           </div>
-        </div>
-        <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>
-          {savingSections ? 'Сохраняем…' : 'Изменения сохраняются автоматически'}
-        </div>
-      </div>
-
-      {/* БИНы */}
-      <div>
-        <h4 style={{ marginBottom: 8 }}>Назначенные БИНы</h4>
-
-        {/* селектор — слева, чипы выше уже есть; можно также отрисовывать чипы здесь, но оставим как есть */}
-        <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
-          {assignedBins.length === 0 && <span className="text-muted">Нет назначенных БИНов</span>}
-          {assignedBins.map((b) => (
-            <span key={b} className="chip bin-chip">
-              {b}
-              <button
-                className="chip-x"
-                type="button"
-                aria-label={`Удалить БИН ${b}`}
-                onClick={() => removeBin(b)}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-
-        <div className="bins-row" style={{ justifyContent: 'flex-start' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div className="label" style={{ fontWeight: 700 }}>Добавить БИН</div>
-            <SelectPill
-              label=""                 // метку прячем
-              showLabelInside={false}
-              options={binOptions}
-              value={binToAdd}
-              onChange={(v) => { setBinToAdd(v); if (v) addBin(v); }}
-              searchable
-              style={{ minWidth: 260 }}
-            />
-          </div>
-        </div>
-
-        <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>
-          {savingBins ? 'Сохраняем…' : 'Изменения сохраняются автоматически'}
+          {savingSections && (
+            <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>
+          )}
         </div>
       </div>
 
@@ -390,6 +403,9 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadAdminData = useCallback(
     async (query?: string) => {
@@ -465,6 +481,22 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
     );
   }, [users, search]);
 
+  const handleConfirmDelete = useCallback(async () => {
+    if (!userToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await apiClient.deleteUser(userToDelete.id);
+      setUsers((prev) => prev.filter((user) => user.id !== userToDelete.id));
+      setUserToDelete(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : (err as Error)?.message ?? 'Не удалось удалить пользователя';
+      setDeleteError(message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [apiClient, userToDelete]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -510,9 +542,37 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
             onSectionsSave={handleSectionsSave}
             onBinsSave={handleBinsSave}
             onPasswordReset={handlePasswordReset}
+            canDeleteUser={currentUser.id !== user.id}
+            onDeleteRequest={(selectedUser) => {
+              setDeleteError(null);
+              setUserToDelete(selectedUser);
+            }}
           />
         ))
       )}
+
+      <ConfirmModal
+        open={Boolean(userToDelete)}
+        title="Удалить аккаунт сотрудника?"
+        description={
+          userToDelete && (
+            <>
+              Аккаунт <strong>{userToDelete.name}</strong> ({userToDelete.email}) будет удалён навсегда.
+              {deleteError && <p className="alert error" style={{ marginTop: 12 }}>{deleteError}</p>}
+            </>
+          )
+        }
+        tone="danger"
+        confirmLabel="Удалить"
+        cancelLabel="Отмена"
+        loading={deleteLoading}
+        onCancel={() => {
+          if (deleteLoading) return;
+          setUserToDelete(null);
+          setDeleteError(null);
+        }}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 };

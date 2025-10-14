@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
-import { AuthSession } from '../types';
+import { AuthSession, Section } from '../types';
 import Modal from '../components/Modal';
 
 interface ProfilePageProps {
@@ -13,14 +13,17 @@ interface ProfilePageProps {
 const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSessionUpdate }) => {
   const user = session.user;
 
-  const [name, setName] = useState((user as any).name || '');
-  const [position, setPosition] = useState((user as any).jobTitle || '');
-  const [phone, setPhone] = useState((user as any).phone || '');
-  const [bio, setBio] = useState((user as any).bio || '');
+  const [name, setName] = useState(user.name || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [position, setPosition] = useState(user.jobTitle || '');
+  const [phone, setPhone] = useState(user.phone || '');
+  const [bio, setBio] = useState(user.bio || '');
 
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [sectionTitles, setSectionTitles] = useState<Record<string, string>>({});
 
   // ======== Модалка смены пароля ========
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -49,18 +52,54 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
 
   const isAdmin = useMemo(() => user.role === 'admin', [user.role]);
 
+  useEffect(() => {
+    if (isAdmin) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const availableSections: Section[] = await apiClient.fetchSections();
+        if (cancelled) {
+          return;
+        }
+        const titles = availableSections.reduce<Record<string, string>>((acc, section) => {
+          acc[section.id] = section.title;
+          return acc;
+        }, {});
+        setSectionTitles(titles);
+      } catch (err) {
+        console.warn('Не удалось загрузить список разделов', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, isAdmin]);
+
+  const assignedSections = useMemo(
+    () => (user.sections ?? []).map((sectionId) => sectionTitles[sectionId] ?? sectionId),
+    [sectionTitles, user.sections],
+  );
+
   const saveProfile = async () => {
     setSaving(true);
     setError(null);
     try {
       const updated = await apiClient.updateProfile({
         name: name.trim(),
+        email: email.trim(),
         jobTitle: position.trim(),
         phone: phone.trim(),
         bio: bio.trim(),
       });
       // обновим сессию, чтобы хедер и др. места сразу получили актуальные данные
       onSessionUpdate({ ...session, user: { ...session.user, ...updated } });
+      setName(updated.name || '');
+      setEmail(updated.email || '');
+      setPosition(updated.jobTitle || '');
+      setPhone(updated.phone || '');
+      setBio(updated.bio || '');
       setBanner('Профиль обновлён');
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : (e as Error)?.message ?? 'Не удалось сохранить профиль';
@@ -119,20 +158,42 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
           {/* Кнопку "Обновить из сервера" убрали по ТЗ */}
         </div>
 
-        <label className="label">
-          Имя и фамилия
-          <input className="input" value={name} onChange={e => setName(e.target.value)} />
-        </label>
+        <div className="profile-form-grid">
+          <label className="label">
+            Имя и фамилия
+            <input className="input" value={name} onChange={e => setName(e.target.value)} autoComplete="name" />
+          </label>
 
-        <label className="label">
-          Должность
-          <input className="input" value={position} onChange={e => setPosition(e.target.value)} />
-        </label>
+          <label className="label">
+            Электронная почта
+            <input
+              className="input"
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              autoComplete="email"
+              placeholder="name@example.com"
+            />
+          </label>
 
-        <label className="label">
-          Телефон
-          <input className="input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+7 (777) 000-00-00" />
-        </label>
+          <label className="label">
+            Должность
+            <input className="input" value={position} onChange={e => setPosition(e.target.value)} autoComplete="organization-title" />
+          </label>
+
+          <label className="label">
+            Телефон
+            <input
+              className="input"
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+7 (777) 000-00-00"
+              autoComplete="tel"
+            />
+          </label>
+        </div>
 
         <label className="label">
           О себе и компетенции
@@ -160,9 +221,17 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
         <>
           <div className="card">
             <h3>Назначенные разделы</h3>
-            {user.sections?.length ? (
+            {assignedSections.length ? (
               <div className="flex-gap" style={{ flexWrap: 'wrap' }}>
-                {user.sections.map((s) => <span key={s} className="chip">{s}</span>)}
+                {assignedSections.map((title, index) => {
+                  const sectionId = user.sections[index];
+                  const key = sectionId ?? `${title}-${index}`;
+                  return (
+                    <span key={key} className="chip">
+                      {title}
+                    </span>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-muted">Разделы ещё не назначены. Обратитесь к администратору.</p>

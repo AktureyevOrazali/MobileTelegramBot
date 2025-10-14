@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
-import { AuthSession } from '../types';
+import { AuthSession, Section } from '../types';
 import Modal from '../components/Modal';
 
 interface ProfilePageProps {
@@ -22,6 +22,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [sectionTitles, setSectionTitles] = useState<Record<string, string>>({});
 
   // ======== Модалка смены пароля ========
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -49,6 +51,36 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
   }, [banner]);
 
   const isAdmin = useMemo(() => user.role === 'admin', [user.role]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const availableSections: Section[] = await apiClient.fetchSections();
+        if (cancelled) {
+          return;
+        }
+        const titles = availableSections.reduce<Record<string, string>>((acc, section) => {
+          acc[section.id] = section.title;
+          return acc;
+        }, {});
+        setSectionTitles(titles);
+      } catch (err) {
+        console.warn('Не удалось загрузить список разделов', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, isAdmin]);
+
+  const assignedSections = useMemo(
+    () => (user.sections ?? []).map((sectionId) => sectionTitles[sectionId] ?? sectionId),
+    [sectionTitles, user.sections],
+  );
 
   const saveProfile = async () => {
     setSaving(true);
@@ -189,9 +221,17 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
         <>
           <div className="card">
             <h3>Назначенные разделы</h3>
-            {user.sections?.length ? (
+            {assignedSections.length ? (
               <div className="flex-gap" style={{ flexWrap: 'wrap' }}>
-                {user.sections.map((s) => <span key={s} className="chip">{s}</span>)}
+                {assignedSections.map((title, index) => {
+                  const sectionId = user.sections[index];
+                  const key = sectionId ?? `${title}-${index}`;
+                  return (
+                    <span key={key} className="chip">
+                      {title}
+                    </span>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-muted">Разделы ещё не назначены. Обратитесь к администратору.</p>

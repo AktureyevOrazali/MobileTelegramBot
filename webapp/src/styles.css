@@ -311,6 +311,40 @@ select {
 .modal--confirm {
   max-width: 420px;
   gap: 16px;
+  text-align: left;
+}
+
+.modal--confirm .modal__header {
+  padding: 0;
+}
+
+.confirm-modal__icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: var(--brand-200);
+  color: var(--brand);
+  margin-bottom: 4px;
+}
+
+.confirm-modal__icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.modal--confirm-danger .confirm-modal__icon {
+  background: #fee2e2;
+  color: #d03838;
+}
+
+.modal--confirm-danger .modal__title {
+  color: #d03838;
+}
+
+.modal--confirm-danger .modal__description {
+  color: #4a1f1f;
 }
 
 /* служебное */

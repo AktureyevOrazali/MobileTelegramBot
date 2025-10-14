@@ -368,6 +368,10 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   }, [activeChat, chats]);
 
   const handleDialogDelete = useCallback(async () => {
+    if (!canDeleteDialog) {
+      setDialogToDelete(null);
+      return;
+    }
     if (!dialogToDelete) return;
     setDialogDeleteLoading(true);
     try {
@@ -389,7 +393,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       setDialogDeleteLoading(false);
       setDialogToDelete(null);
     }
-  }, [activeChat, apiClient, dialogToDelete]);
+  }, [activeChat, apiClient, canDeleteDialog, dialogToDelete]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
@@ -506,7 +510,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       )}
 
       <ConfirmModal
-        open={Boolean(dialogToDelete)}
+        open={Boolean(dialogToDelete && canDeleteDialog)}
         title="Удалить диалог?"
         description={
           dialogToDelete

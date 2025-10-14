@@ -322,6 +322,9 @@ export class ApiClient {
   }
 
   async deleteDialog(dialogId: number): Promise<void> {
+    if (!this.currentUserProfile?.isAdmin) {
+      throw new ApiError('Удаление диалогов доступно только администраторам.', 403);
+    }
     await this.request(`dialogs/${dialogId}`, {
       method: 'DELETE',
       expectJson: false,

@@ -54,6 +54,19 @@ def _init_db() -> None:
         )
         _connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS chat_dialogs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER NOT NULL,
+                bin TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                last_message_at TEXT,
+                FOREIGN KEY(chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE
+            )
+            """
+        )
+        _connection.execute(
+            """
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id INTEGER NOT NULL,
@@ -63,7 +76,9 @@ def _init_db() -> None:
                 author TEXT,
                 created_at TEXT NOT NULL,
                 section TEXT,
-                FOREIGN KEY(chat_id) REFERENCES chats(chat_id)
+                dialog_id INTEGER,
+                FOREIGN KEY(chat_id) REFERENCES chats(chat_id),
+                FOREIGN KEY(dialog_id) REFERENCES chat_dialogs(id) ON DELETE SET NULL
             )
             """
         )
@@ -143,6 +158,8 @@ def _init_db() -> None:
     _ensure_column("chats", "section", "TEXT")
     _ensure_column("chats", "bin", "TEXT")
     _ensure_column("messages", "section", "TEXT")
+    _ensure_column("messages", "dialog_id", "INTEGER")
+    _ensure_column("chat_dialogs", "last_message_at", "TEXT")
     _ensure_column("users", "job_title", "TEXT")
     _ensure_column("users", "phone", "TEXT")
     _ensure_column("users", "bio", "TEXT")
@@ -158,6 +175,7 @@ def _init_db() -> None:
         )
 
     _ensure_admin_account()
+    _ensure_chat_dialog_records()
 
 
 def _ensure_column(table: str, column: str, definition: str) -> None:
@@ -212,6 +230,32 @@ def _ensure_admin_account() -> None:
     )
 
 
+def _ensure_chat_dialog_records() -> None:
+    with _lock, _connection:
+        rows = _connection.execute(
+            """
+            SELECT chat_id, bin, updated_at
+            FROM chats
+            WHERE bin IS NOT NULL AND TRIM(bin) != ''
+            """
+        ).fetchall()
+        for row in rows:
+            exists = _connection.execute(
+                "SELECT 1 FROM chat_dialogs WHERE chat_id = ? LIMIT 1",
+                (row["chat_id"],),
+            ).fetchone()
+            if exists:
+                continue
+            updated_at = row["updated_at"] or datetime.utcnow().isoformat()
+            _connection.execute(
+                """
+                INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (row["chat_id"], row["bin"], updated_at, updated_at),
+            )
+
+
 _init_db()
 
 
@@ -257,6 +301,7 @@ class Message:
     author: str | None
     created_at: datetime
     section: str | None
+    dialog_id: int | None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Message":
@@ -269,6 +314,7 @@ class Message:
             author=row["author"],
             created_at=datetime.fromisoformat(row["created_at"]),
             section=row["section"],
+            dialog_id=row["dialog_id"],
         )
 
 
@@ -300,17 +346,81 @@ def save_message(
     username: str | None,
     chat_type: str,
     section: str | None,
+    dialog_id: int | None = None,
 ) -> None:
     now = datetime.utcnow().isoformat()
+    resolved_dialog_id = dialog_id
+    if resolved_dialog_id is None:
+        active_dialog = get_active_chat_dialog(chat_id)
+        if active_dialog:
+            resolved_dialog_id = active_dialog["id"]
     with _lock, _connection:
         _connection.execute(
             """
-            INSERT INTO messages (chat_id, direction, text, message_id, author, created_at, section)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (chat_id, direction, text, message_id, author, created_at, section, dialog_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (chat_id, direction, text, message_id, author, now, section),
+            (chat_id, direction, text, message_id, author, now, section, resolved_dialog_id),
         )
+        if resolved_dialog_id is not None:
+            _connection.execute(
+                "UPDATE chat_dialogs SET last_message_at = ? WHERE id = ?",
+                (now, resolved_dialog_id),
+            )
     upsert_chat(chat_id, chat_title, username, chat_type)
+
+
+def get_chat_dialog(dialog_id: int) -> Optional[Dict[str, object]]:
+    with _lock, _connection:
+        row = _connection.execute(
+            """
+            SELECT id, chat_id, bin, started_at, ended_at, last_message_at
+            FROM chat_dialogs
+            WHERE id = ?
+            """,
+            (dialog_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "chat_id": row["chat_id"],
+        "bin": row["bin"],
+        "started_at": row["started_at"],
+        "ended_at": row["ended_at"],
+        "last_message_at": row["last_message_at"],
+    }
+
+
+def get_active_chat_dialog(chat_id: int) -> Optional[Dict[str, object]]:
+    with _lock, _connection:
+        row = _connection.execute(
+            """
+            SELECT id, chat_id, bin, started_at, ended_at, last_message_at
+            FROM chat_dialogs
+            WHERE chat_id = ? AND ended_at IS NULL
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (chat_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "chat_id": row["chat_id"],
+        "bin": row["bin"],
+        "started_at": row["started_at"],
+        "ended_at": row["ended_at"],
+        "last_message_at": row["last_message_at"],
+    }
+
+
+def get_active_chat_dialog_id(chat_id: int) -> int | None:
+    dialog = get_active_chat_dialog(chat_id)
+    if dialog is None:
+        return None
+    return int(dialog["id"])
 
 
 def list_chats_for_user(
@@ -321,9 +431,21 @@ def list_chats_for_user(
     bin_query: str | None = None,
 ) -> List[dict]:
     query_parts = [
-        "SELECT c.chat_id, c.title, c.username, c.type, c.updated_at, c.section, c.bin,",
-        "       f.user_id AS fav_user_id",
-        "FROM chats c",
+        "SELECT",
+        "  c.chat_id,",
+        "  c.title,",
+        "  c.username,",
+        "  c.type,",
+        "  c.section,",
+        "  c.updated_at AS chat_updated_at,",
+        "  cd.id AS dialog_id,",
+        "  cd.bin AS dialog_bin,",
+        "  cd.started_at AS dialog_started_at,",
+        "  cd.ended_at AS dialog_ended_at,",
+        "  cd.last_message_at AS dialog_last_message_at,",
+        "  f.user_id AS fav_user_id",
+        "FROM chat_dialogs cd",
+        "JOIN chats c ON c.chat_id = cd.chat_id",
         "LEFT JOIN favorites f ON f.chat_id = c.chat_id AND f.user_id = ?",
     ]
     params: List[object] = [user_id]
@@ -333,29 +455,49 @@ def list_chats_for_user(
         assigned_bins = get_user_bins(user_id)
         if not allowed_sections or not assigned_bins:
             return []
-        placeholders = ",".join("?" for _ in allowed_sections)
-        filters.append(f"c.section IN ({placeholders})")
+        section_placeholders = ",".join("?" for _ in allowed_sections)
+        filters.append(f"c.section IN ({section_placeholders})")
         params.extend(allowed_sections)
         bin_placeholders = ",".join("?" for _ in assigned_bins)
-        filters.append(f"c.bin IN ({bin_placeholders})")
+        filters.append(f"cd.bin IN ({bin_placeholders})")
         params.extend(assigned_bins)
     if favorite_only:
         filters.append("f.user_id IS NOT NULL")
     if bin_query:
-        filters.append("c.bin LIKE ?")
+        filters.append("cd.bin LIKE ?")
         params.append(f"%{bin_query.strip()}%")
     if filters:
         query_parts.append("WHERE " + " AND ".join(filters))
-    query_parts.append("ORDER BY c.updated_at DESC")
+    query_parts.append(
+        "ORDER BY COALESCE(cd.last_message_at, c.updated_at, cd.started_at) DESC"
+    )
     sql = "\n".join(query_parts)
     with _lock, _connection:
         rows = _connection.execute(sql, params).fetchall()
     chats: List[dict] = []
     for row in rows:
-        chat = dict(asdict(Chat.from_row(row)))
-        chat["updated_at"] = chat["updated_at"].isoformat()
-        chat["is_favorite"] = bool(row["fav_user_id"])
-        chats.append(chat)
+        updated_raw = (
+            row["dialog_last_message_at"]
+            or row["chat_updated_at"]
+            or row["dialog_started_at"]
+        )
+        if not updated_raw:
+            updated_raw = datetime.utcnow().isoformat()
+        chats.append(
+            {
+                "chat_id": row["chat_id"],
+                "dialog_id": row["dialog_id"],
+                "title": row["title"],
+                "username": row["username"],
+                "type": row["type"],
+                "updated_at": updated_raw,
+                "dialog_started_at": row["dialog_started_at"],
+                "dialog_closed_at": row["dialog_ended_at"],
+                "section": row["section"],
+                "bin": row["dialog_bin"],
+                "is_favorite": bool(row["fav_user_id"]),
+            }
+        )
     return chats
 
 
@@ -363,13 +505,18 @@ def get_messages(
     chat_id: int,
     limit: int = 50,
     allowed_sections: Optional[Iterable[str]] = None,
+    *,
+    dialog_id: int | None = None,
 ) -> List[dict]:
     query_parts = [
-        "SELECT id, chat_id, direction, text, message_id, author, created_at, section",
+        "SELECT id, chat_id, direction, text, message_id, author, created_at, section, dialog_id",
         "FROM messages",
         "WHERE chat_id = ?",
     ]
     params: List[object] = [chat_id]
+    if dialog_id is not None:
+        query_parts.append("AND dialog_id = ?")
+        params.append(dialog_id)
     if allowed_sections is not None:
         allowed_list = [section for section in allowed_sections if section]
         if allowed_list:
@@ -402,12 +549,46 @@ def set_chat_section(chat_id: int, section: str | None) -> None:
         )
 
 
-def set_chat_bin(chat_id: int, bin_value: str | None) -> None:
+def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
+    normalized = (bin_value or "").strip()
+    now = datetime.utcnow().isoformat()
     with _lock, _connection:
+        if not normalized:
+            _connection.execute(
+                """
+                UPDATE chats
+                SET bin = NULL, section = NULL, updated_at = ?
+                WHERE chat_id = ?
+                """,
+                (now, chat_id),
+            )
+            _connection.execute(
+                "UPDATE chat_dialogs SET ended_at = COALESCE(ended_at, ?) WHERE chat_id = ? AND ended_at IS NULL",
+                (now, chat_id),
+            )
+            return None
+
         _connection.execute(
-            "UPDATE chats SET bin = ? WHERE chat_id = ?",
-            (bin_value, chat_id),
+            "UPDATE chat_dialogs SET ended_at = ? WHERE chat_id = ? AND ended_at IS NULL",
+            (now, chat_id),
         )
+        _connection.execute(
+            """
+            INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (chat_id, normalized, now, now),
+        )
+        dialog_id_row = _connection.execute("SELECT last_insert_rowid()").fetchone()
+        _connection.execute(
+            """
+            UPDATE chats
+            SET bin = ?, section = NULL, updated_at = ?
+            WHERE chat_id = ?
+            """,
+            (normalized, now, chat_id),
+        )
+    return int(dialog_id_row[0]) if dialog_id_row else None
 
 
 def get_chat(chat_id: int) -> Optional[Dict[str, object]]:
@@ -502,6 +683,13 @@ def set_user_bins(user_id: int, bins: Iterable[str], *, assigned_by: int | None 
             created_at=now,
         )
     return sorted(new_values)
+
+
+def delete_user(user_id: int) -> None:
+    with _lock, _connection:
+        cursor = _connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        if cursor.rowcount == 0:
+            raise ValueError("Пользователь не найден")
 
 
 def list_favorite_chat_ids(user_id: int) -> List[int]:
@@ -614,7 +802,42 @@ def delete_chat(chat_id: int) -> None:
             raise ValueError("Chat not found")
         _connection.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
         _connection.execute("DELETE FROM favorites WHERE chat_id = ?", (chat_id,))
+        _connection.execute("DELETE FROM chat_dialogs WHERE chat_id = ?", (chat_id,))
         _connection.execute("DELETE FROM chats WHERE chat_id = ?", (chat_id,))
+
+
+def delete_chat_dialog(dialog_id: int) -> None:
+    with _lock, _connection:
+        dialog_row = _connection.execute(
+            "SELECT id, chat_id FROM chat_dialogs WHERE id = ?",
+            (dialog_id,),
+        ).fetchone()
+        if dialog_row is None:
+            raise ValueError("Диалог не найден")
+        chat_id = dialog_row["chat_id"]
+        _connection.execute("DELETE FROM messages WHERE dialog_id = ?", (dialog_id,))
+        _connection.execute("DELETE FROM chat_dialogs WHERE id = ?", (dialog_id,))
+        latest = _connection.execute(
+            """
+            SELECT bin, started_at, last_message_at
+            FROM chat_dialogs
+            WHERE chat_id = ?
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (chat_id,),
+        ).fetchone()
+        if latest:
+            timestamp = latest["last_message_at"] or latest["started_at"] or datetime.utcnow().isoformat()
+            _connection.execute(
+                "UPDATE chats SET bin = ?, updated_at = ? WHERE chat_id = ?",
+                (latest["bin"], timestamp, chat_id),
+            )
+        else:
+            _connection.execute(
+                "UPDATE chats SET bin = NULL, section = NULL WHERE chat_id = ?",
+                (chat_id,),
+            )
 
 
 def _row_to_user(row: sqlite3.Row | None) -> dict | None:
@@ -784,16 +1007,20 @@ def update_user_profile(
     job_title: str,
     phone: str,
     bio: str,
+    email: str | None,
 ) -> dict:
     with _lock, _connection:
-        _connection.execute(
-            """
-            UPDATE users
-            SET name = ?, job_title = ?, phone = ?, bio = ?
-            WHERE id = ?
-            """,
-            (name, job_title, phone, bio, user_id),
-        )
+        try:
+            _connection.execute(
+                """
+                UPDATE users
+                SET name = ?, job_title = ?, phone = ?, bio = ?, email = ?
+                WHERE id = ?
+                """,
+                (name, job_title, phone, bio, email or "", user_id),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("Адрес электронной почты уже используется") from exc
     return _sanitize_user_payload(get_user_by_id(user_id))
 
 
@@ -903,14 +1130,25 @@ def list_faq(section: str | None = None) -> List[dict]:
     return list(FAQ_ENTRIES)
 
 
-def user_can_access_chat(user_id: int, role: str, chat_id: int) -> bool:
+def user_can_access_chat(
+    user_id: int,
+    role: str,
+    chat_id: int,
+    dialog_id: int | None = None,
+) -> bool:
     if role == ROLE_ADMIN:
         return True
+    dialog_bin = None
+    if dialog_id is not None:
+        dialog = get_chat_dialog(dialog_id)
+        if dialog is None or dialog["chat_id"] != chat_id:
+            return False
+        dialog_bin = dialog.get("bin")
     chat = get_chat(chat_id)
     if chat is None:
         return False
     section = chat.get("section")
-    chat_bin = chat.get("bin")
+    chat_bin = dialog_bin or chat.get("bin")
     if section is None or chat_bin is None:
         return False
     allowed = set(get_user_sections(user_id))
@@ -932,7 +1170,7 @@ def list_updates_since(
     params: List[object] = []
     if role == ROLE_ADMIN or (allowed_sections and assigned_bins):
         query_parts = [
-            "SELECT m.id, m.chat_id, m.text, m.created_at, m.section, c.title, c.bin",
+            "SELECT m.id, m.chat_id, m.text, m.created_at, m.section, m.dialog_id, c.title, c.bin",
             "FROM messages m",
             "JOIN chats c ON c.chat_id = m.chat_id",
             "WHERE m.direction = 'incoming'",
@@ -964,6 +1202,7 @@ def list_updates_since(
                     "created_at": created_at,
                     "section": row["section"],
                     "bin": row["bin"],
+                    "dialog_id": row["dialog_id"],
                 }
             )
     notification_rows = list_notifications_since(user_id, since)

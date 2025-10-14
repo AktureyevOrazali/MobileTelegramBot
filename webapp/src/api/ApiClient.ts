@@ -21,7 +21,10 @@ export class ApiError extends Error {
   }
 }
 
-const DEFAULT_BASE_URL = 'https://exclamatorily-nonaffecting-chelsey.ngrok-free.dev';
+const DEFAULT_BASE_URL =
+  typeof window !== 'undefined' && window.location
+    ? window.location.origin
+    : 'http://localhost:8000';
 const DEFAULT_API_TOKEN = 'MySecretTokenSayCheese';
 
 export interface ApiClientOptions {
@@ -238,12 +241,13 @@ export class ApiClient {
     return profile;
   }
 
-  async updateProfile(payload: { name?: string; jobTitle?: string; phone?: string; bio?: string }): Promise<UserProfile> {
+  async updateProfile(payload: { name?: string; jobTitle?: string; phone?: string; bio?: string; email?: string }): Promise<UserProfile> {
     const body = {
       name: payload.name,
       job_title: payload.jobTitle,
       phone: payload.phone,
       bio: payload.bio,
+      email: payload.email,
     };
     const response = await this.request<UserProfileRaw>('profile', {
       method: 'PUT',
@@ -286,19 +290,18 @@ export class ApiClient {
     return response.map(mapChatSummary);
   }
 
-  async fetchMessages(chatId: number, limit = 50): Promise<Message[]> {
+  async fetchMessages(chatId: number, limit = 50, dialogId?: number): Promise<Message[]> {
     const response = await this.request<MessageRaw[]>(`chats/${chatId}/messages`, {
       method: 'GET',
-      query: { limit },
+      query: { limit, dialog_id: dialogId },
     });
     return response.map(mapMessage);
   }
 
-  async sendMessage(chatId: number, text: string): Promise<void> {
+  async sendMessage(chatId: number, text: string, dialogId?: number): Promise<void> {
     await this.request('messages/send', {
       method: 'POST',
-      body: JSON.stringify({ chat_id: chatId, text }),
-      expectJson: false,
+      body: JSON.stringify({ chat_id: chatId, text, dialog_id: dialogId }),
     });
   }
 
@@ -318,16 +321,11 @@ export class ApiClient {
     }
   }
 
-  async deleteChat(chatId: number): Promise<void> {
-    await this.request(`chats/${chatId}`, {
+  async deleteDialog(dialogId: number): Promise<void> {
+    await this.request(`dialogs/${dialogId}`, {
       method: 'DELETE',
       expectJson: false,
     });
-    if (this.currentUserProfile) {
-      const favoriteSet = new Set(this.currentUserProfile.favoriteChatIds);
-      favoriteSet.delete(chatId);
-      this.updateCurrentUser({ ...this.currentUserProfile, favoriteChatIds: Array.from(favoriteSet) });
-    }
   }
 
   async fetchUsers(query?: string): Promise<UserProfile[]> {
@@ -336,6 +334,13 @@ export class ApiClient {
       query: query ? { query } : undefined,
     });
     return response.map(mapUserProfile);
+  }
+
+  async deleteUser(userId: number): Promise<void> {
+    await this.request(`users/${userId}`, {
+      method: 'DELETE',
+      expectJson: false,
+    });
   }
 
   async fetchRoles(): Promise<RoleInfo[]> {

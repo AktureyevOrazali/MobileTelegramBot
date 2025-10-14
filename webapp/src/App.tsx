@@ -13,16 +13,19 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('dialogs');
 
   const currentUser = session?.user ?? null;
-  const availableTabs = useMemo(() => {
+  const navigationTabs = useMemo(() => {
     if (!currentUser) return [] as TabKey[];
-    return currentUser.isAdmin ? tabs.slice() : (['dialogs', 'profile'] as TabKey[]);
+    return currentUser.isAdmin ? (['dialogs', 'admin'] as TabKey[]) : (['dialogs'] as TabKey[]);
   }, [currentUser]);
 
   useEffect(() => {
-    if (!availableTabs.includes(activeTab) && availableTabs.length > 0) {
-      setActiveTab(availableTabs[0]);
+    if (activeTab === 'profile') {
+      return;
     }
-  }, [activeTab, availableTabs]);
+    if (!navigationTabs.includes(activeTab) && navigationTabs.length > 0) {
+      setActiveTab(navigationTabs[0]);
+    }
+  }, [activeTab, navigationTabs]);
 
   if (!session) {
     return <AuthPage onAuthenticated={setSession} apiClient={apiClient} />;
@@ -61,7 +64,7 @@ const App: React.FC = () => {
         </div>
 
         <nav className="tab-bar">
-          {availableTabs.map((tab) => (
+          {navigationTabs.map((tab) => (
             <button
               key={tab}
               className={`tab-button ${activeTab === tab ? 'active' : ''}`}

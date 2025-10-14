@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
 import { AuthSession, ChatSummary, Message, MessageNotification, Section } from '../types';
 import { formatDateTime } from '../utils/date';
@@ -18,8 +25,6 @@ interface ChatDetailModalProps {
   chat: ChatSummary;
   onClose: () => void;
   onChatUpdated: (chat: ChatSummary) => void;
-  canDeleteDialog: boolean;
-  onDeleteRequest: (chat: ChatSummary) => void;
 }
 
 /* -------------------- Modal -------------------- */
@@ -28,8 +33,6 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   chat,
   onClose,
   onChatUpdated,
-  canDeleteDialog,
-  onDeleteRequest,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -40,9 +43,19 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   const listRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<number | null>(null);
   const lastCountRef = useRef<number>(0);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const currentUser = apiClient.currentUser;
   const canReply = Boolean(currentUser?.canReply);
+
+  const adjustComposerHeight = useCallback(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const minHeight = 52;
+    el.style.height = 'auto';
+    const nextHeight = Math.max(el.scrollHeight, minHeight);
+    el.style.height = `${nextHeight}px`;
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     const el = listRef.current;
@@ -66,6 +79,14 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   }, [apiClient, chat.chatId, chat.dialogId]);
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
+
+  useLayoutEffect(() => {
+    adjustComposerHeight();
+  }, [adjustComposerHeight, input]);
+
+  useLayoutEffect(() => {
+    adjustComposerHeight();
+  }, [adjustComposerHeight, chat.dialogId]);
 
   useEffect(() => {
     const t = setTimeout(scrollToBottom, 0);
@@ -147,15 +168,6 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
               onToggle={toggleFavorite}
               title={chat.isFavorite ? "Убрать из избранного" : "В избранное"}
             />
-            {canDeleteDialog && (
-              <button
-                className="button danger"
-                type="button"
-                onClick={() => onDeleteRequest(chat)}
-              >
-                Удалить
-              </button>
-            )}
             <button
               className="icon-btn"
               type="button"
@@ -210,8 +222,10 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
                 handleSend();
               }
             }}
+            onInput={adjustComposerHeight}
             disabled={!canReply || sending}
-            rows={3}
+            rows={1}
+            ref={composerRef}
           />
           <div className="dialog-composer__actions">
             <button className="button" type="button" onClick={handleSend} disabled={!canReply || sending || !input.trim()}>
@@ -504,8 +518,6 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
             );
             setActiveChat((prev) => (prev && prev.dialogId === updated.dialogId ? updated : prev));
           }}
-          canDeleteDialog={canDeleteDialog}
-          onDeleteRequest={(chat) => setDialogToDelete(chat)}
         />
       )}
 

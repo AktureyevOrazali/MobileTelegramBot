@@ -534,21 +534,30 @@ html, body {
 
 .dialog-composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
-  align-items: stretch;
+  align-items: flex-end;
 }
 
 .dialog-composer textarea {
-  flex: 1;
-  min-height: 140px;
-  resize: vertical;
+  flex: 1 1 260px;
+  max-width: 280px;
+  width: 100%;
+  min-height: 52px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5;
 }
 
 .dialog-composer__actions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 140px;
+  flex: 1 1 260px;
+  max-width: 280px;
+  width: 100%;
+}
+
+.dialog-composer__actions .button {
+  flex: 1;
 }
 
 .dialog-meta {

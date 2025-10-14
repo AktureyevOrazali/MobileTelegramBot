@@ -211,8 +211,10 @@ select {
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  max-height: 60vh;
   overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
 }
 
 .message-bubble {
@@ -269,6 +271,7 @@ select {
   justify-content: center;
   padding: 24px;
   z-index: 40;
+  overflow-y: auto;
 }
 
 .modal {
@@ -280,6 +283,8 @@ select {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
 }
 
 .modal__header {
@@ -533,15 +538,13 @@ html, body {
 }
 
 .dialog-composer {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: flex-end;
 }
 
 .dialog-composer textarea {
-  flex: 1 1 260px;
-  max-width: 280px;
   width: 100%;
   min-height: 52px;
   resize: none;
@@ -551,13 +554,11 @@ html, body {
 
 .dialog-composer__actions {
   display: flex;
-  flex: 1 1 260px;
-  max-width: 280px;
-  width: 100%;
+  align-items: stretch;
 }
 
 .dialog-composer__actions .button {
-  flex: 1;
+  white-space: nowrap;
 }
 
 .dialog-meta {
@@ -580,5 +581,20 @@ html, body {
 }
 
 .modal--dialog {
-  max-width: 900px;
+  width: min(900px, 100%);
+  max-height: calc(100vh - 48px);
+}
+
+.dialog-modal__layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+}
+
+.dialog-modal__scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  width: 100%;
 }

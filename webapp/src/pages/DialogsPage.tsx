@@ -69,6 +69,8 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
       setMessages(data);
       lastCountRef.current = data.length;
       setError(null);
+      if (typeof window !== 'undefined') window.requestAnimationFrame(scrollToBottom);
+      else scrollToBottom();
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else if (err instanceof Error) setError(err.message);
@@ -76,7 +78,7 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [apiClient, chat.chatId, chat.dialogId]);
+  }, [apiClient, chat.chatId, chat.dialogId, scrollToBottom]);
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
 
@@ -100,6 +102,8 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
         if (data.length !== lastCountRef.current) {
           setMessages(data);
           lastCountRef.current = data.length;
+          if (typeof window !== 'undefined') window.requestAnimationFrame(scrollToBottom);
+          else scrollToBottom();
         }
       } catch {
         /* игнорируем */
@@ -109,7 +113,7 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
     return () => {
       if (pollRef.current) window.clearInterval(pollRef.current);
     };
-  }, [apiClient, chat.chatId, chat.dialogId]);
+  }, [apiClient, chat.chatId, chat.dialogId, scrollToBottom]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -146,7 +150,7 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
 
   return (
     <Modal open onClose={onClose} className="modal--dialog">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '70vh' }}>
+      <div className="dialog-modal__layout">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div>
             <h2 className="heading" style={{ marginBottom: 6 }}>{chat.title}</h2>
@@ -185,9 +189,11 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
         <div className="separator" />
         {error && <div className="alert">{error}</div>}
 
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div className="dialog-modal__scroll">
           {loading ? (
-            <div style={{ padding: '24px 0', textAlign: 'center' }}>Загружаем сообщения...</div>
+            <div className="message-list" aria-busy="true">
+              <div style={{ margin: 'auto', textAlign: 'center', width: '100%' }}>Загружаем сообщения...</div>
+            </div>
           ) : (
             <div className="message-list" ref={listRef}>
               {messages.length === 0 && <div className="text-muted">Нет сообщений в этом диалоге.</div>}

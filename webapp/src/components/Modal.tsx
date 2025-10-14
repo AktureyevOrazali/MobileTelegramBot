@@ -19,7 +19,9 @@ export default function Modal({ open, onClose, children, className }: ModalProps
   const contentClass = className ? `modal ${className}` : 'modal';
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className={contentClass} onClick={e=>e.stopPropagation()}>{children}</div>
+      <div className={contentClass} onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true">
+        {children}
+      </div>
     </div>
   );
 }

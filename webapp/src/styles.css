@@ -87,7 +87,16 @@ input, textarea, select { font-family: inherit; }
   min-height: 0;
 }
 
-.message-bubble { padding: 12px 16px; border-radius: 16px; max-width: 70%; box-shadow: 0 8px 24px rgba(20, 33, 61, 0.08); }
+.modal.modal--dialog .message-list {
+  padding: 20px 24px 24px;
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 16px;
+  max-width: 72%;
+  box-shadow: 0 8px 24px rgba(20, 33, 61, 0.08);
+}
 .message-bubble.incoming { align-self: flex-start; background-color: #ffffff; }
 .message-bubble.outgoing { align-self: flex-end; background-color: #3e5aa8; color: #fff; }
 
@@ -129,23 +138,28 @@ input, textarea, select { font-family: inherit; }
   z-index: 40;
 }
 
-/* ключ: ширина/высота адекватны на 100% масштабе */
+/* базовая модалка: компактная ширина, подходит для confirm и форм */
 .modal {
-  width: clamp(360px, 92vw, 720px);
+  width: min(90vw, 520px);
   background: #ffffff;
   border-radius: 20px;
   box-shadow: 0 28px 60px rgba(15, 23, 42, 0.24);
   padding: 28px;
-  display: flex; flex-direction: column; gap: 20px;
-  max-height: 90vh;         /* не превышает экран */
-  overflow: hidden;         /* скролл у внутреннего контейнера */
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 90vh;
+  overflow: auto;
 }
 
 .modal__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .modal__title  { margin: 0; font-size: 1.2rem; font-weight: 700; color: #253263; }
 .modal__description { margin: 0; color: #525b7c; line-height: 1.5; }
 .modal__actions { display: flex; justify-content: flex-end; gap: 12px; }
-.modal--confirm { max-width: 420px; gap: 16px; }
+.modal--confirm {
+  width: min(90vw, 420px);
+  gap: 16px;
+}
 
 /* служебное */
 .sticky-filters{position:sticky;top:12px;z-index:5}
@@ -264,18 +278,54 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 
 .admin-user-card__grid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  border: 1px solid #e2e8ff;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #f8faff;
 }
 
 .admin-user-card__cell {
-  background: #f8faff;
-  border: 1px solid #e2e8ff;
-  border-radius: 18px;
-  padding: 16px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+  height: 100%;
+}
+
+.admin-user-card__cell:nth-child(-n + 2) {
+  border-bottom: 1px solid #e2e8ff;
+}
+
+.admin-user-card__cell:nth-child(odd) {
+  border-right: 1px solid #e2e8ff;
+}
+
+.admin-user-card__cell > *:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 960px) {
+  .admin-user-card__grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    border-radius: 18px;
+  }
+
+  .admin-user-card__cell {
+    border-right: none;
+    border-bottom: 1px solid #e2e8ff;
+  }
+
+  .admin-user-card__cell:last-child {
+    border-bottom: none;
+  }
 }
 
 .admin-user-card__cell h3,
@@ -308,34 +358,20 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 
 .profile-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 
-.modal--dialog {
-  width: clamp(520px, 96vw, 960px);
-  max-width: 960px;
+.modal.modal--dialog {
+  width: min(96vw, 960px);
   max-height: min(92vh, 880px);
+  padding: 32px;
+  overflow: hidden; /* скролл внутри */
 }
 
-/* === МОДАЛКА: фиксируем высоту, чтобы flex-внуктри работал === */
-.modal {
-  width: clamp(360px, 92vw, 720px);
-  background: #ffffff;
-  border-radius: 20px;
-  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.24);
-  padding: 28px;
+.modal.modal--dialog .modal__content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  height: min(90vh, 100%); /* ключевой момент */
-  overflow: hidden;        /* скроллим только внутренний блок */
-}
-
-/* контент модалки занимает всю высоту */
-.modal__content{
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   height: 100%;
-  min-height: 0; /* нужно, чтобы дочерний flex:1 мог сжиматься */
-   position: relative;
+  min-height: 0;
+  position: relative;
 }
 
 .modal__close {
@@ -373,34 +409,23 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 .separator { flex-shrink: 0; }
 
 /* прокручиваемая центральная зона с сообщениями */
-.modal__scroll{
+.modal.modal--dialog .modal__scroll{
   flex: 1;
-  min-height: 0;     /* позволяет появиться скроллу */
+  min-height: 320px;  /* гарантируем место для истории */
   overflow: auto;
-  padding: 0;        /* паддинги уже у .message-list */
-}
-.modal--dialog .modal__scroll {
-  min-height: 320px;
+  padding: 0;
+  margin: 0 -4px 0 0; /* небольшой запас для скроллбара */
 }
 
 /* сообщение: уберём жёсткий max-height у списка из прежних стилей */
-.message-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  min-height: 0;
+.modal.modal--dialog .modal__scroll::-webkit-scrollbar {
+  width: 8px;
 }
 
 /* низ модалки: одинаковая высота и автогроу */
-.dialog-composer { display: flex; gap: 12px; align-items: stretch; }
-.dialog-composer .textarea {
-  flex: 1;
-  min-height: 44px;
-  max-height: 176px;  /* ~4 строки */
-  overflow: auto;
-  resize: none;
+.modal.modal--dialog .modal__scroll::-webkit-scrollbar-thumb {
+  background: rgba(37, 50, 99, 0.22);
+  border-radius: 999px;
 }
-.dialog-composer__actions { display: flex; flex-direction: column; gap: 8px; min-width: auto; }
-.dialog-composer .button { height: 44px; white-space: nowrap; flex: 0 0 auto; }
+
 

@@ -30,8 +30,9 @@ function loadSessionFromStorage(): AuthSession | null {
     const parsed = JSON.parse(stored);
     if (parsed && typeof parsed === 'object' && typeof parsed.token === 'string' && parsed.user) {
       const role: string = parsed.user.role ?? 'viewer';
-      const favoriteChatIds: number[] = Array.isArray(parsed.user.favoriteChatIds)
-        ? (parsed.user.favoriteChatIds as unknown[])
+      const favoriteRaw = parsed.user.favoriteDialogIds ?? parsed.user.favorite_dialog_ids;
+      const favoriteDialogIds: number[] = Array.isArray(favoriteRaw)
+        ? (favoriteRaw as unknown[])
             .map((v: unknown) => Number(v))
             .filter((n) => !Number.isNaN(n))
         : [];
@@ -42,7 +43,7 @@ function loadSessionFromStorage(): AuthSession | null {
           createdAt: new Date(parsed.user.createdAt ?? parsed.user.created_at ?? new Date().toISOString()),
           sections: Array.isArray(parsed.user.sections) ? parsed.user.sections : [],
           bins: Array.isArray(parsed.user.bins) ? parsed.user.bins : [],
-          favoriteChatIds,
+           favoriteDialogIds,
           isAdmin: role === 'admin',
           canReply: role === 'admin' || role === 'moderator',
           role,

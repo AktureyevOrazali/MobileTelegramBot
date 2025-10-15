@@ -8,18 +8,43 @@ interface ModalProps {
 }
 
 export default function Modal({ open, onClose, children, className }: ModalProps) {
-  useEffect(()=>{
-    if(!open) return;
-    const onKey=(e:KeyboardEvent)=>{ if(e.key==='Escape') onClose(); };
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
-    return ()=>document.removeEventListener('keydown', onKey);
-  },[open,onClose]);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
-  if(!open) return null;
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') {
+      return;
+    }
+
+    const { style } = document.body;
+    const originalOverflow = style.overflow;
+    const originalPaddingRight = style.paddingRight;
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbarWidth > 0) {
+      style.paddingRight = `${scrollbarWidth}px`;
+    }
+    style.overflow = 'hidden';
+
+    return () => {
+      style.overflow = originalOverflow;
+      style.paddingRight = originalPaddingRight;
+    };
+  }, [open]);
+
+  if (!open) return null;
   const contentClass = className ? `modal ${className}` : 'modal';
+  const overlayClass = className?.includes('modal--dialog')
+    ? 'modal-overlay modal-overlay--dialog'
+    : 'modal-overlay';
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className={contentClass} onClick={e=>e.stopPropagation()}>{children}</div>
+    <div className={overlayClass} onClick={onClose}>
+      <div className={contentClass} onClick={(e) => e.stopPropagation()}>{children}</div>
     </div>
   );
 }

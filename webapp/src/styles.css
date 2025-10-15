@@ -136,6 +136,14 @@ input, textarea, select { font-family: inherit; }
   justify-content: center;
   padding: 24px;
   z-index: 40;
+  overflow-y: auto;
+  min-height: 100vh;
+}
+
+.modal-overlay--dialog {
+  align-items: flex-start;
+  padding-top: 48px;
+  padding-bottom: 48px;
 }
 
 /* базовая модалка: компактная ширина, подходит для confirm и форм */
@@ -283,7 +291,7 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
   grid-template-rows: repeat(2, minmax(0, 1fr));
   border: 1px solid #e2e8ff;
   border-radius: 20px;
-  overflow: hidden;
+  overflow: visible;
   background: #f8faff;
 }
 

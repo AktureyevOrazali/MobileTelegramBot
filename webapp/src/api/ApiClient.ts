@@ -305,19 +305,19 @@ export class ApiClient {
     });
   }
 
-  async setFavorite(chatId: number, favorite: boolean): Promise<void> {
-    await this.request(`chats/${chatId}/favorite`, {
+  async setFavorite(dialogId: number, favorite: boolean): Promise<void> {
+    await this.request(`dialogs/${dialogId}/favorite`, {
       method: favorite ? 'POST' : 'DELETE',
       expectJson: false,
     });
     if (this.currentUserProfile) {
-      const favoriteSet = new Set(this.currentUserProfile.favoriteChatIds);
+      const favoriteSet = new Set(this.currentUserProfile.favoriteDialogIds);
       if (favorite) {
-        favoriteSet.add(chatId);
+        favoriteSet.add(dialogId);
       } else {
-        favoriteSet.delete(chatId);
+        favoriteSet.delete(dialogId);
       }
-      this.updateCurrentUser({ ...this.currentUserProfile, favoriteChatIds: Array.from(favoriteSet) });
+      this.updateCurrentUser({ ...this.currentUserProfile, favoriteDialogIds: Array.from(favoriteSet) });
     }
   }
 

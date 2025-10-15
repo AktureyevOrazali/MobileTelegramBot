@@ -268,19 +268,54 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const loadBins = useCallback(async () => {
     try {
       const data = await apiClient.fetchBins();
-      setBins(data);
+      if (currentUser.isAdmin) {
+        setBins(data);
+        return;
+      }
+
+      const allowed = new Set(currentUser.bins ?? []);
+      const filtered = data.filter((bin) => allowed.has(bin));
+      const merged = Array.from(new Set([...filtered, ...(currentUser.bins ?? [])]));
+      setBins(merged);
     } catch (err) {
       console.warn('Не удалось загрузить БИНы', err);
     }
-  }, [apiClient]);
+  }, [apiClient, currentUser.bins, currentUser.isAdmin]);
 
   useEffect(() => { loadSectionsAndChats(true); loadBins(); }, [loadSectionsAndChats, loadBins]);
+
+  useEffect(() => {
+    if (!selectedBin) return;
+    if (!bins.includes(selectedBin)) {
+      setSelectedBin(null);
+    }
+  }, [bins, selectedBin]);
 
   useEffect(() => {
     if (!banner) return;
     const timer = setTimeout(() => setBanner(null), 6000);
     return () => clearTimeout(timer);
   }, [banner]);
+
+  const handleUpdates = useCallback(
+    (updates: MessageNotification[]) => {
+      const messages = updates
+        .filter((update) => update.type === 'message' && update.chatTitle)
+        .map((update) => `${update.chatTitle}: ${update.text}`);
+      const assignments = updates
+        .filter((update) => update.type === 'bin_assignment' && update.bin)
+        .map((update) => `Вам назначен новый БИН ${update.bin}.`);
+      const combined = [...assignments, ...messages];
+      if (combined.length > 0) {
+        setBanner(combined.join(' '));
+        loadSectionsAndChats(false);
+        if (assignments.length > 0) {
+          loadBins();
+        }
+      }
+    },
+    [loadBins, loadSectionsAndChats],
+  );
 
   useEffect(() => {
     const timer = setInterval(async () => {
@@ -300,7 +335,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       }
     }, 5000);
     return () => clearInterval(timer);
-  }, [apiClient, updatesCursor, loadSectionsAndChats]);
+  }, [apiClient, updatesCursor, handleUpdates, loadSectionsAndChats]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -309,19 +344,6 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     return () => window.clearInterval(interval);
   }, [loadSectionsAndChats]);
 
-  const handleUpdates = (updates: MessageNotification[]) => {
-    const messages = updates
-      .filter((update) => update.type === 'message' && update.chatTitle)
-      .map((update) => `${update.chatTitle}: ${update.text}`);
-    const assignments = updates
-      .filter((update) => update.type === 'bin_assignment' && update.bin)
-      .map((update) => `Вам назначен новый БИН ${update.bin}.`);
-    const combined = [...assignments, ...messages];
-    if (combined.length > 0) {
-      setBanner(combined.join(' '));
-      loadSectionsAndChats(false);
-    }
-  };
 
   const sectionOptions = useMemo(
     () => [{ value: "", label: "Все разделы" }, ...sections.map(s => ({ value: String(s.id), label: s.title }))],

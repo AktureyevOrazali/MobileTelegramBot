@@ -27,6 +27,11 @@ FAQ_BY_SECTION = {section["id"]: database.list_faq(section["id"]) for section in
 FAQ_TRIGGER = "частые вопросы"
 OPERATOR_TRIGGER = "связаться с оператором"
 BIN_PATTERN = re.compile(r"^\d{12}$")
+START_BUTTON = "▶️ Старт"
+NEW_BIN_BUTTON = "➕ Добавить БИН"
+SELECT_BIN_BUTTON = "📂 Выбрать БИН"
+FINISH_BUTTON = "⏹ Завершить работу"
+SWITCH_BIN_CALLBACK = "switch_bin"
 
 # Глобальный словарь для управления AI сессиями
 AI_SESSIONS = {}  # {chat_id: {'ai_enabled': True, 'operator_requested': False, 'waiting_message_id': None}}
@@ -43,6 +48,12 @@ def get_ai_session(chat_id: int) -> dict:
 
 def _section_keyboard() -> types.ReplyKeyboardMarkup:
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
+    keyboard.add(types.KeyboardButton(START_BUTTON))
+    keyboard.row(
+        types.KeyboardButton(NEW_BIN_BUTTON),
+        types.KeyboardButton(SELECT_BIN_BUTTON),
+    )
+    keyboard.add(types.KeyboardButton(FINISH_BUTTON))
     for section in database.SECTIONS:
         keyboard.add(types.KeyboardButton(section["title"]))
     keyboard.add(types.KeyboardButton("Частые вопросы"))
@@ -201,9 +212,8 @@ def handle_ai_commands(message: telebot.types.Message) -> None:
 def handle_start(message: telebot.types.Message) -> None:
     chat = message.chat
     database.upsert_chat(chat.id, chat.title or chat.username or str(chat.id), chat.username, chat.type)
-    database.set_chat_section(chat.id, None)
-    database.set_chat_bin(chat.id, None)
-    
+    database.close_active_chat_dialog(chat.id)
+
     # Инициализируем AI сессию (автоматически включен)
     session = get_ai_session(chat.id)
     
@@ -267,6 +277,40 @@ def handle_updates(message: telebot.types.Message) -> None:
 
     # Обрабатываем текстовые команды управления AI
     if message.content_type == "text":
+        stripped_text = text.strip()
+        if stripped_text == START_BUTTON:
+            _persist_message(message, direction="incoming", override_text="[КОМАНДА] Старт", section=None)
+            handle_start(message)
+            return
+        if stripped_text == NEW_BIN_BUTTON:
+            ai_session['ai_enabled'] = True
+            ai_session['operator_requested'] = False
+            bot.send_message(chat.id, "Отправьте БИН организации числом из 12 цифр, чтобы начать новый диалог.")
+            _persist_message(message, direction="incoming", override_text="[КОМАНДА] Добавить БИН", section=None)
+            return
+        if stripped_text == SELECT_BIN_BUTTON:
+            _persist_message(message, direction="incoming", override_text="[КОМАНДА] Выбрать БИН", section=None)
+            _send_bin_selection_menu(chat.id)
+            return
+        if stripped_text == FINISH_BUTTON:
+            active_dialog = database.get_active_chat_dialog(chat.id)
+            database.close_active_chat_dialog(chat.id)
+            ai_session['ai_enabled'] = True
+            ai_session['operator_requested'] = False
+            if active_dialog:
+                bot.send_message(
+                    chat.id,
+                    "Диалог завершён. AI помощник снова включен. Отправьте новый БИН, чтобы начать консультацию заново.",
+                    reply_markup=_section_keyboard(),
+                )
+            else:
+                bot.send_message(
+                    chat.id,
+                    "Активных диалогов не было. Отправьте БИН организации, чтобы начать работу.",
+                    reply_markup=_section_keyboard(),
+                )
+            _persist_message(message, direction="incoming", override_text="[КОМАНДА] Завершить работу", section=None)
+            return
         normalized = text.strip().lower()
         
         # Кнопки управления AI
@@ -315,6 +359,8 @@ def handle_updates(message: telebot.types.Message) -> None:
     if is_bin_message:
         was_empty_bin = not chat_record or not chat_record.get("bin")
         dialog_id = database.set_chat_bin(chat.id, normalized_text)
+        ai_session['ai_enabled'] = True
+        ai_session['operator_requested'] = False
         if was_empty_bin:
             bot.send_message(chat.id, f"Спасибо! БИН {normalized_text} сохранён.")
         else:
@@ -474,6 +520,33 @@ def _send_faq_menu(chat_id: int, section_id: str) -> None:
     )
 
 
+def _send_bin_selection_menu(chat_id: int) -> None:
+    dialogs = database.list_chat_dialogs(chat_id)
+    if not dialogs:
+        bot.send_message(
+            chat_id,
+            "Сохранённых диалогов пока нет. Добавьте новый БИН через кнопку"
+            " или просто отправьте БИН числом из 12 цифр.",
+        )
+        return
+    keyboard = types.InlineKeyboardMarkup()
+    for dialog in dialogs:
+        label = dialog["bin"] or "Не указан"
+        if dialog["ended_at"] is None:
+            label = f"{label} • текущий"
+        keyboard.add(
+            types.InlineKeyboardButton(
+                label,
+                callback_data=f"{SWITCH_BIN_CALLBACK}:{dialog['id']}",
+            )
+        )
+    bot.send_message(
+        chat_id,
+        "Выберите БИН, чтобы продолжить работу с соответствующим диалогом.",
+        reply_markup=keyboard,
+    )
+
+
 def _try_auto_answer(message: telebot.types.Message, section_id: str) -> None:
     entries = FAQ_BY_SECTION.get(section_id) or []
     normalized = (message.text or "").lower()
@@ -570,6 +643,30 @@ def handle_operator_callback(call: telebot.types.CallbackQuery) -> None:
         section=section_id,
     )
     bot.send_message(chat.id, "👨‍💼 Подключаю оператора...")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith(f"{SWITCH_BIN_CALLBACK}:"))
+def handle_switch_bin_callback(call: telebot.types.CallbackQuery) -> None:
+    try:
+        _, dialog_id_str = call.data.split(":", 1)
+        dialog_id = int(dialog_id_str)
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "Не удалось распознать диалог")
+        return
+    chat = call.message.chat
+    dialog = database.activate_chat_dialog(dialog_id, chat_id=chat.id)
+    if dialog is None:
+        bot.answer_callback_query(call.id, "Диалог не найден")
+        return
+    ai_session = get_ai_session(chat.id)
+    ai_session['ai_enabled'] = True
+    ai_session['operator_requested'] = False
+    bot.answer_callback_query(call.id, "Диалог активирован")
+    bot.send_message(
+        chat.id,
+        f"Возобновлён диалог по БИН {dialog['bin']}. AI помощник включен.",
+        reply_markup=_section_keyboard(),
+    )
 
 
 bot.set_my_commands(

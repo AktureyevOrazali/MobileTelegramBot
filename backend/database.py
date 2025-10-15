@@ -134,11 +134,11 @@ def _init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS favorites (
                 user_id INTEGER NOT NULL,
-                chat_id INTEGER NOT NULL,
+                dialog_id INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
-                PRIMARY KEY (user_id, chat_id),
+                PRIMARY KEY (user_id, dialog_id),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY(chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE
+                FOREIGN KEY(dialog_id) REFERENCES chat_dialogs(id) ON DELETE CASCADE
             )
             """
         )
@@ -176,6 +176,7 @@ def _init_db() -> None:
 
     _ensure_admin_account()
     _ensure_chat_dialog_records()
+    _ensure_favorites_schema()
 
 
 def _ensure_column(table: str, column: str, definition: str) -> None:
@@ -254,6 +255,53 @@ def _ensure_chat_dialog_records() -> None:
                 """,
                 (row["chat_id"], row["bin"], updated_at, updated_at),
             )
+
+
+def _ensure_favorites_schema() -> None:
+    """Мигрирует таблицу избранного на привязку к диалогам."""
+    with _lock, _connection:
+        info = _connection.execute("PRAGMA table_info(favorites)").fetchall()
+        columns = {row["name"] for row in info}
+        if "dialog_id" in columns:
+            return
+
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS favorites_new (
+                user_id INTEGER NOT NULL,
+                dialog_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, dialog_id),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(dialog_id) REFERENCES chat_dialogs(id) ON DELETE CASCADE
+            )
+            """
+        )
+        existing = _connection.execute(
+            "SELECT user_id, chat_id, created_at FROM favorites"
+        ).fetchall()
+        for row in existing:
+            dialog_row = _connection.execute(
+                """
+                SELECT id
+                FROM chat_dialogs
+                WHERE chat_id = ?
+                ORDER BY COALESCE(last_message_at, started_at) DESC
+                LIMIT 1
+                """,
+                (row["chat_id"],),
+            ).fetchone()
+            if not dialog_row:
+                continue
+            _connection.execute(
+                """
+                INSERT OR IGNORE INTO favorites_new (user_id, dialog_id, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (row["user_id"], dialog_row["id"], row["created_at"]),
+            )
+        _connection.execute("DROP TABLE favorites")
+        _connection.execute("ALTER TABLE favorites_new RENAME TO favorites")
 
 
 _init_db()
@@ -370,6 +418,31 @@ def save_message(
     upsert_chat(chat_id, chat_title, username, chat_type)
 
 
+def list_chat_dialogs(chat_id: int) -> List[Dict[str, object]]:
+    with _lock, _connection:
+        rows = _connection.execute(
+            """
+            SELECT id, bin, started_at, ended_at, last_message_at
+            FROM chat_dialogs
+            WHERE chat_id = ?
+            ORDER BY COALESCE(last_message_at, started_at) DESC
+            """,
+            (chat_id,),
+        ).fetchall()
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        result.append(
+            {
+                "id": int(row["id"]),
+                "bin": row["bin"],
+                "started_at": row["started_at"],
+                "ended_at": row["ended_at"],
+                "last_message_at": row["last_message_at"],
+            }
+        )
+    return result
+
+
 def get_chat_dialog(dialog_id: int) -> Optional[Dict[str, object]]:
     with _lock, _connection:
         row = _connection.execute(
@@ -423,6 +496,88 @@ def get_active_chat_dialog_id(chat_id: int) -> int | None:
     return int(dialog["id"])
 
 
+def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optional[Dict[str, object]]:
+    now = datetime.utcnow().isoformat()
+    with _lock, _connection:
+        dialog_row = _connection.execute(
+            "SELECT id, chat_id, bin FROM chat_dialogs WHERE id = ?",
+            (dialog_id,),
+        ).fetchone()
+        if dialog_row is None:
+            return None
+        if chat_id is not None and dialog_row["chat_id"] != chat_id:
+            return None
+        chat_id_value = dialog_row["chat_id"]
+        _connection.execute(
+            "UPDATE chat_dialogs SET ended_at = ? WHERE chat_id = ? AND ended_at IS NULL AND id != ?",
+            (now, chat_id_value, dialog_id),
+        )
+        _connection.execute(
+            "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = COALESCE(last_message_at, started_at) WHERE id = ?",
+            (dialog_id,),
+        )
+        section_row = _connection.execute(
+            """
+            SELECT section
+            FROM messages
+            WHERE dialog_id = ? AND section IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (dialog_id,),
+        ).fetchone()
+        section_value = section_row["section"] if section_row else None
+        _connection.execute(
+            """
+            UPDATE chats
+            SET bin = ?, section = ?, updated_at = ?
+            WHERE chat_id = ?
+            """,
+            (dialog_row["bin"], section_value, now, chat_id_value),
+        )
+        dialog = _connection.execute(
+            """
+            SELECT id, chat_id, bin, started_at, ended_at, last_message_at
+            FROM chat_dialogs
+            WHERE id = ?
+            """,
+            (dialog_id,),
+        ).fetchone()
+    if dialog is None:
+        return None
+    return {
+        "id": dialog["id"],
+        "chat_id": dialog["chat_id"],
+        "bin": dialog["bin"],
+        "started_at": dialog["started_at"],
+        "ended_at": dialog["ended_at"],
+        "last_message_at": dialog["last_message_at"],
+    }
+
+
+def close_active_chat_dialog(chat_id: int) -> None:
+    now = datetime.utcnow().isoformat()
+    with _lock, _connection:
+        active = _connection.execute(
+            """
+            SELECT id FROM chat_dialogs
+            WHERE chat_id = ? AND ended_at IS NULL
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (chat_id,),
+        ).fetchone()
+        if active:
+            _connection.execute(
+                "UPDATE chat_dialogs SET ended_at = ?, last_message_at = COALESCE(last_message_at, ?) WHERE id = ?",
+                (now, now, active["id"]),
+            )
+        _connection.execute(
+            "UPDATE chats SET bin = NULL, section = NULL, updated_at = ? WHERE chat_id = ?",
+            (now, chat_id),
+        )
+
+
 def list_chats_for_user(
     user_id: int,
     role: str,
@@ -446,7 +601,7 @@ def list_chats_for_user(
         "  f.user_id AS fav_user_id",
         "FROM chat_dialogs cd",
         "JOIN chats c ON c.chat_id = cd.chat_id",
-        "LEFT JOIN favorites f ON f.chat_id = c.chat_id AND f.user_id = ?",
+        "LEFT JOIN favorites f ON f.dialog_id = cd.id AND f.user_id = ?",
     ]
     params: List[object] = [user_id]
     filters: List[str] = []
@@ -692,44 +847,52 @@ def delete_user(user_id: int) -> None:
             raise ValueError("Пользователь не найден")
 
 
-def list_favorite_chat_ids(user_id: int) -> List[int]:
+def list_favorite_dialog_ids(user_id: int) -> List[int]:
     with _lock, _connection:
         rows = _connection.execute(
-            "SELECT chat_id FROM favorites WHERE user_id = ? ORDER BY created_at DESC",
+            "SELECT dialog_id FROM favorites WHERE user_id = ? ORDER BY created_at DESC",
             (user_id,),
         ).fetchall()
     return [row["chat_id"] for row in rows]
 
 
-def set_favorite_chat(user_id: int, chat_id: int, favorite: bool) -> None:
+def set_favorite_dialog(user_id: int, dialog_id: int, favorite: bool) -> None:
     with _lock, _connection:
+        dialog = _connection.execute(
+            "SELECT id FROM chat_dialogs WHERE id = ?",
+            (dialog_id,),
+        ).fetchone()
+        if dialog is None:
+            raise ValueError("Диалог не найден")
         if favorite:
             now = datetime.utcnow().isoformat()
             _connection.execute(
                 """
-                INSERT OR REPLACE INTO favorites (user_id, chat_id, created_at)
+                INSERT OR REPLACE INTO favorites (user_id, dialog_id, created_at)
                 VALUES (?, ?, ?)
                 """,
-                (user_id, chat_id, now),
+                (user_id, dialog_id, now),
             )
         else:
             _connection.execute(
-                "DELETE FROM favorites WHERE user_id = ? AND chat_id = ?",
-                (user_id, chat_id),
+                "DELETE FROM favorites WHERE user_id = ? AND dialog_id = ?",
+                (user_id, dialog_id),
             )
 
 
-def is_favorite_chat(user_id: int, chat_id: int) -> bool:
+def is_favorite_dialog(user_id: int, dialog_id: int) -> bool:
     with _lock, _connection:
         row = _connection.execute(
-            "SELECT 1 FROM favorites WHERE user_id = ? AND chat_id = ?",
-            (user_id, chat_id),
+            "SELECT 1 FROM favorites WHERE user_id = ? AND dialog_id = ?",
+            (user_id, dialog_id),
         ).fetchone()
     return row is not None
 
 
 def list_bins(query: str | None = None) -> List[str]:
-    clauses = ["SELECT DISTINCT bin FROM chats WHERE bin IS NOT NULL AND TRIM(bin) != ''"]
+    clauses = [
+        "SELECT DISTINCT bin FROM chat_dialogs WHERE bin IS NOT NULL AND TRIM(bin) != ''"
+    ]
     params: List[object] = []
     if query:
         clauses.append("AND bin LIKE ?")
@@ -801,7 +964,17 @@ def delete_chat(chat_id: int) -> None:
         if existing is None:
             raise ValueError("Chat not found")
         _connection.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
-        _connection.execute("DELETE FROM favorites WHERE chat_id = ?", (chat_id,))
+        dialog_rows = _connection.execute(
+            "SELECT id FROM chat_dialogs WHERE chat_id = ?",
+            (chat_id,),
+        ).fetchall()
+        dialog_ids = [row["id"] for row in dialog_rows]
+        if dialog_ids:
+            placeholders = ",".join("?" for _ in dialog_ids)
+            _connection.execute(
+                f"DELETE FROM favorites WHERE dialog_id IN ({placeholders})",
+                dialog_ids,
+            )
         _connection.execute("DELETE FROM chat_dialogs WHERE chat_id = ?", (chat_id,))
         _connection.execute("DELETE FROM chats WHERE chat_id = ?", (chat_id,))
 
@@ -816,10 +989,14 @@ def delete_chat_dialog(dialog_id: int) -> None:
             raise ValueError("Диалог не найден")
         chat_id = dialog_row["chat_id"]
         _connection.execute("DELETE FROM messages WHERE dialog_id = ?", (dialog_id,))
+        _connection.execute(
+            "DELETE FROM favorites WHERE dialog_id = ?",
+            (dialog_id,),
+        )
         _connection.execute("DELETE FROM chat_dialogs WHERE id = ?", (dialog_id,))
         latest = _connection.execute(
             """
-            SELECT bin, started_at, last_message_at
+            SELECT id, bin, started_at, last_message_at
             FROM chat_dialogs
             WHERE chat_id = ?
             ORDER BY started_at DESC
@@ -829,9 +1006,20 @@ def delete_chat_dialog(dialog_id: int) -> None:
         ).fetchone()
         if latest:
             timestamp = latest["last_message_at"] or latest["started_at"] or datetime.utcnow().isoformat()
+            section_row = _connection.execute(
+                """
+                SELECT section
+                FROM messages
+                WHERE dialog_id = ? AND section IS NOT NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (latest["id"],),
+            ).fetchone()
+            section_value = section_row["section"] if section_row else None
             _connection.execute(
-                "UPDATE chats SET bin = ?, updated_at = ? WHERE chat_id = ?",
-                (latest["bin"], timestamp, chat_id),
+                "UPDATE chats SET bin = ?, section = ?, updated_at = ? WHERE chat_id = ?",
+                (latest["bin"], section_value, timestamp, chat_id),
             )
         else:
             _connection.execute(
@@ -1148,6 +1336,20 @@ def user_can_access_chat(
     if chat is None:
         return False
     section = chat.get("section")
+    if section is None and dialog_id is not None:
+        with _lock, _connection:
+            section_row = _connection.execute(
+                """
+                SELECT section
+                FROM messages
+                WHERE dialog_id = ? AND section IS NOT NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (dialog_id,),
+            ).fetchone()
+        if section_row is not None:
+            section = section_row["section"]
     chat_bin = dialog_bin or chat.get("bin")
     if section is None or chat_bin is None:
         return False
@@ -1170,9 +1372,11 @@ def list_updates_since(
     params: List[object] = []
     if role == ROLE_ADMIN or (allowed_sections and assigned_bins):
         query_parts = [
-            "SELECT m.id, m.chat_id, m.text, m.created_at, m.section, m.dialog_id, c.title, c.bin",
+            "SELECT m.id, m.chat_id, m.text, m.created_at, m.section, m.dialog_id, c.title,",
+            "       COALESCE(cd.bin, c.bin) AS dialog_bin",
             "FROM messages m",
             "JOIN chats c ON c.chat_id = m.chat_id",
+            "LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id",
             "WHERE m.direction = 'incoming'",
         ]
         if since is not None:
@@ -1185,7 +1389,7 @@ def list_updates_since(
             )
             params.extend(allowed_sections)
             bin_placeholders = ",".join("?" for _ in assigned_bins)
-            query_parts.append(f"AND c.bin IN ({bin_placeholders})")
+            query_parts.append(f"AND COALESCE(cd.bin, c.bin) IN ({bin_placeholders})")
             params.extend(assigned_bins)
         query_parts.append("ORDER BY m.created_at ASC")
         sql = "\n".join(query_parts)
@@ -1201,7 +1405,7 @@ def list_updates_since(
                     "text": row["text"],
                     "created_at": created_at,
                     "section": row["section"],
-                    "bin": row["bin"],
+                    "bin": row["dialog_bin"],
                     "dialog_id": row["dialog_id"],
                 }
             )

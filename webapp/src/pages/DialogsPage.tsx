@@ -131,7 +131,7 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   const toggleFavorite = async () => {
     const nextValue = !chat.isFavorite;
     try {
-      await apiClient.setFavorite(chat.chatId, nextValue);
+      await apiClient.setFavorite(chat.dialogId, nextValue);
       onChatUpdated({ ...chat, isFavorite: nextValue });
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
@@ -142,6 +142,11 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   return (
     <Modal open onClose={onClose} className="modal--dialog">
       <div className="modal__content">
+        <button className="modal__close" type="button" aria-label="Закрыть" onClick={onClose} title="Закрыть">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.41Z" fill="currentColor"/>
+          </svg>
+        </button>
         {/* Header */}
         <div className="modal__header-row">
           <div>
@@ -164,11 +169,6 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
               onToggle={toggleFavorite}
               title={chat.isFavorite ? "Убрать из избранного" : "В избранное"}
             />
-            <button className="icon-btn" type="button" aria-label="Закрыть" onClick={onClose} title="Закрыть">
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                <path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.41Z" fill="currentColor"/>
-              </svg>
-            </button>
           </div>
         </div>
 
@@ -359,11 +359,11 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     let list = chats;
     if (selectedSection) list = list.filter((chat) => chat.section === selectedSection);
     if (showFavoritesOnly) {
-      const favorites = new Set(apiClient.currentUser?.favoriteChatIds ?? []);
-      list = list.filter((chat) => favorites.has(chat.chatId));
+      const favorites = new Set(apiClient.currentUser?.favoriteDialogIds ?? []);
+      list = list.filter((chat) => favorites.has(chat.dialogId));
     }
     return list.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-  }, [apiClient.currentUser?.favoriteChatIds, chats, selectedSection, showFavoritesOnly]);
+  }, [apiClient.currentUser?.favoriteDialogIds, chats, selectedSection, showFavoritesOnly]);
 
   useEffect(() => {
     if (!activeChat) return;
@@ -461,7 +461,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                   <StarButton
                     active={Boolean(chat.isFavorite)}
                     onToggle={() =>
-                      apiClient.setFavorite(chat.chatId, !chat.isFavorite).then(() => {
+                      apiClient.setFavorite(chat.dialogId, !chat.isFavorite).then(() => {
                         setChats((prev) =>
                           prev.map((item) => (item.chatId === chat.chatId ? { ...item, isFavorite: !item.isFavorite } : item)),
                         );

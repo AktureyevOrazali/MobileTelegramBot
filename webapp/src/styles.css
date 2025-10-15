@@ -282,6 +282,30 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
   gap: 16px;
   height: 100%;
   min-height: 0; /* нужно, чтобы дочерний flex:1 мог сжиматься */
+   position: relative;
+}
+
+.modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: none;
+  background: rgba(37, 50, 99, 0.08);
+  color: #253263;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.modal__close:hover,
+.modal__close:focus-visible {
+  background: rgba(37, 50, 99, 0.16);
+  outline: none;
 }
 
 /* шапка — не сжимается, разделители тоже не сжимаются */

@@ -10,7 +10,7 @@ export interface UserProfileRaw {
   role: string;
   sections: string[];
   bins: string[];
-  favorite_chat_ids: number[];
+  favorite_dialog_ids: number[];
 }
 
 export interface AuthSessionRaw {
@@ -79,7 +79,7 @@ export interface UserProfile {
   role: string;
   sections: string[];
   bins: string[];
-  favoriteChatIds: number[];
+  favoriteDialogIds: number[];
   isAdmin: boolean;
   canReply: boolean;
 }

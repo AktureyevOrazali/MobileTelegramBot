@@ -248,7 +248,7 @@ class ApiClient {
   final String apiToken;
   String? _sessionToken;
   UserProfile? _currentUser;
-  final Set<int> _favoriteChatIds = <int>{};
+  final Set<int> _favoriteDialogIds = <int>{};
 
   Uri _buildUri(String path, [Map<String, dynamic>? queryParameters]) {
     final normalizedBase = baseUrl.endsWith('/') ? baseUrl : '$baseUrl/';
@@ -271,15 +271,15 @@ class ApiClient {
   void setSession(AuthSession session) {
     _sessionToken = session.token;
     updateCurrentUser(session.user);
-    _favoriteChatIds
+    _favoriteDialogIds
       ..clear()
-      ..addAll(session.user.favoriteChatIds);
+      ..addAll(session.user.favoriteDialogIds);
   }
 
   void clearSession() {
     _sessionToken = null;
     _currentUser = null;
-    _favoriteChatIds.clear();
+    _favoriteDialogIds.clear();
   }
 
   UserProfile? get currentUser => _currentUser;
@@ -291,12 +291,12 @@ class ApiClient {
 
   void updateCurrentUser(UserProfile profile) {
     _currentUser = profile;
-    _favoriteChatIds
+    _favoriteDialogIds
       ..clear()
-      ..addAll(profile.favoriteChatIds);
+      ..addAll(profile.favoriteDialogIds);
   }
 
-  Set<int> get favoriteChatIds => _favoriteChatIds;
+  Set<int> get favoriteDialogIds => _favoriteDialogIds;
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json; charset=utf-8',
@@ -440,8 +440,12 @@ class ApiClient {
         .toList();
   }
 
-  Future<List<Message>> fetchMessages(int chatId) async {
-    final uri = _buildUri('chats/$chatId/messages', {'limit': 100});
+  Future<List<Message>> fetchMessages(int chatId, {int? dialogId}) async {
+    final params = <String, dynamic>{'limit': 100};
+    if (dialogId != null && dialogId > 0) {
+      params['dialog_id'] = dialogId;
+    }
+    final uri = _buildUri('chats/$chatId/messages', params);
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить сообщения.',
@@ -452,17 +456,21 @@ class ApiClient {
         .toList();
   }
 
-  Future<void> sendMessage(int chatId, String text) async {
+  Future<void> sendMessage(int chatId, String text, {int? dialogId}) async {
     final uri = _buildUri('messages/send');
-    final body = jsonEncode({'chat_id': chatId, 'text': text});
+    final payload = <String, dynamic>{'chat_id': chatId, 'text': text};
+    if (dialogId != null && dialogId > 0) {
+      payload['dialog_id'] = dialogId;
+    }
+    final body = jsonEncode(payload);
     await _sendRequest(
       () => http.post(uri, headers: _headers, body: body),
       'Не удалось отправить сообщение.',
     );
   }
 
-  Future<void> setFavorite(int chatId, bool favorite) async {
-    final uri = _buildUri('chats/$chatId/favorite');
+  Future<void> setFavoriteDialog(int dialogId, bool favorite) async {
+    final uri = _buildUri('dialogs/$dialogId/favorite');
     await _sendRequest(
       () => favorite
           ? http.post(uri, headers: _headers)
@@ -470,14 +478,14 @@ class ApiClient {
       'Не удалось обновить избранное.',
     );
     if (_currentUser != null) {
-      final updatedFavorites = Set<int>.from(_currentUser!.favoriteChatIds);
+      final updatedFavorites = Set<int>.from(_currentUser!.favoriteDialogIds);
       if (favorite) {
-        updatedFavorites.add(chatId);
+        updatedFavorites.add(dialogId);
       } else {
-        updatedFavorites.remove(chatId);
+        updatedFavorites.remove(dialogId);
       }
-      _currentUser = _currentUser!.copyWith(favoriteChatIds: updatedFavorites);
-      _favoriteChatIds
+      _currentUser = _currentUser!.copyWith(favoriteDialogIds: updatedFavorites);
+      _favoriteDialogIds
         ..clear()
         ..addAll(updatedFavorites);
     }
@@ -490,11 +498,11 @@ class ApiClient {
       'Не удалось удалить диалог.',
     );
     if (_currentUser != null) {
-      final updatedFavorites = Set<int>.from(_favoriteChatIds)..remove(chatId);
-      _favoriteChatIds
+       final updatedFavorites = Set<int>.from(_favoriteDialogIds);
+      _favoriteDialogIds
         ..clear()
         ..addAll(updatedFavorites);
-      _currentUser = _currentUser!.copyWith(favoriteChatIds: updatedFavorites);
+      _currentUser = _currentUser!.copyWith(favoriteDialogIds: updatedFavorites);
     }
   }
 
@@ -1191,7 +1199,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           .toList();
     });
     try {
-      await widget.apiClient.setFavorite(chat.chatId, newValue);
+      await widget.apiClient.setFavoriteDialog(chat.dialogId, newValue);
       if (!mounted) {
         return;
       }
@@ -1207,7 +1215,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       }
       setState(() {
         _allChats = _allChats
-            .map((item) => item.chatId == chat.chatId
+            .map((item) => item.dialogId == chat.dialogId
                 ? item.copyWith(isFavorite: !newValue)
                 : item)
             .toList();
@@ -1679,7 +1687,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _fetchMessages() async {
     try {
-      final messages = await widget.apiClient.fetchMessages(widget.chat.chatId);
+      final messages = await widget.apiClient.fetchMessages(
+        widget.chat.chatId,
+        dialogId: widget.chat.dialogId,
+      );
       setState(() {
         _messages = messages;
         _loading = false;
@@ -1702,7 +1713,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       _loading = true;
     });
     try {
-      await widget.apiClient.sendMessage(widget.chat.chatId, text);
+      await widget.apiClient.sendMessage(
+        widget.chat.chatId,
+        text,
+        dialogId: widget.chat.dialogId,
+      );
       _messageController.clear();
       await _fetchMessages();
       _scrollToBottom();
@@ -1739,7 +1754,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       _isFavorite = !_isFavorite;
     });
     try {
-      await widget.apiClient.setFavorite(widget.chat.chatId, _isFavorite);
+      await widget.apiClient.setFavoriteDialog(widget.chat.dialogId, _isFavorite);
       if (!mounted) {
         return;
       }
@@ -2977,7 +2992,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                 const SizedBox(height: 8),
               ],
               Text(
-                'Избранных диалогов: ${profile.favoriteChatIds.length}',
+                'Избранных диалогов: ${profile.favoriteDialogIds.length}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -3276,6 +3291,7 @@ int? _parseIntValue(dynamic value) {
 class ChatSummary {
   ChatSummary({
     required this.chatId,
+    required this.dialogId,
     required this.title,
     required this.username,
     required this.type,
@@ -3287,6 +3303,7 @@ class ChatSummary {
   });
 
   final int chatId;
+  final int dialogId;
   final String title;
   final String? username;
   final String type;
@@ -3301,6 +3318,7 @@ class ChatSummary {
   ChatSummary copyWith({bool? isFavorite}) {
     return ChatSummary(
       chatId: chatId,
+      dialogId: dialogId,
       title: title,
       username: username,
       type: type,
@@ -3314,12 +3332,14 @@ class ChatSummary {
 
   factory ChatSummary.fromJson(Map<String, dynamic> json) {
     final chatId = _parseIntValue(json['chat_id']) ?? 0;
+    final dialogId = _parseIntValue(json['dialog_id']) ?? chatId;
     final updatedAtRaw = json['updated_at'] as String?;
     final updatedAt = updatedAtRaw != null
         ? DateTime.tryParse(updatedAtRaw) ?? DateTime.now().toUtc()
         : DateTime.now().toUtc();
     return ChatSummary(
       chatId: chatId,
+      dialogId: dialogId,
       title: json['title'] as String? ?? 'Диалог',
       username: json['username'] as String?,
       type: json['type'] as String? ?? 'unknown',
@@ -3453,10 +3473,10 @@ class UserProfile {
     required this.role,
     required List<String> sections,
     required List<String> bins,
-    required Set<int> favoriteChatIds,
+    required Set<int> favoriteDialogIds,
   })  : sections = List.unmodifiable(sections),
         bins = List.unmodifiable(bins),
-        favoriteChatIds = Set<int>.unmodifiable(favoriteChatIds);
+        favoriteDialogIds = Set<int>.unmodifiable(favoriteDialogIds);
 
   final int id;
   final String name;
@@ -3469,7 +3489,7 @@ class UserProfile {
   final String role;
   final List<String> sections;
   final List<String> bins;
-  final Set<int> favoriteChatIds;
+  final Set<int> favoriteDialogIds;
 
   bool get canReply => role == 'admin' || role == 'moderator';
   bool get isAdmin => role == 'admin';
@@ -3503,7 +3523,7 @@ class UserProfile {
     String? role,
     List<String>? sections,
     List<String>? bins,
-    Set<int>? favoriteChatIds,
+    Set<int>? favoriteDialogIds,
   }) {
     return UserProfile(
       id: id,
@@ -3517,7 +3537,7 @@ class UserProfile {
       role: role ?? this.role,
       sections: sections ?? this.sections,
       bins: bins ?? this.bins,
-      favoriteChatIds: favoriteChatIds ?? this.favoriteChatIds,
+      favoriteDialogIds: favoriteDialogIds ?? this.favoriteDialogIds,
     );
   }
 
@@ -3534,7 +3554,7 @@ class UserProfile {
       'role': role,
       'sections': sections,
       'bins': bins,
-      'favorite_chat_ids': favoriteChatIds.toList(),
+      'favorite_dialog_ids': favoriteDialogIds.toList(),
     };
   }
 
@@ -3545,7 +3565,8 @@ class UserProfile {
     final binList = (json['bins'] as List<dynamic>? ?? [])
         .map((item) => item.toString())
         .toList();
-    final favorites = (json['favorite_chat_ids'] as List<dynamic>? ?? [])
+    final rawFavorites = json['favorite_dialog_ids'] ?? json['favorite_chat_ids'];
+    final favorites = (rawFavorites as List<dynamic>? ?? [])
         .map((item) => item is int ? item : int.tryParse(item.toString()) ?? 0)
         .where((value) => value > 0)
         .toSet();
@@ -3561,7 +3582,7 @@ class UserProfile {
       role: json['role'] as String? ?? 'viewer',
       sections: sectionList,
       bins: binList,
-      favoriteChatIds: favorites,
+      favoriteDialogIds: favorites,
     );
   }
 }

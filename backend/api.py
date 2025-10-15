@@ -62,7 +62,7 @@ class UserResponse(BaseModel):
     role: str
     sections: List[str] = []
     bins: List[str] = []
-    favorite_chat_ids: List[int] = []
+    favorite_dialog_ids: List[int] = []
 
 
 class AuthResponse(BaseModel):
@@ -156,7 +156,7 @@ def require_admin(current_user: Dict[str, object] = Depends(get_current_user)) -
 def _sanitize_user(user: Dict[str, object]) -> Dict[str, object]:
     user_id = user["id"]
     sections = user.get("sections") or database.get_user_sections(user_id)
-    favorites = database.list_favorite_chat_ids(user_id)
+    favorites = database.list_favorite_dialog_ids(user_id)
     bins = user.get("bins") or database.get_user_bins(user_id)
     return {
         "id": user_id,
@@ -170,7 +170,7 @@ def _sanitize_user(user: Dict[str, object]) -> Dict[str, object]:
         "role": user.get("role", database.ROLE_VIEWER),
         "sections": sections,
         "bins": bins,
-        "favorite_chat_ids": favorites,
+        "favorite_dialog_ids": favorites,
     }
 
 
@@ -531,25 +531,35 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
     }
 
 
-@router.post("/chats/{chat_id}/favorite")
-def mark_chat_favorite(
-    chat_id: int,
+@router.post("/dialogs/{dialog_id}/favorite")
+def mark_dialog_favorite(
+    dialog_id: int,
     current_user: Dict[str, object] = Depends(get_current_user),
 ):
-    if not database.user_can_access_chat(current_user["id"], current_user["role"], chat_id):
+    dialog = database.get_chat_dialog(dialog_id)
+    if dialog is None:
+        raise HTTPException(status_code=404, detail="Диалог не найден")
+    if not database.user_can_access_chat(
+        current_user["id"], current_user["role"], dialog["chat_id"], dialog_id
+    ):
         raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
-    database.set_favorite_chat(current_user["id"], chat_id, True)
+    database.set_favorite_dialog(current_user["id"], dialog_id, True)
     return {"status": "ok"}
 
 
-@router.delete("/chats/{chat_id}/favorite")
-def unmark_chat_favorite(
-    chat_id: int,
+@router.delete("/dialogs/{dialog_id}/favorite")
+def unmark_dialog_favorite(
+    dialog_id: int,
     current_user: Dict[str, object] = Depends(get_current_user),
 ):
-    if not database.user_can_access_chat(current_user["id"], current_user["role"], chat_id):
+    dialog = database.get_chat_dialog(dialog_id)
+    if dialog is None:
+        raise HTTPException(status_code=404, detail="Диалог не найден")
+    if not database.user_can_access_chat(
+        current_user["id"], current_user["role"], dialog["chat_id"], dialog_id
+    ):
         raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
-    database.set_favorite_chat(current_user["id"], chat_id, False)
+    database.set_favorite_dialog(current_user["id"], dialog_id, False)
     return {"status": "ok"}
 
 

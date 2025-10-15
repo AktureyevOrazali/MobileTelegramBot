@@ -27,7 +27,7 @@ export function mapUserProfile(raw: UserProfileRaw): UserProfile {
     role,
     sections: raw.sections ?? [],
     bins: raw.bins ?? [],
-    favoriteChatIds: raw.favorite_chat_ids ?? [],
+    favoriteDialogIds: raw.favorite_dialog_ids ?? [],
     isAdmin,
     canReply,
   };
@@ -43,7 +43,7 @@ export function mapSession(raw: AuthSessionRaw): AuthSession {
 export function mapChatSummary(raw: ChatSummaryRaw): ChatSummary {
   return {
     chatId: raw.chat_id,
-    dialogId: raw.dialog_id,
+    dialogId: raw.dialog_id ?? raw.chat_id,
     title: raw.title,
     username: raw.username ?? null,
     type: raw.type,

@@ -61,6 +61,34 @@ input, textarea, select { font-family: inherit; }
   background-color: rgba(62, 90, 168, 0.12); color: #253263; font-size: 0.82rem; gap: 8px;
 }
 
+.dialog-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.status-badge--open {
+  background: rgba(46, 164, 79, 0.16);
+  color: #1b7f2b;
+}
+
+.status-badge--closed {
+  background: rgba(220, 53, 69, 0.16);
+  color: #b42318;
+}
+
 .tab-bar { display: flex; gap: 12px; padding: 16px; justify-content: center; }
 .tab-button { padding: 12px 24px; border-radius: 999px; border: none; background-color: rgba(37, 50, 99, 0.1); color: #253263; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease, transform 0.2s ease; }
 .tab-button.active { background-color: #3e5aa8; color: #fff; transform: translateY(-1px); }

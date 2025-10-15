@@ -2000,7 +2000,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 FilledButton.icon(
                   onPressed: canSend && !_deleting ? _sendMessage : null,
                   icon: const Icon(Icons.send),
-                  label: const Text('Отправить'),
+                  label: const Text(''),
                 ),
               ],
             ),

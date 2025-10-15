@@ -39,6 +39,9 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
 
   const currentUser = apiClient.currentUser;
   const canReply = Boolean(currentUser?.canReply);
+  const isClosed = Boolean(chat.dialogClosedAt);
+  const statusLabel = isClosed ? 'Закрыт' : 'Открыт';
+  const statusClassName = `status-badge ${isClosed ? 'status-badge--closed' : 'status-badge--open'}`;
 
   const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollRef.current;
@@ -134,15 +137,17 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
         <div className="modal__header-row">
           <div>
             <h2 className="heading" style={{ marginBottom: 6 }}>{chat.title}</h2>
-            <div className="text-muted" style={{ fontSize: '0.9rem' }}>
-              {chat.username ? `@${chat.username}` : chat.type}
+            <div className="dialog-status-row">
+              <span className="text-muted" style={{ fontSize: '0.9rem' }}>
+                {chat.username ? `@${chat.username}` : chat.type}
+              </span>
+              <span className={statusClassName}>{statusLabel}</span>
             </div>
             <div className="dialog-meta" style={{ marginTop: 12 }}>
               {chat.sectionTitle && <span className="chip">Раздел: {chat.sectionTitle}</span>}
               {chat.bin && <span className="chip">БИН: {chat.bin}</span>}
               <span className="chip">Начат: {formatDateTime(chat.dialogStartedAt)}</span>
               <span className="chip">Обновлён: {formatDateTime(chat.updatedAt)}</span>
-              {chat.dialogClosedAt && <span className="chip">Закрыт: {formatDateTime(chat.dialogClosedAt)}</span>}
             </div>
           </div>
         </div>
@@ -489,8 +494,13 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                     title={chat.isFavorite ? "Убрать из избранного" : "В избранное"}
                   />
                 </div>
-                <div className="text-muted" style={{ marginTop: 4 }}>
-                  {chat.username ? `@${chat.username}` : chat.type}
+                <div className="dialog-status-row" style={{ marginTop: 4 }}>
+                  <span className="text-muted">
+                    {chat.username ? `@${chat.username}` : chat.type}
+                  </span>
+                  <span className={`status-badge ${chat.dialogClosedAt ? 'status-badge--closed' : 'status-badge--open'}`}>
+                    {chat.dialogClosedAt ? 'Закрыт' : 'Открыт'}
+                  </span>
                 </div>
                 <div className="flex-gap" style={{ marginTop: 8 }}>
                   {chat.sectionTitle && <span className="chip">{chat.sectionTitle}</span>}

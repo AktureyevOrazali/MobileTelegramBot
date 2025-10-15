@@ -853,7 +853,7 @@ def list_favorite_dialog_ids(user_id: int) -> List[int]:
             "SELECT dialog_id FROM favorites WHERE user_id = ? ORDER BY created_at DESC",
             (user_id,),
         ).fetchall()
-    return [row["chat_id"] for row in rows]
+    return [int(row["dialog_id"]) for row in rows]
 
 
 def set_favorite_dialog(user_id: int, dialog_id: int, favorite: bool) -> None:

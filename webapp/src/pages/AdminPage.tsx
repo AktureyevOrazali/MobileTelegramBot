@@ -229,69 +229,59 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   }, [successMessage]);
 
   return (
-    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(280px, 1fr) minmax(220px, 260px)',
-          gap: 24,
-          alignItems: 'start',
-        }}
-      >
-        <div>
-          <h3 style={{ margin: 0 }}>{user.name}</h3>
-          <p className="text-muted" style={{ margin: '4px 0' }}>
-            {user.email} · {user.login}
-          </p>
-          <p className="text-muted" style={{ margin: '4px 0', fontSize: '0.85rem' }}>
-            Аккаунт создан: {formatDateTime(user.createdAt)}
-          </p>
+    <div className="card admin-user-card">
+      <div className="admin-user-card__grid">
+        <div className="admin-user-card__cell">
+          <div>
+            <h3>{user.name}</h3>
+            <p className="text-muted" style={{ margin: '4px 0' }}>
+              {user.email} · {user.login}
+            </p>
+            <p className="text-muted" style={{ margin: '4px 0', fontSize: '0.85rem' }}>
+              Аккаунт создан: {formatDateTime(user.createdAt)}
+            </p>
+          </div>
           <div className="flex-gap" style={{ marginTop: 8 }}>
-            <span className="chip">Текущая роль: {roleLabels[user.role] ?? user.role}</span>
-            <span className="chip">Назначено разделов: {sectionIds.size}</span>
-            <span className="chip">Назначено БИНов: {assignedBins.length}</span>
+            <span className="chip">Роль: {roleLabels[user.role] ?? user.role}</span>
+            <span className="chip">Разделов: {sectionIds.size}</span>
+            <span className="chip">БИНов: {assignedBins.length}</span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="admin-user-card__cell">
           <div>
-            <div className="label" style={{ fontWeight: 700 }}>Роль</div>
+            <h4>Роль</h4>
             <SelectPill
               label=""
               showLabelInside={false}
               options={roleOptions}
               value={selectedRole}
               onChange={(v) => setSelectedRole(v)}
-              style={{ minWidth: 220 }}
+              style={{ minWidth: 0 }}
             />
           </div>
           {savingRole && <div className="text-muted" style={{ fontSize: 12 }}>Сохраняем…</div>}
-          {canDeleteUser && (
-            <button className="button danger" type="button" onClick={() => onDeleteRequest(user)}>
-              Удалить аккаунт
-            </button>
-          )}
         </div>
-      </div>
 
-      <div className="assignment-grid">
-        <div>
-          <h4 style={{ marginBottom: 8 }}>Назначенные БИНы</h4>
-          <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
-            {assignedBins.length === 0 && <span className="text-muted">Нет назначенных БИНов</span>}
-            {assignedBins.map((b) => (
-              <span key={b} className="chip bin-chip">
-                {b}
-                <button
-                  className="chip-x"
-                  type="button"
-                  aria-label={`Удалить БИН ${b}`}
-                  onClick={() => removeBin(b)}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
+        <div className="admin-user-card__cell">
+          <div>
+            <h4>Назначенные БИНы</h4>
+            <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+              {assignedBins.length === 0 && <span className="text-muted">Нет назначенных БИНов</span>}
+              {assignedBins.map((b) => (
+                <span key={b} className="chip bin-chip">
+                  {b}
+                  <button
+                    className="chip-x"
+                    type="button"
+                    aria-label={`Удалить БИН ${b}`}
+                    onClick={() => removeBin(b)}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div className="label" style={{ fontWeight: 700 }}>Добавить БИН</div>
@@ -305,36 +295,36 @@ const AdminUserCard: React.FC<UserCardProps> = ({
                 if (v) addBin(v);
               }}
               searchable
-              style={{ minWidth: 240 }}
+              style={{ minWidth: 0 }}
             />
           </div>
-          {savingBins && (
-            <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>
-          )}
+          {savingBins && <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>}
         </div>
 
-        <div>
-          <h4 style={{ marginBottom: 8 }}>Назначенные разделы</h4>
-          <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
-            {assignedSections.length === 0 && (
-              <span className="text-muted">Нет назначенных разделов</span>
-            )}
-            {assignedSections.map((section) => {
-              const label = section.title || section.id;
-              return (
-                <span key={section.id} className="chip bin-chip">
-                  {label}
-                  <button
-                    className="chip-x"
-                    type="button"
-                    aria-label={`Удалить раздел ${label}`}
-                    onClick={() => removeSection(section.id)}
-                  >
-                    ×
-                  </button>
-                </span>
-              );
-            })}
+        <div className="admin-user-card__cell">
+          <div>
+            <h4>Назначенные разделы</h4>
+            <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+              {assignedSections.length === 0 && (
+                <span className="text-muted">Нет назначенных разделов</span>
+              )}
+              {assignedSections.map((section) => {
+                const label = section.title || section.id;
+                return (
+                  <span key={section.id} className="chip bin-chip">
+                    {label}
+                    <button
+                      className="chip-x"
+                      type="button"
+                      aria-label={`Удалить раздел ${label}`}
+                      onClick={() => removeSection(section.id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div className="label" style={{ fontWeight: 700 }}>Добавить раздел</div>
@@ -348,29 +338,36 @@ const AdminUserCard: React.FC<UserCardProps> = ({
                 if (v) addSection(v);
               }}
               searchable
-              style={{ minWidth: 240 }}
+              style={{ minWidth: 0 }}
             />
           </div>
-          {savingSections && (
-            <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>
-          )}
+          {savingSections && <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>}
         </div>
       </div>
 
-      {/* Сброс пароля */}
-      <div>
-        <h4 style={{ marginBottom: 8 }}>Сброс пароля</h4>
+       {(error || successMessage) && (
+        <div className="admin-user-card__status">
+          {error && <div className="alert">{error}</div>}
+          {successMessage && <div className="badge">{successMessage}</div>}
+        </div>
+      )}
+
+      <div className="admin-user-card__footer">
         <button
           className="button secondary"
           type="button"
           onClick={() => { setPwd1(''); setPwd2(''); setPwdErr(null); setPwdOpen(true); }}
         >
-          Сбросить
+          Сбросить пароль
         </button>
+        <div className="admin-user-card__footer-actions">
+          {canDeleteUser && (
+            <button className="button danger" type="button" onClick={() => onDeleteRequest(user)}>
+              Удалить аккаунт
+            </button>
+          )}
+        </div>
       </div>
-
-      {error && <div className="alert">{error}</div>}
-      {successMessage && <div className="badge">{successMessage}</div>}
 
       {/* Модалка пароля */}
       <Modal open={pwdOpen} onClose={() => setPwdOpen(false)}>

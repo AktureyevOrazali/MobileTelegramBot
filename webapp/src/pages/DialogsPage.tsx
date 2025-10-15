@@ -17,9 +17,6 @@ interface ChatDetailModalProps {
   apiClient: ApiClient;
   chat: ChatSummary;
   onClose: () => void;
-  onChatUpdated: (chat: ChatSummary) => void;
-  canDeleteDialog: boolean;
-  onDeleteRequest: (chat: ChatSummary) => void;
 }
 
 /* -------------------- Modal -------------------- */
@@ -27,9 +24,6 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   apiClient,
   chat,
   onClose,
-  onChatUpdated,
-  canDeleteDialog,
-  onDeleteRequest,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -128,17 +122,6 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
     }
   };
 
-  const toggleFavorite = async () => {
-    const nextValue = !chat.isFavorite;
-    try {
-      await apiClient.setFavorite(chat.dialogId, nextValue);
-      onChatUpdated({ ...chat, isFavorite: nextValue });
-    } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      else if (err instanceof Error) setError(err.message);
-    }
-  };
-
   return (
     <Modal open onClose={onClose} className="modal--dialog">
       <div className="modal__content">
@@ -161,14 +144,6 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
               <span className="chip">Обновлён: {formatDateTime(chat.updatedAt)}</span>
               {chat.dialogClosedAt && <span className="chip">Закрыт: {formatDateTime(chat.dialogClosedAt)}</span>}
             </div>
-          </div>
-
-          <div className="flex-gap" style={{ alignItems: 'center' }}>
-            <StarButton
-              active={Boolean(chat.isFavorite)}
-              onToggle={toggleFavorite}
-              title={chat.isFavorite ? "Убрать из избранного" : "В избранное"}
-            />
           </div>
         </div>
 
@@ -327,6 +302,13 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     return () => clearInterval(timer);
   }, [apiClient, updatesCursor, loadSectionsAndChats]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      loadSectionsAndChats(false);
+    }, 15000);
+    return () => window.clearInterval(interval);
+  }, [loadSectionsAndChats]);
+
   const handleUpdates = (updates: MessageNotification[]) => {
     const messages = updates
       .filter((update) => update.type === 'message' && update.chatTitle)
@@ -460,13 +442,28 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                   <h3 style={{ margin: 0 }}>{chat.title}</h3>
                   <StarButton
                     active={Boolean(chat.isFavorite)}
-                    onToggle={() =>
-                      apiClient.setFavorite(chat.dialogId, !chat.isFavorite).then(() => {
+                    onToggle={async () => {
+                      const next = !chat.isFavorite;
+                      try {
+                        await apiClient.setFavorite(chat.dialogId, next);
                         setChats((prev) =>
-                          prev.map((item) => (item.chatId === chat.chatId ? { ...item, isFavorite: !item.isFavorite } : item)),
+                          prev.map((item) =>
+                            item.dialogId === chat.dialogId ? { ...item, isFavorite: next } : item,
+                          ),
                         );
-                      })
-                    }
+                        setActiveChat((prev) =>
+                          prev && prev.dialogId === chat.dialogId ? { ...prev, isFavorite: next } : prev,
+                        );
+                      } catch (err) {
+                        const message =
+                          err instanceof ApiError
+                            ? err.message
+                            : err instanceof Error
+                            ? err.message
+                            : 'Не удалось обновить избранное.';
+                        setBanner(`Ошибка: ${message}`);
+                      }
+                    }}
                     title={chat.isFavorite ? "Убрать из избранного" : "В избранное"}
                   />
                 </div>
@@ -500,14 +497,6 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           apiClient={apiClient}
           chat={activeChat}
           onClose={() => setActiveChat(null)}
-          onChatUpdated={(updated) => {
-            setChats((prev) =>
-              prev.map((item) => (item.dialogId === updated.dialogId ? updated : item)),
-            );
-            setActiveChat((prev) => (prev && prev.dialogId === updated.dialogId ? updated : prev));
-          }}
-          canDeleteDialog={canDeleteDialog}
-          onDeleteRequest={(chat) => setDialogToDelete(chat)}
         />
       )}
 

@@ -3,6 +3,8 @@ import {
   AuthSessionRaw,
   ChatSummary,
   ChatSummaryRaw,
+  DashboardSummary,
+  DashboardSummaryRaw,
   Message,
   MessageNotification,
   MessageNotificationRaw,
@@ -12,7 +14,14 @@ import {
   UserProfile,
   UserProfileRaw,
 } from '../types';
-import { mapChatSummary, mapMessage, mapNotification, mapSession, mapUserProfile } from '../utils/converters';
+import {
+  mapChatSummary,
+  mapDashboardSummary,
+  mapMessage,
+  mapNotification,
+  mapSession,
+  mapUserProfile,
+} from '../utils/converters';
 
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -296,6 +305,13 @@ export class ApiClient {
       query: { limit, dialog_id: dialogId },
     });
     return response.map(mapMessage);
+  }
+
+  async fetchDashboardSummary(): Promise<DashboardSummary> {
+    const response = await this.request<DashboardSummaryRaw>('analytics/dashboard', {
+      method: 'GET',
+    });
+    return mapDashboardSummary(response);
   }
 
   async sendMessage(chatId: number, text: string, dialogId?: number): Promise<void> {

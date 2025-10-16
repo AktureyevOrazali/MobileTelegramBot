@@ -6,7 +6,7 @@ import json
 import sqlite3
 import threading
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -305,6 +305,20 @@ def _ensure_favorites_schema() -> None:
 
 
 _init_db()
+
+
+def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
 
 
 def _fetch_user(where_clause: str, *params: object) -> dict | None:
@@ -1316,6 +1330,161 @@ def list_faq(section: str | None = None) -> List[dict]:
     if section:
         return [entry for entry in FAQ_ENTRIES if entry["section"] == section]
     return list(FAQ_ENTRIES)
+
+
+def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
+    now = datetime.utcnow()
+    span = max(days, 1)
+    start_date = now.date() - timedelta(days=span - 1)
+    start_iso = start_date.isoformat()
+
+    with _lock, _connection:
+        total_dialogs = _connection.execute(
+            "SELECT COUNT(*) AS total FROM chat_dialogs",
+        ).fetchone()["total"] or 0
+        open_dialogs = _connection.execute(
+            "SELECT COUNT(*) AS total FROM chat_dialogs WHERE ended_at IS NULL",
+        ).fetchone()["total"] or 0
+        total_incoming = _connection.execute(
+            "SELECT COUNT(*) AS total FROM messages WHERE direction = 'incoming'",
+        ).fetchone()["total"] or 0
+        total_outgoing = _connection.execute(
+            "SELECT COUNT(*) AS total FROM messages WHERE direction = 'outgoing'",
+        ).fetchone()["total"] or 0
+        total_messages = total_incoming + total_outgoing
+        total_chats = _connection.execute(
+            "SELECT COUNT(DISTINCT chat_id) AS total FROM chat_dialogs",
+        ).fetchone()["total"] or 0
+        section_rows = _connection.execute(
+            """
+            SELECT COALESCE(c.section, '') AS section_id, COUNT(*) AS dialog_count
+            FROM chat_dialogs cd
+            LEFT JOIN chats c ON c.chat_id = cd.chat_id
+            GROUP BY COALESCE(c.section, '')
+            ORDER BY dialog_count DESC
+            """
+        ).fetchall()
+        duration_rows = _connection.execute(
+            "SELECT started_at, ended_at FROM chat_dialogs WHERE started_at IS NOT NULL AND ended_at IS NOT NULL",
+        ).fetchall()
+        dialogs_by_day_rows = _connection.execute(
+            """
+            SELECT substr(started_at, 1, 10) AS day, COUNT(*) AS cnt
+            FROM chat_dialogs
+            WHERE started_at IS NOT NULL AND started_at >= ?
+            GROUP BY substr(started_at, 1, 10)
+            ORDER BY day ASC
+            """,
+            (start_iso,),
+        ).fetchall()
+        incoming_by_day_rows = _connection.execute(
+            """
+            SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS cnt
+            FROM messages
+            WHERE created_at >= ? AND direction = 'incoming'
+            GROUP BY substr(created_at, 1, 10)
+            ORDER BY day ASC
+            """,
+            (start_iso,),
+        ).fetchall()
+        question_rows = _connection.execute(
+            """
+            SELECT text, created_at
+            FROM messages
+            WHERE direction = 'incoming' AND text IS NOT NULL AND TRIM(text) != ''
+            """
+        ).fetchall()
+
+    closed_dialogs = max(total_dialogs - open_dialogs, 0)
+    average_messages_per_dialog = (
+        total_messages / total_dialogs if total_dialogs else 0.0
+    )
+
+    durations: List[float] = []
+    for row in duration_rows:
+        started_at = _parse_datetime(row["started_at"])
+        ended_at = _parse_datetime(row["ended_at"])
+        if started_at and ended_at and ended_at > started_at:
+            durations.append((ended_at - started_at).total_seconds())
+    avg_dialog_duration_minutes: Optional[float]
+    if durations:
+        avg_dialog_duration_minutes = sum(durations) / len(durations) / 60.0
+    else:
+        avg_dialog_duration_minutes = None
+
+    section_map = {section["id"]: section["title"] for section in SECTIONS}
+    section_breakdown: List[dict] = []
+    for row in section_rows:
+        section_id = row["section_id"] or None
+        dialogs = row["dialog_count"] or 0
+        if not dialogs:
+            continue
+        title = section_map.get(section_id or "", section_id or "Без раздела")
+        percentage = (dialogs / total_dialogs * 100.0) if total_dialogs else 0.0
+        section_breakdown.append(
+            {
+                "section": section_id,
+                "title": title,
+                "dialogs": dialogs,
+                "percentage": percentage,
+            }
+        )
+
+    dialogs_by_day = {row["day"]: row["cnt"] for row in dialogs_by_day_rows}
+    incoming_by_day = {row["day"]: row["cnt"] for row in incoming_by_day_rows}
+    recent_activity: List[dict] = []
+    for offset in range(span):
+        day = start_date + timedelta(days=offset)
+        day_key = day.isoformat()
+        recent_activity.append(
+            {
+                "date": day_key,
+                "dialogs": int(dialogs_by_day.get(day_key, 0)),
+                "incoming_messages": int(incoming_by_day.get(day_key, 0)),
+            }
+        )
+
+    question_stats: Dict[str, dict] = {}
+    for row in question_rows:
+        text = (row["text"] or "").strip()
+        if not text:
+            continue
+        normalized = text.lower()
+        seen_at = _parse_datetime(row["created_at"])
+        entry = question_stats.get(normalized)
+        if entry is None:
+            entry = {"question": text, "count": 0, "last_seen": seen_at}
+            question_stats[normalized] = entry
+        entry["count"] += 1
+        if seen_at and (entry["last_seen"] is None or seen_at > entry["last_seen"]):
+            entry["last_seen"] = seen_at
+        if len(text) < len(entry["question"]):
+            entry["question"] = text
+
+    sorted_questions = sorted(
+        question_stats.values(),
+        key=lambda item: (-item["count"], item["last_seen"] or datetime.min),
+    )
+    top_questions = [
+        {"question": item["question"], "count": int(item["count"])}
+        for item in sorted_questions[: max(questions_limit, 0)]
+    ]
+
+    return {
+        "total_dialogs": int(total_dialogs),
+        "open_dialogs": int(open_dialogs),
+        "closed_dialogs": int(closed_dialogs),
+        "total_chats": int(total_chats),
+        "total_messages": int(total_messages),
+        "total_incoming_messages": int(total_incoming),
+        "total_outgoing_messages": int(total_outgoing),
+        "average_messages_per_dialog": average_messages_per_dialog,
+        "avg_dialog_duration_minutes": avg_dialog_duration_minutes,
+        "section_breakdown": section_breakdown,
+        "top_questions": top_questions,
+        "recent_activity": recent_activity,
+        "updated_at": now.isoformat(),
+    }
 
 
 def user_can_access_chat(

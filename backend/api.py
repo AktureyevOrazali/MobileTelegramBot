@@ -130,6 +130,40 @@ class NotificationResponse(BaseModel):
     dialog_id: int | None = None
 
 
+class DashboardSectionStat(BaseModel):
+    section: Optional[str] = None
+    title: str
+    dialogs: int
+    percentage: float
+
+
+class DashboardTopQuestion(BaseModel):
+    question: str
+    count: int
+
+
+class DashboardActivityPoint(BaseModel):
+    date: str
+    dialogs: int
+    incoming_messages: int
+
+
+class DashboardSummaryResponse(BaseModel):
+    total_dialogs: int
+    open_dialogs: int
+    closed_dialogs: int
+    total_chats: int
+    total_messages: int
+    total_incoming_messages: int
+    total_outgoing_messages: int
+    average_messages_per_dialog: float
+    avg_dialog_duration_minutes: float | None = None
+    section_breakdown: List[DashboardSectionStat]
+    top_questions: List[DashboardTopQuestion]
+    recent_activity: List[DashboardActivityPoint]
+    updated_at: str
+
+
 def require_api_token(x_api_token: str | None = Header(default=None, alias="X-Api-Token")) -> None:
     if API_TOKEN and x_api_token != API_TOKEN:
         raise HTTPException(status_code=403, detail="Invalid API token")
@@ -388,6 +422,12 @@ def list_bins_endpoint(
 @router.get("/faq")
 def list_faq(_: Dict[str, object] = Depends(get_current_user)):
     return database.list_faq()
+
+
+@router.get("/analytics/dashboard", response_model=DashboardSummaryResponse)
+def dashboard_summary(_: Dict[str, object] = Depends(require_admin)):
+    summary = database.get_dashboard_summary()
+    return DashboardSummaryResponse(**summary)
 
 
 @router.get("/chats", response_model=List[ChatResponse])

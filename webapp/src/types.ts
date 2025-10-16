@@ -126,4 +126,72 @@ export interface MessageNotification {
   sectionTitle?: string | null;
   bin?: string | null;
   dialogId?: number | null;
+  }
+
+export interface DashboardSectionStatRaw {
+  section: string | null;
+  title: string;
+  dialogs: number;
+  percentage: number;
+}
+
+export interface DashboardTopQuestionRaw {
+  question: string;
+  count: number;
+}
+
+export interface DashboardActivityPointRaw {
+  date: string;
+  dialogs: number;
+  incoming_messages: number;
+}
+
+export interface DashboardSummaryRaw {
+  total_dialogs: number;
+  open_dialogs: number;
+  closed_dialogs: number;
+  total_chats: number;
+  total_messages: number;
+  total_incoming_messages: number;
+  total_outgoing_messages: number;
+  average_messages_per_dialog: number;
+  avg_dialog_duration_minutes: number | null;
+  section_breakdown: DashboardSectionStatRaw[];
+  top_questions: DashboardTopQuestionRaw[];
+  recent_activity: DashboardActivityPointRaw[];
+  updated_at: string;
+}
+
+export interface DashboardSectionStat {
+  section: string | null;
+  title: string;
+  dialogs: number;
+  percentage: number;
+}
+
+export interface DashboardTopQuestion {
+  question: string;
+  count: number;
+}
+
+export interface DashboardActivityPoint {
+  date: string;
+  dialogs: number;
+  incomingMessages: number;
+}
+
+export interface DashboardSummary {
+  totalDialogs: number;
+  openDialogs: number;
+  closedDialogs: number;
+  totalChats: number;
+  totalMessages: number;
+  totalIncomingMessages: number;
+  totalOutgoingMessages: number;
+  averageMessagesPerDialog: number;
+  avgDialogDurationMinutes: number | null;
+  sectionBreakdown: DashboardSectionStat[];
+  topQuestions: DashboardTopQuestion[];
+  recentActivity: DashboardActivityPoint[];
+  updatedAt: Date;
 }

@@ -224,6 +224,8 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [selectedBin, setSelectedBin] = useState<string | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
 
   const [banner, setBanner] = useState<string | null>(null);
   const [activeChat, setActiveChat] = useState<ChatSummary | null>(null);
@@ -358,6 +360,21 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     () => [{ value: "", label: "Все БИНы" }, ...bins.map(b => ({ value: b, label: b }))],
     [bins]
   );
+  const sortOptions = useMemo(
+    () => [
+      { value: 'desc', label: 'Сначала новые' },
+      { value: 'asc', label: 'Сначала старые' },
+    ],
+    [],
+  );
+  const statusOptions = useMemo(
+    () => [
+      { value: 'all', label: 'Все диалоги' },
+      { value: 'open', label: 'Только открытые' },
+      { value: 'closed', label: 'Только закрытые' },
+    ],
+    [],
+  );
 
   useEffect(() => {
     loadSectionsAndChats(true, { bin: selectedBin, favoritesOnly: showFavoritesOnly });
@@ -366,13 +383,31 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
 
   const filteredChats = useMemo(() => {
     let list = chats;
-    if (selectedSection) list = list.filter((chat) => chat.section === selectedSection);
+    if (selectedSection) {
+      list = list.filter((chat) => chat.section === selectedSection);
+    }
     if (showFavoritesOnly) {
       const favorites = new Set(apiClient.currentUser?.favoriteDialogIds ?? []);
       list = list.filter((chat) => favorites.has(chat.dialogId));
     }
-    return list.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-  }, [apiClient.currentUser?.favoriteDialogIds, chats, selectedSection, showFavoritesOnly]);
+    if (statusFilter === 'open') {
+      list = list.filter((chat) => !chat.dialogClosedAt);
+    } else if (statusFilter === 'closed') {
+      list = list.filter((chat) => Boolean(chat.dialogClosedAt));
+    }
+    const sorted = [...list].sort((a, b) => {
+      const diff = a.updatedAt.getTime() - b.updatedAt.getTime();
+      return sortOrder === 'asc' ? diff : -diff;
+    });
+    return sorted;
+  }, [
+    apiClient.currentUser?.favoriteDialogIds,
+    chats,
+    selectedSection,
+    showFavoritesOnly,
+    sortOrder,
+    statusFilter,
+  ]);
 
   useEffect(() => {
     if (!activeChat) return;
@@ -431,6 +466,18 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
             value={selectedBin ?? ""}
             onChange={(v) => setSelectedBin(v || null)}
             searchable
+          />
+          <SelectPill
+            label="Сортировка"
+            options={sortOptions}
+            value={sortOrder}
+            onChange={(v) => setSortOrder((v as 'asc' | 'desc') || 'desc')}
+          />
+          <SelectPill
+            label="Статус"
+            options={statusOptions}
+            value={statusFilter}
+            onChange={(v) => setStatusFilter((v as 'all' | 'open' | 'closed') || 'all')}
           />
           <label className="check-pill">
             <input

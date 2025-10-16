@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AuthPage from './pages/AuthPage';
 import DialogsPage from './pages/DialogsPage';
+import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
 import ProfilePage from './pages/ProfilePage';
 import { useApi } from './context/ApiContext';
 
-const tabs = ['dialogs', 'admin', 'profile'] as const;
+const tabs = ['dialogs', 'dashboard', 'admin', 'profile'] as const;
 type TabKey = (typeof tabs)[number];
 
 const App: React.FC = () => {
@@ -15,7 +16,10 @@ const App: React.FC = () => {
   const currentUser = session?.user ?? null;
   const navigationTabs = useMemo(() => {
     if (!currentUser) return [] as TabKey[];
-    return currentUser.isAdmin ? (['dialogs', 'admin'] as TabKey[]) : (['dialogs'] as TabKey[]);
+    if (currentUser.isAdmin) {
+      return ['dialogs', 'dashboard', 'admin'] as TabKey[];
+    }
+    return ['dialogs'] as TabKey[];
   }, [currentUser]);
 
   useEffect(() => {
@@ -72,6 +76,7 @@ const App: React.FC = () => {
               type="button"
             >
               {tab === 'dialogs' && 'Диалоги'}
+              {tab === 'dashboard' && 'Дэшборд'}
               {tab === 'admin' && 'Администрирование'}
               {tab === 'profile' && 'Профиль'}
             </button>
@@ -81,6 +86,9 @@ const App: React.FC = () => {
 
       <main className="container" style={{ marginTop: 16 }}>
         {activeTab === 'dialogs' && session && <DialogsPage apiClient={apiClient} session={session} />}
+        {activeTab === 'dashboard' && session && currentUser?.isAdmin && (
+          <DashboardPage apiClient={apiClient} />
+        )}
         {activeTab === 'admin' && session && currentUser?.isAdmin && (
           <AdminPage apiClient={apiClient} currentUser={currentUser} />
         )}

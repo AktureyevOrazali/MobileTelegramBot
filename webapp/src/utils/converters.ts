@@ -3,6 +3,8 @@ import {
   AuthSessionRaw,
   ChatSummary,
   ChatSummaryRaw,
+  DashboardSummary,
+  DashboardSummaryRaw,
   Message,
   MessageNotification,
   MessageNotificationRaw,
@@ -82,5 +84,35 @@ export function mapNotification(raw: MessageNotificationRaw): MessageNotificatio
     sectionTitle: raw.section_title ?? null,
     bin: raw.bin ?? null,
     dialogId: raw.dialog_id ?? null,
+  };
+}
+
+export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary {
+  return {
+    totalDialogs: raw.total_dialogs,
+    openDialogs: raw.open_dialogs,
+    closedDialogs: raw.closed_dialogs,
+    totalChats: raw.total_chats,
+    totalMessages: raw.total_messages,
+    totalIncomingMessages: raw.total_incoming_messages,
+    totalOutgoingMessages: raw.total_outgoing_messages,
+    averageMessagesPerDialog: raw.average_messages_per_dialog,
+    avgDialogDurationMinutes: raw.avg_dialog_duration_minutes,
+    sectionBreakdown: raw.section_breakdown.map((item) => ({
+      section: item.section,
+      title: item.title,
+      dialogs: item.dialogs,
+      percentage: item.percentage,
+    })),
+    topQuestions: raw.top_questions.map((item) => ({
+      question: item.question,
+      count: item.count,
+    })),
+    recentActivity: raw.recent_activity.map((item) => ({
+      date: item.date,
+      dialogs: item.dialogs,
+      incomingMessages: item.incoming_messages,
+    })),
+    updatedAt: new Date(raw.updated_at),
   };
 }

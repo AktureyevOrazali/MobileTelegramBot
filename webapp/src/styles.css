@@ -202,7 +202,9 @@ input, textarea, select { font-family: inherit; }
 .badge{font-size:12px;padding:6px 10px;border-radius:999px;background:var(--brand-200);color:var(--brand);border:1px solid #dfe5ff}
 
 /* выравнивание фильтров */
-.controls-row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.controls-row{ display:flex; gap:12px; align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:4px; }
+.controls-row::-webkit-scrollbar{ height:6px; }
+.controls-row::-webkit-scrollbar-thumb{ background:rgba(62,90,168,0.25); border-radius:999px; }
 
 /* чекбокс-пилюля */
 .check-pill{
@@ -247,12 +249,12 @@ input, textarea, select { font-family: inherit; }
 
 /* dashboard */
 .dashboard-header{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-start; gap:16px; }
-.dashboard-stat-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px; }
-.stat-card{ background:rgba(62,90,168,0.08); border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:6px; }
+.dashboard-stat-grid{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:16px; }
+.stat-card{ background:rgba(62,90,168,0.08); border-radius:16px; padding:18px; display:flex; flex-direction:column; gap:8px; min-height:110px; }
 .stat-card__label{ font-size:0.85rem; font-weight:600; color:#3e4a7b; }
 .stat-card__value{ font-size:1.4rem; font-weight:700; color:#253263; }
-.dashboard-secondary-metrics{ display:flex; gap:24px; flex-wrap:wrap; }
-.dashboard-secondary-metrics > div{ background:rgba(62,90,168,0.06); border-radius:12px; padding:14px 18px; min-width:180px; display:flex; flex-direction:column; gap:4px; }
+.dashboard-secondary-metrics{ display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; }
+.dashboard-secondary-metrics > div{ background:rgba(62,90,168,0.06); border-radius:12px; padding:16px 18px; display:flex; flex-direction:column; gap:4px; min-height:96px; }
 .dashboard-columns{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:24px; }
 .section-progress-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:16px; }
 .section-progress-item__header{ display:flex; justify-content:space-between; align-items:center; font-weight:600; }
@@ -262,7 +264,23 @@ input, textarea, select { font-family: inherit; }
 .question-list__item{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; font-weight:600; color:#253263; }
 .question-list__item span:first-child{ flex:1; }
 .question-list__count{ color:#3e4a7b; font-variant-numeric:tabular-nums; }
+.question-badge{ display:inline-flex; align-items:center; justify-content:center; padding:2px 8px; border-radius:999px; background:rgba(62,90,168,0.14); color:#2f3e76; font-size:0.7rem; font-weight:700; margin-right:8px; }
+.questions-by-section{ display:flex; flex-direction:column; gap:12px; }
+.questions-by-section__header{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.questions-by-section__header h4{ margin:0; font-size:0.95rem; color:#253263; }
+.questions-by-section__grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }
+.questions-by-section__item{ background:rgba(62,90,168,0.06); border-radius:12px; padding:14px 16px; display:flex; flex-direction:column; gap:8px; }
+.questions-by-section__item ul{ margin:0; padding-left:16px; display:flex; flex-direction:column; gap:6px; }
+.questions-by-section__title{ font-weight:600; color:#253263; }
 .table--compact th, .table--compact td{ padding:10px 12px; }
+
+@media (max-width: 1024px){
+  .dashboard-stat-grid{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px){
+  .dashboard-stat-grid{ grid-template-columns:minmax(0, 1fr); }
+}
 
 /* textarea: отключаем ручной ресайз; автогроу делаем кодом */
 .textarea { resize: none; }

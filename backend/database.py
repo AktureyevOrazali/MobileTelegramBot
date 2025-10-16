@@ -1389,9 +1389,22 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
         ).fetchall()
         question_rows = _connection.execute(
             """
-            SELECT text, created_at
+            SELECT text, created_at, section
             FROM messages
             WHERE direction = 'incoming' AND text IS NOT NULL AND TRIM(text) != ''
+            """
+        ).fetchall()
+        agent_rows = _connection.execute(
+            """
+            SELECT
+                TRIM(COALESCE(author, '')) AS author,
+                COUNT(*) AS message_count,
+                COUNT(DISTINCT dialog_id) AS dialog_count,
+                MAX(created_at) AS last_activity
+            FROM messages
+            WHERE direction = 'outgoing' AND author IS NOT NULL AND TRIM(author) != ''
+            GROUP BY TRIM(COALESCE(author, ''))
+            ORDER BY message_count DESC
             """
         ).fetchall()
 
@@ -1445,6 +1458,7 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
         )
 
     question_stats: Dict[str, dict] = {}
+    section_question_stats: Dict[Optional[str], Dict[str, dict]] = {}
     for row in question_rows:
         text = (row["text"] or "").strip()
         if not text:
@@ -1461,6 +1475,18 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
         if len(text) < len(entry["question"]):
             entry["question"] = text
 
+        section_id = (row["section"] or "").strip() or None
+        section_bucket = section_question_stats.setdefault(section_id, {})
+        section_entry = section_bucket.get(normalized)
+        if section_entry is None:
+            section_entry = {"question": text, "count": 0, "last_seen": seen_at}
+            section_bucket[normalized] = section_entry
+        section_entry["count"] += 1
+        if seen_at and (section_entry["last_seen"] is None or seen_at > section_entry["last_seen"]):
+            section_entry["last_seen"] = seen_at
+        if len(text) < len(section_entry["question"]):
+            section_entry["question"] = text
+
     sorted_questions = sorted(
         question_stats.values(),
         key=lambda item: (-item["count"], item["last_seen"] or datetime.min),
@@ -1469,6 +1495,44 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
         {"question": item["question"], "count": int(item["count"])}
         for item in sorted_questions[: max(questions_limit, 0)]
     ]
+
+    questions_by_section: List[dict] = []
+    for section_id, bucket in section_question_stats.items():
+        if not bucket:
+            continue
+        questions_sorted = sorted(
+            bucket.values(),
+            key=lambda item: (-item["count"], item["last_seen"] or datetime.min),
+        )
+        questions_by_section.append(
+            {
+                "section": section_id,
+                "title": section_map.get(section_id or "", section_id or "Без раздела"),
+                "questions": [
+                    {"question": item["question"], "count": int(item["count"])}
+                    for item in questions_sorted[: max(questions_limit, 0)]
+                ],
+            }
+        )
+
+    agent_breakdown: List[dict] = []
+    for row in agent_rows:
+        name = row["author"] or "Без имени"
+        messages_sent = int(row["message_count"] or 0)
+        dialogs_handled = int(row["dialog_count"] or 0)
+        last_activity = _parse_datetime(row["last_activity"])
+        avg_messages = (
+            messages_sent / dialogs_handled if dialogs_handled else 0.0
+        )
+        agent_breakdown.append(
+            {
+                "name": name,
+                "messages": messages_sent,
+                "dialogs": dialogs_handled,
+                "avg_messages_per_dialog": avg_messages,
+                "last_activity": last_activity.isoformat() if last_activity else None,
+            }
+        )
 
     return {
         "total_dialogs": int(total_dialogs),
@@ -1482,6 +1546,8 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
         "avg_dialog_duration_minutes": avg_dialog_duration_minutes,
         "section_breakdown": section_breakdown,
         "top_questions": top_questions,
+        "questions_by_section": questions_by_section,
+        "agent_breakdown": agent_breakdown,
         "recent_activity": recent_activity,
         "updated_at": now.isoformat(),
     }

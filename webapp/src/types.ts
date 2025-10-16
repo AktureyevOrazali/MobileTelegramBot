@@ -140,6 +140,20 @@ export interface DashboardTopQuestionRaw {
   count: number;
 }
 
+export interface DashboardSectionTopQuestionsRaw {
+  section: string | null;
+  title: string;
+  questions: DashboardTopQuestionRaw[];
+}
+
+export interface DashboardAgentStatRaw {
+  name: string;
+  dialogs: number;
+  messages: number;
+  avg_messages_per_dialog: number;
+  last_activity: string | null;
+}
+
 export interface DashboardActivityPointRaw {
   date: string;
   dialogs: number;
@@ -158,6 +172,8 @@ export interface DashboardSummaryRaw {
   avg_dialog_duration_minutes: number | null;
   section_breakdown: DashboardSectionStatRaw[];
   top_questions: DashboardTopQuestionRaw[];
+  questions_by_section: DashboardSectionTopQuestionsRaw[];
+  agent_breakdown: DashboardAgentStatRaw[];
   recent_activity: DashboardActivityPointRaw[];
   updated_at: string;
 }
@@ -172,6 +188,20 @@ export interface DashboardSectionStat {
 export interface DashboardTopQuestion {
   question: string;
   count: number;
+}
+
+export interface DashboardSectionTopQuestions {
+  section: string | null;
+  title: string;
+  questions: DashboardTopQuestion[];
+}
+
+export interface DashboardAgentStat {
+  name: string;
+  dialogs: number;
+  messages: number;
+  avgMessagesPerDialog: number;
+  lastActivity: Date | null;
 }
 
 export interface DashboardActivityPoint {
@@ -192,6 +222,8 @@ export interface DashboardSummary {
   avgDialogDurationMinutes: number | null;
   sectionBreakdown: DashboardSectionStat[];
   topQuestions: DashboardTopQuestion[];
+  questionsBySection: DashboardSectionTopQuestions[];
+  agentBreakdown: DashboardAgentStat[];
   recentActivity: DashboardActivityPoint[];
   updatedAt: Date;
 }

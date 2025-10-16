@@ -468,13 +468,15 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
             searchable
           />
           <SelectPill
-            label="Сортировка"
+            label=""
+            showLabelInside={false}
             options={sortOptions}
             value={sortOrder}
             onChange={(v) => setSortOrder((v as 'asc' | 'desc') || 'desc')}
           />
           <SelectPill
-            label="Статус"
+            label=""
+            showLabelInside={false}
             options={statusOptions}
             value={statusFilter}
             onChange={(v) => setStatusFilter((v as 'all' | 'open' | 'closed') || 'all')}

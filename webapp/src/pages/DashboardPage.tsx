@@ -81,6 +81,64 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     { label: 'Исходящих сообщений', value: summary.totalOutgoingMessages },
   ];
 
+  const sectionTitleSet = useMemo(
+    () =>
+      new Set(
+        summary.sectionBreakdown
+          .map((item) => item.title.trim().toLowerCase())
+          .filter((title) => title.length > 0),
+      ),
+    [summary.sectionBreakdown],
+  );
+
+  const topQuestions = useMemo(() => {
+    const seen = new Set<string>();
+    const filtered = summary.topQuestions.filter((item) => {
+      const trimmed = item.question.trim();
+      if (!trimmed) {
+        return false;
+      }
+      const normalized = trimmed.toLowerCase();
+      if (sectionTitleSet.has(normalized)) {
+        return false;
+      }
+      if (/^\[[^\]]*команда[^\]]*\]/i.test(trimmed)) {
+        return false;
+      }
+      if (seen.has(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
+      return true;
+    });
+    return filtered.slice(0, 5);
+  }, [sectionTitleSet, summary.topQuestions]);
+
+  const questionsBySection = useMemo(
+    () =>
+      summary.questionsBySection
+        .map((section) => ({
+          ...section,
+          totalCount: section.questions.reduce((acc, question) => acc + question.count, 0),
+        }))
+        .filter((section) => section.questions.length > 0)
+        .sort((a, b) => b.totalCount - a.totalCount),
+    [summary.questionsBySection],
+  );
+
+  const agentStats = useMemo(
+    () =>
+      summary.agentBreakdown
+        .map((agent) => ({
+          ...agent,
+          avgMessagesPerDialog: Number.isFinite(agent.avgMessagesPerDialog)
+            ? agent.avgMessagesPerDialog
+            : 0,
+        }))
+        .sort((a, b) => b.messages - a.messages),
+    [summary.agentBreakdown],
+  );
+
   const avgMessagesValue = summary.averageMessagesPerDialog
     ? summary.averageMessagesPerDialog.toFixed(1)
     : '0.0';
@@ -167,17 +225,81 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h3 className="heading" style={{ fontSize: '1.1rem', margin: 0 }}>Частые вопросы</h3>
-          {summary.topQuestions.length === 0 ? (
+          {topQuestions.length === 0 ? (
             <p className="text-muted" style={{ margin: 0 }}>Входящих вопросов пока недостаточно.</p>
           ) : (
             <ol className="question-list">
-              {summary.topQuestions.map((item, index) => (
-                <li key={`${item.question}-${index}`} className="question-list__item">
-                  <span>{item.question}</span>
-                  <span className="question-list__count">{numberFormatter.format(item.count)}</span>
-                </li>
-              ))}
+              {topQuestions.map((item, index) => {
+                const raw = item.question.trim();
+                const match = raw.match(/^\[(faq)\]\s*/i);
+                const questionText = match ? raw.slice(match[0].length) : raw;
+                const badge = match ? match[1].toUpperCase() : null;
+                return (
+                  <li key={`${item.question}-${index}`} className="question-list__item">
+                    <span>
+                      {badge && <span className="question-badge">{badge}</span>}
+                      {questionText}
+                    </span>
+                    <span className="question-list__count">{numberFormatter.format(item.count)}</span>
+                  </li>
+                );
+              })}
             </ol>
+          )}
+
+          <div className="questions-by-section">
+            <div className="questions-by-section__header">
+              <h4>По разделам</h4>
+              <span className="text-muted">ТОП-5 для каждого</span>
+            </div>
+            {questionsBySection.length === 0 ? (
+              <p className="text-muted" style={{ margin: 0 }}>Пока недостаточно данных по разделам.</p>
+            ) : (
+              <div className="questions-by-section__grid">
+                {questionsBySection.map((section) => (
+                  <div key={section.section ?? 'no-section'} className="questions-by-section__item">
+                    <div className="questions-by-section__title">{section.title}</div>
+                    <ul>
+                      {section.questions.slice(0, 5).map((question) => (
+                        <li key={`${section.title}-${question.question}`}>{question.question}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="dashboard-columns">
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h3 className="heading" style={{ fontSize: '1.1rem', margin: 0 }}>Дэшборд сотрудников</h3>
+          {agentStats.length === 0 ? (
+            <p className="text-muted" style={{ margin: 0 }}>Пока нет активности сотрудников.</p>
+          ) : (
+            <table className="table table--compact">
+              <thead>
+                <tr>
+                  <th>Сотрудник</th>
+                  <th>Диалогов</th>
+                  <th>Сообщений</th>
+                  <th>Среднее сообщений</th>
+                  <th>Последняя активность</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agentStats.map((agent) => (
+                  <tr key={agent.name}>
+                    <td>{agent.name}</td>
+                    <td>{numberFormatter.format(agent.dialogs)}</td>
+                    <td>{numberFormatter.format(agent.messages)}</td>
+                    <td>{agent.avgMessagesPerDialog.toFixed(1)}</td>
+                    <td>{agent.lastActivity ? formatDateTime(agent.lastActivity) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       </div>

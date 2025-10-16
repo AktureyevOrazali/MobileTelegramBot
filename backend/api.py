@@ -142,6 +142,20 @@ class DashboardTopQuestion(BaseModel):
     count: int
 
 
+class DashboardSectionQuestions(BaseModel):
+    section: Optional[str] = None
+    title: str
+    questions: List[DashboardTopQuestion]
+
+
+class DashboardAgentStat(BaseModel):
+    name: str
+    dialogs: int
+    messages: int
+    avg_messages_per_dialog: float
+    last_activity: Optional[str] = None
+
+
 class DashboardActivityPoint(BaseModel):
     date: str
     dialogs: int
@@ -160,6 +174,8 @@ class DashboardSummaryResponse(BaseModel):
     avg_dialog_duration_minutes: float | None = None
     section_breakdown: List[DashboardSectionStat]
     top_questions: List[DashboardTopQuestion]
+    questions_by_section: List[DashboardSectionQuestions]
+    agent_breakdown: List[DashboardAgentStat]
     recent_activity: List[DashboardActivityPoint]
     updated_at: str
 

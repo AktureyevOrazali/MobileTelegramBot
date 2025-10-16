@@ -108,6 +108,21 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
       question: item.question,
       count: item.count,
     })),
+    questionsBySection: raw.questions_by_section.map((section) => ({
+      section: section.section,
+      title: section.title,
+      questions: section.questions.map((item) => ({
+        question: item.question,
+        count: item.count,
+      })),
+    })),
+    agentBreakdown: raw.agent_breakdown.map((agent) => ({
+      name: agent.name,
+      dialogs: agent.dialogs,
+      messages: agent.messages,
+      avgMessagesPerDialog: agent.avg_messages_per_dialog,
+      lastActivity: agent.last_activity ? new Date(agent.last_activity) : null,
+    })),
     recentActivity: raw.recent_activity.map((item) => ({
       date: item.date,
       dialogs: item.dialogs,

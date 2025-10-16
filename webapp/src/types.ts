@@ -165,17 +165,17 @@ export interface DashboardSummaryRaw {
   open_dialogs: number;
   closed_dialogs: number;
   total_chats: number;
-  total_messages: number;
-  total_incoming_messages: number;
-  total_outgoing_messages: number;
-  average_messages_per_dialog: number;
-  avg_dialog_duration_minutes: number | null;
-  section_breakdown: DashboardSectionStatRaw[];
-  top_questions: DashboardTopQuestionRaw[];
-  questions_by_section: DashboardSectionTopQuestionsRaw[];
-  agent_breakdown: DashboardAgentStatRaw[];
-  recent_activity: DashboardActivityPointRaw[];
-  updated_at: string;
+  total_messages?: number;
+  total_incoming_messages?: number;
+  total_outgoing_messages?: number;
+  average_messages_per_dialog?: number | null;
+  avg_dialog_duration_minutes?: number | null;
+  section_breakdown?: DashboardSectionStatRaw[];
+  top_questions?: DashboardTopQuestionRaw[];
+  questions_by_section?: DashboardSectionTopQuestionsRaw[];
+  agent_breakdown?: DashboardAgentStatRaw[];
+  recent_activity?: DashboardActivityPointRaw[];
+  updated_at?: string;
 }
 
 export interface DashboardSectionStat {

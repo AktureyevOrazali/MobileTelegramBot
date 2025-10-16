@@ -5,6 +5,10 @@ import {
   ChatSummaryRaw,
   DashboardSummary,
   DashboardSummaryRaw,
+  DashboardActivityPointRaw,
+  DashboardAgentStatRaw,
+  DashboardSectionStatRaw,
+  DashboardSectionTopQuestionsRaw,
   Message,
   MessageNotification,
   MessageNotificationRaw,
@@ -34,6 +38,7 @@ export function mapUserProfile(raw: UserProfileRaw): UserProfile {
     canReply,
   };
 }
+
 
 export function mapSession(raw: AuthSessionRaw): AuthSession {
   return {
@@ -88,46 +93,86 @@ export function mapNotification(raw: MessageNotificationRaw): MessageNotificatio
 }
 
 export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary {
+  const safeNumber = (value: number | null | undefined, fallback = 0): number =>
+    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+  const sectionBreakdown = Array.isArray(raw.section_breakdown)
+    ? raw.section_breakdown
+        .filter((item): item is DashboardSectionStatRaw => Boolean(item))
+        .map((item) => ({
+          section: item.section ?? null,
+          title: item.title ?? '',
+          dialogs: safeNumber(item.dialogs),
+          percentage: safeNumber(item.percentage),
+        }))
+    : [];
+
+  const topQuestions = Array.isArray(raw.top_questions)
+    ? raw.top_questions
+        .filter((item) => Boolean(item) && typeof item.question === 'string')
+        .map((item) => ({
+          question: item.question,
+          count: safeNumber(item.count),
+        }))
+    : [];
+
+  const questionsBySection = Array.isArray(raw.questions_by_section)
+    ? raw.questions_by_section
+        .filter((section): section is DashboardSectionTopQuestionsRaw => Boolean(section))
+        .map((section) => ({
+          section: section.section ?? null,
+          title: section.title ?? '',
+          questions: Array.isArray(section.questions)
+            ? section.questions
+                .filter((item) => Boolean(item) && typeof item.question === 'string')
+                .map((item) => ({
+                  question: item.question,
+                  count: safeNumber(item.count),
+                }))
+            : [],
+        }))
+    : [];
+
+  const agentBreakdown = Array.isArray(raw.agent_breakdown)
+    ? raw.agent_breakdown
+        .filter((agent): agent is DashboardAgentStatRaw => Boolean(agent))
+        .map((agent) => ({
+          name: agent.name ?? '',
+          dialogs: safeNumber(agent.dialogs),
+          messages: safeNumber(agent.messages),
+          avgMessagesPerDialog: safeNumber(agent.avg_messages_per_dialog),
+          lastActivity: agent.last_activity ? new Date(agent.last_activity) : null,
+        }))
+    : [];
+
+  const recentActivity = Array.isArray(raw.recent_activity)
+    ? raw.recent_activity
+        .filter((item): item is DashboardActivityPointRaw => Boolean(item))
+        .map((item) => ({
+          date: item.date,
+          dialogs: safeNumber(item.dialogs),
+          incomingMessages: safeNumber(item.incoming_messages),
+        }))
+    : [];
+
   return {
-    totalDialogs: raw.total_dialogs,
-    openDialogs: raw.open_dialogs,
-    closedDialogs: raw.closed_dialogs,
-    totalChats: raw.total_chats,
-    totalMessages: raw.total_messages,
-    totalIncomingMessages: raw.total_incoming_messages,
-    totalOutgoingMessages: raw.total_outgoing_messages,
-    averageMessagesPerDialog: raw.average_messages_per_dialog,
-    avgDialogDurationMinutes: raw.avg_dialog_duration_minutes,
-    sectionBreakdown: raw.section_breakdown.map((item) => ({
-      section: item.section,
-      title: item.title,
-      dialogs: item.dialogs,
-      percentage: item.percentage,
-    })),
-    topQuestions: raw.top_questions.map((item) => ({
-      question: item.question,
-      count: item.count,
-    })),
-    questionsBySection: raw.questions_by_section.map((section) => ({
-      section: section.section,
-      title: section.title,
-      questions: section.questions.map((item) => ({
-        question: item.question,
-        count: item.count,
-      })),
-    })),
-    agentBreakdown: raw.agent_breakdown.map((agent) => ({
-      name: agent.name,
-      dialogs: agent.dialogs,
-      messages: agent.messages,
-      avgMessagesPerDialog: agent.avg_messages_per_dialog,
-      lastActivity: agent.last_activity ? new Date(agent.last_activity) : null,
-    })),
-    recentActivity: raw.recent_activity.map((item) => ({
-      date: item.date,
-      dialogs: item.dialogs,
-      incomingMessages: item.incoming_messages,
-    })),
-    updatedAt: new Date(raw.updated_at),
+    totalDialogs: safeNumber(raw.total_dialogs),
+    openDialogs: safeNumber(raw.open_dialogs),
+    closedDialogs: safeNumber(raw.closed_dialogs),
+    totalChats: safeNumber(raw.total_chats),
+    totalMessages: safeNumber(raw.total_messages),
+    totalIncomingMessages: safeNumber(raw.total_incoming_messages),
+    totalOutgoingMessages: safeNumber(raw.total_outgoing_messages),
+    averageMessagesPerDialog: safeNumber(raw.average_messages_per_dialog),
+    avgDialogDurationMinutes:
+      typeof raw.avg_dialog_duration_minutes === 'number' && Number.isFinite(raw.avg_dialog_duration_minutes)
+        ? raw.avg_dialog_duration_minutes
+        : null,
+    sectionBreakdown,
+    topQuestions,
+    questionsBySection,
+    agentBreakdown,
+    recentActivity,
+    updatedAt: raw.updated_at ? new Date(raw.updated_at) : new Date(),
   };
 }

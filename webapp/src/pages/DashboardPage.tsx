@@ -9,6 +9,24 @@ interface DashboardPageProps {
 
 type LoadMode = 'initial' | 'refresh';
 
+const EMPTY_SUMMARY: DashboardSummary = {
+  totalDialogs: 0,
+  openDialogs: 0,
+  closedDialogs: 0,
+  totalChats: 0,
+  totalMessages: 0,
+  totalIncomingMessages: 0,
+  totalOutgoingMessages: 0,
+  averageMessagesPerDialog: 0,
+  avgDialogDurationMinutes: null,
+  sectionBreakdown: [],
+  topQuestions: [],
+  questionsBySection: [],
+  agentBreakdown: [],
+  recentActivity: [],
+  updatedAt: new Date(0),
+};
+
 const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,49 +69,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
   const numberFormatter = useMemo(() => new Intl.NumberFormat('ru-RU'), []);
 
-  if (loading && !summary) {
-    return (
-      <div className="card" style={{ textAlign: 'center' }}>
-        <h2 className="heading" style={{ marginBottom: 8 }}>Дэшборд обращений</h2>
-        <p className="text-muted">Загружаем отчёт...</p>
-      </div>
-    );
-  }
-
-  if (!summary) {
-    return (
-      <div className="card" style={{ textAlign: 'center' }}>
-        <h2 className="heading" style={{ marginBottom: 12 }}>Дэшборд обращений</h2>
-        <p className="text-muted" style={{ marginBottom: 16 }}>{error ?? 'Нет данных для отображения.'}</p>
-        <button className="button" type="button" onClick={() => loadData('initial')}>
-          Попробовать снова
-        </button>
-      </div>
-    );
-  }
+  const hasData = Boolean(summary);
+  const data = summary ?? EMPTY_SUMMARY;
 
   const statCards = [
-    { label: 'Всего обращений', value: summary.totalDialogs },
-    { label: 'Открытые диалоги', value: summary.openDialogs },
-    { label: 'Закрытые диалоги', value: summary.closedDialogs },
-    { label: 'Активных чатов', value: summary.totalChats },
-    { label: 'Входящих сообщений', value: summary.totalIncomingMessages },
-    { label: 'Исходящих сообщений', value: summary.totalOutgoingMessages },
+    { label: 'Всего обращений', value: data.totalDialogs },
+    { label: 'Открытые диалоги', value: data.openDialogs },
+    { label: 'Закрытые диалоги', value: data.closedDialogs },
+    { label: 'Активных чатов', value: data.totalChats },
+    { label: 'Входящих сообщений', value: data.totalIncomingMessages },
+    { label: 'Исходящих сообщений', value: data.totalOutgoingMessages },
   ];
 
   const sectionTitleSet = useMemo(
     () =>
       new Set(
-        summary.sectionBreakdown
+        data.sectionBreakdown
           .map((item) => item.title.trim().toLowerCase())
           .filter((title) => title.length > 0),
       ),
-    [summary.sectionBreakdown],
+    [data.sectionBreakdown],
   );
 
   const topQuestions = useMemo(() => {
     const seen = new Set<string>();
-    const filtered = summary.topQuestions.filter((item) => {
+    const filtered = data.topQuestions.filter((item) => {
       const trimmed = item.question.trim();
       if (!trimmed) {
         return false;
@@ -112,23 +112,23 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       return true;
     });
     return filtered.slice(0, 5);
-  }, [sectionTitleSet, summary.topQuestions]);
+  }, [sectionTitleSet, data.topQuestions]);
 
   const questionsBySection = useMemo(
     () =>
-      summary.questionsBySection
+      data.questionsBySection
         .map((section) => ({
           ...section,
           totalCount: section.questions.reduce((acc, question) => acc + question.count, 0),
         }))
         .filter((section) => section.questions.length > 0)
         .sort((a, b) => b.totalCount - a.totalCount),
-    [summary.questionsBySection],
+    [data.questionsBySection],
   );
 
   const agentStats = useMemo(
     () =>
-      summary.agentBreakdown
+      data.agentBreakdown
         .map((agent) => ({
           ...agent,
           avgMessagesPerDialog: Number.isFinite(agent.avgMessagesPerDialog)
@@ -136,17 +136,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             : 0,
         }))
         .sort((a, b) => b.messages - a.messages),
-    [summary.agentBreakdown],
+    [data.agentBreakdown],
   );
 
-  const avgMessagesValue = summary.averageMessagesPerDialog
-    ? summary.averageMessagesPerDialog.toFixed(1)
+  const avgMessagesValue = data.averageMessagesPerDialog
+    ? data.averageMessagesPerDialog.toFixed(1)
     : '0.0';
-  const avgDurationValue = summary.avgDialogDurationMinutes
-    ? summary.avgDialogDurationMinutes.toFixed(1)
+  const avgDurationValue = data.avgDialogDurationMinutes
+    ? data.avgDialogDurationMinutes.toFixed(1)
     : '—';
 
-  const lastUpdated = formatDateTime(summary.updatedAt);
+  const lastUpdated = hasData ? formatDateTime(data.updatedAt) : '';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
@@ -194,16 +194,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             <span className="stat-card__value">{avgDurationValue}</span>
           </div>
         </div>
+
+         {!hasData && (
+          <div style={{ borderTop: '1px solid rgba(37, 50, 99, 0.1)', paddingTop: 16 }}>
+            <p className="text-muted" style={{ margin: '0 0 12px 0' }}>
+              {loading
+                ? 'Загружаем отчёт...'
+                : error ?? 'Нет данных для отображения. Попробуйте обновить страницу.'}
+            </p>
+            {!loading && (
+              <button className="button" type="button" onClick={() => loadData('initial')}>
+                Попробовать снова
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="dashboard-columns">
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h3 className="heading" style={{ fontSize: '1.1rem', margin: 0 }}>Обращения по разделам</h3>
-          {summary.sectionBreakdown.length === 0 ? (
+          {data.sectionBreakdown.length === 0 ? (
             <p className="text-muted" style={{ margin: 0 }}>Данных пока нет.</p>
           ) : (
             <ul className="section-progress-list">
-              {summary.sectionBreakdown.map((section) => (
+              {data.sectionBreakdown.map((section) => (
                 <li key={section.section ?? section.title} className="section-progress-item">
                   <div className="section-progress-item__header">
                     <span>{section.title}</span>
@@ -305,8 +320,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       </div>
 
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <h3 className="heading" style={{ fontSize: '1.1rem', margin: 0 }}>Активность за последние {summary.recentActivity.length} дн.</h3>
-        {summary.recentActivity.length === 0 ? (
+        <h3 className="heading" style={{ fontSize: '1.1rem', margin: 0 }}>Активность за последние {data.recentActivity.length} дн.</h3>
+        {data.recentActivity.length === 0 ? (
           <p className="text-muted" style={{ margin: 0 }}>Нет данных о новых диалогах.</p>
         ) : (
           <table className="table table--compact">
@@ -318,7 +333,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
               </tr>
             </thead>
             <tbody>
-              {summary.recentActivity.map((item) => (
+              {data.recentActivity.map((item) => (
                 <tr key={item.date}>
                   <td>{formatDate(item.date)}</td>
                   <td>{numberFormatter.format(item.dialogs)}</td>

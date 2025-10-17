@@ -341,12 +341,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
               Обновлено: {lastUpdated || '—'}
             </p>
             <p className="text-muted" style={{ margin: '4px 0 0 0' }}>
-              Сотрудник: {selectedOperatorLabel}
+              {selectedOperatorLabel}
             </p>
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             <SelectPill
-              label={operatorsLoading ? 'Загрузка...' : 'Сотрудник'}
+              label={operatorsLoading ? 'Загрузка...' : 'Все сотрудники'}
               options={operatorOptions}
               value={operatorSelectValue}
               onChange={(value) => {
@@ -354,6 +354,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                 setSelectedOperatorId((prev) => (prev === nextValue ? prev : nextValue));
               }}
               searchable
+              showLabelInside={false}
               style={{ minWidth: 220 }}
             />
             {operatorsError && (

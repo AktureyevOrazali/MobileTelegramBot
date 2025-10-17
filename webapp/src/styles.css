@@ -450,19 +450,38 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 .admin-field{ display:flex; flex-direction:column; gap:6px; }
 .label.strong{ font-weight:700; }
 .block-title{ font-weight:600; margin-bottom:10px; }
-.muted-mini{ font-size:12px; color:#8a92b6; }
+.muted-mini { font-size: 12px; color: var(--text-muted); }
 
-.sections-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
-.check-chip{ display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:999px; background:var(--surface-soft-color); border:1px solid var(--border-color); color:inherit; transition:.14s; cursor:pointer; user-select:none; }
-.check-chip:hover{ box-shadow:0 0 0 4px rgba(64,80,160,.08); }
-.check-chip input{ appearance:none; width:18px; height:18px; border-radius:6px; border:1px solid var(--border-color); background:var(--surface-color); display:inline-block; position:relative; }
-.check-chip.checked input{ background:var(--brand-color); border-color:var(--brand-color); }
-.check-chip.checked input::after{ content:""; position:absolute; inset:3px; background:var(--text-on-brand); border-radius:3px; }
+.sections-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.check-chip { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 999px; background: var(--surface-soft-color); border: 1px solid var(--border-color); color: inherit; transition: 0.14s; cursor: pointer; user-select: none; }
+.check-chip:hover { box-shadow: 0 0 0 4px var(--input-ring); }
+.check-chip input { appearance: none; width: 18px; height: 18px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--surface-color); display: inline-block; position: relative; }
+.check-chip.checked input { background: var(--brand-color); border-color: var(--brand-color); }
+.check-chip.checked input::after { content: ""; position: absolute; inset: 3px; background: var(--text-on-brand); border-radius: 3px; }
 
-.bins-row{ display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-.bin-chip{ display:inline-flex; align-items:center; gap:8px; }
-.chip-x{ width:22px; height:22px; border-radius:50%; border:1px solid #dfe5ff; background:#fff; display:grid; place-items:center; line-height:1; font-weight:700; color:#6370a0; cursor:pointer; padding:0; }
-.chip-x:hover{ box-shadow:0 0 0 4px rgba(64,80,160,.08); color:#2f4390; }
+.bins-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.bin-chip { display: inline-flex; align-items: center; gap: 8px; }
+.chip-x {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-color);
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+.chip-x:hover {
+  box-shadow: 0 0 0 4px var(--input-ring);
+  color: var(--text-heading);
+  background: var(--surface-soft-color);
+  border-color: var(--border-strong);
+}
 
 .button.danger { background-color: var(--danger-bg); border-color: transparent; color: #fff; }
 .button.danger:hover:not(:disabled) { background-color: var(--danger-hover); }
@@ -492,14 +511,14 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
   gap: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  border: 1px solid #e2e8ff;
+  border: 1px solid var(--border-strong);
   border-radius: 20px;
-  overflow: visible;
-  background: #f8faff;
+  overflow: hidden;
+  background: var(--surface-soft-color);
 }
 
 .admin-user-card__cell {
-  background: transparent;
+  background: var(--surface-color);
   border: none;
   border-radius: 0;
   padding: 18px;
@@ -511,11 +530,11 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 }
 
 .admin-user-card__cell:nth-child(-n + 2) {
-  border-bottom: 1px solid #e2e8ff;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .admin-user-card__cell:nth-child(odd) {
-  border-right: 1px solid #e2e8ff;
+  border-right: 1px solid var(--border-color);
 }
 
 .admin-user-card__cell > *:last-child {
@@ -531,7 +550,7 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 
   .admin-user-card__cell {
     border-right: none;
-    border-bottom: 1px solid #e2e8ff;
+    border-bottom: 1px solid var(--border-color);
   }
 
   .admin-user-card__cell:last-child {
@@ -551,7 +570,7 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
   flex-wrap: wrap;
   gap: 12px;
   padding-top: 12px;
-  border-top: 1px solid #e5e9ff;
+  border-top: 1px solid var(--border-color);
 }
 
 .admin-user-card__footer-actions {

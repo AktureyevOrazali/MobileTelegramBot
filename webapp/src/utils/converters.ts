@@ -136,13 +136,26 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
   const agentBreakdown = Array.isArray(raw.agent_breakdown)
     ? raw.agent_breakdown
         .filter((agent): agent is DashboardAgentStatRaw => Boolean(agent))
-        .map((agent) => ({
-          name: agent.name ?? '',
-          dialogs: safeNumber(agent.dialogs),
-          messages: safeNumber(agent.messages),
-          avgMessagesPerDialog: safeNumber(agent.avg_messages_per_dialog),
-          lastActivity: agent.last_activity ? new Date(agent.last_activity) : null,
-        }))
+        .map((agent) => {
+          const dialogs = safeNumber(agent.dialogs);
+          const rawMessages = safeNumber(agent.messages);
+          const messages = dialogs > 0 ? rawMessages : 0;
+          const avgFromApi =
+            typeof agent.avg_messages_per_dialog === 'number' && Number.isFinite(agent.avg_messages_per_dialog)
+              ? agent.avg_messages_per_dialog
+              : null;
+          const avgMessagesPerDialog = dialogs > 0
+            ? (avgFromApi ?? (messages / dialogs))
+            : 0;
+
+          return {
+            name: agent.name ?? '',
+            dialogs,
+            messages,
+            avgMessagesPerDialog,
+            lastActivity: agent.last_activity ? new Date(agent.last_activity) : null,
+          };
+        })
     : [];
 
   const recentActivity = Array.isArray(raw.recent_activity)

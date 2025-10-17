@@ -2,12 +2,16 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
 import { DashboardSummary } from '../types';
 import { formatDate, formatDateTime } from '../utils/date';
+import SelectPill from '../components/SelectPill';
 
 interface DashboardPageProps {
   apiClient: ApiClient;
 }
 
 type LoadMode = 'initial' | 'refresh';
+
+type QuestionSection = DashboardSummary['questionsBySection'][number] & { totalCount: number };
+type QuestionSectionEntry = { key: string; title: string; section: QuestionSection };
 
 const EMPTY_SUMMARY: DashboardSummary = {
   totalDialogs: 0,
@@ -32,6 +36,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedQuestionSection, setSelectedQuestionSection] = useState<string>('all');
 
   const loadData = useCallback(
     async (mode: LoadMode = 'initial') => {
@@ -124,20 +129,92 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
         .filter((section) => section.questions.length > 0)
         .sort((a, b) => b.totalCount - a.totalCount),
     [data.questionsBySection],
+  ) as QuestionSection[];
+
+  const questionSectionEntries = useMemo(() => {
+    const seen = new Set<string>();
+    const entries: QuestionSectionEntry[] = [];
+    questionsBySection.forEach((section) => {
+      const key = section.section ?? (section.title || 'no-section');
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      entries.push({ key, title: section.title || 'Без раздела', section });
+    });
+    return entries;
+  }, [questionsBySection]) as QuestionSectionEntry[];
+
+  const questionSectionOptions = useMemo(
+    () => [
+      { value: 'all', label: 'Все разделы' },
+      ...questionSectionEntries.map((entry) => ({ value: entry.key, label: entry.title })),
+    ],
+    [questionSectionEntries],
   );
 
-  const agentStats = useMemo(
-    () =>
-      data.agentBreakdown
-        .map((agent) => ({
-          ...agent,
-          avgMessagesPerDialog: Number.isFinite(agent.avgMessagesPerDialog)
-            ? agent.avgMessagesPerDialog
-            : 0,
-        }))
-        .sort((a, b) => b.messages - a.messages),
-    [data.agentBreakdown],
-  );
+  useEffect(() => {
+    if (selectedQuestionSection === 'all') {
+      return;
+    }
+    const exists = questionSectionEntries.some((entry) => entry.key === selectedQuestionSection);
+    if (!exists) {
+      setSelectedQuestionSection('all');
+    }
+  }, [questionSectionEntries, selectedQuestionSection]);
+
+  const selectedQuestions = useMemo(() => {
+    if (selectedQuestionSection === 'all') {
+      return topQuestions;
+    }
+    const entry = questionSectionEntries.find((item) => item.key === selectedQuestionSection);
+    if (!entry) {
+      return [];
+    }
+    return entry.section.questions.slice(0, 5);
+  }, [questionSectionEntries, selectedQuestionSection, topQuestions]);
+
+  const selectedSectionTitle = useMemo(() => {
+    if (selectedQuestionSection === 'all') {
+      return 'Все разделы';
+    }
+    const entry = questionSectionEntries.find((item) => item.key === selectedQuestionSection);
+    return entry?.title ?? 'Без раздела';
+  }, [questionSectionEntries, selectedQuestionSection]);
+
+  const agentStats = useMemo(() => {
+    const systemKeywords = ['admin', 'administrator', 'администратор', 'ai assistant'];
+    return data.agentBreakdown
+      .filter((agent) => {
+        const normalized = agent.name.trim().toLowerCase();
+        if (!normalized) {
+          return false;
+        }
+        if (systemKeywords.some((keyword) => normalized.includes(keyword))) {
+          return false;
+        }
+        if (/\b(bot|бот)\b/.test(normalized)) {
+          return false;
+        }
+        return true;
+      })
+      .map((agent) => ({
+        ...agent,
+        avgMessagesPerDialog: Number.isFinite(agent.avgMessagesPerDialog)
+          ? agent.avgMessagesPerDialog
+          : 0,
+      }))
+      .sort((a, b) => b.messages - a.messages);
+  }, [data.agentBreakdown]);
+
+  const parseQuestion = useCallback((raw: string) => {
+    const trimmed = raw.trim();
+    const match = trimmed.match(/^\[(faq)\]\s*/i);
+    return {
+      text: match ? trimmed.slice(match[0].length) : trimmed,
+      badge: match ? match[1].toUpperCase() : null,
+    };
+  }, []);
 
   const avgMessagesValue = data.averageMessagesPerDialog
     ? data.averageMessagesPerDialog.toFixed(1)
@@ -239,21 +316,38 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
         </div>
 
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <h3 className="heading" style={{ fontSize: '1.1rem', margin: 0 }}>Частые вопросы</h3>
-          {topQuestions.length === 0 ? (
-            <p className="text-muted" style={{ margin: 0 }}>Входящих вопросов пока недостаточно.</p>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <h3 className="heading" style={{ fontSize: '1.1rem', margin: 0 }}>Частые вопросы</h3>
+            <SelectPill
+              label=""
+              options={questionSectionOptions}
+              value={selectedQuestionSection}
+              onChange={(value) => setSelectedQuestionSection(value || 'all')}
+              showLabelInside={false}
+            />
+          </div>
+          <span className="text-muted" style={{ fontSize: '0.85rem' }}>
+            ТОП-5 · {selectedSectionTitle}
+          </span>
+          {selectedQuestions.length === 0 ? (
+            <p className="text-muted" style={{ margin: 0 }}>Пока нет популярных вопросов для выбранного раздела.</p>
           ) : (
             <ol className="question-list">
-              {topQuestions.map((item, index) => {
-                const raw = item.question.trim();
-                const match = raw.match(/^\[(faq)\]\s*/i);
-                const questionText = match ? raw.slice(match[0].length) : raw;
-                const badge = match ? match[1].toUpperCase() : null;
+              {selectedQuestions.map((item, index) => {
+                const { text, badge } = parseQuestion(item.question);
                 return (
                   <li key={`${item.question}-${index}`} className="question-list__item">
                     <span>
                       {badge && <span className="question-badge">{badge}</span>}
-                      {questionText}
+                      {text}
                     </span>
                     <span className="question-list__count">{numberFormatter.format(item.count)}</span>
                   </li>
@@ -262,28 +356,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             </ol>
           )}
 
-          <div className="questions-by-section">
-            <div className="questions-by-section__header">
-              <h4>По разделам</h4>
-              <span className="text-muted">ТОП-5 для каждого</span>
-            </div>
-            {questionsBySection.length === 0 ? (
-              <p className="text-muted" style={{ margin: 0 }}>Пока недостаточно данных по разделам.</p>
-            ) : (
-              <div className="questions-by-section__grid">
-                {questionsBySection.map((section) => (
-                  <div key={section.section ?? 'no-section'} className="questions-by-section__item">
-                    <div className="questions-by-section__title">{section.title}</div>
-                    <ul>
-                      {section.questions.slice(0, 5).map((question) => (
-                        <li key={`${section.title}-${question.question}`}>{question.question}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 

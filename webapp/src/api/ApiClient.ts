@@ -307,9 +307,10 @@ export class ApiClient {
     return response.map(mapMessage);
   }
 
-  async fetchDashboardSummary(): Promise<DashboardSummary> {
+  async fetchDashboardSummary(operatorId?: number): Promise<DashboardSummary> {
     const response = await this.request<DashboardSummaryRaw>('analytics/dashboard', {
       method: 'GET',
+      query: operatorId ? { operator_id: operatorId } : undefined,
     });
     return mapDashboardSummary(response);
   }

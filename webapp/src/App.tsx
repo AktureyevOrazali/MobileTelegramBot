@@ -9,9 +9,28 @@ import { useApi } from './context/ApiContext';
 const tabs = ['dialogs', 'dashboard', 'admin', 'profile'] as const;
 type TabKey = (typeof tabs)[number];
 
+type ThemeMode = 'light' | 'dark';
+
+const THEME_STORAGE_KEY = 'telegram-companion-theme';
+
 const App: React.FC = () => {
   const { session, apiClient, setSession, logout } = useApi();
   const [activeTab, setActiveTab] = useState<TabKey>('dialogs');
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    if (typeof window === 'undefined') {
+      return 'light';
+    }
+    try {
+      const stored = window.localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
+      if (stored === 'light' || stored === 'dark') {
+        return stored;
+      }
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      return prefersDark ? 'dark' : 'light';
+    } catch (error) {
+      return 'light';
+    }
+  });
 
   const currentUser = session?.user ?? null;
   const navigationTabs = useMemo(() => {
@@ -21,6 +40,38 @@ const App: React.FC = () => {
     }
     return ['dialogs'] as TabKey[];
   }, [currentUser]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch (error) {
+      // ignore storage errors
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) {
+      return;
+    }
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const listener = (event: MediaQueryListEvent) => {
+      try {
+        const stored = window.localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
+        if (stored === 'light' || stored === 'dark') {
+          return;
+        }
+      } catch (error) {
+        // ignore
+      }
+      setTheme(event.matches ? 'dark' : 'light');
+    };
+    media.addEventListener('change', listener);
+    return () => media.removeEventListener('change', listener);
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'profile') {
@@ -36,7 +87,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div style={{ paddingBottom: 32 }}>
+    <div className="app-shell" style={{ paddingBottom: 32 }}>
       <header style={{ padding: '24px 0 0 0' }}>
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -62,6 +113,15 @@ const App: React.FC = () => {
                     : 'Оператор'}
                 </span>
               </span>
+            </button>
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+              aria-label={theme === 'dark' ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
+              title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+            >
+              {theme === 'dark' ? '🌙' : '☀️'}
             </button>
             <button className="button secondary" type="button" onClick={logout}>Выйти</button>
           </div>

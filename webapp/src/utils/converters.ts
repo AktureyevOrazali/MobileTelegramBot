@@ -96,6 +96,16 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
   const safeNumber = (value: number | null | undefined, fallback = 0): number =>
     typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
+  const parseResponseTimeMinutes = (): number | null => {
+    if (typeof raw.avg_response_time_minutes === 'number' && Number.isFinite(raw.avg_response_time_minutes)) {
+      return raw.avg_response_time_minutes;
+    }
+    if (typeof raw.avg_response_time_seconds === 'number' && Number.isFinite(raw.avg_response_time_seconds)) {
+      return raw.avg_response_time_seconds / 60;
+    }
+    return null;
+  };
+
   const sectionBreakdown = Array.isArray(raw.section_breakdown)
     ? raw.section_breakdown
         .filter((item): item is DashboardSectionStatRaw => Boolean(item))
@@ -181,6 +191,7 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
       typeof raw.avg_dialog_duration_minutes === 'number' && Number.isFinite(raw.avg_dialog_duration_minutes)
         ? raw.avg_dialog_duration_minutes
         : null,
+    avgResponseTimeMinutes: parseResponseTimeMinutes(),
     sectionBreakdown,
     topQuestions,
     questionsBySection,

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
-import { DashboardSummary } from '../types';
+import { DashboardSummary, UserProfile } from '../types';
 import { formatDate, formatDateTime } from '../utils/date';
 import SelectPill from '../components/SelectPill';
 
@@ -23,6 +23,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
   totalOutgoingMessages: 0,
   averageMessagesPerDialog: 0,
   avgDialogDurationMinutes: null,
+  avgResponseTimeMinutes: null,
   sectionBreakdown: [],
   topQuestions: [],
   questionsBySection: [],
@@ -37,16 +38,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedQuestionSection, setSelectedQuestionSection] = useState<string>('all');
+  const [selectedOperatorId, setSelectedOperatorId] = useState<number | null>(null);
+  const [operators, setOperators] = useState<UserProfile[]>([]);
+  const [operatorsLoading, setOperatorsLoading] = useState(false);
+  const [operatorsError, setOperatorsError] = useState<string | null>(null);
 
   const loadData = useCallback(
-    async (mode: LoadMode = 'initial') => {
+    async (mode: LoadMode = 'initial', operatorIdOverride?: number | null) => {
       if (mode === 'initial') {
         setLoading(true);
       } else {
         setRefreshing(true);
       }
       try {
-        const data = await apiClient.fetchDashboardSummary();
+        const operatorId = operatorIdOverride !== undefined ? operatorIdOverride : selectedOperatorId;
+        const data = await apiClient.fetchDashboardSummary(operatorId ?? undefined);
         setSummary(data);
         setError(null);
       } catch (err) {
@@ -65,17 +71,95 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
         }
       }
     },
-    [apiClient],
+    [apiClient, selectedOperatorId],
   );
 
   useEffect(() => {
     loadData('initial');
   }, [loadData]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setOperatorsLoading(true);
+    setOperatorsError(null);
+
+    (async () => {
+      try {
+        const users = await apiClient.fetchUsers();
+        if (cancelled) {
+          return;
+        }
+        const filtered = users
+          .filter((user) => ['moderator', 'viewer'].includes(user.role) && !user.isAdmin)
+          .filter((user) => {
+            const normalized = `${user.name ?? ''} ${user.login ?? ''}`.toLowerCase();
+            return normalized ? !normalized.includes('bot') && !normalized.includes('бот') : true;
+          })
+          .sort((a, b) => {
+            const nameA = a.name || a.login || '';
+            const nameB = b.name || b.login || '';
+            return nameA.localeCompare(nameB, 'ru', { sensitivity: 'base' });
+          });
+        setOperators(filtered);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+            ? err.message
+            : 'Не удалось загрузить список сотрудников.';
+        setOperatorsError(message);
+      } finally {
+        if (!cancelled) {
+          setOperatorsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient]);
+
+  useEffect(() => {
+    if (selectedOperatorId === null) {
+      return;
+    }
+    const exists = operators.some((operator) => operator.id === selectedOperatorId);
+    if (!exists) {
+      setSelectedOperatorId(null);
+    }
+  }, [operators, selectedOperatorId]);
+
   const numberFormatter = useMemo(() => new Intl.NumberFormat('ru-RU'), []);
 
   const hasData = Boolean(summary);
   const data = summary ?? EMPTY_SUMMARY;
+
+  const operatorOptions = useMemo(
+    () => [
+      { value: 'all', label: 'Все сотрудники' },
+      ...operators.map((operator) => ({
+        value: String(operator.id),
+        label: operator.name || operator.login,
+        meta: operator.role === 'moderator' ? 'Модератор' : 'Оператор',
+      })),
+    ],
+    [operators],
+  );
+
+  const operatorSelectValue = selectedOperatorId === null ? 'all' : String(selectedOperatorId);
+
+  const selectedOperatorLabel = useMemo(() => {
+    if (selectedOperatorId === null) {
+      return 'Все сотрудники';
+    }
+    const found = operators.find((operator) => operator.id === selectedOperatorId);
+    return found?.name || found?.login || `ID ${selectedOperatorId}`;
+  }, [operators, selectedOperatorId]);
 
   const statCards = [
     { label: 'Всего обращений', value: data.totalDialogs },
@@ -219,9 +303,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   const avgMessagesValue = data.averageMessagesPerDialog
     ? data.averageMessagesPerDialog.toFixed(1)
     : '0.0';
-  const avgDurationValue = data.avgDialogDurationMinutes
-    ? data.avgDialogDurationMinutes.toFixed(1)
-    : '—';
+   const responseTimeDisplay = useMemo(() => {
+    if (data.avgResponseTimeMinutes === null) {
+      return '—';
+    }
+    const totalSeconds = Math.round(data.avgResponseTimeMinutes * 60);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes > 0) {
+      return `${minutes} мин${seconds > 0 ? ` ${seconds} с` : ''}`;
+    }
+    return `${seconds} с`;
+  }, [data.avgResponseTimeMinutes]);
+
+  const responseTimeMood = useMemo(() => {
+    if (data.avgResponseTimeMinutes === null) {
+      return 'Недостаточно данных';
+    }
+    if (data.avgResponseTimeMinutes <= 2) {
+      return 'Отвечает быстро';
+    }
+    if (data.avgResponseTimeMinutes <= 7) {
+      return 'Отвечает в среднем темпе';
+    }
+    return 'Отвечает медленно';
+  }, [data.avgResponseTimeMinutes]);
 
   const lastUpdated = hasData ? formatDateTime(data.updatedAt) : '';
 
@@ -234,10 +340,29 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             <p className="text-muted" style={{ margin: 0 }}>
               Обновлено: {lastUpdated || '—'}
             </p>
+            <p className="text-muted" style={{ margin: '4px 0 0 0' }}>
+              Сотрудник: {selectedOperatorLabel}
+            </p>
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <SelectPill
+              label={operatorsLoading ? 'Загрузка...' : 'Сотрудник'}
+              options={operatorOptions}
+              value={operatorSelectValue}
+              onChange={(value) => {
+                const nextValue = value === 'all' ? null : Number(value);
+                setSelectedOperatorId((prev) => (prev === nextValue ? prev : nextValue));
+              }}
+              searchable
+              style={{ minWidth: 220 }}
+            />
+            {operatorsError && (
+              <span className="badge badge--error">
+                {operatorsError}
+              </span>
+            )}
             {error && (
-              <span className="badge" style={{ background: 'rgba(220, 53, 69, 0.12)', color: '#b42318' }}>
+              <span className="badge badge--error">
                 {error}
               </span>
             )}
@@ -267,8 +392,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             <span className="stat-card__value">{avgMessagesValue}</span>
           </div>
           <div>
-            <span className="stat-card__label">Средняя длительность, мин</span>
-            <span className="stat-card__value">{avgDurationValue}</span>
+            <span className="stat-card__label">Среднее время ответа</span>
+            <span className="stat-card__value">{responseTimeDisplay}</span>
+            <span className="stat-card__hint">{responseTimeMood}</span>
           </div>
         </div>
 

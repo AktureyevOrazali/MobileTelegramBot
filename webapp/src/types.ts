@@ -170,6 +170,8 @@ export interface DashboardSummaryRaw {
   total_outgoing_messages?: number;
   average_messages_per_dialog?: number | null;
   avg_dialog_duration_minutes?: number | null;
+  avg_response_time_minutes?: number | null;
+  avg_response_time_seconds?: number | null;
   section_breakdown?: DashboardSectionStatRaw[];
   top_questions?: DashboardTopQuestionRaw[];
   questions_by_section?: DashboardSectionTopQuestionsRaw[];
@@ -220,6 +222,7 @@ export interface DashboardSummary {
   totalOutgoingMessages: number;
   averageMessagesPerDialog: number;
   avgDialogDurationMinutes: number | null;
+  avgResponseTimeMinutes: number | null;
   sectionBreakdown: DashboardSectionStat[];
   topQuestions: DashboardTopQuestion[];
   questionsBySection: DashboardSectionTopQuestions[];

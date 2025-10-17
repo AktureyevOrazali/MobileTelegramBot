@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 
@@ -172,7 +172,6 @@ class DashboardSummaryResponse(BaseModel):
     total_outgoing_messages: int
     average_messages_per_dialog: float
     avg_dialog_duration_minutes: float | None = None
-    avg_response_time_minutes: float | None = None
     section_breakdown: List[DashboardSectionStat]
     top_questions: List[DashboardTopQuestion]
     questions_by_section: List[DashboardSectionQuestions]
@@ -442,11 +441,8 @@ def list_faq(_: Dict[str, object] = Depends(get_current_user)):
 
 
 @router.get("/analytics/dashboard", response_model=DashboardSummaryResponse)
-def dashboard_summary(
-    operator_id: int | None = Query(default=None, description="Идентификатор сотрудника для фильтрации"),
-    _: Dict[str, object] = Depends(require_admin),
-):
-    summary = database.get_dashboard_summary(operator_id=operator_id)
+def dashboard_summary(_: Dict[str, object] = Depends(require_admin)):
+    summary = database.get_dashboard_summary()
     return DashboardSummaryResponse(**summary)
 
 

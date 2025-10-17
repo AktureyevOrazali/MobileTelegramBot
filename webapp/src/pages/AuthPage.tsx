@@ -1,16 +1,6 @@
 import React, { FormEvent, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
 import { AuthSession } from '../types';
-import {
-  buttonPrimaryClass,
-  buttonSecondaryClass,
-  cardClass,
-  headingClass,
-  inputClass,
-  labelClass,
-  mutedTextClass,
-} from '../ui/primitives';
-import { cn } from '../utils/cn';
 
 interface AuthPageProps {
   apiClient: ApiClient;
@@ -57,34 +47,32 @@ const AuthPage: React.FC<AuthPageProps> = ({ apiClient, onAuthenticated }) => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-500/10 via-transparent to-transparent px-4 py-12 dark:from-slate-900/40 dark:via-slate-950">
-      <div className={cn(cardClass, 'w-full max-w-md space-y-6')}>
-        <div className="space-y-2 text-center">
-          <h2 className={cn(headingClass, 'text-3xl')}>
-            {mode === 'login' ? 'Добро пожаловать' : 'Создание аккаунта'}
-          </h2>
-          <p className={cn(mutedTextClass, 'text-sm')}> 
-            {mode === 'login'
-              ? 'Введите логин или e-mail и пароль, чтобы продолжить работу.'
-              : 'Заполните форму, чтобы подключиться к системе. Пароль должен содержать минимум 5 символов.'}
-          </p>
-        </div>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className="card" style={{ width: 'min(460px, 100%)' }}>
+        <h2 className="heading" style={{ marginBottom: 12 }}>
+          {mode === 'login' ? 'Добро пожаловать' : 'Создание аккаунта'}
+        </h2>
+        <p className="text-muted" style={{ marginBottom: 24 }}>
+          {mode === 'login'
+            ? 'Введите логин или e-mail и пароль, чтобы продолжить работу.'
+            : 'Заполните форму, чтобы подключиться к системе. Пароль должен содержать минимум 5 символов.'}
+        </p>
+        <form onSubmit={handleSubmit} className="flex-gap" style={{ flexDirection: 'column', display: 'flex' }}>
           {mode === 'register' && (
-            <label className="flex flex-col gap-2">
-              <span className={labelClass}>Имя и фамилия</span>
+            <label className="label" style={{ width: '100%' }}>
+              Имя и фамилия
               <input
-                className={inputClass}
+                className="input"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Иван Иванов"
               />
             </label>
           )}
-          <label className="flex flex-col gap-2">
-            <span className={labelClass}>{mode === 'login' ? 'Логин или e-mail' : 'Рабочий e-mail'}</span>
+          <label className="label">
+            {mode === 'login' ? 'Логин или e-mail' : 'Рабочий e-mail'}
             <input
-              className={inputClass}
+              className="input"
               type={mode === 'login' ? 'text' : 'email'}
               value={identifier}
               onChange={(event) => setIdentifier(event.target.value)}
@@ -92,10 +80,10 @@ const AuthPage: React.FC<AuthPageProps> = ({ apiClient, onAuthenticated }) => {
               required
             />
           </label>
-          <label className="flex flex-col gap-2">
-            <span className={labelClass}>Пароль</span>
+          <label className="label">
+            Пароль
             <input
-              className={inputClass}
+              className="input"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -103,18 +91,14 @@ const AuthPage: React.FC<AuthPageProps> = ({ apiClient, onAuthenticated }) => {
               required
             />
           </label>
-          {error && (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-200">
-              {error}
-            </div>
-          )}
-          <button className={buttonPrimaryClass} type="submit" disabled={loading}>
+          {error && <div className="alert">{error}</div>}
+          <button className="button" type="submit" disabled={loading}>
             {loading ? 'Проверяем...' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
           </button>
         </form>
-        <div className="text-center">
+        <div style={{ marginTop: 16, textAlign: 'center' }}>
           <button
-            className={buttonSecondaryClass}
+            className="button secondary"
             type="button"
             onClick={() => {
               setMode(mode === 'login' ? 'register' : 'login');

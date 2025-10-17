@@ -5,19 +5,6 @@ import { formatDateTime } from '../utils/date';
 import SelectPill from '../components/SelectPill';
 import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
-import {
-  buttonBaseClass,
-  buttonPrimaryClass,
-  buttonSecondaryClass,
-  cardClass,
-  chipClass,
-  headingClass,
-  inputClass,
-  labelClass,
-  mutedTextClass,
-  sectionTitleClass,
-} from '../ui/primitives';
-import { cn } from '../utils/cn';
 
 interface AdminPageProps {
   apiClient: ApiClient;
@@ -69,6 +56,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   const [assignedBins, setAssignedBins] = useState<string[]>(user.bins);
   const [binToAdd, setBinToAdd] = useState<string>('');
 
+  // состояния автосохранений
   const [savingRole, setSavingRole] = useState(false);
   const [savingSections, setSavingSections] = useState(false);
   const [savingBins, setSavingBins] = useState(false);
@@ -76,6 +64,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // password modal
   const [pwdOpen, setPwdOpen] = useState(false);
   const [pwd1, setPwd1] = useState('');
   const [pwd2, setPwd2] = useState('');
@@ -114,6 +103,8 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     return mapped;
   }, [sections, sectionIds]);
 
+
+
   const binOptions = useMemo(() => {
     const current = new Set(assignedBins);
     return [{ value: '', label: 'Выберите БИН' }].concat(
@@ -121,6 +112,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     );
   }, [availableBins, assignedBins]);
 
+  // ---- Автосохранение роли (мгновенно) ----
   const lastSavedRole = useRef(selectedRole);
   useEffect(() => {
     if (lastSavedRole.current === selectedRole) return;
@@ -140,6 +132,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRole]);
 
+  // ---- Автосохранение разделов (debounce) ----
   const sectionKey = useMemo(() => Array.from(sectionIds).sort().join(','), [sectionIds]);
   useDebouncedEffect(() => {
     (async () => {
@@ -156,6 +149,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     })();
   }, [sectionKey]);
 
+  // ---- Автосохранение БИНов (debounce) ----
   const binsKey = useMemo(() => assignedBins.slice().sort().join(','), [assignedBins]);
   useDebouncedEffect(() => {
     (async () => {
@@ -192,16 +186,18 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     });
   };
 
+
+
   const addBin = (b: string) => {
     if (!b || assignedBins.includes(b)) return;
     setAssignedBins((prev) => prev.concat(b));
     setBinToAdd('');
   };
-
   const removeBin = (b: string) => {
     setAssignedBins((prev) => prev.filter((x) => x !== b));
   };
 
+  // Сброс пароля
   const handlePasswordReset = async () => {
     if (pwd1.trim().length < 6) {
       setPwdErr('Пароль должен быть не короче 6 символов');
@@ -233,42 +229,50 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   }, [successMessage]);
 
   return (
-    <div className={cn(cardClass, 'space-y-6')}>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h3 className="text-xl font-semibold text-slate-900 dark:text-white">{user.name}</h3>
-          <p className={cn(mutedTextClass, 'text-sm')}>{user.email} · {user.login}</p>
-          <p className={cn(mutedTextClass, 'text-xs')}>Аккаунт создан: {formatDateTime(user.createdAt)}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className={chipClass}>Роль: {roleLabels[user.role] ?? user.role}</span>
-            <span className={chipClass}>Разделов: {sectionIds.size}</span>
-            <span className={chipClass}>БИНов: {assignedBins.length}</span>
+    <div className="card admin-user-card">
+      <div className="admin-user-card__grid">
+        <div className="admin-user-card__cell">
+          <div>
+            <h3>{user.name}</h3>
+            <p className="text-muted" style={{ margin: '4px 0' }}>
+              {user.email} · {user.login}
+            </p>
+            <p className="text-muted" style={{ margin: '4px 0', fontSize: '0.85rem' }}>
+              Аккаунт создан: {formatDateTime(user.createdAt)}
+            </p>
+          </div>
+          <div className="flex-gap" style={{ marginTop: 8 }}>
+            <span className="chip">Роль: {roleLabels[user.role] ?? user.role}</span>
+            <span className="chip">Разделов: {sectionIds.size}</span>
+            <span className="chip">БИНов: {assignedBins.length}</span>
           </div>
         </div>
-        <div className="space-y-2 text-sm">
-          <span className="font-semibold text-slate-700 dark:text-slate-200">Роль</span>
-          <SelectPill
-            label="Роль"
-            options={roleOptions}
-            value={selectedRole}
-            onChange={(v) => setSelectedRole(v)}
-            showLabelInside
-          />
-          {savingRole && <div className={cn(mutedTextClass, 'text-xs')}>Сохраняем…</div>}
-        </div>
-      </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-4">
+        <div className="admin-user-card__cell">
           <div>
-            <h4 className={sectionTitleClass}>Назначенные БИНы</h4>
-            <div className="flex flex-wrap gap-2">
-              {assignedBins.length === 0 && <span className={mutedTextClass}>Нет назначенных БИНов</span>}
+            <h4>Роль</h4>
+            <SelectPill
+              label=""
+              showLabelInside={false}
+              options={roleOptions}
+              value={selectedRole}
+              onChange={(v) => setSelectedRole(v)}
+              style={{ minWidth: 0 }}
+            />
+          </div>
+          {savingRole && <div className="text-muted" style={{ fontSize: 12 }}>Сохраняем…</div>}
+        </div>
+
+        <div className="admin-user-card__cell">
+          <div>
+            <h4>Назначенные БИНы</h4>
+            <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+              {assignedBins.length === 0 && <span className="text-muted">Нет назначенных БИНов</span>}
               {assignedBins.map((b) => (
-                <span key={b} className={cn(chipClass, 'flex items-center gap-2')}>
+                <span key={b} className="chip bin-chip">
                   {b}
                   <button
-                    className={cn(buttonBaseClass, 'h-7 rounded-full bg-rose-500/10 px-2 text-xs text-rose-600 hover:bg-rose-500/20 dark:bg-rose-500/20 dark:text-rose-200')}
+                    className="chip-x"
                     type="button"
                     aria-label={`Удалить БИН ${b}`}
                     onClick={() => removeBin(b)}
@@ -279,10 +283,11 @@ const AdminUserCard: React.FC<UserCardProps> = ({
               ))}
             </div>
           </div>
-          <div className="space-y-2">
-            <span className={labelClass}>Добавить БИН</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="label" style={{ fontWeight: 700 }}>Добавить БИН</div>
             <SelectPill
-              label="БИН"
+              label=""
+              showLabelInside={false}
               options={binOptions}
               value={binToAdd}
               onChange={(v) => {
@@ -290,25 +295,26 @@ const AdminUserCard: React.FC<UserCardProps> = ({
                 if (v) addBin(v);
               }}
               searchable
+              style={{ minWidth: 0 }}
             />
           </div>
-          {savingBins && <div className={cn(mutedTextClass, 'text-xs')}>Сохраняем…</div>}
+          {savingBins && <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>}
         </div>
 
-        <div className="space-y-4">
+        <div className="admin-user-card__cell">
           <div>
-            <h4 className={sectionTitleClass}>Назначенные разделы</h4>
-            <div className="flex flex-wrap gap-2">
+            <h4>Назначенные разделы</h4>
+            <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
               {assignedSections.length === 0 && (
-                <span className={mutedTextClass}>Нет назначенных разделов</span>
+                <span className="text-muted">Нет назначенных разделов</span>
               )}
               {assignedSections.map((section) => {
                 const label = section.title || section.id;
                 return (
-                  <span key={section.id} className={cn(chipClass, 'flex items-center gap-2')}>
+                  <span key={section.id} className="chip bin-chip">
                     {label}
                     <button
-                      className={cn(buttonBaseClass, 'h-7 rounded-full bg-rose-500/10 px-2 text-xs text-rose-600 hover:bg-rose-500/20 dark:bg-rose-500/20 dark:text-rose-200')}
+                      className="chip-x"
                       type="button"
                       aria-label={`Удалить раздел ${label}`}
                       onClick={() => removeSection(section.id)}
@@ -320,10 +326,11 @@ const AdminUserCard: React.FC<UserCardProps> = ({
               })}
             </div>
           </div>
-          <div className="space-y-2">
-            <span className={labelClass}>Добавить раздел</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="label" style={{ fontWeight: 700 }}>Добавить раздел</div>
             <SelectPill
-              label="Раздел"
+              label=""
+              showLabelInside={false}
               options={sectionOptions}
               value={sectionToAdd}
               onChange={(v) => {
@@ -331,71 +338,52 @@ const AdminUserCard: React.FC<UserCardProps> = ({
                 if (v) addSection(v);
               }}
               searchable
+              style={{ minWidth: 0 }}
             />
           </div>
-          {savingSections && <div className={cn(mutedTextClass, 'text-xs')}>Сохраняем…</div>}
+          {savingSections && <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>}
         </div>
       </div>
 
-      {(error || successMessage) && (
-        <div className="space-y-2">
-          {error && (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-200">
-              {error}
-            </div>
-          )}
-          {successMessage && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm font-semibold text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-200">
-              {successMessage}
-            </div>
-          )}
+       {(error || successMessage) && (
+        <div className="admin-user-card__status">
+          {error && <div className="alert">{error}</div>}
+          {successMessage && <div className="badge">{successMessage}</div>}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-4 dark:border-slate-700/60">
+      <div className="admin-user-card__footer">
         <button
-          className={buttonSecondaryClass}
+          className="button secondary"
           type="button"
-          onClick={() => {
-            setPwd1('');
-            setPwd2('');
-            setPwdErr(null);
-            setPwdOpen(true);
-          }}
+          onClick={() => { setPwd1(''); setPwd2(''); setPwdErr(null); setPwdOpen(true); }}
         >
           Сбросить пароль
         </button>
-        {canDeleteUser && (
-          <button
-            className={cn(buttonBaseClass, 'rounded-xl bg-rose-500 px-4 py-2 text-white hover:bg-rose-600 dark:hover:bg-rose-500')}
-            type="button"
-            onClick={() => onDeleteRequest(user)}
-          >
-            Удалить аккаунт
-          </button>
-        )}
+        <div className="admin-user-card__footer-actions">
+          {canDeleteUser && (
+            <button className="button danger" type="button" onClick={() => onDeleteRequest(user)}>
+              Удалить аккаунт
+            </button>
+          )}
+        </div>
       </div>
 
-      <Modal open={pwdOpen} onClose={() => setPwdOpen(false)} className="max-w-md space-y-4">
-        <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Сброс пароля</h3>
-        <label className="flex flex-col gap-2">
-          <span className={labelClass}>Новый пароль</span>
-          <input className={inputClass} type="password" value={pwd1} onChange={(e) => setPwd1(e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-2">
-          <span className={labelClass}>Подтвердите пароль</span>
-          <input className={inputClass} type="password" value={pwd2} onChange={(e) => setPwd2(e.target.value)} />
-        </label>
-        {pwdErr && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-200">
-            {pwdErr}
-          </div>
-        )}
-        <div className="flex justify-end gap-3 pt-2">
-          <button className={buttonSecondaryClass} onClick={() => setPwdOpen(false)}>
-            Отмена
-          </button>
-          <button className={buttonPrimaryClass} onClick={handlePasswordReset} disabled={savingPassword}>
+      {/* Модалка пароля */}
+      <Modal open={pwdOpen} onClose={() => setPwdOpen(false)}>
+        <h3>Сброс пароля</h3>
+        <div className="row">
+          <label>Новый пароль</label>
+          <input className="input" type="password" value={pwd1} onChange={(e) => setPwd1(e.target.value)} />
+        </div>
+        <div className="row">
+          <label>Подтвердите пароль</label>
+          <input className="input" type="password" value={pwd2} onChange={(e) => setPwd2(e.target.value)} />
+        </div>
+        {pwdErr && <div className="alert error" style={{ marginTop: 6 }}>{pwdErr}</div>}
+        <div className="actions" style={{ justifyContent: 'space-between' }}>
+          <button className="button secondary" onClick={() => setPwdOpen(false)}>Отмена</button>
+          <button className="button" onClick={handlePasswordReset} disabled={savingPassword}>
             {savingPassword ? 'Сохраняем…' : 'Сбросить пароль'}
           </button>
         </div>
@@ -412,46 +400,44 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deleteUser, setDeleteUser] = useState<UserProfile | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    try {
+  const loadAdminData = useCallback(
+    async (query?: string) => {
       setLoading(true);
-      const [fetchedUsers, fetchedRoles, fetchedSections, fetchedBins] = await Promise.all([
-        apiClient.fetchUsers(),
-        apiClient.fetchRoles(),
-        apiClient.fetchSections(),
-        apiClient.fetchBins(),
-      ]);
-      setUsers(fetchedUsers);
-      setRoles(fetchedRoles);
-      setSections(fetchedSections);
-      setBins(fetchedBins);
       setError(null);
-    } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      else if (err instanceof Error) setError(err.message);
-      else setError('Не удалось загрузить данные.');
-    } finally {
-      setLoading(false);
-    }
-  }, [apiClient]);
+      try {
+        const [loadedRoles, loadedUsers, loadedSections, loadedBins] = await Promise.all([
+          apiClient.fetchRoles(),
+          apiClient.fetchUsers(query),
+          apiClient.fetchSections(),
+          apiClient.fetchBins(),
+        ]);
+        setRoles(loadedRoles);
+        setUsers(loadedUsers);
+        setSections(loadedSections);
+        setBins(loadedBins);
+      } catch (err) {
+        if (err instanceof ApiError) setError(err.message);
+        else if (err instanceof Error) setError(err.message);
+        else setError('Не удалось загрузить данные администратора');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [apiClient],
+  );
 
+  // первая загрузка
+  useEffect(() => { loadAdminData(); }, [loadAdminData]);
+
+  // автопоиск (debounce)
   useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const filteredUsers = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) {
-      return users;
-    }
-    return users.filter((user) => {
-      const haystack = `${user.name} ${user.email} ${user.login}`.toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [search, users]);
+    const t = setTimeout(() => { loadAdminData(search.trim() || undefined); }, 350);
+    return () => clearTimeout(t);
+  }, [search, loadAdminData]);
 
   const handleRoleSave = useCallback(
     async (userId: number, role: string) => {
@@ -462,116 +448,127 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   );
 
   const handleSectionsSave = useCallback(
-    async (userId: number, nextSections: string[]) => {
-      const updated = await apiClient.updateUserSections(userId, nextSections);
+    async (userId: number, sectionList: string[]) => {
+      const updated = await apiClient.updateUserSections(userId, sectionList);
       setUsers((prev) => prev.map((user) => (user.id === updated.id ? updated : user)));
     },
     [apiClient],
   );
 
   const handleBinsSave = useCallback(
-    async (userId: number, nextBins: string[]) => {
-      const updated = await apiClient.updateUserBins(userId, nextBins);
+    async (userId: number, binsList: string[]) => {
+      const updated = await apiClient.updateUserBins(userId, binsList);
       setUsers((prev) => prev.map((user) => (user.id === updated.id ? updated : user)));
     },
     [apiClient],
   );
 
   const handlePasswordReset = useCallback(
-    async (userId: number, password: string) => {
-      await apiClient.adminSetUserPassword(userId, password);
+    async (userId: number, newPassword: string) => {
+      await apiClient.adminSetUserPassword(userId, newPassword);
     },
     [apiClient],
   );
 
-  const handleDeleteUser = useCallback(
-    async (userId: number) => {
-      try {
-        setDeleting(true);
-        await apiClient.deleteUser(userId);
-        setUsers((prev) => prev.filter((user) => user.id !== userId));
-        setDeleteUser(null);
-      } catch (err) {
-        const message =
-          err instanceof ApiError
-            ? err.message
-            : err instanceof Error
-            ? err.message
-            : 'Не удалось удалить пользователя';
-        setError(message);
-      } finally {
-        setDeleting(false);
-      }
-    },
-    [apiClient],
-  );
+  const filteredUsers = useMemo(() => {
+    if (!search.trim()) return users;
+    const normalized = search.trim().toLowerCase();
+    return users.filter((user) =>
+      [user.name, user.email, user.login].some((value) => value.toLowerCase().includes(normalized)),
+    );
+  }, [users, search]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!userToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await apiClient.deleteUser(userToDelete.id);
+      setUsers((prev) => prev.filter((user) => user.id !== userToDelete.id));
+      setUserToDelete(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : (err as Error)?.message ?? 'Не удалось удалить пользователя';
+      setDeleteError(message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [apiClient, userToDelete]);
 
   return (
-    <div className="flex flex-col gap-6 pb-16">
-      <div className={cn(cardClass, 'space-y-4')}>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className={cn(headingClass, 'text-2xl')}>Управление пользователями</h2>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
-            className={cn(inputClass, 'sm:w-72')}
-            placeholder="Поиск по имени или e-mail"
+            className="input"
+            placeholder="Поиск по имени, логину или e-mail"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            style={{ flex: '1 1 420px' }}
           />
         </div>
-        <p className={mutedTextClass}>
-          Всего пользователей: {users.length}. Выберите аккаунт для изменения роли, разделов или БИНов.
-        </p>
+        <div className="text-muted" style={{ fontSize: '0.9rem' }}>
+          Вы вошли как {currentUser.name} ({roleLabels[currentUser.role] ?? currentUser.role}). Всего пользователей: {filteredUsers.length} · Доступные БИНы: {bins.length}
+        </div>
       </div>
 
       {loading ? (
-        <div className={cn(cardClass, 'text-center text-sm')}>Загружаем пользователей…</div>
+        <div className="card" style={{ textAlign: 'center' }}>
+          Загружаем данные администратора...
+        </div>
       ) : error ? (
-        <div className={cn(cardClass, 'space-y-4 text-center')}>
-          <p>Ошибка: {error}</p>
-          <button className={buttonPrimaryClass} type="button" onClick={loadData}>
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p style={{ marginBottom: 16 }}>Ошибка: {error}</p>
+          <button className="button" type="button" onClick={() => loadAdminData(search)}>
             Повторить попытку
           </button>
         </div>
       ) : filteredUsers.length === 0 ? (
-        <div className={cn(cardClass, 'text-center')}>
-          <p className={mutedTextClass}>Пользователи не найдены. Попробуйте изменить запрос.</p>
+        <div className="card" style={{ textAlign: 'center' }}>
+          <h3>Пользователи не найдены</h3>
+          <p className="text-muted">Измените параметры поиска или создайте нового пользователя в мобильном приложении.</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {filteredUsers.map((user) => (
-            <AdminUserCard
-              key={user.id}
-              user={user}
-              roles={roles}
-              sections={sections}
-              availableBins={bins}
-              onRoleSave={handleRoleSave}
-              onSectionsSave={handleSectionsSave}
-              onBinsSave={handleBinsSave}
-              onPasswordReset={handlePasswordReset}
-              canDeleteUser={currentUser.id !== user.id}
-              onDeleteRequest={setDeleteUser}
-            />
-          ))}
-        </div>
+        filteredUsers.map((user) => (
+          <AdminUserCard
+            key={user.id}
+            user={user}
+            roles={roles}
+            sections={sections}
+            availableBins={bins}
+            onRoleSave={handleRoleSave}
+            onSectionsSave={handleSectionsSave}
+            onBinsSave={handleBinsSave}
+            onPasswordReset={handlePasswordReset}
+            canDeleteUser={currentUser.id !== user.id}
+            onDeleteRequest={(selectedUser) => {
+              setDeleteError(null);
+              setUserToDelete(selectedUser);
+            }}
+          />
+        ))
       )}
 
       <ConfirmModal
-        open={Boolean(deleteUser)}
-        title="Удалить пользователя?"
+        open={Boolean(userToDelete)}
+        title="Удалить аккаунт сотрудника?"
         description={
-          deleteUser ? (
-            <span>
-              Пользователь <span className="font-semibold">{deleteUser.name}</span> будет удалён без возможности восстановления.
-            </span>
-          ) : undefined
+          userToDelete && (
+            <>
+              Аккаунт <strong>{userToDelete.name}</strong> ({userToDelete.email}) будет удалён навсегда.
+              {deleteError && <p className="alert error" style={{ marginTop: 12 }}>{deleteError}</p>}
+            </>
+          )
         }
+        tone="danger"
         confirmLabel="Удалить"
         cancelLabel="Отмена"
-        tone="danger"
-        loading={deleting}
-        onCancel={() => setDeleteUser(null)}
-        onConfirm={() => deleteUser && handleDeleteUser(deleteUser.id)}
+        loading={deleteLoading}
+        onCancel={() => {
+          if (deleteLoading) return;
+          setUserToDelete(null);
+          setDeleteError(null);
+        }}
+        onConfirm={handleConfirmDelete}
       />
     </div>
   );

@@ -93,15 +93,60 @@ export function mapNotification(raw: MessageNotificationRaw): MessageNotificatio
 }
 
 export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary {
-  const safeNumber = (value: number | null | undefined, fallback = 0): number =>
-    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  const toNumber = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().replace(',', '.');
+      if (!normalized) {
+        return null;
+      }
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    if (typeof value === 'bigint') {
+      return Number(value);
+    }
+    return null;
+  };
+
+  const safeNumber = (value: unknown, fallback = 0): number => {
+    const parsed = toNumber(value);
+    return parsed === null ? fallback : parsed;
+  };
+
+  const parseIsoDurationMinutes = (value: string): number | null => {
+    const match = value.trim().match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:[.,]\d+)?)S)?$/i);
+    if (!match) {
+      return null;
+    }
+    const hours = match[1] ? Number(match[1]) : 0;
+    const minutes = match[2] ? Number(match[2]) : 0;
+    const seconds = match[3] ? Number(match[3].replace(',', '.')) : 0;
+    return hours * 60 + minutes + seconds / 60;
+  };
 
   const parseResponseTimeMinutes = (): number | null => {
-    if (typeof raw.avg_response_time_minutes === 'number' && Number.isFinite(raw.avg_response_time_minutes)) {
-      return raw.avg_response_time_minutes;
+    const minutes = toNumber(raw.avg_response_time_minutes);
+    if (minutes !== null) {
+      return minutes;
     }
-    if (typeof raw.avg_response_time_seconds === 'number' && Number.isFinite(raw.avg_response_time_seconds)) {
-      return raw.avg_response_time_seconds / 60;
+    if (typeof raw.avg_response_time_minutes === 'string') {
+      const duration = parseIsoDurationMinutes(raw.avg_response_time_minutes);
+      if (duration !== null) {
+        return duration;
+      }
+    }
+    const seconds = toNumber(raw.avg_response_time_seconds);
+    if (seconds !== null) {
+      return seconds / 60;
+    }
+    if (typeof raw.avg_response_time_seconds === 'string') {
+      const duration = parseIsoDurationMinutes(raw.avg_response_time_seconds);
+      if (duration !== null) {
+        return duration;
+      }
     }
     return null;
   };

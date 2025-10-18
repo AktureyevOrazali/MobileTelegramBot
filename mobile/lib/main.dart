@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'network_exceptions.dart';
 
@@ -25,8 +26,10 @@ class TelegramCompanionApp extends StatefulWidget {
 class _TelegramCompanionAppState extends State<TelegramCompanionApp> {
   late final ApiClient apiClient;
   final SessionStorage _sessionStorage = const SessionStorage();
+  final ThemePreferences _themePreferences = const ThemePreferences();
   AuthSession? _session;
   bool _initializing = true;
+  ThemeMode _themeMode = ThemeMode.system;
 
   @override
   void initState() {
@@ -41,6 +44,7 @@ class _TelegramCompanionAppState extends State<TelegramCompanionApp> {
     );
     apiClient = ApiClient(apiBaseUrl, apiToken);
     _restoreSession();
+    _restoreThemeMode();
   }
 
   Future<void> _restoreSession() async {
@@ -59,6 +63,23 @@ class _TelegramCompanionAppState extends State<TelegramCompanionApp> {
         _initializing = false;
       });
     }
+  }
+
+  Future<void> _restoreThemeMode() async {
+    final mode = await _themePreferences.load();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _themeMode = mode;
+    });
+  }
+
+  void _handleThemeModeChanged(ThemeMode mode) {
+    setState(() {
+      _themeMode = mode;
+    });
+    unawaited(_themePreferences.save(mode));
   }
 
   void _handleAuthenticated(AuthSession session) {
@@ -102,14 +123,12 @@ class _TelegramCompanionAppState extends State<TelegramCompanionApp> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = ColorScheme.fromSeed(seedColor: const Color(0xFF3E5AA8));
+  ThemeData _buildTheme(ColorScheme colorScheme) {
     final outlineBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
       borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.4)),
     );
-    final theme = ThemeData(
+    return ThemeData(
       colorScheme: colorScheme,
       useMaterial3: true,
       scaffoldBackgroundColor: colorScheme.surface,
@@ -156,11 +175,26 @@ class _TelegramCompanionAppState extends State<TelegramCompanionApp> {
         ),
       ),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const seedColor = Color(0xFF3E5AA8);
+    final lightTheme = _buildTheme(ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: Brightness.light,
+    ));
+    final darkTheme = _buildTheme(ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: Brightness.dark,
+    ));
 
     final home = _session == null
         ? AuthScreen(
             apiClient: apiClient,
             onAuthenticated: _handleAuthenticated,
+            themeMode: _themeMode,
+            onThemeModeChanged: _handleThemeModeChanged,
           )
         : ChatListScreen(
             apiClient: apiClient,
@@ -168,12 +202,16 @@ class _TelegramCompanionAppState extends State<TelegramCompanionApp> {
             onLogout: _handleLogout,
             onProfileUpdated: _handleProfileUpdated,
             onSessionRefreshed: _handleSessionRefreshed,
+            themeMode: _themeMode,
+            onThemeModeChanged: _handleThemeModeChanged,
           );
 
     if (_initializing) {
       return MaterialApp(
         title: 'Telegram Companion',
-        theme: theme,
+        theme: lightTheme,
+        darkTheme: darkTheme,
+        themeMode: _themeMode,
         home: const Scaffold(
           body: Center(child: CircularProgressIndicator()),
         ),
@@ -182,7 +220,9 @@ class _TelegramCompanionAppState extends State<TelegramCompanionApp> {
 
     return MaterialApp(
       title: 'Telegram Companion',
-      theme: theme,
+      theme: lightTheme,
+      darkTheme: darkTheme,
+      themeMode: _themeMode,
       home: home,
     );
   }
@@ -590,6 +630,14 @@ class ApiClient {
     return UserProfile.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  Future<void> deleteUser(int userId) async {
+    final uri = _buildUri('users/$userId');
+    await _sendRequest(
+      () => http.delete(uri, headers: _headers),
+      'Не удалось удалить пользователя.',
+    );
+  }
+
   Future<List<MessageNotification>> fetchUpdates(DateTime? since) async {
     final query = since != null
         ? <String, dynamic>{
@@ -621,6 +669,17 @@ class ApiClient {
       }
     }
     return notifications;
+  }
+
+  Future<DashboardSummary> fetchDashboardSummary({int? operatorId}) async {
+    final query = operatorId != null ? <String, dynamic>{'operator_id': operatorId} : null;
+    final uri = _buildUri('analytics/dashboard', query);
+    final response = await _sendRequest(
+      () => http.get(uri, headers: _headers),
+      'Не удалось загрузить дэшборд.',
+    );
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    return DashboardSummary.fromJson(decoded);
   }
 
   Future<http.Response> _sendRequest(
@@ -812,11 +871,52 @@ class SessionStorage {
   }
 }
 
+class ThemePreferences {
+  const ThemePreferences();
+
+  static const _storageKey = 'theme_mode';
+
+  Future<ThemeMode> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_storageKey);
+    if (stored == 'dark') {
+      return ThemeMode.dark;
+    }
+    if (stored == 'light') {
+      return ThemeMode.light;
+    }
+    return ThemeMode.system;
+  }
+
+  Future<void> save(ThemeMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    switch (mode) {
+      case ThemeMode.dark:
+        await prefs.setString(_storageKey, 'dark');
+        break;
+      case ThemeMode.light:
+        await prefs.setString(_storageKey, 'light');
+        break;
+      case ThemeMode.system:
+        await prefs.remove(_storageKey);
+        break;
+    }
+  }
+}
+
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({required this.apiClient, required this.onAuthenticated, super.key});
+  const AuthScreen({
+    required this.apiClient,
+    required this.onAuthenticated,
+    required this.themeMode,
+    required this.onThemeModeChanged,
+    super.key,
+  });
 
   final ApiClient apiClient;
   final void Function(AuthSession session) onAuthenticated;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -875,12 +975,24 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final platformBrightness = MediaQuery.of(context).platformBrightness;
+    final isDarkModeActive = widget.themeMode == ThemeMode.dark ||
+        (widget.themeMode == ThemeMode.system && platformBrightness == Brightness.dark);
+    final themeToggleIcon = isDarkModeActive ? Icons.light_mode : Icons.dark_mode;
+    final themeToggleTooltip = isDarkModeActive ? 'Светлый режим' : 'Тёмный режим';
+    final nextThemeMode = isDarkModeActive ? ThemeMode.light : ThemeMode.dark;
     final title = _isLogin ? 'Добро пожаловать' : 'Создание аккаунта';
     final description = _isLogin
         ? 'Введите логин или e-mail и пароль, чтобы продолжить работу.'
         : 'Заполните форму, чтобы подключиться. Пароль должен содержать минимум 5 символов.';
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton.small(
+        heroTag: 'auth-theme-toggle',
+        onPressed: () => widget.onThemeModeChanged(nextThemeMode),
+        tooltip: themeToggleTooltip,
+        child: Icon(themeToggleIcon),
+      ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -1064,6 +1176,8 @@ class ChatListScreen extends StatefulWidget {
     required this.onLogout,
     required this.onProfileUpdated,
     required this.onSessionRefreshed,
+    required this.themeMode,
+    required this.onThemeModeChanged,
     super.key,
   });
 
@@ -1072,9 +1186,31 @@ class ChatListScreen extends StatefulWidget {
   final VoidCallback onLogout;
   final ValueChanged<UserProfile> onProfileUpdated;
   final ValueChanged<AuthSession> onSessionRefreshed;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
 
   @override
   State<ChatListScreen> createState() => _ChatListScreenState();
+}
+
+enum ChatSortOrder { newest, oldest }
+
+enum DialogStatusFilter { all, open, closed }
+
+class _ChatFiltersResult {
+  _ChatFiltersResult({
+    required this.section,
+    required this.bin,
+    required this.favoritesOnly,
+    required this.sortOrder,
+    required this.statusFilter,
+  });
+
+  final String? section;
+  final String? bin;
+  final bool favoritesOnly;
+  final ChatSortOrder sortOrder;
+  final DialogStatusFilter statusFilter;
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
@@ -1087,10 +1223,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
   String? _error;
   int _tabIndex = 0;
   bool _showFavoritesOnly = false;
+  ChatSortOrder _sortOrder = ChatSortOrder.newest;
+  DialogStatusFilter _statusFilter = DialogStatusFilter.all;
   Timer? _updatesTimer;
   DateTime? _lastUpdateCursor;
   final GlobalKey<_OperatorProfileViewState> _profileKey = GlobalKey<_OperatorProfileViewState>();
   final GlobalKey<_AdminUserManagementViewState> _adminKey = GlobalKey<_AdminUserManagementViewState>();
+  final GlobalKey<_DashboardViewState> _dashboardKey = GlobalKey<_DashboardViewState>();
 
   @override
   void initState() {
@@ -1119,7 +1258,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
     try {
       final sections = await widget.apiClient.fetchSections();
-      final chats = await widget.apiClient.fetchChats(binQuery: _selectedBin);
+      final chats = await widget.apiClient.fetchChats(
+        favoritesOnly: _showFavoritesOnly,
+        binQuery: _selectedBin,
+      );
       final currentUser = widget.apiClient.currentUser ?? widget.session.user;
       final visibleSections = currentUser.isAdmin
           ? sections
@@ -1193,7 +1335,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final newValue = !chat.isFavorite;
     setState(() {
       _allChats = _allChats
-          .map((item) => item.chatId == chat.chatId
+          .map((item) => item.dialogId == chat.dialogId
               ? item.copyWith(isFavorite: newValue)
               : item)
           .toList();
@@ -1283,59 +1425,296 @@ class _ChatListScreenState extends State<ChatListScreen> {
     if (_showFavoritesOnly) {
       result = result.where((chat) => chat.isFavorite);
     }
-    return result.toList();
+    if (_statusFilter == DialogStatusFilter.open) {
+      result = result.where((chat) => !chat.isClosed);
+    } else if (_statusFilter == DialogStatusFilter.closed) {
+      result = result.where((chat) => chat.isClosed);
+    }
+    final sorted = result.toList()
+      ..sort((a, b) {
+        final diff = a.updatedAt.compareTo(b.updatedAt);
+        return _sortOrder == ChatSortOrder.newest ? -diff : diff;
+      });
+    return sorted;
+  }
+
+  Future<void> _showFiltersSheet() async {
+    final result = await showModalBottomSheet<_ChatFiltersResult>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        String? section = _selectedSection;
+        String? bin = _selectedBin;
+        bool favorites = _showFavoritesOnly;
+        ChatSortOrder sort = _sortOrder;
+        DialogStatusFilter status = _statusFilter;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+            final theme = Theme.of(context);
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.outlineVariant,
+                            borderRadius: BorderRadius.circular(100),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        'Фильтры диалогов',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String?>(
+                        value: section,
+                        decoration: const InputDecoration(labelText: 'Раздел'),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('Все разделы'),
+                          ),
+                          ..._sections.map(
+                            (item) => DropdownMenuItem<String?>(
+                              value: item.id,
+                              child: Text(item.title),
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) => setModalState(() => section = value),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String?>(
+                        value: bin,
+                        decoration: const InputDecoration(labelText: 'БИН'),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('Все БИНы'),
+                          ),
+                          ..._availableBins.map(
+                            (item) => DropdownMenuItem<String?>(
+                              value: item,
+                              child: Text(item),
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) => setModalState(() => bin = value),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<DialogStatusFilter>(
+                        value: status,
+                        decoration: const InputDecoration(labelText: 'Статус диалога'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: DialogStatusFilter.all,
+                            child: Text('Все диалоги'),
+                          ),
+                          DropdownMenuItem(
+                            value: DialogStatusFilter.open,
+                            child: Text('Только открытые'),
+                          ),
+                          DropdownMenuItem(
+                            value: DialogStatusFilter.closed,
+                            child: Text('Только закрытые'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) {
+                            return;
+                          }
+                          setModalState(() => status = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<ChatSortOrder>(
+                        value: sort,
+                        decoration: const InputDecoration(labelText: 'Сортировка по времени'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: ChatSortOrder.newest,
+                            child: Text('Сначала новые'),
+                          ),
+                          DropdownMenuItem(
+                            value: ChatSortOrder.oldest,
+                            child: Text('Сначала старые'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) {
+                            return;
+                          }
+                          setModalState(() => sort = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Только избранные'),
+                        value: favorites,
+                        onChanged: (value) => setModalState(() => favorites = value),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              setModalState(() {
+                                section = null;
+                                bin = null;
+                                favorites = false;
+                                sort = ChatSortOrder.newest;
+                                status = DialogStatusFilter.all;
+                              });
+                            },
+                            child: const Text('Сбросить'),
+                          ),
+                          const Spacer(),
+                          FilledButton(
+                            onPressed: () {
+                              Navigator.of(sheetContext).pop(
+                                _ChatFiltersResult(
+                                  section: section,
+                                  bin: bin,
+                                  favoritesOnly: favorites,
+                                  sortOrder: sort,
+                                  statusFilter: status,
+                                ),
+                              );
+                            },
+                            child: const Text('Применить'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null) {
+      return;
+    }
+
+    final shouldReload =
+        result.bin != _selectedBin || result.favoritesOnly != _showFavoritesOnly;
+    setState(() {
+      _selectedSection = result.section;
+      _selectedBin = result.bin;
+      _showFavoritesOnly = result.favoritesOnly;
+      _sortOrder = result.sortOrder;
+      _statusFilter = result.statusFilter;
+    });
+    if (shouldReload) {
+      await _loadData(showLoading: true);
+    }
   }
 
   PreferredSizeWidget _buildAppBar(int index, bool isAdmin) {
-    if (index == 0) {
+    final platformBrightness = MediaQuery.of(context).platformBrightness;
+    final isDarkModeActive = widget.themeMode == ThemeMode.dark ||
+        (widget.themeMode == ThemeMode.system && platformBrightness == Brightness.dark);
+    final themeToggleIcon = isDarkModeActive ? Icons.light_mode : Icons.dark_mode;
+    final themeToggleTooltip = isDarkModeActive ? 'Светлый режим' : 'Тёмный режим';
+    final nextMode = isDarkModeActive ? ThemeMode.light : ThemeMode.dark;
+    final themeButton = IconButton(
+      tooltip: themeToggleTooltip,
+      icon: Icon(themeToggleIcon),
+      onPressed: () => widget.onThemeModeChanged(nextMode),
+    );
+    final logoutButton = IconButton(
+      tooltip: 'Выход',
+      icon: const Icon(Icons.logout),
+      onPressed: widget.onLogout,
+    );
+
+    Widget buildChatAppBar() {
       return AppBar(
         title: const Text('Диалоги Telegram'),
         actions: [
+          IconButton(
+            tooltip: 'Фильтры',
+            icon: const Icon(Icons.filter_alt_outlined),
+            onPressed: _showFiltersSheet,
+          ),
           IconButton(
             tooltip: 'Обновить',
             icon: const Icon(Icons.refresh),
             onPressed: () => _loadData(),
           ),
-          IconButton(
-            tooltip: 'Выход',
-            icon: const Icon(Icons.logout),
-            onPressed: widget.onLogout,
-          ),
+          themeButton,
+          logoutButton,
         ],
       );
     }
-    if (isAdmin && index == 1) {
+
+    Widget buildProfileAppBar() {
       return AppBar(
-        title: const Text('Управление ролями'),
+        title: const Text('Профиль оператора'),
+        actions: [
+          IconButton(
+            tooltip: 'Обновить',
+            icon: const Icon(Icons.refresh),
+            onPressed: () => _profileKey.currentState?.refreshProfile(),
+          ),
+          themeButton,
+          logoutButton,
+        ],
+      );
+    }
+
+    if (!isAdmin) {
+      return (index == 0 ? buildChatAppBar() : buildProfileAppBar()) as PreferredSizeWidget;
+    }
+
+    if (index == 0) {
+      return buildChatAppBar() as PreferredSizeWidget;
+    }
+    if (index == 1) {
+      return AppBar(
+        title: const Text('Дэшборд обращений'),
+        actions: [
+          IconButton(
+            tooltip: 'Обновить дэшборд',
+            icon: const Icon(Icons.refresh),
+            onPressed: () => _dashboardKey.currentState?.reloadSummary(),
+          ),
+          themeButton,
+          logoutButton,
+        ],
+      );
+    }
+    if (index == 2) {
+      return AppBar(
+        title: const Text('Администрирование'),
         actions: [
           IconButton(
             tooltip: 'Обновить список',
             icon: const Icon(Icons.refresh),
             onPressed: () => _adminKey.currentState?.refreshAdminData(),
           ),
-          IconButton(
-            tooltip: 'Выход',
-            icon: const Icon(Icons.logout),
-            onPressed: widget.onLogout,
-          ),
+          themeButton,
+          logoutButton,
         ],
       );
     }
-    return AppBar(
-      title: const Text('Профиль оператора'),
-      actions: [
-        IconButton(
-          tooltip: 'Обновить',
-          icon: const Icon(Icons.refresh),
-          onPressed: () => _profileKey.currentState?.refreshProfile(),
-        ),
-        IconButton(
-          tooltip: 'Выход',
-          icon: const Icon(Icons.logout),
-          onPressed: widget.onLogout,
-        ),
-      ],
-    );
+    return buildProfileAppBar() as PreferredSizeWidget;
   }
 
   Widget _buildChatTab() {
@@ -1358,6 +1737,88 @@ class _ChatListScreenState extends State<ChatListScreen> {
       );
     }
     final theme = Theme.of(context);
+    final String? sectionTitle = _selectedSection == null
+        ? null
+        : _sections
+            .firstWhere(
+              (section) => section.id == _selectedSection,
+              orElse: () => Section(id: _selectedSection!, title: _selectedSection!),
+            )
+            .title;
+    final statusLabel = () {
+      switch (_statusFilter) {
+        case DialogStatusFilter.open:
+          return 'Только открытые';
+        case DialogStatusFilter.closed:
+          return 'Только закрытые';
+        case DialogStatusFilter.all:
+          return null;
+      }
+    }();
+    final chips = <Widget>[];
+    if (sectionTitle != null && sectionTitle.isNotEmpty) {
+      chips.add(
+        InputChip(
+          label: Text('Раздел: $sectionTitle'),
+          onDeleted: () {
+            setState(() {
+              _selectedSection = null;
+            });
+          },
+        ),
+      );
+    }
+    if (_selectedBin != null && _selectedBin!.isNotEmpty) {
+      chips.add(
+        InputChip(
+          label: Text('БИН: ${_selectedBin!}'),
+          onDeleted: () {
+            setState(() {
+              _selectedBin = null;
+            });
+            unawaited(_loadData(showLoading: false));
+          },
+        ),
+      );
+    }
+    if (statusLabel != null) {
+      chips.add(
+        InputChip(
+          label: Text(statusLabel),
+          onDeleted: () {
+            setState(() {
+              _statusFilter = DialogStatusFilter.all;
+            });
+          },
+        ),
+      );
+    }
+    if (_sortOrder == ChatSortOrder.oldest) {
+      chips.add(
+        InputChip(
+          label: const Text('Сначала старые'),
+          onDeleted: () {
+            setState(() {
+              _sortOrder = ChatSortOrder.newest;
+            });
+          },
+        ),
+      );
+    }
+    if (_showFavoritesOnly) {
+      chips.add(
+        InputChip(
+          label: const Text('Только избранные'),
+          onDeleted: () {
+            setState(() {
+              _showFavoritesOnly = false;
+            });
+            unawaited(_loadData(showLoading: false));
+          },
+        ),
+      );
+    }
+
     final filtersCard = Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Card(
@@ -1366,64 +1827,35 @@ class _ChatListScreenState extends State<ChatListScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DropdownButtonFormField<String?>(
-                value: _selectedSection,
-                decoration: const InputDecoration(labelText: 'Раздел'),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('Все разделы'),
-                  ),
-                  ..._sections.map(
-                    (section) => DropdownMenuItem<String?>(
-                      value: section.id,
-                      child: Text(section.title),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Фильтры',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedSection = value;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String?>(
-                value: _selectedBin,
-                decoration: const InputDecoration(labelText: 'БИН'),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('Все БИНы'),
-                  ),
-                  ..._availableBins.map(
-                    (bin) => DropdownMenuItem<String?>(
-                      value: bin,
-                      child: Text(bin),
-                    ),
+                  FilledButton.icon(
+                    onPressed: _showFiltersSheet,
+                    icon: const Icon(Icons.filter_alt_outlined),
+                    label: const Text('Настроить'),
                   ),
                 ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedBin = value;
-                  });
-                  _loadData(showLoading: false);
-                },
               ),
               const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FilterChip(
-                  label: const Text('Только избранные'),
-                  selected: _showFavoritesOnly,
-                  showCheckmark: false,
-                  onSelected: (value) {
-                    setState(() {
-                      _showFavoritesOnly = value;
-                    });
-                  },
+              if (chips.isEmpty)
+                Text(
+                  'Активные фильтры отсутствуют',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: chips,
                 ),
-              ),
             ],
           ),
         ),
@@ -1459,6 +1891,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
       else
         ...chats.map((chat) {
           final updatedAt = DateFormat('dd.MM.yyyy HH:mm').format(chat.updatedAt.toLocal());
+          final startedAt = chat.dialogStartedAt != null
+              ? DateFormat('dd.MM.yyyy HH:mm').format(chat.dialogStartedAt!.toLocal())
+              : null;
+          final closedAt = chat.dialogClosedAt != null
+              ? DateFormat('dd.MM.yyyy HH:mm').format(chat.dialogClosedAt!.toLocal())
+              : null;
+          final statusLabel = chat.isClosed ? 'Закрыт' : 'Открыт';
+          final MaterialColor statusPalette = chat.isClosed ? Colors.red : Colors.green;
+          final statusBackground = statusPalette.shade100.withOpacity(0.4);
+          final statusBorder = statusPalette.shade200.withOpacity(0.6);
+          final statusTextColor = statusPalette.shade700;
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Card(
@@ -1490,6 +1933,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Expanded(
                             child: Text(
@@ -1497,6 +1941,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
                               style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: statusBackground,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: statusBorder, width: 1),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: statusTextColor,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
                           IconButton(
                             icon: Icon(chat.isFavorite ? Icons.star : Icons.star_border),
                             color: chat.isFavorite
@@ -1546,6 +2007,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                       ),
                       const SizedBox(height: 4),
+                      if (startedAt != null)
+                        Text(
+                          'Начат: $startedAt',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      if (closedAt != null)
+                        Text(
+                          'Закрыт: $closedAt',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      if (startedAt != null || closedAt != null)
+                        const SizedBox(height: 2),
                       Text(
                         'Обновлён: $updatedAt',
                         style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -1587,6 +2060,21 @@ class _ChatListScreenState extends State<ChatListScreen> {
     ];
 
     if (isAdmin) {
+      tabs.add(
+        DashboardView(
+          key: _dashboardKey,
+          apiClient: widget.apiClient,
+        ),
+      );
+      destinations.add(
+        const NavigationDestination(
+          icon: Icon(Icons.analytics_outlined),
+          selectedIcon: Icon(Icons.analytics),
+          label: 'Дэшборд',
+        ),
+      );
+      callbacks.add(() => _dashboardKey.currentState?.reloadSummary());
+
       tabs.add(
         AdminUserManagementView(
           key: _adminKey,
@@ -1846,6 +2334,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final canDelete = (user?.isAdmin ?? false) || (user?.canReply ?? false);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isClosed = widget.chat.isClosed;
+    final statusLabel = isClosed ? 'Закрыт' : 'Открыт';
+    final MaterialColor statusPalette = isClosed ? Colors.red : Colors.green;
+    final statusBackground = statusPalette.shade100.withOpacity(0.4);
+    final statusBorder = statusPalette.shade200.withOpacity(0.6);
+    final statusTextColor = statusPalette.shade700;
+    final startedAtLabel = widget.chat.dialogStartedAt != null
+        ? DateFormat('dd.MM.yyyy HH:mm').format(widget.chat.dialogStartedAt!.toLocal())
+        : null;
+    final closedAtLabel = widget.chat.dialogClosedAt != null
+        ? DateFormat('dd.MM.yyyy HH:mm').format(widget.chat.dialogClosedAt!.toLocal())
+        : null;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.chat.title),
@@ -1873,14 +2373,34 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
+          preferredSize: const Size.fromHeight(88),
           child: Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Column(
               children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: statusBackground,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: statusBorder, width: 1),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: statusTextColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Text('Раздел: $sectionTitle'),
                 if (widget.chat.bin != null && widget.chat.bin!.isNotEmpty)
                   Text('БИН: ${widget.chat.bin}', style: const TextStyle(fontSize: 12)),
+                if (startedAtLabel != null)
+                  Text('Начат: $startedAtLabel', style: const TextStyle(fontSize: 12)),
+                if (closedAtLabel != null)
+                  Text('Закрыт: $closedAtLabel', style: const TextStyle(fontSize: 12)),
               ],
             ),
           ),
@@ -2035,6 +2555,712 @@ class OperatorProfileView extends StatefulWidget {
   State<OperatorProfileView> createState() => _OperatorProfileViewState();
 }
 
+class _QuestionSectionEntry {
+  _QuestionSectionEntry({
+    required this.key,
+    required this.title,
+    required this.section,
+    required this.totalCount,
+  });
+
+  final String key;
+  final String title;
+  final DashboardSectionTopQuestions section;
+  final int totalCount;
+}
+
+class DashboardView extends StatefulWidget {
+  const DashboardView({required this.apiClient, super.key});
+
+  final ApiClient apiClient;
+
+  @override
+  State<DashboardView> createState() => _DashboardViewState();
+}
+
+class _DashboardViewState extends State<DashboardView> {
+  DashboardSummary? _summary;
+  bool _loading = true;
+  bool _refreshing = false;
+  String? _error;
+  List<UserProfile> _operators = [];
+  bool _operatorsLoading = false;
+  String? _operatorsError;
+  int? _selectedOperatorId;
+  String _selectedQuestionSection = 'all';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSummary(initial: true);
+    _loadOperators();
+  }
+
+  Future<void> reloadSummary() => _loadSummary(initial: false);
+
+  Future<void> _loadSummary({required bool initial, int? operatorOverride}) async {
+    if (initial) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else {
+      setState(() {
+        _refreshing = true;
+      });
+    }
+    try {
+      final summary = await widget.apiClient.fetchDashboardSummary(
+        operatorId: operatorOverride ?? _selectedOperatorId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _summary = summary;
+        _error = null;
+        if (_selectedQuestionSection != 'all') {
+          final validKeys = summary.questionsBySection
+              .map((section) => section.section ?? (section.title.isNotEmpty ? section.title : 'no-section'))
+              .toSet();
+          if (!validKeys.contains(_selectedQuestionSection)) {
+            _selectedQuestionSection = 'all';
+          }
+        }
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.toString();
+        if (initial) {
+          _summary = null;
+        }
+      });
+} finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        if (initial) {
+          _loading = false;
+        } else {
+          _refreshing = false;
+        }
+      });
+    }
+  }
+
+  Future<void> _loadOperators() async {
+    setState(() {
+      _operatorsLoading = true;
+      _operatorsError = null;
+    });
+    try {
+      final users = await widget.apiClient.fetchUsers();
+      if (!mounted) {
+        return;
+      }
+      final filtered = users
+          .where((user) => !user.isAdmin && (user.role == 'moderator' || user.role == 'viewer'))
+          .where((user) {
+            final normalized = ('${user.name} ${user.login}').toLowerCase();
+            if (normalized.trim().isEmpty) {
+              return true;
+            }
+            return !normalized.contains('bot') && !normalized.contains('бот');
+          })
+          .toList()
+        ..sort((a, b) {
+          final nameA = a.name.isNotEmpty ? a.name : a.login;
+          final nameB = b.name.isNotEmpty ? b.name : b.login;
+          return nameA.toLowerCase().compareTo(nameB.toLowerCase());
+        });
+      setState(() {
+        _operators = filtered;
+        if (_selectedOperatorId != null &&
+            !_operators.any((operator) => operator.id == _selectedOperatorId)) {
+          _selectedOperatorId = null;
+        }
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _operatorsError = error.toString();
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _operatorsLoading = false;
+      });
+    }
+  }
+
+  Future<void> _handleRefresh() => _loadSummary(initial: false);
+
+  void _handleOperatorChanged(int? value) {
+    setState(() {
+      _selectedOperatorId = value;
+    });
+    _loadSummary(initial: false, operatorOverride: value);
+  }
+
+  String _formatResponseTime(double? minutes) {
+    if (minutes == null) {
+      return '—';
+    }
+    final totalSeconds = (minutes * 60).round();
+    final minutesPart = totalSeconds ~/ 60;
+    final secondsPart = totalSeconds % 60;
+    if (minutesPart > 0 && secondsPart > 0) {
+      return '$minutesPart мин $secondsPart с';
+    }
+    if (minutesPart > 0) {
+      return '$minutesPart мин';
+    }
+    return '$secondsPart с';
+  }
+
+  String _describeResponseTime(double? minutes) {
+    if (minutes == null) {
+      return 'Недостаточно данных';
+    }
+    if (minutes <= 2) {
+      return 'Отвечает быстро';
+    }
+    if (minutes <= 7) {
+      return 'Отвечает в среднем темпе';
+    }
+    return 'Отвечает медленно';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final theme = Theme.of(context);
+    final numberFormatter = NumberFormat.decimalPattern('ru');
+    final summary = _summary;
+    final hasData = summary != null;
+    final data = summary ?? DashboardSummary.empty();
+    final updatedAtLabel = DateFormat('dd.MM.yyyy HH:mm').format(data.updatedAt.toLocal());
+    final avgMessagesLabel = data.averageMessagesPerDialog.toStringAsFixed(1);
+    final responseTimeLabel = _formatResponseTime(data.avgResponseTimeMinutes);
+    final responseTimeMood = _describeResponseTime(data.avgResponseTimeMinutes);
+
+    final operatorItems = <DropdownMenuItem<int?>>[
+      const DropdownMenuItem<int?>(
+        value: null,
+        child: Text('Все сотрудники'),
+      ),
+      ..._operators.map(
+        (operator) => DropdownMenuItem<int?>(
+          value: operator.id,
+          child: Text(operator.name.isNotEmpty ? operator.name : operator.login),
+        ),
+      ),
+    ];
+
+    final sectionEntries = <_QuestionSectionEntry>[];
+    final seenKeys = <String>{};
+    for (final section in data.questionsBySection) {
+      final key = section.section ?? (section.title.isNotEmpty ? section.title : 'no-section');
+      if (seenKeys.contains(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+      final totalCount = section.questions.fold<int>(0, (acc, question) => acc + question.count);
+      sectionEntries.add(
+        _QuestionSectionEntry(
+          key: key,
+          title: section.title.isNotEmpty ? section.title : 'Без раздела',
+          section: section,
+          totalCount: totalCount,
+        ),
+      );
+    }
+    sectionEntries.sort((a, b) => b.totalCount.compareTo(a.totalCount));
+
+    final questionSectionItems = <DropdownMenuItem<String>>[
+      const DropdownMenuItem<String>(value: 'all', child: Text('Все разделы')),
+      ...sectionEntries.map(
+        (entry) => DropdownMenuItem<String>(
+          value: entry.key,
+          child: Text(entry.title),
+        ),
+      ),
+    ];
+
+    final selectedSectionTitle = _selectedQuestionSection == 'all'
+        ? 'Все разделы'
+        : sectionEntries
+                .firstWhere(
+                  (entry) => entry.key == _selectedQuestionSection,
+                  orElse: () => _QuestionSectionEntry(
+                    key: 'all',
+                    title: 'Все разделы',
+                    section: DashboardSectionTopQuestions(
+                      section: null,
+                      title: 'Все разделы',
+                      questions: const <DashboardTopQuestion>[],
+                    ),
+                    totalCount: 0,
+                  ),
+                )
+                .title;
+
+    final selectedQuestions = () {
+      if (_selectedQuestionSection == 'all') {
+        return data.topQuestions.take(5).toList();
+      }
+      final match = sectionEntries.firstWhere(
+        (entry) => entry.key == _selectedQuestionSection,
+        orElse: () => _QuestionSectionEntry(
+          key: 'all',
+          title: 'Все разделы',
+          section: DashboardSectionTopQuestions(
+            section: null,
+            title: 'Все разделы',
+            questions: const <DashboardTopQuestion>[],
+          ),
+          totalCount: 0,
+        ),
+      );
+      return match.section.questions.take(5).toList();
+    }();
+
+    final agentStats = data.agentBreakdown
+        .where((agent) {
+          final normalized = agent.name.toLowerCase();
+          if (normalized.trim().isEmpty) {
+            return false;
+          }
+          if (normalized.contains('bot') || normalized.contains('бот')) {
+            return false;
+          }
+          if (normalized.contains('admin') || normalized.contains('administrator') || normalized.contains('администратор')) {
+            return false;
+          }
+          return true;
+        })
+        .toList()
+      ..sort((a, b) => b.messages.compareTo(a.messages));
+
+    final headerCard = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Дэшборд обращений',
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Обновлено: $updatedAtLabel',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int?>(
+                value: _selectedOperatorId,
+                decoration: const InputDecoration(labelText: 'Сотрудник'),
+                items: operatorItems,
+                onChanged: _operatorsLoading ? null : _handleOperatorChanged,
+              ),
+              if (_operatorsLoading) ...[
+                const SizedBox(height: 12),
+                const LinearProgressIndicator(),
+              ],
+              if (_operatorsError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _operatorsError!,
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                ),
+              ],
+              if (!hasData && _error == null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Нет данных для отображения. Попробуйте выбрать другого сотрудника или обновить дэшборд.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
+              if (_error != null && hasData) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Ошибка при обновлении: $_error',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 16),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final maxWidth = constraints.maxWidth;
+                  final tileWidth = maxWidth > 520 ? (maxWidth - 12) / 2 : maxWidth;
+                  final statCards = <Widget>[
+                    _DashboardStatCard(label: 'Всего обращений', value: numberFormatter.format(data.totalDialogs)),
+                    _DashboardStatCard(label: 'Открытые диалоги', value: numberFormatter.format(data.openDialogs)),
+                    _DashboardStatCard(label: 'Закрытые диалоги', value: numberFormatter.format(data.closedDialogs)),
+                    _DashboardStatCard(label: 'Активных чатов', value: numberFormatter.format(data.totalChats)),
+                    _DashboardStatCard(label: 'Входящих сообщений', value: numberFormatter.format(data.totalIncomingMessages)),
+                    _DashboardStatCard(label: 'Исходящих сообщений', value: numberFormatter.format(data.totalOutgoingMessages)),
+                    _DashboardStatCard(label: 'Среднее сообщений в диалоге', value: avgMessagesLabel),
+                    _DashboardStatCard(label: 'Среднее время ответа', value: responseTimeLabel, hint: responseTimeMood),
+                  ];
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: statCards
+                        .map(
+                          (card) => SizedBox(
+                            width: tileWidth,
+                            child: card,
+                          ),
+                        )
+                        .toList(),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _refreshing ? null : () => _loadSummary(initial: false),
+                icon: Icon(_refreshing ? Icons.sync : Icons.refresh),
+                label: Text(_refreshing ? 'Обновляем…' : 'Обновить дэшборд'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final sectionCard = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Обращения по разделам',
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              if (data.sectionBreakdown.isEmpty)
+                Text(
+                  'Данных пока нет.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                )
+              else
+                Column(
+                  children: data.sectionBreakdown.map((section) {
+                    final progress = (section.percentage / 100).clamp(0, 1);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(section.title, style: theme.textTheme.bodyMedium),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '${numberFormatter.format(section.dialogs)} · ${section.percentage.toStringAsFixed(1)}%',
+                                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              minHeight: 6,
+                              value: progress.toDouble(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final questionsCard = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Частые вопросы',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 200,
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedQuestionSection,
+                      decoration: const InputDecoration(labelText: 'Раздел'),
+                      items: questionSectionItems,
+                      onChanged: (value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setState(() {
+                          _selectedQuestionSection = value;
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'ТОП-5 · $selectedSectionTitle',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              if (selectedQuestions.isEmpty)
+                Text(
+                  'Пока нет популярных вопросов для выбранного раздела.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                )
+              else
+                Column(
+                  children: List.generate(selectedQuestions.length, (index) {
+                    final question = selectedQuestions[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${index + 1}.', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              question.question,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            numberFormatter.format(question.count),
+                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final agentsCard = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Дэшборд сотрудников',
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              if (agentStats.isEmpty)
+                Text(
+                  'Пока нет активности сотрудников.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                )
+              else ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(flex: 2, child: Text('Сотрудник', style: theme.textTheme.labelMedium)),
+                      Expanded(child: Text('Диалогов', textAlign: TextAlign.right, style: theme.textTheme.labelMedium)),
+                      Expanded(child: Text('Сообщений', textAlign: TextAlign.right, style: theme.textTheme.labelMedium)),
+                      Expanded(child: Text('Среднее', textAlign: TextAlign.right, style: theme.textTheme.labelMedium)),
+                      Expanded(flex: 2, child: Text('Последняя активность', textAlign: TextAlign.right, style: theme.textTheme.labelMedium)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                ...agentStats.map((agent) {
+                  final lastActivityLabel = agent.lastActivity != null
+                      ? DateFormat('dd.MM.yyyy HH:mm').format(agent.lastActivity!.toLocal())
+                      : '—';
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Expanded(flex: 2, child: Text(agent.name, style: theme.textTheme.bodyMedium)),
+                        Expanded(child: Text(numberFormatter.format(agent.dialogs), textAlign: TextAlign.right)),
+                        Expanded(child: Text(numberFormatter.format(agent.messages), textAlign: TextAlign.right)),
+                        Expanded(child: Text(agent.avgMessagesPerDialog.toStringAsFixed(1), textAlign: TextAlign.right)),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            lastActivityLabel,
+                            textAlign: TextAlign.right,
+                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final activityCard = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Активность по дням',
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              if (data.recentActivity.isEmpty)
+                Text(
+                  'Данных пока нет.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                )
+              else
+                Column(
+                  children: data.recentActivity.map((activity) {
+                    final dateLabel = DateFormat('dd.MM').format(activity.date.toLocal());
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text(dateLabel)),
+                          Expanded(
+                            child: Text(
+                              numberFormatter.format(activity.dialogs),
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              numberFormatter.format(activity.incomingMessages),
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final listChildren = <Widget>[
+      headerCard,
+      sectionCard,
+      questionsCard,
+      agentsCard,
+      activityCard,
+      const SizedBox(height: 24),
+    ];
+
+    return RefreshIndicator(
+      onRefresh: _handleRefresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        children: listChildren,
+      ),
+    );
+  }
+}
+
+class _DashboardStatCard extends StatelessWidget {
+  const _DashboardStatCard({required this.label, required this.value, this.hint});
+
+  final String label;
+  final String value;
+  final String? hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          if (hint != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              hint!,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class AdminUserManagementView extends StatefulWidget {
   const AdminUserManagementView({
     required this.apiClient,
@@ -2057,6 +3283,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   List<Section> _availableSections = [];
   List<String> _availableBins = [];
   final Set<int> _updatingUserIds = <int>{};
+  final Set<int> _deletingUserIds = <int>{};
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
   String _searchQuery = '';
@@ -2100,6 +3327,8 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _availableSections = sections;
         _availableBins = bins;
         _loading = false;
+        _updatingUserIds.clear();
+        _deletingUserIds.clear();
       });
     } catch (error) {
       if (!mounted) {
@@ -2237,6 +3466,66 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       showTopMessage(
         context,
         'Не удалось обновить БИНы: $error',
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _deleteUser(UserProfile user) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('Удалить аккаунт ${user.name}?'),
+          content: const Text('Пользователь потеряет доступ к системе. Действие нельзя отменить.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+              child: const Text('Удалить'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+    setState(() {
+      _deletingUserIds.add(user.id);
+      _updatingUserIds.add(user.id);
+      _error = null;
+    });
+    try {
+      await widget.apiClient.deleteUser(user.id);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _users = _users.where((existing) => existing.id != user.id).toList();
+        _deletingUserIds.remove(user.id);
+        _updatingUserIds.remove(user.id);
+      });
+      showTopMessage(
+        context,
+        'Аккаунт "${user.name}" удалён.',
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _deletingUserIds.remove(user.id);
+        _updatingUserIds.remove(user.id);
+        _error = error.toString();
+      });
+      showTopMessage(
+        context,
+        'Не удалось удалить пользователя: $error',
         isError: true,
       );
     }
@@ -2396,16 +3685,43 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _users.map((user) {
           final isSelf = user.id == widget.currentUser.id;
           final isUpdating = _updatingUserIds.contains(user.id);
+          final isDeleting = _deletingUserIds.contains(user.id);
+          final canDelete = !isSelf && !user.isAdmin;
           final badgeColor = user.isAdmin
               ? theme.colorScheme.errorContainer
               : (user.canReply
                   ? theme.colorScheme.primaryContainer
-                  : theme.colorScheme.surfaceVariant);
+                  : theme.colorScheme.surfaceVariant.withOpacity(0.6));
           final badgeTextColor = user.isAdmin
               ? theme.colorScheme.onErrorContainer
               : (user.canReply
                   ? theme.colorScheme.onPrimaryContainer
                   : theme.colorScheme.onSurfaceVariant);
+          final createdAtLabel = DateFormat('dd.MM.yyyy HH:mm').format(user.createdAt.toLocal());
+
+          Widget buildInfoChip(IconData icon, String label) {
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Card(
@@ -2415,68 +3731,91 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: Text(
-                            user.name,
-                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                user.name,
+                                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  buildInfoChip(Icons.email_outlined, user.email),
+                                  buildInfoChip(Icons.person_outline, user.login),
+                                  buildInfoChip(Icons.calendar_month_outlined, createdAtLabel),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        Chip(
-                          label: Text(user.roleLabel),
-                          backgroundColor: badgeColor,
-                          labelStyle: TextStyle(color: badgeTextColor, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text('Email: ${user.email}'),
-                    Text('Логин: ${user.login}'),
-                    Text('Создан: ${DateFormat('dd.MM.yyyy HH:mm').format(user.createdAt.toLocal())}'),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Text('Роль:'),
                         const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value: user.role,
-                              isExpanded: true,
-                              items: roleItems,
-                              onChanged: (!isSelf && !isUpdating)
-                                  ? (value) {
-                                      if (value == null || value == user.role) {
-                                        return;
-                                      }
-                                      _changeRole(user, value);
-                                    }
-                                  : null,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Chip(
+                              label: Text(user.roleLabel),
+                              backgroundColor: badgeColor,
+                              labelStyle: TextStyle(color: badgeTextColor, fontWeight: FontWeight.w600),
                             ),
-                          ),
+                            if (canDelete)
+                              IconButton(
+                                tooltip: 'Удалить аккаунт',
+                                icon: const Icon(Icons.delete_outline),
+                                color: theme.colorScheme.error,
+                                onPressed: (isUpdating || isDeleting)
+                                    ? null
+                                    : () => _deleteUser(user),
+                              ),
+                          ],
                         ),
-                        if (isUpdating)
-                          const Padding(
-                            padding: EdgeInsets.only(left: 12),
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
                       ],
                     ),
+                    if (isDeleting) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: const [
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 8),
+                          Text('Удаляем аккаунт…'),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 12),
-                    Text(
-                      'Назначенные разделы:',
-                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    DropdownButtonFormField<String>(
+                      value: user.role,
+                      decoration: const InputDecoration(labelText: 'Роль пользователя'),
+                      items: roleItems,
+                      onChanged: (!isSelf && !isUpdating && !isDeleting)
+                          ? (value) {
+                              if (value == null || value == user.role) {
+                                return;
+                              }
+                              _changeRole(user, value);
+                            }
+                          : null,
                     ),
+                    if (isUpdating && !isDeleting) ...[
+                      const SizedBox(height: 12),
+                      const LinearProgressIndicator(),
+                    ],
+                    const SizedBox(height: 16),
+                    Text('Разделы', style: theme.textTheme.labelLarge),
                     const SizedBox(height: 8),
                     if (user.sections.isEmpty)
                       Text(
                         'Нет назначенных разделов',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       )
                     else
@@ -2490,29 +3829,23 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                           );
                           return Chip(
                             label: Text(match.title),
-                            backgroundColor: theme.colorScheme.primaryContainer,
-                            onDeleted: (!isUpdating)
+                            onDeleted: (!isUpdating && !isDeleting)
                                 ? () {
                                     final updatedSections =
                                         Set<String>.from(user.sections)..remove(sectionId);
                                     _updateUserSections(user, updatedSections);
-                                }
-                              : null,
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Добавить раздел',
-                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                    ),
+                                  }
+                                : null,
+                          );
+                        }).toList(),
+                      ),
                     const SizedBox(height: 8),
                     _SectionSelectorField(
                       key: ValueKey('section-selector-${user.id}-${user.sections.length}'),
                       availableSections: _availableSections
                           .where((section) => !user.sections.contains(section.id))
                           .toList(),
-                      enabled: !isUpdating && _availableSections.isNotEmpty,
+                      enabled: !isUpdating && !isDeleting && _availableSections.isNotEmpty,
                       onSectionSelected: (value) {
                         if (value.isEmpty || user.sections.contains(value)) {
                           return;
@@ -2521,18 +3854,14 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         _updateUserSections(user, updatedSections);
                       },
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Назначенные БИНы:',
-                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                    ),
+                    const SizedBox(height: 16),
+                    Text('БИНы', style: theme.textTheme.labelLarge),
                     const SizedBox(height: 8),
-                    // Список доступных БИНов для выбора
                     if (user.bins.isEmpty)
                       Text(
                         'Нет назначенных БИНов',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       )
                     else
@@ -2542,8 +3871,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         children: user.bins.map((bin) {
                           return Chip(
                             label: Text(bin),
-                            backgroundColor: theme.colorScheme.primaryContainer,
-                            onDeleted: (!isUpdating)
+                            onDeleted: (!isUpdating && !isDeleting)
                                 ? () {
                                     final updatedBins =
                                         Set<String>.from(user.bins)..remove(bin);
@@ -2553,18 +3881,13 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                           );
                         }).toList(),
                       ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Добавить БИН',
-                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                    ),
                     const SizedBox(height: 8),
                     _BinSelectorField(
                       key: ValueKey('bin-selector-${user.id}-${user.bins.length}'),
                       availableBins: _availableBins
                           .where((bin) => !user.bins.contains(bin))
                           .toList(),
-                      enabled: !isUpdating && _availableBins.isNotEmpty,
+                      enabled: !isUpdating && !isDeleting && _availableBins.isNotEmpty,
                       onBinSelected: (value) {
                         if (value.isEmpty || user.bins.contains(value)) {
                           return;
@@ -2573,9 +3896,22 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         _updateUserBins(user, updatedBins);
                       },
                     ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.lock_reset),
+                          label: const Text('Сменить пароль'),
+                          onPressed:
+                              (isUpdating || isDeleting) ? null : () => _promptResetPassword(user),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     Text(
-                      isUpdating
+                      (isUpdating || isDeleting)
                           ? 'Сохраняем изменения…'
                           : 'Изменения сохраняются автоматически',
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -2590,18 +3926,6 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
                         ),
                       ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.lock_reset),
-                          label: const Text('Сменить пароль'),
-                          onPressed: isUpdating ? null : () => _promptResetPassword(user),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -3288,6 +4612,292 @@ int? _parseIntValue(dynamic value) {
   return int.tryParse(value.toString());
 }
 
+double? _parseDoubleValue(dynamic value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is double) {
+    return value;
+  }
+  if (value is int) {
+    return value.toDouble();
+  }
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    final normalized = value.replaceAll(',', '.').trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    return double.tryParse(normalized);
+  }
+  return double.tryParse(value.toString());
+}
+
+DateTime? _parseDateTime(dynamic value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is DateTime) {
+    return value.toLocal();
+  }
+  if (value is String) {
+    return DateTime.tryParse(value)?.toLocal();
+  }
+  return null;
+}
+
+class DashboardSummary {
+  DashboardSummary({
+    required this.totalDialogs,
+    required this.openDialogs,
+    required this.closedDialogs,
+    required this.totalChats,
+    required this.totalMessages,
+    required this.totalIncomingMessages,
+    required this.totalOutgoingMessages,
+    required this.averageMessagesPerDialog,
+    required this.avgDialogDurationMinutes,
+    required this.avgResponseTimeMinutes,
+    required this.sectionBreakdown,
+    required this.topQuestions,
+    required this.questionsBySection,
+    required this.agentBreakdown,
+    required this.recentActivity,
+    required this.updatedAt,
+  });
+
+  final int totalDialogs;
+  final int openDialogs;
+  final int closedDialogs;
+  final int totalChats;
+  final int totalMessages;
+  final int totalIncomingMessages;
+  final int totalOutgoingMessages;
+  final double averageMessagesPerDialog;
+  final double? avgDialogDurationMinutes;
+  final double? avgResponseTimeMinutes;
+  final List<DashboardSectionStat> sectionBreakdown;
+  final List<DashboardTopQuestion> topQuestions;
+  final List<DashboardSectionTopQuestions> questionsBySection;
+  final List<DashboardAgentStat> agentBreakdown;
+  final List<DashboardActivityPoint> recentActivity;
+  final DateTime updatedAt;
+
+  factory DashboardSummary.empty() {
+    final now = DateTime.now();
+    return DashboardSummary(
+      totalDialogs: 0,
+      openDialogs: 0,
+      closedDialogs: 0,
+      totalChats: 0,
+      totalMessages: 0,
+      totalIncomingMessages: 0,
+      totalOutgoingMessages: 0,
+      averageMessagesPerDialog: 0,
+      avgDialogDurationMinutes: null,
+      avgResponseTimeMinutes: null,
+      sectionBreakdown: const [],
+      topQuestions: const [],
+      questionsBySection: const [],
+      agentBreakdown: const [],
+      recentActivity: const [],
+      updatedAt: now,
+    );
+  }
+
+  factory DashboardSummary.fromJson(Map<String, dynamic> json) {
+    int parseInt(dynamic value) => _parseIntValue(value) ?? 0;
+    double parseDouble(dynamic value) => _parseDoubleValue(value) ?? 0.0;
+    double? parseDoubleNullable(dynamic value) => _parseDoubleValue(value);
+
+    double? parseResponseMinutes(dynamic minutesRaw, dynamic secondsRaw) {
+      final minutes = parseDoubleNullable(minutesRaw);
+      if (minutes != null && minutes.isFinite) {
+        return minutes;
+      }
+      final seconds = parseDoubleNullable(secondsRaw);
+      if (seconds != null && seconds.isFinite) {
+        return seconds / 60;
+      }
+      if (minutesRaw is String) {
+        final pattern = RegExp(r'^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:[\.,]\d+)?)S)?$', caseSensitive: false);
+        final match = pattern.firstMatch(minutesRaw.trim().toUpperCase());
+        if (match != null) {
+          final hours = int.tryParse(match.group(1) ?? '') ?? 0;
+          final mins = int.tryParse(match.group(2) ?? '') ?? 0;
+          final secs = double.tryParse((match.group(3) ?? '').replaceAll(',', '.')) ?? 0.0;
+          return hours * 60 + mins + secs / 60;
+        }
+      }
+      return null;
+    }
+
+    final sectionBreakdown = (json['section_breakdown'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardSectionStat.fromJson)
+        .toList();
+    final topQuestions = (json['top_questions'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardTopQuestion.fromJson)
+        .toList();
+    final questionsBySection = (json['questions_by_section'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardSectionTopQuestions.fromJson)
+        .toList();
+    final agentBreakdown = (json['agent_breakdown'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardAgentStat.fromJson)
+        .toList();
+    final recentActivity = (json['recent_activity'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardActivityPoint.fromJson)
+        .toList();
+
+    final avgDialogDuration = parseDoubleNullable(json['avg_dialog_duration_minutes']);
+    final avgResponseMinutes = parseResponseMinutes(
+      json['avg_response_time_minutes'],
+      json['avg_response_time_seconds'],
+    );
+
+    final updatedAt = _parseDateTime(json['updated_at']) ?? DateTime.now();
+
+    return DashboardSummary(
+      totalDialogs: parseInt(json['total_dialogs']),
+      openDialogs: parseInt(json['open_dialogs']),
+      closedDialogs: parseInt(json['closed_dialogs']),
+      totalChats: parseInt(json['total_chats']),
+      totalMessages: parseInt(json['total_messages']),
+      totalIncomingMessages: parseInt(json['total_incoming_messages']),
+      totalOutgoingMessages: parseInt(json['total_outgoing_messages']),
+      averageMessagesPerDialog: parseDouble(json['average_messages_per_dialog']),
+      avgDialogDurationMinutes: avgDialogDuration?.isFinite == true ? avgDialogDuration : null,
+      avgResponseTimeMinutes: avgResponseMinutes?.isFinite == true ? avgResponseMinutes : null,
+      sectionBreakdown: sectionBreakdown,
+      topQuestions: topQuestions,
+      questionsBySection: questionsBySection,
+      agentBreakdown: agentBreakdown,
+      recentActivity: recentActivity,
+      updatedAt: updatedAt,
+    );
+  }
+}
+
+class DashboardSectionStat {
+  DashboardSectionStat({
+    required this.section,
+    required this.title,
+    required this.dialogs,
+    required this.percentage,
+  });
+
+  final String? section;
+  final String title;
+  final int dialogs;
+  final double percentage;
+
+  factory DashboardSectionStat.fromJson(Map<String, dynamic> json) {
+    return DashboardSectionStat(
+      section: json['section'] as String?,
+      title: (json['title'] as String?)?.trim() ?? '',
+      dialogs: _parseIntValue(json['dialogs']) ?? 0,
+      percentage: _parseDoubleValue(json['percentage']) ?? 0,
+    );
+  }
+}
+
+class DashboardTopQuestion {
+  DashboardTopQuestion({required this.question, required this.count});
+
+  final String question;
+  final int count;
+
+  factory DashboardTopQuestion.fromJson(Map<String, dynamic> json) {
+    return DashboardTopQuestion(
+      question: (json['question'] as String?)?.trim() ?? '',
+      count: _parseIntValue(json['count']) ?? 0,
+    );
+  }
+}
+
+class DashboardSectionTopQuestions {
+  DashboardSectionTopQuestions({
+    required this.section,
+    required this.title,
+    required this.questions,
+  });
+
+  final String? section;
+  final String title;
+  final List<DashboardTopQuestion> questions;
+
+  factory DashboardSectionTopQuestions.fromJson(Map<String, dynamic> json) {
+    final questions = (json['questions'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardTopQuestion.fromJson)
+        .toList();
+    return DashboardSectionTopQuestions(
+      section: json['section'] as String?,
+      title: (json['title'] as String?)?.trim() ?? '',
+      questions: questions,
+    );
+  }
+}
+
+class DashboardAgentStat {
+  DashboardAgentStat({
+    required this.name,
+    required this.dialogs,
+    required this.messages,
+    required this.avgMessagesPerDialog,
+    required this.lastActivity,
+  });
+
+  final String name;
+  final int dialogs;
+  final int messages;
+  final double avgMessagesPerDialog;
+  final DateTime? lastActivity;
+
+  factory DashboardAgentStat.fromJson(Map<String, dynamic> json) {
+    final dialogs = _parseIntValue(json['dialogs']) ?? 0;
+    final messages = _parseIntValue(json['messages']) ?? 0;
+    final avg = _parseDoubleValue(json['avg_messages_per_dialog']);
+    final computedAvg = dialogs > 0
+        ? (avg != null && avg.isFinite ? avg : messages / dialogs)
+        : 0.0;
+    return DashboardAgentStat(
+      name: (json['name'] as String?)?.trim() ?? '',
+      dialogs: dialogs,
+      messages: messages,
+      avgMessagesPerDialog: computedAvg,
+      lastActivity: _parseDateTime(json['last_activity']),
+    );
+  }
+}
+
+class DashboardActivityPoint {
+  DashboardActivityPoint({
+    required this.date,
+    required this.dialogs,
+    required this.incomingMessages,
+  });
+
+  final DateTime date;
+  final int dialogs;
+  final int incomingMessages;
+
+  factory DashboardActivityPoint.fromJson(Map<String, dynamic> json) {
+    final parsedDate = _parseDateTime(json['date']) ?? DateTime.now();
+    return DashboardActivityPoint(
+      date: parsedDate,
+      dialogs: _parseIntValue(json['dialogs']) ?? 0,
+      incomingMessages: _parseIntValue(json['incoming_messages']) ?? 0,
+    );
+  }
+}
+
 class ChatSummary {
   ChatSummary({
     required this.chatId,
@@ -3300,6 +4910,8 @@ class ChatSummary {
     required this.sectionTitle,
     required this.bin,
     required this.isFavorite,
+    required this.dialogStartedAt,
+    required this.dialogClosedAt,
   });
 
   final int chatId;
@@ -3312,10 +4924,17 @@ class ChatSummary {
   final String? sectionTitle;
   final String? bin;
   final bool isFavorite;
+  final DateTime? dialogStartedAt;
+  final DateTime? dialogClosedAt;
 
   String get updatedAtLabel => DateFormat('HH:mm').format(updatedAt.toLocal());
+  bool get isClosed => dialogClosedAt != null;
 
-  ChatSummary copyWith({bool? isFavorite}) {
+  ChatSummary copyWith({
+    bool? isFavorite,
+    DateTime? dialogStartedAt,
+    DateTime? dialogClosedAt,
+  }) {
     return ChatSummary(
       chatId: chatId,
       dialogId: dialogId,
@@ -3327,6 +4946,8 @@ class ChatSummary {
       sectionTitle: sectionTitle,
       bin: bin,
       isFavorite: isFavorite ?? this.isFavorite,
+      dialogStartedAt: dialogStartedAt ?? this.dialogStartedAt,
+      dialogClosedAt: dialogClosedAt ?? this.dialogClosedAt,
     );
   }
 
@@ -3337,6 +4958,8 @@ class ChatSummary {
     final updatedAt = updatedAtRaw != null
         ? DateTime.tryParse(updatedAtRaw) ?? DateTime.now().toUtc()
         : DateTime.now().toUtc();
+    final startedAt = _parseDateTime(json['dialog_started_at']);
+    final closedAt = _parseDateTime(json['dialog_closed_at']);
     return ChatSummary(
       chatId: chatId,
       dialogId: dialogId,
@@ -3348,6 +4971,8 @@ class ChatSummary {
       sectionTitle: json['section_title'] as String?,
       bin: json['bin'] as String?,
       isFavorite: json['is_favorite'] as bool? ?? false,
+      dialogStartedAt: startedAt,
+      dialogClosedAt: closedAt,
     );
   }
 }

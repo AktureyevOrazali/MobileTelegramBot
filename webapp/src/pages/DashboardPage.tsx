@@ -352,6 +352,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
               onChange={(value) => {
                 const nextValue = value === 'all' ? null : Number(value);
                 setSelectedOperatorId((prev) => (prev === nextValue ? prev : nextValue));
+                loadData('refresh', nextValue);
               }}
               searchable
               showLabelInside={false}

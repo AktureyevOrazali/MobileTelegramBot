@@ -31,6 +31,9 @@ USER_COLUMN_NAMES = (
 )
 
 
+AUTOMATION_AUTHOR_NAMES: tuple[str, ...] = ("AutoBot", "AI Assistant", "System")
+
+
 def _user_columns(prefix: str | None = None) -> str:
     if prefix:
         return ", ".join(f"{prefix}.{column} AS {column}" for column in USER_COLUMN_NAMES)
@@ -1338,6 +1341,8 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
     start_date = now.date() - timedelta(days=span - 1)
     start_iso = start_date.isoformat()
 
+    response_deltas: List[float] = []
+
     with _lock, _connection:
         total_dialogs = _connection.execute(
             "SELECT COUNT(*) AS total FROM chat_dialogs",
@@ -1408,10 +1413,68 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
             """
         ).fetchall()
 
+        operator_request_rows = _connection.execute(
+            """
+            SELECT id, chat_id, dialog_id, created_at
+            FROM messages
+            WHERE direction = 'incoming'
+              AND text IN ('[ЗАПРОС ОПЕРАТОРА]', '[FAQ] Связаться с оператором')
+            ORDER BY created_at ASC
+            """
+        ).fetchall()
+
+        if operator_request_rows:
+            placeholders = ", ".join("?" for _ in AUTOMATION_AUTHOR_NAMES)
+            automation_clause = (
+                f"AND TRIM(author) NOT IN ({placeholders})"
+                if AUTOMATION_AUTHOR_NAMES
+                else ""
+            )
+
+            for request_row in operator_request_rows:
+                request_created_raw = request_row["created_at"]
+                request_at = _parse_datetime(request_created_raw)
+                if request_at is None:
+                    continue
+
+                query_parts = [
+                    "SELECT created_at, author",
+                    "FROM messages",
+                    "WHERE direction = 'outgoing'",
+                    "  AND chat_id = ?",
+                    "  AND created_at > ?",
+                    "  AND author IS NOT NULL",
+                    "  AND TRIM(author) != ''",
+                ]
+                params: List[object] = [request_row["chat_id"], request_created_raw]
+                dialog_id = request_row["dialog_id"]
+                if dialog_id is not None:
+                    query_parts.append("  AND dialog_id = ?")
+                    params.append(dialog_id)
+                if automation_clause:
+                    query_parts.append(f"  {automation_clause}")
+                    params.extend(AUTOMATION_AUTHOR_NAMES)
+                query_parts.append("ORDER BY created_at ASC LIMIT 1")
+                sql = "\n".join(query_parts)
+                candidate = _connection.execute(sql, params).fetchone()
+                if candidate is None:
+                    continue
+                reply_at = _parse_datetime(candidate["created_at"])
+                if reply_at is None or reply_at <= request_at:
+                    continue
+                response_deltas.append((reply_at - request_at).total_seconds())
+
     closed_dialogs = max(total_dialogs - open_dialogs, 0)
     average_messages_per_dialog = (
         total_messages / total_dialogs if total_dialogs else 0.0
     )
+
+    if response_deltas:
+        avg_response_time_seconds = sum(response_deltas) / len(response_deltas)
+        avg_response_time_minutes: Optional[float] = avg_response_time_seconds / 60.0
+    else:
+        avg_response_time_seconds = None
+        avg_response_time_minutes = None
 
     durations: List[float] = []
     for row in duration_rows:
@@ -1544,6 +1607,8 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
         "total_outgoing_messages": int(total_outgoing),
         "average_messages_per_dialog": average_messages_per_dialog,
         "avg_dialog_duration_minutes": avg_dialog_duration_minutes,
+        "avg_response_time_minutes": avg_response_time_minutes,
+        "avg_response_time_seconds": avg_response_time_seconds,
         "section_breakdown": section_breakdown,
         "top_questions": top_questions,
         "questions_by_section": questions_by_section,

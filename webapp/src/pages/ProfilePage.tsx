@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
 import { AuthSession } from '../types';
 import Modal from '../components/Modal';
+import { formatDateTime } from '../utils/date';
 
 interface ProfilePageProps {
   apiClient: ApiClient;
@@ -202,7 +203,14 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
             <h3>Назначенные БИНы</h3>
             {user.bins?.length ? (
               <div className="flex-gap" style={{ flexWrap: 'wrap' }}>
-                {user.bins.map((b) => <span key={b} className="chip">{b}</span>)}
+                {user.bins.map((assignment) => (
+                  <span key={assignment.bin} className="chip bin-chip bin-chip--detailed">
+                    <span className="bin-chip__title">{assignment.bin}</span>
+                    <span className="bin-chip__meta">
+                      {assignment.expiresAt ? `до ${formatDateTime(assignment.expiresAt)}` : 'без срока'}
+                    </span>
+                  </span>
+                ))}
               </div>
             ) : (
               <p className="text-muted">БИНы ещё не назначены. Обратитесь к администратору.</p>

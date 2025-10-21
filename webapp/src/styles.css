@@ -461,6 +461,64 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 
 .bins-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .bin-chip { display: inline-flex; align-items: center; gap: 8px; }
+
+.bin-chip--detailed {
+  align-items: flex-start;
+  padding-right: 6px;
+  gap: 8px;
+}
+
+.bin-chip__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.bin-chip__title {
+  font-weight: 600;
+}
+
+.bin-chip__meta {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.bin-chip__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chip-action {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 0.85rem;
+  padding: 0;
+}
+
+.chip-action:hover {
+  color: #2563eb;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.checkbox-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+}
+
+.pending-bin-chip {
+  flex-direction: column;
+  align-items: flex-start;
+}
 .chip-x {
   width: 22px;
   height: 22px;

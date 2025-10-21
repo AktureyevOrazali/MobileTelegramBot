@@ -1,3 +1,27 @@
+export interface UserBinAssignmentRaw {
+  bin: string;
+  assigned_at: string;
+  expires_at?: string | null;
+  assigned_by?: number | null;
+}
+
+export interface UserBinAssignment {
+  bin: string;
+  assignedAt: Date;
+  expiresAt: Date | null;
+  assignedBy?: number | null;
+}
+
+export interface PendingBinRaw {
+  bin: string;
+  pending_dialogs: number;
+}
+
+export interface PendingBin {
+  bin: string;
+  pendingDialogs: number;
+}
+
 export interface UserProfileRaw {
   id: number;
   email: string;
@@ -9,7 +33,7 @@ export interface UserProfileRaw {
   bio: string;
   role: string;
   sections: string[];
-  bins: string[];
+  bins: (string | UserBinAssignmentRaw)[];
   favorite_dialog_ids: number[];
 }
 
@@ -78,7 +102,7 @@ export interface UserProfile {
   bio: string;
   role: string;
   sections: string[];
-  bins: string[];
+  bins: UserBinAssignment[];
   favoriteDialogIds: number[];
   isAdmin: boolean;
   canReply: boolean;

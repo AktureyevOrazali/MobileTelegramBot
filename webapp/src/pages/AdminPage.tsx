@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
-import { RoleInfo, Section, UserProfile } from '../types';
+import { PendingBin, RoleInfo, Section, UserBinAssignment, UserProfile } from '../types';
 import { formatDateTime } from '../utils/date';
 import SelectPill from '../components/SelectPill';
 import Modal from '../components/Modal';
@@ -18,7 +18,7 @@ interface UserCardProps {
   availableBins: string[];
   onRoleSave: (userId: number, role: string) => Promise<void>;
   onSectionsSave: (userId: number, sections: string[]) => Promise<void>;
-  onBinsSave: (userId: number, bins: string[]) => Promise<void>;
+  onBinsSave: (userId: number, bins: UserBinAssignment[]) => Promise<void>;
   onPasswordReset: (userId: number, password: string) => Promise<void>;
   canDeleteUser: boolean;
   onDeleteRequest: (user: UserProfile) => void;
@@ -29,6 +29,32 @@ const roleLabels: Record<string, string> = {
   moderator: 'Модератор',
   viewer: 'Оператор',
 };
+
+const formatDateTimeLocalInput = (date: Date): string => {
+  const pad = (value: number) => value.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+const parseDateTimeLocalInput = (value: string): Date | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const pluralizeDialogs = (count: number): string => {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'диалог';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'диалога';
+  return 'диалогов';
+};
+
+const cloneAssignment = (assignment: UserBinAssignment): UserBinAssignment => ({
+  bin: assignment.bin,
+  assignedAt: new Date(assignment.assignedAt),
+  expiresAt: assignment.expiresAt ? new Date(assignment.expiresAt) : null,
+  assignedBy: assignment.assignedBy,
+});
 
 const useDebouncedEffect = (fn: () => void, deps: React.DependencyList, delay = 300) => {
   useEffect(() => {
@@ -53,10 +79,17 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   const [selectedRole, setSelectedRole] = useState(user.role);
   const [sectionIds, setSectionIds] = useState<Set<string>>(new Set(user.sections));
   const [sectionToAdd, setSectionToAdd] = useState<string>('');
-  const [assignedBins, setAssignedBins] = useState<string[]>(user.bins);
+  const [assignedBins, setAssignedBins] = useState<UserBinAssignment[]>(() =>
+    user.bins.map(cloneAssignment),
+  );
   const [binToAdd, setBinToAdd] = useState<string>('');
+  const [binModalOpen, setBinModalOpen] = useState(false);
+  const [pendingBinValue, setPendingBinValue] = useState<string | null>(null);
+  const [pendingIndefinite, setPendingIndefinite] = useState(true);
+  const [pendingExpiresAt, setPendingExpiresAt] = useState<string>('');
+  const [binModalError, setBinModalError] = useState<string | null>(null);
+  const [editingBin, setEditingBin] = useState<UserBinAssignment | null>(null);
 
-  // состояния автосохранений
   const [savingRole, setSavingRole] = useState(false);
   const [savingSections, setSavingSections] = useState(false);
   const [savingBins, setSavingBins] = useState(false);
@@ -64,7 +97,6 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // password modal
   const [pwdOpen, setPwdOpen] = useState(false);
   const [pwd1, setPwd1] = useState('');
   const [pwd2, setPwd2] = useState('');
@@ -75,8 +107,14 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     setSelectedRole(user.role);
     setSectionIds(new Set(user.sections));
     setSectionToAdd('');
-    setAssignedBins(user.bins);
+    setAssignedBins(user.bins.map(cloneAssignment));
     setBinToAdd('');
+    setBinModalOpen(false);
+    setPendingBinValue(null);
+    setPendingIndefinite(true);
+    setPendingExpiresAt('');
+    setBinModalError(null);
+    setEditingBin(null);
   }, [user]);
 
   const roleOptions = useMemo(
@@ -103,16 +141,13 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     return mapped;
   }, [sections, sectionIds]);
 
-
-
   const binOptions = useMemo(() => {
-    const current = new Set(assignedBins);
+    const current = new Set(assignedBins.map((assignment) => assignment.bin));
     return [{ value: '', label: 'Выберите БИН' }].concat(
       availableBins.filter((b) => !current.has(b)).map((b) => ({ value: b, label: b })),
     );
   }, [availableBins, assignedBins]);
 
-  // ---- Автосохранение роли (мгновенно) ----
   const lastSavedRole = useRef(selectedRole);
   useEffect(() => {
     if (lastSavedRole.current === selectedRole) return;
@@ -132,7 +167,6 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRole]);
 
-  // ---- Автосохранение разделов (debounce) ----
   const sectionKey = useMemo(() => Array.from(sectionIds).sort().join(','), [sectionIds]);
   useDebouncedEffect(() => {
     (async () => {
@@ -149,14 +183,23 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     })();
   }, [sectionKey]);
 
-  // ---- Автосохранение БИНов (debounce) ----
-  const binsKey = useMemo(() => assignedBins.slice().sort().join(','), [assignedBins]);
+  const binsKey = useMemo(
+    () =>
+      assignedBins
+        .map((assignment) => `${assignment.bin}:${assignment.expiresAt ? assignment.expiresAt.toISOString() : ''}`)
+        .join('|'),
+    [assignedBins],
+  );
+
   useDebouncedEffect(() => {
     (async () => {
       try {
         setSavingBins(true);
         setError(null);
-        await onBinsSave(user.id, assignedBins);
+        await onBinsSave(
+          user.id,
+          assignedBins.map(cloneAssignment),
+        );
         setSuccessMessage('БИНы обновлены');
       } catch (e) {
         setError(e instanceof ApiError ? e.message : (e as Error)?.message ?? 'Ошибка при сохранении БИНов');
@@ -186,15 +229,72 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     });
   };
 
-
-
-  const addBin = (b: string) => {
-    if (!b || assignedBins.includes(b)) return;
-    setAssignedBins((prev) => prev.concat(b));
-    setBinToAdd('');
+  const openBinModal = (binValue: string, existing?: UserBinAssignment) => {
+    setPendingBinValue(binValue);
+    if (existing?.expiresAt) {
+      setPendingIndefinite(false);
+      setPendingExpiresAt(formatDateTimeLocalInput(existing.expiresAt));
+    } else {
+      setPendingIndefinite(true);
+      setPendingExpiresAt('');
+    }
+    setEditingBin(existing ?? null);
+    setBinModalError(null);
+    setBinModalOpen(true);
   };
-  const removeBin = (b: string) => {
-    setAssignedBins((prev) => prev.filter((x) => x !== b));
+
+  const handleIndefiniteChange = (checked: boolean) => {
+    setPendingIndefinite(checked);
+    if (checked) {
+      setPendingExpiresAt('');
+      setBinModalError(null);
+    } else {
+      const base = editingBin?.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000);
+      setPendingExpiresAt(formatDateTimeLocalInput(base));
+      setBinModalError(null);
+    }
+  };
+
+  const closeBinModal = () => {
+    setBinModalOpen(false);
+    setPendingBinValue(null);
+    setPendingIndefinite(true);
+    setPendingExpiresAt('');
+    setBinModalError(null);
+    setEditingBin(null);
+  };
+
+  const handleConfirmBin = () => {
+    if (!pendingBinValue) {
+      closeBinModal();
+      return;
+    }
+    let expiresAt: Date | null = null;
+    if (!pendingIndefinite) {
+      const parsed = parseDateTimeLocalInput(pendingExpiresAt);
+      if (!parsed) {
+        setBinModalError('Укажите корректные дату и время окончания.');
+        return;
+      }
+      expiresAt = parsed;
+    }
+    const assignment: UserBinAssignment = {
+      bin: pendingBinValue,
+      assignedAt: editingBin ? new Date(editingBin.assignedAt) : new Date(),
+      expiresAt,
+      assignedBy: editingBin?.assignedBy,
+    };
+    setAssignedBins((prev) => {
+      const filtered = prev.filter((item) => item.bin !== pendingBinValue);
+      const next = [...filtered, assignment].sort((a, b) => a.bin.localeCompare(b.bin));
+      return next;
+    });
+    setBinToAdd('');
+    closeBinModal();
+  };
+  
+  const removeBin = (binValue: string) => {
+    setAssignedBins((prev) => prev.filter((assignment) => assignment.bin !== binValue));
   };
 
   // Сброс пароля
@@ -268,17 +368,40 @@ const AdminUserCard: React.FC<UserCardProps> = ({
             <h4>Назначенные БИНы</h4>
             <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
               {assignedBins.length === 0 && <span className="text-muted">Нет назначенных БИНов</span>}
-              {assignedBins.map((b) => (
-                <span key={b} className="chip bin-chip">
-                  {b}
-                  <button
-                    className="chip-x"
-                    type="button"
-                    aria-label={`Удалить БИН ${b}`}
-                    onClick={() => removeBin(b)}
-                  >
-                    ×
-                  </button>
+              {assignedBins.map((assignment) => (
+                <span
+                  key={assignment.bin}
+                  className="chip bin-chip bin-chip--detailed"
+                  title={
+                    assignment.expiresAt
+                      ? `Действует до ${formatDateTime(assignment.expiresAt)}`
+                      : 'Без ограничения по времени'
+                  }
+                >
+                  <span className="bin-chip__text">
+                    <span className="bin-chip__title">{assignment.bin}</span>
+                    <span className="bin-chip__meta">
+                      {assignment.expiresAt ? `до ${formatDateTime(assignment.expiresAt)}` : 'без срока'}
+                    </span>
+                  </span>
+                  <div className="bin-chip__actions">
+                    <button
+                      className="chip-action"
+                      type="button"
+                      aria-label={`Изменить срок для БИНа ${assignment.bin}`}
+                      onClick={() => openBinModal(assignment.bin, assignment)}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      className="chip-x"
+                      type="button"
+                      aria-label={`Удалить БИН ${assignment.bin}`}
+                      onClick={() => removeBin(assignment.bin)}
+                    >
+                      ×
+                    </button>
+                  </div>
                 </span>
               ))}
             </div>
@@ -291,8 +414,12 @@ const AdminUserCard: React.FC<UserCardProps> = ({
               options={binOptions}
               value={binToAdd}
               onChange={(v) => {
-                setBinToAdd(v);
-                if (v) addBin(v);
+                if (!v) {
+                  setBinToAdd('');
+                  return;
+                }
+                setBinToAdd('');
+                openBinModal(v);
               }}
               searchable
               style={{ minWidth: 0 }}
@@ -368,6 +495,50 @@ const AdminUserCard: React.FC<UserCardProps> = ({
           )}
         </div>
       </div>
+      
+      <Modal open={binModalOpen} onClose={closeBinModal}>
+        <h3>Назначение БИНа</h3>
+        {pendingBinValue && (
+          <p style={{ marginBottom: 12 }}>
+            <strong>{pendingBinValue}</strong>
+          </p>
+        )}
+        <p className="text-muted" style={{ marginTop: -8 }}>
+          Укажите срок, до которого БИН закреплён за сотрудником. Без срока — назначение бессрочное.
+        </p>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={pendingIndefinite}
+            onChange={(event) => handleIndefiniteChange(event.target.checked)}
+          />
+          <span>Без ограничения по времени</span>
+        </label>
+        {!pendingIndefinite && (
+          <div className="row">
+            <label>Действует до</label>
+            <input
+              className="input"
+              type="datetime-local"
+              value={pendingExpiresAt}
+              min={formatDateTimeLocalInput(new Date())}
+              onChange={(event) => {
+                setPendingExpiresAt(event.target.value);
+                if (binModalError) setBinModalError(null);
+              }}
+            />
+          </div>
+        )}
+        {binModalError && <div className="alert error" style={{ marginTop: 6 }}>{binModalError}</div>}
+        <div className="actions" style={{ justifyContent: 'space-between' }}>
+          <button className="button secondary" type="button" onClick={closeBinModal}>
+            Отмена
+          </button>
+          <button className="button" type="button" onClick={handleConfirmBin}>
+            {editingBin ? 'Сохранить' : 'Назначить'}
+          </button>
+        </div>
+      </Modal>
 
       {/* Модалка пароля */}
       <Modal open={pwdOpen} onClose={() => setPwdOpen(false)}>
@@ -397,6 +568,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [roles, setRoles] = useState<RoleInfo[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [bins, setBins] = useState<string[]>([]);
+  const [pendingBins, setPendingBins] = useState<PendingBin[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -409,16 +581,18 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       setLoading(true);
       setError(null);
       try {
-        const [loadedRoles, loadedUsers, loadedSections, loadedBins] = await Promise.all([
+        const [loadedRoles, loadedUsers, loadedSections, loadedBins, loadedPendingBins] = await Promise.all([
           apiClient.fetchRoles(),
           apiClient.fetchUsers(query),
           apiClient.fetchSections(),
           apiClient.fetchBins(),
+          apiClient.fetchPendingBins(),
         ]);
         setRoles(loadedRoles);
         setUsers(loadedUsers);
         setSections(loadedSections);
         setBins(loadedBins);
+        setPendingBins(loadedPendingBins);
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
         else if (err instanceof Error) setError(err.message);
@@ -456,9 +630,15 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   );
 
   const handleBinsSave = useCallback(
-    async (userId: number, binsList: string[]) => {
+    async (userId: number, binsList: UserBinAssignment[]) => {
       const updated = await apiClient.updateUserBins(userId, binsList);
       setUsers((prev) => prev.map((user) => (user.id === updated.id ? updated : user)));
+      try {
+        const refreshed = await apiClient.fetchPendingBins();
+        setPendingBins(refreshed);
+      } catch (err) {
+        console.warn('Не удалось обновить список неотвеченных БИНов', err);
+      }
     },
     [apiClient],
   );
@@ -496,6 +676,24 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <h3 style={{ margin: 0 }}>Неотвеченные БИНы</h3>
+        {pendingBins.length === 0 ? (
+          <span className="text-muted">Все текущие диалоги получили ответ.</span>
+        ) : (
+          <div className="flex-gap pending-bins-list" style={{ flexWrap: 'wrap' }}>
+            {pendingBins.map((item) => (
+              <span key={item.bin} className="chip bin-chip pending-bin-chip">
+                <span className="bin-chip__title">{item.bin}</span>
+                <span className="bin-chip__meta">
+                  {item.pendingDialogs} {pluralizeDialogs(item.pendingDialogs)} без ответа
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <input

@@ -15,12 +15,62 @@ import {
   MessageRaw,
   UserProfile,
   UserProfileRaw,
+  UserBinAssignment,
+  UserBinAssignmentRaw,
 } from '../types';
 
 export function mapUserProfile(raw: UserProfileRaw): UserProfile {
   const role = raw.role || 'viewer';
   const isAdmin = role === 'admin';
   const canReply = role === 'admin' || role === 'moderator';
+  const mapAssignments = (
+    entries: (string | UserBinAssignmentRaw)[] | undefined,
+  ): UserBinAssignment[] => {
+    if (!Array.isArray(entries)) {
+      return [];
+    }
+    const now = new Date();
+    const assignments: UserBinAssignment[] = [];
+    entries.forEach((entry) => {
+      if (!entry) {
+        return;
+      }
+      if (typeof entry === 'string') {
+        const binLabel = entry.trim();
+        if (!binLabel) {
+          return;
+        }
+        assignments.push({
+          bin: binLabel,
+          assignedAt: now,
+          expiresAt: null,
+          assignedBy: undefined,
+        });
+        return;
+      }
+      const binLabel = typeof entry.bin === 'string' ? entry.bin.trim() : '';
+      if (!binLabel) {
+        return;
+      }
+      const assignedSource = (entry as UserBinAssignmentRaw).assigned_at ?? (entry as any).assignedAt;
+      const expiresSource = entry.expires_at ?? (entry as any).expiresAt ?? null;
+      const assignedAt = assignedSource ? new Date(assignedSource) : now;
+      const expiresAt = expiresSource ? new Date(expiresSource) : null;
+      assignments.push({
+        bin: binLabel,
+        assignedAt: Number.isNaN(assignedAt.getTime()) ? now : assignedAt,
+        expiresAt: expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null,
+        assignedBy:
+          typeof entry.assigned_by === 'number'
+            ? entry.assigned_by
+            : typeof (entry as any).assignedBy === 'number'
+            ? (entry as any).assignedBy
+            : undefined,
+      });
+    });
+    assignments.sort((a, b) => a.bin.localeCompare(b.bin));
+    return assignments;
+  };
   return {
     id: raw.id,
     email: raw.email,
@@ -32,7 +82,7 @@ export function mapUserProfile(raw: UserProfileRaw): UserProfile {
     bio: raw.bio,
     role,
     sections: raw.sections ?? [],
-    bins: raw.bins ?? [],
+    bins: mapAssignments(raw.bins),
     favoriteDialogIds: raw.favorite_dialog_ids ?? [],
     isAdmin,
     canReply,

@@ -280,9 +280,10 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
         return;
       }
 
-      const allowed = new Set(currentUser.bins ?? []);
+      const assignedValues = (currentUser.bins ?? []).map((assignment) => assignment.bin);
+      const allowed = new Set(assignedValues);
       const filtered = data.filter((bin) => allowed.has(bin));
-      const merged = Array.from(new Set([...filtered, ...(currentUser.bins ?? [])]));
+      const merged = Array.from(new Set([...filtered, ...assignedValues]));
       setBins(merged);
     } catch (err) {
       console.warn('Не удалось загрузить БИНы', err);

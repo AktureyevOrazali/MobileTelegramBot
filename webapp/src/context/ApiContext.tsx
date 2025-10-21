@@ -7,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { ApiClient } from '../api/ApiClient';
-import { AuthSession } from '../types';
+import { AuthSession, UserBinAssignment } from '../types';
 
 interface ApiContextValue {
   apiClient: ApiClient;
@@ -36,14 +36,45 @@ function loadSessionFromStorage(): AuthSession | null {
             .map((v: unknown) => Number(v))
             .filter((n) => !Number.isNaN(n))
         : [];
+      const normalizeAssignments = (entries: unknown): UserBinAssignment[] => {
+        if (!Array.isArray(entries)) {
+          return [];
+        }
+        const now = new Date();
+        const assignments: UserBinAssignment[] = [];
+        (entries as unknown[]).forEach((item) => {
+          if (!item || typeof item !== 'object' || typeof (item as any).bin !== 'string') {
+            return;
+          }
+          const bin = ((item as any).bin as string).trim();
+          if (!bin) {
+            return;
+          }
+          const assignedAtRaw = (item as any).assignedAt ?? (item as any).assigned_at;
+          const expiresAtRaw = (item as any).expiresAt ?? (item as any).expires_at;
+          const assignedAt = assignedAtRaw ? new Date(assignedAtRaw) : now;
+          const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
+          assignments.push({
+            bin,
+            assignedAt: Number.isNaN(assignedAt.getTime()) ? now : assignedAt,
+            expiresAt: expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null,
+            assignedBy: typeof (item as any).assignedBy === 'number'
+              ? (item as any).assignedBy
+              : typeof (item as any).assigned_by === 'number'
+              ? (item as any).assigned_by
+              : undefined,
+          });
+        });
+        return assignments;
+      };
       const session: AuthSession = {
         token: parsed.token,
         user: {
           ...parsed.user,
           createdAt: new Date(parsed.user.createdAt ?? parsed.user.created_at ?? new Date().toISOString()),
           sections: Array.isArray(parsed.user.sections) ? parsed.user.sections : [],
-          bins: Array.isArray(parsed.user.bins) ? parsed.user.bins : [],
-           favoriteDialogIds,
+          bins: normalizeAssignments(parsed.user.bins),
+          favoriteDialogIds,
           isAdmin: role === 'admin',
           canReply: role === 'admin' || role === 'moderator',
           role,

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AliasChoices, BaseModel, EmailStr, Field
 
 from . import database
 from .telegram_bot import bot
@@ -50,6 +50,13 @@ class ReplyRequest(BaseModel):
     dialog_id: int | None = None
 
 
+class BinAssignmentResponse(BaseModel):
+    bin: str
+    assigned_at: str
+    expires_at: str | None = None
+    assigned_by: int | None = None
+
+
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
@@ -60,14 +67,23 @@ class UserResponse(BaseModel):
     phone: str = ""
     bio: str = ""
     role: str
-    sections: List[str] = []
-    bins: List[str] = []
+    sections: List[str] = Field(default_factory=list)
+    bins: List[BinAssignmentResponse] = Field(default_factory=list)
     favorite_dialog_ids: List[int] = []
 
 
 class AuthResponse(BaseModel):
     token: str
     user: UserResponse
+
+
+class BinAssignmentRequest(BaseModel):
+    bin: str = Field(min_length=1, max_length=100)
+    expires_at: datetime | None = Field(
+        default=None,
+        validation_alias=AliasChoices("expires_at", "expiresAt"),
+        serialization_alias="expires_at",
+    )
 
 
 class RoleUpdateRequest(BaseModel):
@@ -88,7 +104,12 @@ class PasswordResetRequest(BaseModel):
 
 
 class BinsUpdateRequest(BaseModel):
-    bins: List[str] = Field(default_factory=list)
+    bins: List[BinAssignmentRequest] = Field(default_factory=list)
+
+
+class PendingBinResponse(BaseModel):
+    bin: str
+    pending_dialogs: int
 
 
 class MessageResponse(BaseModel):
@@ -435,6 +456,13 @@ def list_bins_endpoint(
     _: Dict[str, object] = Depends(get_current_user),
 ):
     return database.list_bins(query)
+
+
+@router.get("/bins/pending", response_model=List[PendingBinResponse])
+def list_pending_bins_endpoint(
+    _: Dict[str, object] = Depends(require_admin),
+):
+    return [PendingBinResponse(**item) for item in database.list_unanswered_bins()]
 
 
 @router.get("/faq")

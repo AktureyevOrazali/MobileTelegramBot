@@ -13,6 +13,9 @@ import {
   Section,
   UserProfile,
   UserProfileRaw,
+  PendingBin,
+  PendingBinRaw,
+  UserBinAssignment,
 } from '../types';
 import {
   mapChatSummary,
@@ -288,6 +291,14 @@ export class ApiClient {
     });
   }
 
+  async fetchPendingBins(): Promise<PendingBin[]> {
+    const response = await this.request<PendingBinRaw[]>('bins/pending', { method: 'GET' });
+    return response.map((item) => ({
+      bin: item.bin,
+      pendingDialogs: typeof item.pending_dialogs === 'number' ? item.pending_dialogs : 0,
+    }));
+  }
+
   async fetchChats(options: { favoriteOnly?: boolean; binQuery?: string | null } = {}): Promise<ChatSummary[]> {
     const response = await this.request<ChatSummaryRaw[]>('chats', {
       method: 'GET',
@@ -384,10 +395,16 @@ export class ApiClient {
     return mapUserProfile(response);
   }
 
-  async updateUserBins(userId: number, bins: string[]): Promise<UserProfile> {
+  async updateUserBins(userId: number, bins: UserBinAssignment[]): Promise<UserProfile> {
+    const payload = bins
+      .filter((assignment) => assignment && assignment.bin)
+      .map((assignment) => ({
+        bin: assignment.bin,
+        expires_at: assignment.expiresAt ? assignment.expiresAt.toISOString() : null,
+      }));
     const response = await this.request<UserProfileRaw>(`users/${userId}/bins`, {
       method: 'PUT',
-      body: JSON.stringify({ bins }),
+      body: JSON.stringify({ bins: payload }),
     });
     return mapUserProfile(response);
   }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -401,6 +402,36 @@ class ApiClient {
     return decoded.map((item) => item.toString()).toList();
   }
 
+  Future<List<UnassignedBin>> fetchUnassignedBins() async {
+    List<UnassignedBin> parseResponse(http.Response response) {
+      final decoded = jsonDecode(response.body) as List<dynamic>;
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(UnassignedBin.fromJson)
+          .toList();
+    }
+
+    final primaryUri = _buildUri('bins/unassigned');
+    try {
+      final response = await _sendRequest(
+        () => http.get(primaryUri, headers: _headers),
+        'Не удалось загрузить список неразделенных БИНов.',
+      );
+      return parseResponse(response);
+    } on ApiException catch (error) {
+      final legacyUri = _buildUri('bins/pending');
+      try {
+        final fallback = await _sendRequest(
+          () => http.get(legacyUri, headers: _headers),
+          'Не удалось загрузить список неразделенных БИНов.',
+        );
+        return parseResponse(fallback);
+      } catch (_) {
+        throw error;
+      }
+    }
+  }
+
   Future<UserProfile> fetchProfile() async {
     final uri = _buildUri('profile');
     final response = await _sendRequest(
@@ -604,13 +635,14 @@ class ApiClient {
     return UserProfile.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
-  Future<UserProfile> updateUserBins(int userId, List<String> bins) async {
+  Future<UserProfile> updateUserBins(int userId, List<UserBinAssignment> assignments) async {
     final uri = _buildUri('users/$userId/bins');
+    final payload = assignments.map((assignment) => assignment.toUpdatePayload()).toList();
     final response = await _sendRequest(
       () => http.put(
         uri,
         headers: _headers,
-        body: jsonEncode({'bins': bins}),
+        body: jsonEncode({'bins': payload}),
       ),
       'Не удалось обновить назначенные БИНы.',
     );
@@ -3282,6 +3314,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   List<RoleInfo> _roles = [];
   List<Section> _availableSections = [];
   List<String> _availableBins = [];
+  List<UnassignedBin> _unassignedBins = [];
   final Set<int> _updatingUserIds = <int>{};
   final Set<int> _deletingUserIds = <int>{};
   final TextEditingController _searchController = TextEditingController();
@@ -3313,11 +3346,18 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       });
     }
     try {
-      final roles = await widget.apiClient.fetchRoles();
       final query = _searchQuery.trim().isEmpty ? null : _searchQuery.trim();
-      final users = await widget.apiClient.fetchUsers(query: query);
-      final sections = await widget.apiClient.fetchSections();
-      final bins = await widget.apiClient.fetchBins();
+      final rolesFuture = widget.apiClient.fetchRoles();
+      final usersFuture = widget.apiClient.fetchUsers(query: query);
+      final sectionsFuture = widget.apiClient.fetchSections();
+      final binsFuture = widget.apiClient.fetchBins();
+      final unassignedFuture = widget.apiClient.fetchUnassignedBins();
+
+      final roles = await rolesFuture;
+      final users = await usersFuture;
+      final sections = await sectionsFuture;
+      final bins = await binsFuture;
+      final unassigned = await unassignedFuture;
       if (!mounted) {
         return;
       }
@@ -3326,6 +3366,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _users = users;
         _availableSections = sections;
         _availableBins = bins;
+        _unassignedBins = unassigned;
         _loading = false;
         _updatingUserIds.clear();
         _deletingUserIds.clear();
@@ -3338,6 +3379,12 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _error = error.toString();
         _loading = false;
       });
+      final message = error is ApiException ? error.message : error.toString();
+      showTopMessage(
+        context,
+        'Не удалось загрузить данные администратора: $message',
+        isError: true,
+      );
     }
   }
 
@@ -3352,6 +3399,242 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       });
       refreshAdminData(showLoading: false);
     });
+  }
+
+  String _pluralizeDialogs(int count) {
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    if (mod10 == 1 && mod100 != 11) {
+      return 'диалог';
+    }
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+      return 'диалога';
+    }
+    return 'диалогов';
+  }
+
+  Future<UserBinAssignment?> _showBinAssignmentSheet({
+    required UserProfile user,
+    required String bin,
+    UserBinAssignment? current,
+  }) async {
+    DateTime? selected = current?.expiresAt?.toLocal();
+    bool indefinite = selected == null;
+
+    DateTime _defaultExpirySeed() {
+      final now = DateTime.now();
+      final truncatedHour = DateTime(now.year, now.month, now.day, now.hour);
+      final candidate = truncatedHour.add(const Duration(hours: 1));
+      if (candidate.isAfter(now)) {
+        return candidate;
+      }
+      return now.add(const Duration(hours: 2));
+    }
+
+    void _ensureSelectionValidity() {
+      if (indefinite) {
+        selected = null;
+        return;
+      }
+      final minAllowed = DateTime.now().add(const Duration(minutes: 5));
+      if (selected == null || !selected!.isAfter(minAllowed)) {
+        selected = _defaultExpirySeed();
+      }
+    }
+
+    if (!indefinite) {
+      _ensureSelectionValidity();
+    }
+
+    return showModalBottomSheet<UserBinAssignment>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            void updateSelection(bool makeIndefinite) {
+              setModalState(() {
+                indefinite = makeIndefinite;
+                if (makeIndefinite) {
+                  selected = null;
+                } else {
+                  _ensureSelectionValidity();
+                }
+              });
+            }
+
+            Future<void> handlePick() async {
+              final now = DateTime.now();
+              final fallback =
+                  selected != null && selected!.isAfter(now) ? selected! : _defaultExpirySeed();
+              final firstDate = DateTime(now.year, now.month, now.day);
+              final date = await showDatePicker(
+                context: sheetContext,
+                initialDate: fallback.isBefore(firstDate) ? firstDate : fallback,
+                firstDate: firstDate,
+                lastDate: now.add(const Duration(days: 365)),
+              );
+              if (date == null) {
+                return;
+              }
+              final timeOfDay = await showTimePicker(
+                context: sheetContext,
+                initialTime: TimeOfDay.fromDateTime(fallback),
+              );
+              if (timeOfDay == null) {
+                return;
+              }
+              setModalState(() {
+                selected = DateTime(
+                  date.year,
+                  date.month,
+                  date.day,
+                  timeOfDay.hour,
+                  timeOfDay.minute,
+                );
+                indefinite = false;
+                _ensureSelectionValidity();
+              });
+            }
+
+            final theme = Theme.of(context);
+            final expiresLabel = (!indefinite && selected != null)
+                ? DateFormat('dd.MM.yyyy HH:mm').format(selected!)
+                : 'Срок не выбран';
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Назначение БИНа', style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 6),
+                  Text(
+                    user.name,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      bin,
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  RadioListTile<bool>(
+                    value: true,
+                    groupValue: indefinite,
+                    onChanged: (_) => updateSelection(true),
+                    title: const Text('Без ограничения по времени'),
+                    subtitle: const Text('БИН останется за сотрудником, пока вы не снимете назначение вручную.'),
+                  ),
+                  RadioListTile<bool>(
+                    value: false,
+                    groupValue: indefinite,
+                    onChanged: (_) => updateSelection(false),
+                    title: const Text('До указанной даты и времени'),
+                    subtitle: const Text('После истечения срока БИН появится среди неразделенных.'),
+                    secondary: IconButton(
+                      icon: const Icon(Icons.event_outlined),
+                      tooltip: 'Выбрать дату и время',
+                      onPressed: () {
+                        updateSelection(false);
+                        handlePick();
+                      },
+                    ),
+                  ),
+                  if (!indefinite)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 24, right: 16, bottom: 8),
+                      child: Text(
+                        expiresLabel,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        child: const Text('Отмена'),
+                      ),
+                      const SizedBox(width: 12),
+                      FilledButton(
+                        onPressed: () {
+                          if (!indefinite && selected == null) {
+                            ScaffoldMessenger.of(sheetContext).showSnackBar(
+                              const SnackBar(content: Text('Укажите срок действия БИНа.')),
+                            );
+                            return;
+                          }
+                          final expiresUtc = indefinite ? null : selected!.toUtc();
+                          Navigator.of(sheetContext).pop(
+                            UserBinAssignment(
+                              bin: bin,
+                              assignedAt: current?.assignedAt ?? DateTime.now().toUtc(),
+                              expiresAt: expiresUtc,
+                              assignedBy: current?.assignedBy,
+                            ),
+                          );
+                        },
+                        child: Text(current == null ? 'Назначить' : 'Сохранить'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmRemoveBin(UserProfile user, UserBinAssignment assignment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Удалить назначение БИНа?'),
+          content: Text('БИН ${assignment.bin} станет неразделенным.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+              child: const Text('Удалить'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+    final updated = List<UserBinAssignment>.from(user.binAssignments)
+      ..removeWhere((item) => item.bin == assignment.bin);
+    await _updateUserBins(user, updated);
   }
 
   Future<void> _changeRole(UserProfile user, String role) async {
@@ -3432,13 +3715,16 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
     }
   }
 
-  Future<void> _updateUserBins(UserProfile user, Set<String> bins) async {
+  Future<void> _updateUserBins(UserProfile user, List<UserBinAssignment> assignments) async {
     setState(() {
       _updatingUserIds.add(user.id);
       _error = null;
     });
     try {
-      final updated = await widget.apiClient.updateUserBins(user.id, bins.toList());
+      final sortedAssignments = List<UserBinAssignment>.from(assignments)
+        ..sort((a, b) => a.bin.compareTo(b.bin));
+      final updated = await widget.apiClient.updateUserBins(user.id, sortedAssignments);
+      final unassigned = await widget.apiClient.fetchUnassignedBins();
       if (!mounted) {
         return;
       }
@@ -3447,6 +3733,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
             .map((existing) => existing.id == updated.id ? updated : existing)
             .toList();
         _updatingUserIds.remove(user.id);
+        _unassignedBins = unassigned;
       });
       if (!mounted) {
         return;
@@ -3668,6 +3955,81 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
     final listChildren = <Widget>[
       searchField,
       const SizedBox(height: 12),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Неразделенные БИНы',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 12),
+                if (_unassignedBins.isEmpty)
+                  Text(
+                    'Все активные БИНы закреплены за сотрудниками.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                else
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isNarrow = constraints.maxWidth < 420;
+                      final targetWidth = isNarrow
+                          ? constraints.maxWidth
+                          : math.min(260.0, constraints.maxWidth);
+                      return Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: _unassignedBins.map((entry) {
+                          final description = entry.openDialogs > 0
+                              ? '${entry.openDialogs} ${_pluralizeDialogs(entry.openDialogs)} без закрепленного сотрудника'
+                              : 'Нет активных диалогов';
+                          return ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: targetWidth,
+                              maxWidth: targetWidth,
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    entry.bin,
+                                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    description,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
     ];
 
     if (_users.isEmpty) {
@@ -3857,7 +4219,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                     const SizedBox(height: 16),
                     Text('БИНы', style: theme.textTheme.labelLarge),
                     const SizedBox(height: 8),
-                    if (user.bins.isEmpty)
+                    if (user.binAssignments.isEmpty)
                       Text(
                         'Нет назначенных БИНов',
                         style: theme.textTheme.bodySmall?.copyWith(
@@ -3865,35 +4227,95 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         ),
                       )
                     else
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: user.bins.map((bin) {
-                          return Chip(
-                            label: Text(bin),
-                            onDeleted: (!isUpdating && !isDeleting)
-                                ? () {
-                                    final updatedBins =
-                                        Set<String>.from(user.bins)..remove(bin);
-                                    _updateUserBins(user, updatedBins);
-                                  }
-                                : null,
+                      Column(
+                        children: user.binAssignments.map((assignment) {
+                          final expiresLabel = assignment.expiresAt != null
+                              ? 'Действует до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
+                              : 'Бессрочное назначение';
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: theme.colorScheme.outlineVariant.withOpacity(0.6),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        assignment.bin,
+                                        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        expiresLabel,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (!isUpdating && !isDeleting)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        tooltip: 'Изменить срок',
+                                        icon: const Icon(Icons.edit_calendar_outlined),
+                                        onPressed: () async {
+                                          final updatedAssignment = await _showBinAssignmentSheet(
+                                            user: user,
+                                            bin: assignment.bin,
+                                            current: assignment,
+                                          );
+                                          if (updatedAssignment == null) {
+                                            return;
+                                          }
+                                          final updatedAssignments = user.binAssignments
+                                              .map((item) => item.bin == assignment.bin ? updatedAssignment : item)
+                                              .toList();
+                                          await _updateUserBins(user, updatedAssignments);
+                                        },
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Убрать БИН',
+                                        icon: const Icon(Icons.delete_outline),
+                                        onPressed: () => _confirmRemoveBin(user, assignment),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
                           );
                         }).toList(),
                       ),
                     const SizedBox(height: 8),
                     _BinSelectorField(
-                      key: ValueKey('bin-selector-${user.id}-${user.bins.length}'),
+                      key: ValueKey('bin-selector-${user.id}-${user.binAssignments.length}'),
                       availableBins: _availableBins
-                          .where((bin) => !user.bins.contains(bin))
+                          .where((bin) => user.binAssignments.every((assignment) => assignment.bin != bin))
                           .toList(),
                       enabled: !isUpdating && !isDeleting && _availableBins.isNotEmpty,
-                      onBinSelected: (value) {
-                        if (value.isEmpty || user.bins.contains(value)) {
+                      onBinSelected: (value) async {
+                        if (value.isEmpty ||
+                            user.binAssignments.any((assignment) => assignment.bin == value)) {
                           return;
                         }
-                        final updatedBins = Set<String>.from(user.bins)..add(value);
-                        _updateUserBins(user, updatedBins);
+                        final assignment = await _showBinAssignmentSheet(user: user, bin: value);
+                        if (assignment == null) {
+                          return;
+                        }
+                        final updatedAssignments = List<UserBinAssignment>.from(user.binAssignments)
+                          ..add(assignment);
+                        await _updateUserBins(user, updatedAssignments);
                       },
                     ),
                     const SizedBox(height: 16),
@@ -4301,7 +4723,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 8),
-                if (profile.bins.isEmpty)
+                if (profile.binAssignments.isEmpty)
                   const Text(
                     'БИНы ещё не назначены. Обратитесь к администратору.',
                   )
@@ -4309,8 +4731,23 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 4,
-                    children: profile.bins.map((bin) {
-                      return Chip(label: Text(bin));
+                    children: profile.binAssignments.map((assignment) {
+                      final expiresLabel = assignment.expiresAt != null
+                          ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
+                          : 'без срока';
+                      return Chip(
+                        label: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(assignment.bin),
+                            Text(
+                              expiresLabel,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      );
                     }).toList(),
                   ),
                 const SizedBox(height: 8),
@@ -4494,7 +4931,7 @@ class _BinSelectorField extends StatefulWidget {
   });
 
   final List<String> availableBins;
-  final ValueChanged<String> onBinSelected;
+  final Future<void> Function(String) onBinSelected;
   final bool enabled;
 
   @override
@@ -4537,7 +4974,7 @@ class _BinSelectorFieldState extends State<_BinSelectorField> {
         if (!widget.enabled) {
           return;
         }
-        widget.onBinSelected(value);
+        unawaited(widget.onBinSelected(value));
         _focusNode?.unfocus();
       },
       fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
@@ -4561,7 +4998,7 @@ class _BinSelectorFieldState extends State<_BinSelectorField> {
               return;
             }
             if (widget.availableBins.contains(trimmed)) {
-              widget.onBinSelected(trimmed);
+              unawaited(widget.onBinSelected(trimmed));
               _fieldController?.clear();
               focusNode.unfocus();
             }
@@ -5065,6 +5502,147 @@ class MessageNotification {
   }
 }
 
+class UnassignedBin {
+  const UnassignedBin({
+    required this.bin,
+    required this.openDialogs,
+  });
+
+  final String bin;
+  final int openDialogs;
+
+  factory UnassignedBin.fromJson(Map<String, dynamic> json) {
+    final rawBin = json['bin'] ?? '';
+    final parsedBin = rawBin is String ? rawBin.trim() : rawBin.toString();
+    final rawCount = json['open_dialogs'];
+    final count = rawCount is int
+        ? rawCount
+        : int.tryParse(rawCount?.toString() ?? '') ?? 0;
+    return UnassignedBin(bin: parsedBin, openDialogs: count);
+  }
+}
+
+class UserBinAssignment {
+  const UserBinAssignment({
+    required this.bin,
+    required this.assignedAt,
+    required this.expiresAt,
+    this.assignedBy,
+  });
+
+  final String bin;
+  final DateTime assignedAt;
+  final DateTime? expiresAt;
+  final int? assignedBy;
+
+  bool get isIndefinite => expiresAt == null;
+
+  UserBinAssignment copyWith({
+    DateTime? assignedAt,
+    DateTime? expiresAt,
+    int? assignedBy,
+  }) {
+    return UserBinAssignment(
+      bin: bin,
+      assignedAt: assignedAt ?? this.assignedAt,
+      expiresAt: expiresAt ?? this.expiresAt,
+      assignedBy: assignedBy ?? this.assignedBy,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'bin': bin,
+      'assigned_at': assignedAt.toUtc().toIso8601String(),
+      'expires_at': expiresAt?.toUtc().toIso8601String(),
+      'assigned_by': assignedBy,
+    };
+  }
+
+  Map<String, dynamic> toUpdatePayload() {
+    return {
+      'bin': bin,
+      'expires_at': expiresAt?.toUtc().toIso8601String(),
+    };
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is DateTime) {
+      return value.toUtc();
+    }
+    if (value is int) {
+      try {
+        return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+      } catch (_) {
+        return null;
+      }
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        return DateTime.parse(value).toUtc();
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  static UserBinAssignment? tryParse(dynamic raw) {
+    if (raw == null) {
+      return null;
+    }
+    if (raw is UserBinAssignment) {
+      return raw;
+    }
+    if (raw is String) {
+      final bin = raw.trim();
+      if (bin.isEmpty) {
+        return null;
+      }
+      return UserBinAssignment(
+        bin: bin,
+        assignedAt: DateTime.now().toUtc(),
+        expiresAt: null,
+        assignedBy: null,
+      );
+    }
+    if (raw is Map<String, dynamic>) {
+      final value = raw['bin'] ?? raw['value'] ?? '';
+      final bin = value.toString().trim();
+      if (bin.isEmpty) {
+        return null;
+      }
+      final assignedRaw = raw['assigned_at'] ?? raw['assignedAt'];
+      final expiresRaw = raw['expires_at'] ?? raw['expiresAt'];
+      final assignedAt = _parseDate(assignedRaw) ?? DateTime.now().toUtc();
+      final expiresAt = _parseDate(expiresRaw);
+      final assignedByRaw = raw['assigned_by'] ?? raw['assignedBy'];
+      final assignedBy = assignedByRaw is int
+          ? assignedByRaw
+          : int.tryParse(assignedByRaw?.toString() ?? '');
+      return UserBinAssignment(
+        bin: bin,
+        assignedAt: assignedAt,
+        expiresAt: expiresAt,
+        assignedBy: assignedBy,
+      );
+    }
+    final bin = raw.toString().trim();
+    if (bin.isEmpty) {
+      return null;
+    }
+    return UserBinAssignment(
+      bin: bin,
+      assignedAt: DateTime.now().toUtc(),
+      expiresAt: null,
+      assignedBy: null,
+    );
+  }
+}
+
 class Section {
   Section({required this.id, required this.title});
 
@@ -5097,10 +5675,10 @@ class UserProfile {
     required this.bio,
     required this.role,
     required List<String> sections,
-    required List<String> bins,
+    required List<UserBinAssignment> binAssignments,
     required Set<int> favoriteDialogIds,
   })  : sections = List.unmodifiable(sections),
-        bins = List.unmodifiable(bins),
+        binAssignments = List.unmodifiable(binAssignments),
         favoriteDialogIds = Set<int>.unmodifiable(favoriteDialogIds);
 
   final int id;
@@ -5113,8 +5691,10 @@ class UserProfile {
   final String bio;
   final String role;
   final List<String> sections;
-  final List<String> bins;
+  final List<UserBinAssignment> binAssignments;
   final Set<int> favoriteDialogIds;
+
+  List<String> get bins => binAssignments.map((assignment) => assignment.bin).toList(growable: false);
 
   bool get canReply => role == 'admin' || role == 'moderator';
   bool get isAdmin => role == 'admin';
@@ -5137,7 +5717,7 @@ class UserProfile {
     if (bin == null || bin.isEmpty) {
       return false;
     }
-    return bins.contains(bin);
+    return binAssignments.any((assignment) => assignment.bin == bin);
   }
 
   UserProfile copyWith({
@@ -5147,7 +5727,7 @@ class UserProfile {
     String? bio,
     String? role,
     List<String>? sections,
-    List<String>? bins,
+    List<UserBinAssignment>? binAssignments,
     Set<int>? favoriteDialogIds,
   }) {
     return UserProfile(
@@ -5161,7 +5741,7 @@ class UserProfile {
       bio: bio ?? this.bio,
       role: role ?? this.role,
       sections: sections ?? this.sections,
-      bins: bins ?? this.bins,
+      binAssignments: binAssignments ?? this.binAssignments,
       favoriteDialogIds: favoriteDialogIds ?? this.favoriteDialogIds,
     );
   }
@@ -5178,7 +5758,7 @@ class UserProfile {
       'bio': bio,
       'role': role,
       'sections': sections,
-      'bins': bins,
+      'bins': binAssignments.map((assignment) => assignment.toJson()).toList(),
       'favorite_dialog_ids': favoriteDialogIds.toList(),
     };
   }
@@ -5187,9 +5767,22 @@ class UserProfile {
     final sectionList = (json['sections'] as List<dynamic>? ?? [])
         .map((item) => item.toString())
         .toList();
-    final binList = (json['bins'] as List<dynamic>? ?? [])
-        .map((item) => item.toString())
-        .toList();
+    final rawBins = json['bins'];
+    final assignments = <UserBinAssignment>[];
+    if (rawBins is List) {
+      for (final item in rawBins) {
+        final parsed = UserBinAssignment.tryParse(item);
+        if (parsed != null) {
+          assignments.add(parsed);
+        }
+      }
+    } else if (rawBins != null) {
+      final parsed = UserBinAssignment.tryParse(rawBins);
+      if (parsed != null) {
+        assignments.add(parsed);
+      }
+    }
+    assignments.sort((a, b) => a.bin.compareTo(b.bin));
     final rawFavorites = json['favorite_dialog_ids'] ?? json['favorite_chat_ids'];
     final favorites = (rawFavorites as List<dynamic>? ?? [])
         .map((item) => item is int ? item : int.tryParse(item.toString()) ?? 0)
@@ -5206,7 +5799,7 @@ class UserProfile {
       bio: json['bio'] as String? ?? '',
       role: json['role'] as String? ?? 'viewer',
       sections: sectionList,
-      bins: binList,
+      binAssignments: assignments,
       favoriteDialogIds: favorites,
     );
   }

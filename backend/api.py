@@ -230,7 +230,11 @@ def _sanitize_user(user: Dict[str, object]) -> Dict[str, object]:
     user_id = user["id"]
     sections = user.get("sections") or database.get_user_sections(user_id)
     favorites = database.list_favorite_dialog_ids(user_id)
-    bins = user.get("bins") or database.get_user_bins(user_id)
+    raw_bins = user.get("bins")
+    if raw_bins and all(isinstance(assignment, dict) for assignment in raw_bins):
+        bins = raw_bins
+    else:
+        bins = database.get_user_bin_assignments(user_id)
     return {
         "id": user_id,
         "email": user["email"],

@@ -1335,7 +1335,9 @@ def list_faq(section: str | None = None) -> List[dict]:
     return list(FAQ_ENTRIES)
 
 
-def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
+def get_dashboard_summary(
+    *, days: int = 7, questions_limit: int = 5, operator_id: int | None = None
+) -> dict:
     now = datetime.utcnow()
     span = max(days, 1)
     start_date = now.date() - timedelta(days=span - 1)
@@ -1343,90 +1345,231 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
 
     response_deltas: List[float] = []
 
+    assigned_bins: List[str] | None = None
+    if operator_id is not None:
+        assigned_bins = get_user_bins(operator_id)
+
+    def _empty_summary() -> dict:
+        recent_activity = [
+            {
+                "date": (start_date + timedelta(days=offset)).isoformat(),
+                "dialogs": 0,
+                "incoming_messages": 0,
+            }
+            for offset in range(span)
+        ]
+        return {
+            "total_dialogs": 0,
+            "open_dialogs": 0,
+            "closed_dialogs": 0,
+            "total_chats": 0,
+            "total_messages": 0,
+            "total_incoming_messages": 0,
+            "total_outgoing_messages": 0,
+            "average_messages_per_dialog": 0.0,
+            "avg_dialog_duration_minutes": None,
+            "avg_response_time_minutes": None,
+            "avg_response_time_seconds": None,
+            "section_breakdown": [],
+            "top_questions": [],
+            "questions_by_section": [],
+            "agent_breakdown": [],
+            "recent_activity": recent_activity,
+            "updated_at": now.isoformat(),
+        }
+
+    if assigned_bins is not None and not assigned_bins:
+        return _empty_summary()
+
+    placeholders = ", ".join("?" for _ in assigned_bins) if assigned_bins is not None else ""
+
     with _lock, _connection:
         total_dialogs = _connection.execute(
-            "SELECT COUNT(*) AS total FROM chat_dialogs",
+            "SELECT COUNT(*) AS total FROM chat_dialogs"
+            + (
+                f" WHERE bin IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            ),
+            tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
         open_dialogs = _connection.execute(
-            "SELECT COUNT(*) AS total FROM chat_dialogs WHERE ended_at IS NULL",
+            "SELECT COUNT(*) AS total FROM chat_dialogs WHERE ended_at IS NULL"
+            + (
+                f" AND bin IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            ),
+            tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
         total_incoming = _connection.execute(
-            "SELECT COUNT(*) AS total FROM messages WHERE direction = 'incoming'",
+            """
+            SELECT COUNT(*) AS total
+            FROM messages m
+            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
+            LEFT JOIN chats c ON c.chat_id = m.chat_id
+            WHERE m.direction = 'incoming'
+        """
+            + (
+                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            ),
+            tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
         total_outgoing = _connection.execute(
-            "SELECT COUNT(*) AS total FROM messages WHERE direction = 'outgoing'",
+            """
+            SELECT COUNT(*) AS total
+            FROM messages m
+            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
+            LEFT JOIN chats c ON c.chat_id = m.chat_id
+            WHERE m.direction = 'outgoing'
+        """
+            + (
+                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            ),
+            tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
         total_messages = total_incoming + total_outgoing
         total_chats = _connection.execute(
-            "SELECT COUNT(DISTINCT chat_id) AS total FROM chat_dialogs",
+            "SELECT COUNT(DISTINCT chat_id) AS total FROM chat_dialogs"
+            + (
+                f" WHERE bin IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            ),
+            tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
         section_rows = _connection.execute(
             """
             SELECT COALESCE(c.section, '') AS section_id, COUNT(*) AS dialog_count
             FROM chat_dialogs cd
             LEFT JOIN chats c ON c.chat_id = cd.chat_id
+        """
+            + (
+                f" WHERE cd.bin IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            )
+            + """
             GROUP BY COALESCE(c.section, '')
             ORDER BY dialog_count DESC
-            """
+            """,
+            tuple(assigned_bins or []),
         ).fetchall()
         duration_rows = _connection.execute(
-            "SELECT started_at, ended_at FROM chat_dialogs WHERE started_at IS NOT NULL AND ended_at IS NOT NULL",
+            "SELECT started_at, ended_at FROM chat_dialogs"
+            " WHERE started_at IS NOT NULL AND ended_at IS NOT NULL"
+            + (
+                f" AND bin IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            ),
+            tuple(assigned_bins or []),
         ).fetchall()
         dialogs_by_day_rows = _connection.execute(
             """
             SELECT substr(started_at, 1, 10) AS day, COUNT(*) AS cnt
             FROM chat_dialogs
             WHERE started_at IS NOT NULL AND started_at >= ?
+        """
+            + (
+                f" AND bin IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            )
+            + """
             GROUP BY substr(started_at, 1, 10)
             ORDER BY day ASC
             """,
-            (start_iso,),
+            (start_iso, * (assigned_bins or [])),
         ).fetchall()
         incoming_by_day_rows = _connection.execute(
             """
-            SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS cnt
-            FROM messages
-            WHERE created_at >= ? AND direction = 'incoming'
-            GROUP BY substr(created_at, 1, 10)
+            SELECT substr(m.created_at, 1, 10) AS day, COUNT(*) AS cnt
+            FROM messages m
+            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
+            LEFT JOIN chats c ON c.chat_id = m.chat_id
+            WHERE m.created_at >= ? AND m.direction = 'incoming'
+        """
+            + (
+                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            )
+            + """
+            GROUP BY substr(m.created_at, 1, 10)
             ORDER BY day ASC
             """,
-            (start_iso,),
+            (start_iso, * (assigned_bins or [])),
         ).fetchall()
         question_rows = _connection.execute(
             """
-            SELECT text, created_at, section
-            FROM messages
-            WHERE direction = 'incoming' AND text IS NOT NULL AND TRIM(text) != ''
-            """
+           SELECT m.text, m.created_at, m.section
+            FROM messages m
+            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
+            LEFT JOIN chats c ON c.chat_id = m.chat_id
+            WHERE m.direction = 'incoming' AND m.text IS NOT NULL AND TRIM(m.text) != ''
+        """
+            + (
+                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            ),
+            tuple(assigned_bins or []),
         ).fetchall()
         agent_rows = _connection.execute(
             """
             SELECT
-                TRIM(COALESCE(author, '')) AS author,
+                TRIM(COALESCE(m.author, '')) AS author,
                 COUNT(*) AS message_count,
-                COUNT(DISTINCT dialog_id) AS dialog_count,
-                MAX(created_at) AS last_activity
-            FROM messages
-            WHERE direction = 'outgoing' AND author IS NOT NULL AND TRIM(author) != ''
-            GROUP BY TRIM(COALESCE(author, ''))
+                COUNT(DISTINCT m.dialog_id) AS dialog_count,
+                MAX(m.created_at) AS last_activity
+            FROM messages m
+            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
+            LEFT JOIN chats c ON c.chat_id = m.chat_id
+            WHERE m.direction = 'outgoing' AND m.author IS NOT NULL AND TRIM(m.author) != ''
+        """
+            + (
+                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            )
+            + """
+            GROUP BY TRIM(COALESCE(m.author, ''))
             ORDER BY message_count DESC
             """
+        ,
+            tuple(assigned_bins or []),
         ).fetchall()
 
         operator_request_rows = _connection.execute(
             """
-            SELECT id, chat_id, dialog_id, created_at
-            FROM messages
-            WHERE direction = 'incoming'
-              AND text IN ('[ЗАПРОС ОПЕРАТОРА]', '[FAQ] Связаться с оператором')
-            ORDER BY created_at ASC
+            SELECT m.id, m.chat_id, m.dialog_id, m.created_at
+            FROM messages m
+            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
+            LEFT JOIN chats c ON c.chat_id = m.chat_id
+            WHERE m.direction = 'incoming'
+              AND m.text IN ('[ЗАПРОС ОПЕРАТОРА]', '[FAQ] Связаться с оператором')
+        """
+            + (
+                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            )
+            + """
+            ORDER BY m.created_at ASC
             """
+        ,
+            tuple(assigned_bins or []),
         ).fetchall()
 
         if operator_request_rows:
-            placeholders = ", ".join("?" for _ in AUTOMATION_AUTHOR_NAMES)
+            automation_author_placeholders = ", ".join("?" for _ in AUTOMATION_AUTHOR_NAMES)
             automation_clause = (
-                f"AND TRIM(author) NOT IN ({placeholders})"
+                f"AND TRIM(author) NOT IN ({automation_author_placeholders})"
                 if AUTOMATION_AUTHOR_NAMES
                 else ""
             )
@@ -1438,22 +1581,29 @@ def get_dashboard_summary(*, days: int = 7, questions_limit: int = 5) -> dict:
                     continue
 
                 query_parts = [
-                    "SELECT created_at, author",
-                    "FROM messages",
-                    "WHERE direction = 'outgoing'",
-                    "  AND chat_id = ?",
-                    "  AND created_at > ?",
-                    "  AND author IS NOT NULL",
-                    "  AND TRIM(author) != ''",
+                    "SELECT m.created_at, m.author",
+                    "FROM messages m",
+                    "LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id",
+                    "LEFT JOIN chats c ON c.chat_id = m.chat_id",
+                    "WHERE m.direction = 'outgoing'",
+                    "  AND m.chat_id = ?",
+                    "  AND m.created_at > ?",
+                    "  AND m.author IS NOT NULL",
+                    "  AND TRIM(m.author) != ''",
                 ]
                 params: List[object] = [request_row["chat_id"], request_created_raw]
                 dialog_id = request_row["dialog_id"]
                 if dialog_id is not None:
-                    query_parts.append("  AND dialog_id = ?")
+                    query_parts.append("  AND m.dialog_id = ?")
                     params.append(dialog_id)
                 if automation_clause:
-                    query_parts.append(f"  {automation_clause}")
+                    query_parts.append(f"  {automation_clause.replace('author', 'm.author')}")
                     params.extend(AUTOMATION_AUTHOR_NAMES)
+                if assigned_bins is not None:
+                    query_parts.append(
+                        f"  AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
+                    )
+                    params.extend(assigned_bins)
                 query_parts.append("ORDER BY created_at ASC LIMIT 1")
                 sql = "\n".join(query_parts)
                 candidate = _connection.execute(sql, params).fetchone()

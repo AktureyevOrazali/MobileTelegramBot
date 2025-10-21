@@ -107,31 +107,9 @@ class BinsUpdateRequest(BaseModel):
     bins: List[BinAssignmentRequest] = Field(default_factory=list)
 
 
-class UndistributedBinResponse(BaseModel):
+class UnassignedBinResponse(BaseModel):
     bin: str
-    pending_dialogs: int
-
-
-def _serialize_undistributed_bins(items: List[Dict[str, object]]) -> List[UndistributedBinResponse]:
-    results: List[UndistributedBinResponse] = []
-    for item in items:
-        bin_code = str(item.get("bin") or "").strip()
-        if not bin_code:
-            continue
-        pending_value = item.get("pending_dialogs")
-        if pending_value is None:
-            pending_value = item.get("open_dialogs")
-        try:
-            pending_dialogs = int(pending_value) if pending_value is not None else 0
-        except (TypeError, ValueError):
-            pending_dialogs = 0
-        results.append(
-            UndistributedBinResponse(
-                bin=bin_code,
-                pending_dialogs=max(pending_dialogs, 0),
-            )
-        )
-    return results
+    open_dialogs: int
 
 
 class MessageResponse(BaseModel):
@@ -480,18 +458,19 @@ def list_bins_endpoint(
     return database.list_bins(query)
 
 
-@router.get("/bins/pending", response_model=List[UndistributedBinResponse])
+@router.get("/bins/unassigned", response_model=List[UnassignedBinResponse])
+def list_unassigned_bins_endpoint(
+    _: Dict[str, object] = Depends(require_admin),
+):
+    return [UnassignedBinResponse(**item) for item in database.list_unassigned_bins()]
+
+
+@router.get("/bins/pending", response_model=List[UnassignedBinResponse])
 def list_pending_bins_endpoint(
     _: Dict[str, object] = Depends(require_admin),
 ):
-    return _serialize_undistributed_bins(database.list_undistributed_bins())
-
-
-@router.get("/bins/undistributed", response_model=List[UndistributedBinResponse])
-def list_undistributed_bins_endpoint(
-    _: Dict[str, object] = Depends(require_admin),
-):
-    return _serialize_undistributed_bins(database.list_undistributed_bins())
+    """Legacy alias for clients expecting the previous endpoint path."""
+    return list_unassigned_bins_endpoint()
 
 
 @router.get("/faq")

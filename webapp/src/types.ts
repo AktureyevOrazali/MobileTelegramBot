@@ -12,12 +12,12 @@ export interface UserBinAssignment {
   assignedBy?: number | null;
 }
 
-export interface UndistributedBinRaw {
+export interface UnassignedBinRaw {
   bin: string;
-  pending_dialogs: number;
+  open_dialogs: number;
 }
 
-export interface UndistributedBin {
+export interface UnassignedBin {
   bin: string;
   openDialogs: number;
 }

@@ -862,15 +862,25 @@ def refresh_bin_assignments(now: datetime | None = None) -> None:
     current_time = now or datetime.utcnow()
     now_iso = current_time.isoformat()
     with _lock, _connection:
-        _connection.execute(
+        rows = _connection.execute(
             """
-            DELETE FROM user_bins
+            SELECT user_id, bin
+            FROM user_bins
             WHERE expires_at IS NOT NULL
               AND TRIM(expires_at) != ''
               AND expires_at <= ?
             """,
             (now_iso,),
-        )
+        ).fetchall()
+        for row in rows:
+            user_id = int(row["user_id"])
+            bin_value = row["bin"]
+            _connection.execute(
+                "DELETE FROM user_bins WHERE user_id = ? AND bin = ?",
+                (user_id, bin_value),
+            )
+
+
 
 
 def get_user_bin_assignments(user_id: int, *, include_expired: bool = False) -> List[Dict[str, object]]:
@@ -1030,21 +1040,13 @@ def list_bins(query: str | None = None) -> List[str]:
     return [row["bin"] for row in rows]
 
 
-def list_undistributed_bins(now: datetime | None = None) -> List[Dict[str, object]]:
-    reference_time = now or datetime.utcnow()
-    refresh_bin_assignments(reference_time)
-    now_iso = reference_time.isoformat()
+def list_unassigned_bins() -> List[Dict[str, object]]:
+    refresh_bin_assignments()
+    reference = datetime.utcnow().isoformat()
     with _lock, _connection:
         rows = _connection.execute(
             """
-            WITH active_assignments AS (
-                SELECT DISTINCT bin
-                FROM user_bins
-                WHERE bin IS NOT NULL
-                  AND TRIM(bin) != ''
-                  AND (expires_at IS NULL OR expires_at > ?)
-            ),
-            open_dialogs AS (
+            WITH active_dialogs AS (
                 SELECT
                     cd.bin AS bin,
                     COUNT(*) AS open_dialogs
@@ -1053,16 +1055,23 @@ def list_undistributed_bins(now: datetime | None = None) -> List[Dict[str, objec
                   AND cd.bin IS NOT NULL
                   AND TRIM(cd.bin) != ''
                 GROUP BY cd.bin
+            ),
+            assigned_bins AS (
+                SELECT DISTINCT bin
+                FROM user_bins
+                WHERE bin IS NOT NULL
+                  AND TRIM(bin) != ''
+                  AND (expires_at IS NULL OR expires_at > ?)
             )
             SELECT
-                o.bin AS bin,
-                o.open_dialogs AS open_dialogs
-            FROM open_dialogs o
-            LEFT JOIN active_assignments a ON a.bin = o.bin
-            WHERE a.bin IS NULL
-            ORDER BY o.open_dialogs DESC, o.bin ASC
+                ad.bin AS bin,
+                ad.open_dialogs AS open_dialogs
+            FROM active_dialogs ad
+            LEFT JOIN assigned_bins ab ON ab.bin = ad.bin
+            WHERE ab.bin IS NULL
+            ORDER BY ad.open_dialogs DESC, ad.bin ASC
             """,
-            (now_iso,),
+            (reference,),
         ).fetchall()
     return [
         {
@@ -1072,11 +1081,6 @@ def list_undistributed_bins(now: datetime | None = None) -> List[Dict[str, objec
         for row in rows
         if row["bin"]
     ]
-
-
-def list_unanswered_bins() -> List[Dict[str, object]]:
-    """Deprecated wrapper preserved for backward compatibility."""
-    return list_undistributed_bins()
 
 
 def _create_notification(

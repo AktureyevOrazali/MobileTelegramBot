@@ -13,8 +13,8 @@ import {
   Section,
   UserProfile,
   UserProfileRaw,
-  UndistributedBin,
-  UndistributedBinRaw,
+  UnassignedBin,
+  UnassignedBinRaw,
   UserBinAssignment,
 } from '../types';
 import {
@@ -291,20 +291,19 @@ export class ApiClient {
     });
   }
 
-  async fetchUndistributedBins(): Promise<UndistributedBin[]> {
-    try {
-      const response = await this.request<UndistributedBinRaw[]>('bins/undistributed', { method: 'GET' });
-      return response.map((item) => ({
+  async fetchUnassignedBins(): Promise<UnassignedBin[]> {
+    const normalize = (items: UnassignedBinRaw[]) =>
+      items.map((item) => ({
         bin: item.bin,
-        openDialogs: typeof item.pending_dialogs === 'number' ? item.pending_dialogs : 0,
+        openDialogs: typeof item.open_dialogs === 'number' ? item.open_dialogs : 0,
       }));
+    try {
+      const response = await this.request<UnassignedBinRaw[]>('bins/unassigned', { method: 'GET' });
+      return normalize(response);
     } catch (error) {
-      if (error instanceof ApiError && error.status === 404) {
-        const fallback = await this.request<UndistributedBinRaw[]>('bins/pending', { method: 'GET' });
-        return fallback.map((item) => ({
-          bin: item.bin,
-          openDialogs: typeof item.pending_dialogs === 'number' ? item.pending_dialogs : 0,
-        }));
+      if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
+        const legacy = await this.request<UnassignedBinRaw[]>('bins/pending', { method: 'GET' });
+        return normalize(legacy);
       }
       throw error;
     }

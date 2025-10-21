@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
-import { RoleInfo, Section, UndistributedBin, UserBinAssignment, UserProfile } from '../types';
+import { UnassignedBin, RoleInfo, Section, UserBinAssignment, UserProfile } from '../types';
 import { formatDateTime } from '../utils/date';
 import SelectPill from '../components/SelectPill';
 import Modal from '../components/Modal';
@@ -57,7 +57,12 @@ const cloneAssignment = (assignment: UserBinAssignment): UserBinAssignment => ({
 });
 
 const useDebouncedEffect = (fn: () => void, deps: React.DependencyList, delay = 300) => {
+  const isFirst = useRef(true);
   useEffect(() => {
+    if (isFirst.current) {
+      isFirst.current = false;
+      return () => {};
+    }
     const t = setTimeout(fn, delay);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,14 +107,6 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   const [pwd2, setPwd2] = useState('');
   const [pwdErr, setPwdErr] = useState<string | null>(null);
   const [savingPassword, setSavingPassword] = useState(false);
-
-  const timezoneLabel = useMemo(() => {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
-    } catch (err) {
-      return null;
-    }
-  }, []);
 
   useEffect(() => {
     setSelectedRole(user.role);
@@ -257,10 +254,8 @@ const AdminUserCard: React.FC<UserCardProps> = ({
       setPendingExpiresAt('');
       setBinModalError(null);
     } else {
-      if (pendingIndefinite) {
-        const base = editingBin?.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000);
-        setPendingExpiresAt(formatDateTimeLocalInput(base));
-      }
+      const base = editingBin?.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000);
+      setPendingExpiresAt(formatDateTimeLocalInput(base));
       setBinModalError(null);
     }
   };
@@ -506,72 +501,70 @@ const AdminUserCard: React.FC<UserCardProps> = ({
         </div>
       </div>
       
-      <Modal open={binModalOpen} onClose={closeBinModal}>
-        <div className="deadline-modal">
-          <div className="deadline-modal__header">
-            <h3 className="deadline-modal__title">Назначение БИНа</h3>
-            <p className="deadline-modal__description">
-              Укажите срок, до которого БИН закреплён за сотрудником. По истечении срока назначение освободится
-              автоматически.
-            </p>
+      <Modal open={binModalOpen} onClose={closeBinModal} className="bin-modal__container">
+        <div className="bin-modal">
+          <div className="bin-modal__header">
+            <h3>Назначение БИНа</h3>
+            {pendingBinValue && <span className="bin-modal__badge">{pendingBinValue}</span>}
           </div>
-          {pendingBinValue && (
-            <div className="deadline-modal__bin">
-              <span className="deadline-modal__bin-label">БИН</span>
-              <span className="deadline-modal__bin-value">{pendingBinValue}</span>
-            </div>
-          )}
-          <div className="deadline-modal__options">
-            <label className={`deadline-option ${pendingIndefinite ? 'deadline-option--active' : ''}`}>
+          <div className="bin-modal__context">
+            <span className="bin-modal__context-label">Сотрудник</span>
+            <span className="bin-modal__context-value">{user.name}</span>
+          </div>
+          <p className="bin-modal__hint">
+            Выберите, на какой срок закрепить БИН за сотрудником. По окончании срока он вернётся в список
+            неразделенных БИНов.
+          </p>
+          <div className="bin-modal__options">
+            <label className={`bin-modal__option ${pendingIndefinite ? 'bin-modal__option--active' : ''}`}>
               <input
+                className="bin-modal__radio"
                 type="radio"
-                name="binDeadline"
+                name="bin-duration"
                 checked={pendingIndefinite}
                 onChange={() => handleIndefiniteChange(true)}
               />
-              <div className="deadline-option__content">
-                <span className="deadline-option__title">Бессрочное назначение</span>
-                <span className="deadline-option__subtitle">
+              <div className="bin-modal__option-body">
+                <span className="bin-modal__option-title">Без ограничения по времени</span>
+                <span className="bin-modal__option-text">
                   БИН останется за сотрудником, пока вы не снимете назначение вручную.
                 </span>
               </div>
             </label>
-            <label className={`deadline-option ${pendingIndefinite ? '' : 'deadline-option--active'}`}>
+            <label className={`bin-modal__option ${!pendingIndefinite ? 'bin-modal__option--active' : ''}`}>
               <input
+                className="bin-modal__radio"
                 type="radio"
-                name="binDeadline"
+                name="bin-duration"
                 checked={!pendingIndefinite}
                 onChange={() => handleIndefiniteChange(false)}
               />
-              <div className="deadline-option__content">
-                <span className="deadline-option__title">Указать срок действия</span>
-                <span className="deadline-option__subtitle">
-                  Назначение освободится автоматически в выбранное время.
+              <div className="bin-modal__option-body">
+                <span className="bin-modal__option-title">До указанной даты и времени</span>
+                <span className="bin-modal__option-text">
+                  После истечения срока БИН автоматически появится среди неразделенных.
                 </span>
-                <div className="deadline-option__picker">
-                  <input
-                    className="input"
-                    type="datetime-local"
-                    value={pendingExpiresAt}
-                    min={formatDateTimeLocalInput(new Date())}
-                    onFocus={() => {
-                      if (pendingIndefinite) handleIndefiniteChange(false);
-                    }}
-                    onChange={(event) => {
-                      setPendingExpiresAt(event.target.value);
-                      if (binModalError) setBinModalError(null);
-                    }}
-                    disabled={pendingIndefinite}
-                  />
-                  <span className="deadline-option__hint">
-                    Часовой пояс: {timezoneLabel ?? 'локальный'}
-                  </span>
-                </div>
               </div>
             </label>
           </div>
-          {binModalError && <div className="alert error deadline-modal__error">{binModalError}</div>}
-          <div className="actions deadline-modal__actions">
+          {!pendingIndefinite && (
+            <div className="bin-modal__field">
+              <label htmlFor="bin-modal-expires">Дата и время окончания</label>
+              <input
+                id="bin-modal-expires"
+                className="input"
+                type="datetime-local"
+                value={pendingExpiresAt}
+                min={formatDateTimeLocalInput(new Date())}
+                onChange={(event) => {
+                  setPendingExpiresAt(event.target.value);
+                  if (binModalError) setBinModalError(null);
+                }}
+              />
+            </div>
+          )}
+          {binModalError && <div className="alert error" style={{ marginTop: 6 }}>{binModalError}</div>}
+          <div className="bin-modal__actions">
             <button className="button secondary" type="button" onClick={closeBinModal}>
               Отмена
             </button>
@@ -610,7 +603,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [roles, setRoles] = useState<RoleInfo[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [bins, setBins] = useState<string[]>([]);
-  const [undistributedBins, setUndistributedBins] = useState<UndistributedBin[]>([]);
+  const [unassignedBins, setUnassignedBins] = useState<UnassignedBin[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -623,24 +616,18 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       setLoading(true);
       setError(null);
       try {
-        const [loadedRoles, loadedUsers, loadedSections, loadedBins] = await Promise.all([
+        const [loadedRoles, loadedUsers, loadedSections, loadedBins, loadedUnassignedBins] = await Promise.all([
           apiClient.fetchRoles(),
           apiClient.fetchUsers(query),
           apiClient.fetchSections(),
           apiClient.fetchBins(),
+          apiClient.fetchUnassignedBins(),
         ]);
         setRoles(loadedRoles);
         setUsers(loadedUsers);
         setSections(loadedSections);
         setBins(loadedBins);
-        
-        try {
-          const loadedUndistributed = await apiClient.fetchUndistributedBins();
-          setUndistributedBins(loadedUndistributed);
-        } catch (undistributedError) {
-          console.warn('Не удалось загрузить список неразделённых БИНов', undistributedError);
-          setUndistributedBins([]);
-        }
+        setUnassignedBins(loadedUnassignedBins);
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
         else if (err instanceof Error) setError(err.message);
@@ -682,10 +669,10 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       const updated = await apiClient.updateUserBins(userId, binsList);
       setUsers((prev) => prev.map((user) => (user.id === updated.id ? updated : user)));
       try {
-        const refreshed = await apiClient.fetchUndistributedBins();
-        setUndistributedBins(refreshed);
+        const refreshed = await apiClient.fetchUnassignedBins();
+        setUnassignedBins(refreshed);
       } catch (err) {
-        console.warn('Не удалось обновить список неразделённых БИНов', err);
+        console.warn('Не удалось обновить список неразделенных БИНов', err);
       }
     },
     [apiClient],
@@ -725,16 +712,18 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <h3 style={{ margin: 0 }}>Неразделённые БИНы</h3>
-        {undistributedBins.length === 0 ? (
-          <span className="text-muted">Все активные БИНы распределены по сотрудникам.</span>
+        <h3 style={{ margin: 0 }}>Неразделенные БИНы</h3>
+        {unassignedBins.length === 0 ? (
+          <span className="text-muted">Все активные БИНы закреплены за сотрудниками.</span>
         ) : (
           <div className="flex-gap pending-bins-list" style={{ flexWrap: 'wrap' }}>
-            {undistributedBins.map((item) => (
+            {unassignedBins.map((item) => (
               <span key={item.bin} className="chip bin-chip pending-bin-chip">
                 <span className="bin-chip__title">{item.bin}</span>
                 <span className="bin-chip__meta">
-                  {item.openDialogs} {pluralizeDialogs(item.openDialogs)} без закреплённого сотрудника
+                  {item.openDialogs > 0
+                    ? `${item.openDialogs} ${pluralizeDialogs(item.openDialogs)} без закрепленного сотрудника`
+                    : 'нет активных диалогов'}
                 </span>
               </span>
             ))}

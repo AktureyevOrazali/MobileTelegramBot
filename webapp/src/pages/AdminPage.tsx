@@ -623,18 +623,24 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       setLoading(true);
       setError(null);
       try {
-        const [loadedRoles, loadedUsers, loadedSections, loadedBins, loadedUndistributed] = await Promise.all([
+        const [loadedRoles, loadedUsers, loadedSections, loadedBins] = await Promise.all([
           apiClient.fetchRoles(),
           apiClient.fetchUsers(query),
           apiClient.fetchSections(),
           apiClient.fetchBins(),
-          apiClient.fetchUndistributedBins(),
         ]);
         setRoles(loadedRoles);
         setUsers(loadedUsers);
         setSections(loadedSections);
         setBins(loadedBins);
-        setUndistributedBins(loadedUndistributed);
+        
+        try {
+          const loadedUndistributed = await apiClient.fetchUndistributedBins();
+          setUndistributedBins(loadedUndistributed);
+        } catch (undistributedError) {
+          console.warn('Не удалось загрузить список неразделённых БИНов', undistributedError);
+          setUndistributedBins([]);
+        }
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
         else if (err instanceof Error) setError(err.message);

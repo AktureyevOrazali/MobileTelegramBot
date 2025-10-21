@@ -112,6 +112,28 @@ class UndistributedBinResponse(BaseModel):
     pending_dialogs: int
 
 
+def _serialize_undistributed_bins(items: List[Dict[str, object]]) -> List[UndistributedBinResponse]:
+    results: List[UndistributedBinResponse] = []
+    for item in items:
+        bin_code = str(item.get("bin") or "").strip()
+        if not bin_code:
+            continue
+        pending_value = item.get("pending_dialogs")
+        if pending_value is None:
+            pending_value = item.get("open_dialogs")
+        try:
+            pending_dialogs = int(pending_value) if pending_value is not None else 0
+        except (TypeError, ValueError):
+            pending_dialogs = 0
+        results.append(
+            UndistributedBinResponse(
+                bin=bin_code,
+                pending_dialogs=max(pending_dialogs, 0),
+            )
+        )
+    return results
+
+
 class MessageResponse(BaseModel):
     id: int
     chat_id: int
@@ -462,14 +484,14 @@ def list_bins_endpoint(
 def list_pending_bins_endpoint(
     _: Dict[str, object] = Depends(require_admin),
 ):
-    return [UndistributedBinResponse(**item) for item in database.list_undistributed_bins()]
+    return _serialize_undistributed_bins(database.list_undistributed_bins())
 
 
 @router.get("/bins/undistributed", response_model=List[UndistributedBinResponse])
 def list_undistributed_bins_endpoint(
     _: Dict[str, object] = Depends(require_admin),
 ):
-    return [UndistributedBinResponse(**item) for item in database.list_undistributed_bins()]
+    return _serialize_undistributed_bins(database.list_undistributed_bins())
 
 
 @router.get("/faq")

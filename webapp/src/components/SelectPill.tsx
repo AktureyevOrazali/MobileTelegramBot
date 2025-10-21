@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 type Option = { value: string; label: string; meta?: string };
 
@@ -23,7 +23,9 @@ export default function SelectPill({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const ref = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLDivElement | null>(null);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
 
   const currentLabel = useMemo(
     () => options.find((o) => o.value === value)?.label ?? placeholder,
@@ -40,15 +42,70 @@ export default function SelectPill({
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
+  const updateMenuPosition = useCallback(() => {
+    if (!triggerRef.current) return;
+
+    const rect = triggerRef.current.getBoundingClientRect();
+    const gap = 4;
+    const viewportPadding = 12;
+    const preferredWidth = Math.max(rect.width, 260);
+    const availableWidth = Math.max(0, window.innerWidth - viewportPadding * 2);
+    const width = availableWidth > 0 ? Math.min(preferredWidth, availableWidth) : preferredWidth;
+
+    let left = rect.left;
+    const maxLeft = window.innerWidth - viewportPadding - width;
+    if (left > maxLeft) {
+      left = Math.max(viewportPadding, maxLeft);
+    }
+
+    let top = rect.bottom + gap;
+    const maxTop = window.innerHeight - viewportPadding;
+    if (top > maxTop) {
+      top = Math.max(viewportPadding, maxTop);
+    }
+
+    const maxHeight = window.innerHeight - viewportPadding - top;
+
+    setMenuStyle({
+      position: "fixed",
+      top,
+      left,
+      width,
+      minWidth: width,
+      maxHeight: maxHeight > 0 ? maxHeight : undefined,
+      overflowY: "auto",
+      zIndex: 1000,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuStyle(undefined);
+      return;
+    }
+
+    updateMenuPosition();
+
+    const handleScroll = () => updateMenuPosition();
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", handleScroll);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", handleScroll);
+    };
+  }, [open, updateMenuPosition, currentLabel]);
+
   return (
-    <div ref={ref} style={{ position: "relative", ...style }}>
+    <div ref={containerRef} style={{ position: "relative", ...style }}>
       <div
+        ref={triggerRef}
         className="pill"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
@@ -59,7 +116,7 @@ export default function SelectPill({
         <span className="caret">▾</span>
       </div>
       {open && (
-        <div className="menu" role="listbox">
+        <div className="menu" role="listbox" style={menuStyle}>
           {searchable && (
             <input
               type="text"

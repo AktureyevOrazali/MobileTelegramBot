@@ -13,8 +13,8 @@ import {
   Section,
   UserProfile,
   UserProfileRaw,
-  PendingBin,
-  PendingBinRaw,
+  UndistributedBin,
+  UndistributedBinRaw,
   UserBinAssignment,
 } from '../types';
 import {
@@ -291,12 +291,23 @@ export class ApiClient {
     });
   }
 
-  async fetchPendingBins(): Promise<PendingBin[]> {
-    const response = await this.request<PendingBinRaw[]>('bins/pending', { method: 'GET' });
-    return response.map((item) => ({
-      bin: item.bin,
-      pendingDialogs: typeof item.pending_dialogs === 'number' ? item.pending_dialogs : 0,
-    }));
+  async fetchUndistributedBins(): Promise<UndistributedBin[]> {
+    try {
+      const response = await this.request<UndistributedBinRaw[]>('bins/undistributed', { method: 'GET' });
+      return response.map((item) => ({
+        bin: item.bin,
+        openDialogs: typeof item.pending_dialogs === 'number' ? item.pending_dialogs : 0,
+      }));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        const fallback = await this.request<UndistributedBinRaw[]>('bins/pending', { method: 'GET' });
+        return fallback.map((item) => ({
+          bin: item.bin,
+          openDialogs: typeof item.pending_dialogs === 'number' ? item.pending_dialogs : 0,
+        }));
+      }
+      throw error;
+    }
   }
 
   async fetchChats(options: { favoriteOnly?: boolean; binQuery?: string | null } = {}): Promise<ChatSummary[]> {

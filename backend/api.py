@@ -107,7 +107,7 @@ class BinsUpdateRequest(BaseModel):
     bins: List[BinAssignmentRequest] = Field(default_factory=list)
 
 
-class PendingBinResponse(BaseModel):
+class UndistributedBinResponse(BaseModel):
     bin: str
     pending_dialogs: int
 
@@ -458,11 +458,18 @@ def list_bins_endpoint(
     return database.list_bins(query)
 
 
-@router.get("/bins/pending", response_model=List[PendingBinResponse])
+@router.get("/bins/pending", response_model=List[UndistributedBinResponse])
 def list_pending_bins_endpoint(
     _: Dict[str, object] = Depends(require_admin),
 ):
-    return [PendingBinResponse(**item) for item in database.list_unanswered_bins()]
+    return [UndistributedBinResponse(**item) for item in database.list_undistributed_bins()]
+
+
+@router.get("/bins/undistributed", response_model=List[UndistributedBinResponse])
+def list_undistributed_bins_endpoint(
+    _: Dict[str, object] = Depends(require_admin),
+):
+    return [UndistributedBinResponse(**item) for item in database.list_undistributed_bins()]
 
 
 @router.get("/faq")

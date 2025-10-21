@@ -8,7 +8,7 @@ import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from uuid import uuid4
 
@@ -858,150 +858,19 @@ def _normalize_bin_assignment_payload(bins: Iterable[Any]) -> Dict[str, str | No
     return normalized
 
 
-def _get_sections_for_bin(bin_value: str) -> Set[str]:
-    normalized = (bin_value or "").strip()
-    if not normalized:
-        return set()
-    with _lock, _connection:
-        rows = _connection.execute(
-           """
-            SELECT DISTINCT COALESCE(c.section, '') AS section
-            FROM chat_dialogs cd
-            LEFT JOIN chats c ON c.chat_id = cd.chat_id
-            WHERE cd.bin = ?
-              AND cd.ended_at IS NULL
-              AND c.section IS NOT NULL
-              AND TRIM(c.section) != ''
-            """,
-            (normalized,),
-        ).fetchall()
-    return {row["section"] for row in rows if row["section"]}
-
-
 def refresh_bin_assignments(now: datetime | None = None) -> None:
     current_time = now or datetime.utcnow()
     now_iso = current_time.isoformat()
-    expired_pairs: List[Tuple[int, str]] = []
     with _lock, _connection:
-        rows = _connection.execute(
+        _connection.execute(
             """
-            SELECT user_id, bin
-            FROM user_bins
+            DELETE FROM user_bins
             WHERE expires_at IS NOT NULL
               AND TRIM(expires_at) != ''
               AND expires_at <= ?
             """,
             (now_iso,),
-        ).fetchall()
-        for row in rows:
-            user_id = int(row["user_id"])
-            bin_value = row["bin"]
-            expired_pairs.append((user_id, bin_value))
-            _connection.execute(
-                "DELETE FROM user_bins WHERE user_id = ? AND bin = ?",
-                (user_id, bin_value),
-            )
-
-    if not expired_pairs:
-        return
-
-    # Переназначаем освободившиеся БИНы вне блокировки, чтобы избежать дедлоков
-    unique_bins = sorted({bin_value for _, bin_value in expired_pairs if bin_value})
-    for bin_value in unique_bins:
-        _assign_bin_to_next_available(bin_value, current_time)
-
-
-def _assign_bin_to_next_available(bin_value: str, now: datetime) -> None:
-    candidate = _find_bin_candidate(bin_value, now)
-    if candidate is None:
-        return
-    now_iso = now.isoformat()
-    with _lock, _connection:
-        _connection.execute(
-            """
-            INSERT INTO user_bins (user_id, bin, created_at, expires_at, assigned_by)
-            VALUES (?, ?, ?, NULL, NULL)
-            ON CONFLICT(user_id, bin) DO UPDATE SET
-                expires_at = excluded.expires_at,
-                assigned_by = excluded.assigned_by,
-                created_at = excluded.created_at
-            """,
-            (candidate, bin_value, now_iso),
         )
-    _create_notification(
-        candidate,
-        "bin_assigned",
-        {"bin": bin_value, "assigned_by": None},
-        created_at=now_iso,
-    )
-
-
-def _find_bin_candidate(bin_value: str, now: datetime) -> int | None:
-    normalized = (bin_value or "").strip()
-    if not normalized:
-        return None
-    required_sections = _get_sections_for_bin(normalized)
-    now_iso = now.isoformat()
-    with _lock, _connection:
-        candidate_rows = _connection.execute(
-            """
-            SELECT
-                u.id AS user_id,
-                SUM(
-                    CASE
-                        WHEN ub.expires_at IS NULL OR ub.expires_at > ? THEN 1
-                        ELSE 0
-                    END
-                ) AS active_bins
-            FROM users u
-            LEFT JOIN user_bins ub ON ub.user_id = u.id
-            WHERE u.role IN (?, ?)
-            GROUP BY u.id
-            ORDER BY active_bins ASC, u.id ASC
-            """,
-            (now_iso, ROLE_ADMIN, ROLE_MODERATOR),
-        ).fetchall()
-        section_rows = _connection.execute(
-            "SELECT user_id, section FROM user_sections",
-        ).fetchall()
-        active_assignments = _connection.execute(
-            """
-            SELECT user_id, bin
-            FROM user_bins
-            WHERE expires_at IS NULL OR expires_at > ?
-            """,
-            (now_iso,),
-        ).fetchall()
-
-    sections_by_user: Dict[int, Set[str]] = {}
-    for row in section_rows:
-        section_value = (row["section"] or "").strip()
-        if not section_value:
-            continue
-        sections_by_user.setdefault(int(row["user_id"]), set()).add(section_value)
-
-    active_bins_by_user: Dict[int, Set[str]] = {}
-    for row in active_assignments:
-        user_id = int(row["user_id"])
-        bin_label = row["bin"]
-        if not bin_label:
-            continue
-        active_bins_by_user.setdefault(user_id, set()).add(bin_label)
-
-    best_user: int | None = None
-    best_load: int | None = None
-    for row in candidate_rows:
-        user_id = int(row["user_id"])
-        assigned_bins = active_bins_by_user.get(user_id, set())
-        if normalized in assigned_bins:
-            continue
-        if required_sections and not (required_sections & sections_by_user.get(user_id, set())):
-            continue
-        load = len(assigned_bins)
-        if best_user is None or load < best_load or (load == best_load and user_id < best_user):
-            best_user = user_id
-            best_load = load
-    return best_user
 
 
 def get_user_bin_assignments(user_id: int, *, include_expired: bool = False) -> List[Dict[str, object]]:
@@ -1161,41 +1030,53 @@ def list_bins(query: str | None = None) -> List[str]:
     return [row["bin"] for row in rows]
 
 
-def list_unanswered_bins() -> List[Dict[str, object]]:
-    refresh_bin_assignments()
+def list_undistributed_bins(now: datetime | None = None) -> List[Dict[str, object]]:
+    reference_time = now or datetime.utcnow()
+    refresh_bin_assignments(reference_time)
+    now_iso = reference_time.isoformat()
     with _lock, _connection:
         rows = _connection.execute(
             """
-            WITH last_messages AS (
+            WITH active_assignments AS (
+                SELECT DISTINCT bin
+                FROM user_bins
+                WHERE bin IS NOT NULL
+                  AND TRIM(bin) != ''
+                  AND (expires_at IS NULL OR expires_at > ?)
+            ),
+            open_dialogs AS (
                 SELECT
-                    m.dialog_id,
-                    MAX(m.created_at) AS last_created_at
-                FROM messages m
-                WHERE m.dialog_id IS NOT NULL
-                GROUP BY m.dialog_id
+                    cd.bin AS bin,
+                    COUNT(*) AS open_dialogs
+                FROM chat_dialogs cd
+                WHERE cd.ended_at IS NULL
+                  AND cd.bin IS NOT NULL
+                  AND TRIM(cd.bin) != ''
+                GROUP BY cd.bin
             )
             SELECT
-                cd.bin AS bin,
-                COUNT(*) AS pending_dialogs
-            FROM chat_dialogs cd
-            JOIN last_messages lm ON lm.dialog_id = cd.id
-            JOIN messages m ON m.dialog_id = lm.dialog_id AND m.created_at = lm.last_created_at
-            WHERE cd.ended_at IS NULL
-              AND cd.bin IS NOT NULL
-              AND TRIM(cd.bin) != ''
-              AND m.direction = 'incoming'
-            GROUP BY cd.bin
-            ORDER BY pending_dialogs DESC, cd.bin ASC
-            """
+                o.bin AS bin,
+                o.open_dialogs AS open_dialogs
+            FROM open_dialogs o
+            LEFT JOIN active_assignments a ON a.bin = o.bin
+            WHERE a.bin IS NULL
+            ORDER BY o.open_dialogs DESC, o.bin ASC
+            """,
+            (now_iso,),
         ).fetchall()
     return [
         {
             "bin": row["bin"],
-            "pending_dialogs": int(row["pending_dialogs"] or 0),
+            "open_dialogs": int(row["open_dialogs"] or 0),
         }
         for row in rows
         if row["bin"]
     ]
+
+
+def list_unanswered_bins() -> List[Dict[str, object]]:
+    """Deprecated wrapper preserved for backward compatibility."""
+    return list_undistributed_bins()
 
 
 def _create_notification(

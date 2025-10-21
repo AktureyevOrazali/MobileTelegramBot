@@ -194,7 +194,10 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
               if (taRef.current) autosize(taRef.current);
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              if (e.key === 'Enter') {
+                if (e.shiftKey || e.altKey) {
+                  return;
+                }
                 e.preventDefault();
                 handleSend();
               }

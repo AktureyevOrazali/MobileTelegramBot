@@ -14,6 +14,10 @@ from . import database
 from .telegram_bot import bot
 
 API_TOKEN = os.getenv("MOBILE_API_TOKEN")
+ONEC_INTEGRATION_TOKEN = os.getenv("ONEC_INTEGRATION_TOKEN")
+
+ONEC_CHAT_ID_OFFSET = 9_000_000_000_000
+ONEC_CHAT_ID_SPACE = 1_000_000_000_000
 
 app = FastAPI(title="Telegram Mobile Companion API")
 app.add_middleware(
@@ -48,6 +52,16 @@ class ReplyRequest(BaseModel):
     chat_id: int
     text: str
     dialog_id: int | None = None
+
+
+class OneCIncomingMessageRequest(BaseModel):
+    external_chat_id: str = Field(min_length=1, max_length=128)
+    text: str = Field(min_length=1)
+    bin: str = Field(min_length=3, max_length=32)
+    author: str | None = Field(default=None, max_length=150)
+    title: str | None = Field(default=None, max_length=150)
+    section: str | None = Field(default=None, max_length=50)
+    chat_id: int | None = None
 
 
 class BinAssignmentResponse(BaseModel):
@@ -206,6 +220,15 @@ class DashboardSummaryResponse(BaseModel):
 def require_api_token(x_api_token: str | None = Header(default=None, alias="X-Api-Token")) -> None:
     if API_TOKEN and x_api_token != API_TOKEN:
         raise HTTPException(status_code=403, detail="Invalid API token")
+
+
+def require_onec_token(
+    x_integration_token: str | None = Header(default=None, alias="X-Integration-Token")
+) -> None:
+    if not ONEC_INTEGRATION_TOKEN:
+        raise HTTPException(status_code=503, detail="1C integration token is not configured")
+    if x_integration_token != ONEC_INTEGRATION_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid integration token")
 
 
 def get_current_user(
@@ -588,6 +611,21 @@ def get_chat_messages(
     return result
 
 
+def _resolve_onec_chat_id(external_chat_id: str, explicit_chat_id: int | None) -> int:
+    if explicit_chat_id is not None:
+        return explicit_chat_id
+    digest = hashlib.sha256(external_chat_id.encode("utf-8")).digest()
+    hashed = int.from_bytes(digest[:8], "big")
+    return ONEC_CHAT_ID_OFFSET + (hashed % ONEC_CHAT_ID_SPACE)
+
+
+def _normalize_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
 @router.post("/messages/send")
 def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depends(get_current_user)):
     if current_user["role"] not in (database.ROLE_ADMIN, database.ROLE_MODERATOR):
@@ -629,6 +667,63 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
         "message_id": sent_message.message_id,
         "operator": current_user["name"],
         "dialog_id": resolved_dialog_id,
+    }
+
+
+@router.post("/integrations/1c/messages")
+def create_onec_message(
+    request: OneCIncomingMessageRequest,
+    _: None = Depends(require_onec_token),
+):
+    section_id = _normalize_optional(request.section)
+    if section_id and not any(section["id"] == section_id for section in database.SECTIONS):
+        raise HTTPException(status_code=400, detail="Указан неизвестный раздел")
+
+    bin_value = _normalize_optional(request.bin)
+    if not bin_value:
+        raise HTTPException(status_code=400, detail="BIN обязателен")
+
+    external_chat_id = request.external_chat_id.strip()
+    if not external_chat_id:
+        raise HTTPException(status_code=400, detail="external_chat_id обязателен")
+
+    message_text = request.text.strip()
+    if not message_text:
+        raise HTTPException(status_code=400, detail="Текст сообщения не может быть пустым")
+
+    chat_id = _resolve_onec_chat_id(external_chat_id, request.chat_id)
+    author = _normalize_optional(request.author)
+    title_candidate = _normalize_optional(request.title)
+    chat_title = title_candidate or f"1C клиент {bin_value}"
+
+    database.upsert_chat(chat_id, chat_title, None, "onec")
+    try:
+        dialog_id = database.ensure_active_chat_dialog(chat_id, bin_value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:  # pragma: no cover - defensive branch
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    database.save_message(
+        chat_id=chat_id,
+        direction="incoming",
+        text=message_text,
+        message_id=None,
+        author=author,
+        chat_title=chat_title,
+        username=None,
+        chat_type="onec",
+        section=section_id,
+        dialog_id=dialog_id,
+    )
+
+    if section_id:
+        database.set_chat_section(chat_id, section_id)
+
+    return {
+        "status": "ok",
+        "chat_id": chat_id,
+        "dialog_id": dialog_id,
     }
 
 

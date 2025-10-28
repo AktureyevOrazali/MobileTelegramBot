@@ -767,6 +767,64 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
     return int(dialog_id_row[0]) if dialog_id_row else None
 
 
+def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
+    """Ensure there is an active dialog for the chat with the given BIN."""
+
+    normalized = (bin_value or "").strip()
+    if not normalized:
+        raise ValueError("BIN value is required to create a dialog")
+
+    now = datetime.utcnow().isoformat()
+    with _lock, _connection:
+        existing = _connection.execute(
+            """
+            SELECT id, bin
+            FROM chat_dialogs
+            WHERE chat_id = ? AND ended_at IS NULL
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (chat_id,),
+        ).fetchone()
+
+        if existing and existing["bin"] == normalized:
+            dialog_id = int(existing["id"])
+            _connection.execute(
+                "UPDATE chat_dialogs SET last_message_at = COALESCE(last_message_at, ?) WHERE id = ?",
+                (now, dialog_id),
+            )
+            _connection.execute(
+                "UPDATE chats SET bin = ?, updated_at = ? WHERE chat_id = ?",
+                (normalized, now, chat_id),
+            )
+            return dialog_id
+
+        _connection.execute(
+            "UPDATE chat_dialogs SET ended_at = COALESCE(ended_at, ?), last_message_at = COALESCE(last_message_at, ?) WHERE chat_id = ? AND ended_at IS NULL",
+            (now, now, chat_id),
+        )
+        _connection.execute(
+            """
+            INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (chat_id, normalized, now, now),
+        )
+        dialog_id_row = _connection.execute("SELECT last_insert_rowid()").fetchone()
+        _connection.execute(
+            """
+            UPDATE chats
+            SET bin = ?, section = NULL, updated_at = ?
+            WHERE chat_id = ?
+            """,
+            (normalized, now, chat_id),
+        )
+
+    if not dialog_id_row:
+        raise RuntimeError("Failed to create chat dialog")
+    return int(dialog_id_row[0])
+
+
 def get_chat(chat_id: int) -> Optional[Dict[str, object]]:
     with _lock, _connection:
         row = _connection.execute(

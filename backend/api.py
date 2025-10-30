@@ -64,6 +64,25 @@ class OneCIncomingMessageRequest(BaseModel):
     chat_id: int | None = None
 
 
+class OneCMessageEntry(BaseModel):
+    message_id: int | None = None
+    chat_id: int
+    dialog_id: int | None = None
+    direction: str
+    text: str
+    author: str | None = None
+    created_at: str
+    section: str | None = None
+
+
+class OneCMessagesResponse(BaseModel):
+    status: str = Field(default="ok")
+    external_chat_id: str
+    chat_id: int
+    dialog_id: int | None = None
+    messages: List[OneCMessageEntry] = Field(default_factory=list)
+
+
 class BinAssignmentResponse(BaseModel):
     bin: str
     assigned_at: str
@@ -763,6 +782,73 @@ def create_onec_message(
         "chat_id": chat_id,
         "dialog_id": dialog_id,
     }
+
+
+@router.get(
+    "/integrations/1c/messages",
+    response_model=OneCMessagesResponse,
+)
+def list_onec_messages(
+    external_chat_id: str = Query(min_length=1, max_length=128),
+    _: None = Depends(require_onec_token),
+    chat_id: int | None = Query(default=None),
+    dialog_id: int | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+):
+    normalized_external = external_chat_id.strip()
+    if not normalized_external:
+        raise HTTPException(status_code=400, detail="external_chat_id обязателен")
+
+    resolved_chat_id = _resolve_onec_chat_id(normalized_external, chat_id)
+
+    if dialog_id is not None:
+        dialog = database.get_chat_dialog(dialog_id)
+        if dialog is None or dialog["chat_id"] != resolved_chat_id:
+            raise HTTPException(status_code=404, detail="Диалог не найден")
+
+    chat = database.get_chat(resolved_chat_id)
+    if chat and chat.get("type") not in (None, "onec"):
+        raise HTTPException(status_code=403, detail="Чат не предназначен для интеграции 1С")
+
+    raw_messages = database.get_messages(
+        resolved_chat_id,
+        limit=limit,
+        dialog_id=dialog_id,
+    )
+
+    messages: List[OneCMessageEntry] = []
+    for message in reversed(raw_messages):
+        stored_message_id = message.get("message_id")
+        if stored_message_id is None:
+            stored_message_id = message.get("id")
+        created_at_value = message.get("created_at")
+        if isinstance(created_at_value, datetime):
+            created_at_iso = created_at_value.isoformat()
+        else:
+            created_at_iso = str(created_at_value)
+        messages.append(
+            OneCMessageEntry(
+                message_id=int(stored_message_id)
+                if stored_message_id is not None
+                else None,
+                chat_id=int(message["chat_id"]),
+                dialog_id=message.get("dialog_id"),
+                direction=str(message["direction"]),
+                text=str(message["text"]),
+                author=message.get("author"),
+                created_at=created_at_iso,
+                section=message.get("section"),
+            )
+        )
+
+    resolved_dialog_id = dialog_id or database.get_active_chat_dialog_id(resolved_chat_id)
+
+    return OneCMessagesResponse(
+        external_chat_id=normalized_external,
+        chat_id=resolved_chat_id,
+        dialog_id=resolved_dialog_id,
+        messages=messages,
+    )
 
 
 @router.post("/dialogs/{dialog_id}/favorite")

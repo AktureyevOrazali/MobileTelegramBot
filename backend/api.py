@@ -128,6 +128,7 @@ class UnassignedBinResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     id: int
+    message_id: int | None = None
     chat_id: int
     direction: str
     text: str
@@ -595,9 +596,16 @@ def get_chat_messages(
             section = next((s for s in database.SECTIONS if s["id"] == section_id), None)
             if section:
                 section_title = section["title"]
+        stored_message_id = message.get("message_id")
+        resolved_message_id = (
+            int(stored_message_id)
+            if stored_message_id is not None
+            else int(message["id"])
+        )
         result.append(
             MessageResponse(
                 id=int(message["id"]),
+                message_id=resolved_message_id,
                 chat_id=int(message["chat_id"]),
                 direction=str(message["direction"]),
                 text=str(message["text"]),
@@ -640,12 +648,42 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
         raise HTTPException(status_code=403, detail="Нет доступа к выбранному диалогу")
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Message text can not be empty")
+    
+    chat = database.get_chat(request.chat_id)
+    chat_type = chat.get("type") if chat else None
+    if chat_type == "onec":
+        section = chat.get("section") if chat else None
+        resolved_dialog_id = request.dialog_id or database.get_active_chat_dialog_id(request.chat_id)
+        chat_title = chat.get("title") if chat else None
+        if not chat_title:
+            bin_hint = chat.get("bin") if chat else None
+            if bin_hint:
+                chat_title = f"1C клиент {bin_hint}"
+            else:
+                chat_title = f"1C чат {request.chat_id}"
+        inserted_id = database.save_message(
+            chat_id=request.chat_id,
+            direction="outgoing",
+            text=request.text,
+            message_id=None,
+            author=current_user["name"],
+            chat_title=chat_title,
+            username=chat.get("username") if chat else None,
+            chat_type=chat_type,
+            section=section,
+            dialog_id=resolved_dialog_id,
+        )
+        return {
+            "status": "ok",
+            "message_id": inserted_id,
+            "operator": current_user["name"],
+            "dialog_id": resolved_dialog_id,
+        }
     try:
         sent_message = bot.send_message(request.chat_id, request.text)
     except Exception as exc:  # pragma: no cover - depends on Telegram API
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    chat = database.get_chat(request.chat_id)
     section = None
     if chat:
         section = chat.get("section")

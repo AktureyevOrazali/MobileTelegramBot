@@ -416,7 +416,7 @@ def save_message(
     chat_type: str,
     section: str | None,
     dialog_id: int | None = None,
-) -> None:
+) -> int:
     now = datetime.utcnow().isoformat()
     resolved_dialog_id = dialog_id
     if resolved_dialog_id is None:
@@ -424,7 +424,7 @@ def save_message(
         if active_dialog:
             resolved_dialog_id = active_dialog["id"]
     with _lock, _connection:
-        _connection.execute(
+        cursor = _connection.execute(
             """
             INSERT INTO messages (chat_id, direction, text, message_id, author, created_at, section, dialog_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -436,7 +436,12 @@ def save_message(
                 "UPDATE chat_dialogs SET last_message_at = ? WHERE id = ?",
                 (now, resolved_dialog_id),
             )
+        inserted_raw = cursor.lastrowid
+        if inserted_raw is None:
+            raise RuntimeError("Failed to persist message")
+        inserted_id = int(inserted_raw)
     upsert_chat(chat_id, chat_title, username, chat_type)
+    return inserted_id
 
 
 def list_chat_dialogs(chat_id: int) -> List[Dict[str, object]]:

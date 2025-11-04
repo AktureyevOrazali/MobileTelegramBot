@@ -788,7 +788,7 @@ def create_onec_message(
 ):
     section_id = _normalize_optional(request.section)
     if section_id and not any(section["id"] == section_id for section in database.SECTIONS):
-        raise HTTPException(status_code=400, detail="Указан неизвестный раздел")
+        section_id = None
 
     bin_value = _normalize_optional(request.bin)
     if not bin_value:
@@ -804,15 +804,18 @@ def create_onec_message(
 
     chat_id = _resolve_onec_chat_id(external_chat_id, request.chat_id)
     author = _normalize_optional(request.author)
+    
+    # ИСПРАВЛЕНИЕ: В названии используем external_chat_id вместо BIN
     title_candidate = _normalize_optional(request.title)
-    chat_title = title_candidate or f"1C клиент {bin_value}"
+    chat_title = title_candidate or f"1С клиент {external_chat_id}"  # ← Здесь меняем
 
     database.upsert_chat(chat_id, chat_title, None, "onec")
     try:
+        # БИН сохраняем для диалога, но не для названия
         dialog_id = database.ensure_active_chat_dialog(chat_id, bin_value)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:  # pragma: no cover - defensive branch
+    except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     database.save_message(

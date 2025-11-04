@@ -159,6 +159,35 @@ def _init_db() -> None:
             )
             """
         )
+        # --- NEW: outbox для 1С ---
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS outbox_onec (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER NOT NULL,
+                external_chat_id TEXT NOT NULL,
+                bin TEXT,
+                message_id INTEGER,              -- локальный ID из messages
+                payload TEXT NOT NULL,           -- JSON с полем text, author, created_at и т.п.
+                status TEXT NOT NULL DEFAULT 'pending',  -- pending | delivered | failed
+                error TEXT,                      -- текст ошибки, если failed
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        _connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_outbox_onec_status_ext_id
+            ON outbox_onec(status, external_chat_id, id)
+            """
+        )
+        _connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_outbox_onec_message
+            ON outbox_onec(message_id)
+            """
+        )
 
     _ensure_column("chats", "section", "TEXT")
     _ensure_column("chats", "bin", "TEXT")
@@ -2101,3 +2130,103 @@ def list_updates_since(
         )
     updates.sort(key=lambda item: item["created_at"])
     return updates
+
+
+# =========================
+#        OUTBOX 1C
+# =========================
+
+def outbox_enqueue_onec(
+    *,
+    message_id: int | None,
+    chat_id: int,
+    external_chat_id: str,
+    bin_value: str | None,
+    payload: Mapping[str, Any],
+) -> int:
+    """Кладёт сообщение оператора в outbox для 1С."""
+    now = datetime.utcnow().isoformat()
+    serialized = json.dumps(dict(payload), ensure_ascii=False, separators=(",", ":"))
+    with _lock, _connection:
+        cursor = _connection.execute(
+            """
+            INSERT INTO outbox_onec (chat_id, external_chat_id, bin, message_id, payload, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+            """,
+            (chat_id, external_chat_id, (bin_value or None), message_id, serialized, now, now),
+        )
+        inserted = cursor.lastrowid
+        if inserted is None:
+            raise RuntimeError("Failed to enqueue 1C outbox item")
+        return int(inserted)
+
+
+def outbox_list_pending_onec(external_chat_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+    """Возвращает pending-сообщения для указанного external_chat_id (в порядке FIFO)."""
+    normalized = (external_chat_id or "").strip()
+    if not normalized:
+        return []
+    with _lock, _connection:
+        rows = _connection.execute(
+            """
+            SELECT id, chat_id, external_chat_id, bin, message_id, payload, status, error, created_at, updated_at
+            FROM outbox_onec
+            WHERE status = 'pending' AND external_chat_id = ?
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (normalized, limit),
+        ).fetchall()
+    result: List[Dict[str, Any]] = []
+    for r in rows:
+        try:
+            payload = json.loads(r["payload"])
+        except Exception:
+            payload = {"raw": r["payload"]}
+        result.append(
+            {
+                "id": int(r["id"]),
+                "chat_id": r["chat_id"],
+                "external_chat_id": r["external_chat_id"],
+                "bin": r["bin"],
+                "message_id": r["message_id"],
+                "payload": payload,
+                "status": r["status"],
+                "error": r["error"],
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            }
+        )
+    return result
+
+
+def outbox_mark_delivered_onec(ids: Sequence[int]) -> None:
+    """Помечает элементы как доставленные."""
+    if not ids:
+        return
+    now = datetime.utcnow().isoformat()
+    placeholders = ",".join("?" for _ in ids)
+    with _lock, _connection:
+        _connection.execute(
+            f"UPDATE outbox_onec SET status = 'delivered', error = NULL, updated_at = ? WHERE id IN ({placeholders})",
+            (now, *ids),
+        )
+
+
+def outbox_mark_failed_onec(failed: Sequence[Mapping[str, Any]]) -> None:
+    """Помечает элементы как 'failed' с сообщением об ошибке.
+    Ожидается массив словарей вида: {"id": 1, "error": "text"}.
+    """
+    if not failed:
+        return
+    now = datetime.utcnow().isoformat()
+    with _lock, _connection:
+        for item in failed:
+            outbox_id = item.get("id")
+            err_text = item.get("error")
+            if not outbox_id:
+                continue
+            _connection.execute(
+                "UPDATE outbox_onec SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
+                (str(err_text) if err_text is not None else "", now, int(outbox_id)),
+            )

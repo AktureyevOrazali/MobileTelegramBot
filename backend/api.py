@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import AliasChoices, BaseModel, EmailStr, Field
 
@@ -18,6 +20,9 @@ ONEC_INTEGRATION_TOKEN = os.getenv("ONEC_INTEGRATION_TOKEN")
 
 ONEC_CHAT_ID_OFFSET = 9_000_000_000_000
 ONEC_CHAT_ID_SPACE = 1_000_000_000_000
+
+# Опциональный общий секрет для подписи HMAC нагрузки, которую 1С забирает из outbox
+ONEC_SHARED_SECRET = os.getenv("ONEC_SHARED_SECRET", "")
 
 app = FastAPI(title="Telegram Mobile Companion API")
 app.add_middleware(
@@ -35,6 +40,14 @@ ROLE_LABELS: Dict[str, str] = {
     database.ROLE_MODERATOR: "Модератор",
     database.ROLE_VIEWER: "Пользователь",
 }
+
+
+def _sign_payload(payload: dict) -> str:
+    """HMAC-SHA256 подпись компактного JSON. Если секрет пуст — возвращает пустую строку."""
+    if not ONEC_SHARED_SECRET:
+        return ""
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return hmac.new(ONEC_SHARED_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 class RegisterRequest(BaseModel):
@@ -445,7 +458,6 @@ def set_user_sections_endpoint(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     if user_id == current_admin["id"]:
-        # Admin may adjust own sections but they already see all chats; allow update but ignore? We'll allow.
         pass
     valid_ids = {section["id"] for section in database.SECTIONS}
     invalid = [section_id for section_id in request.sections if section_id not in valid_ids]
@@ -473,9 +485,9 @@ def set_user_bins_endpoint(
 @router.delete("/users/{user_id}")
 def delete_user_endpoint(
     user_id: int,
-    current_admin: Dict[str, object] = Depends(require_admin),
+    _: Dict[str, object] = Depends(require_admin),
 ):
-    if user_id == current_admin["id"]:
+    if user_id == _["id"]:
         raise HTTPException(status_code=400, detail="Нельзя удалить собственный аккаунт")
     try:
         database.delete_user(user_id)
@@ -547,6 +559,7 @@ def list_chats(
         bin_query=bin_query,
     )
     enriched: List[ChatResponse] = []
+
     def _normalize(value: object, *, fallback: Optional[str] = None) -> str:
         if value is None:
             return fallback or datetime.utcnow().isoformat()
@@ -570,10 +583,7 @@ def list_chats(
                 type=str(chat["type"]),
                 updated_at=_normalize(chat.get("updated_at")),
                 dialog_started_at=_normalize(chat.get("dialog_started_at")),
-                dialog_closed_at=
-                    _normalize(chat.get("dialog_closed_at"))
-                    if chat.get("dialog_closed_at")
-                    else None,
+                dialog_closed_at=_normalize(chat.get("dialog_closed_at")) if chat.get("dialog_closed_at") else None,
                 section=section_id,
                 section_title=section_title,
                 bin=chat.get("bin"),
@@ -667,7 +677,7 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
         raise HTTPException(status_code=403, detail="Нет доступа к выбранному диалогу")
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Message text can not be empty")
-    
+
     chat = database.get_chat(request.chat_id)
     chat_type = chat.get("type") if chat else None
     if chat_type == "onec":
@@ -692,12 +702,41 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
             section=section,
             dialog_id=resolved_dialog_id,
         )
+        # ---- NEW: кладём в outbox для 1С
+        external_chat_id = str(request.chat_id)  # если есть хранение настоящего external_id — подставь его здесь
+        payload = {
+            "external_chat_id": external_chat_id,
+            "bin": chat.get("bin") if chat else None,
+            "chat_id": request.chat_id,
+            "dialog_id": resolved_dialog_id,
+            "text": request.text,
+            "author": current_user["name"],
+            "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        }
+        signature = _sign_payload(payload)
+        if signature:
+            payload["signature"] = signature
+        try:
+            database.outbox_enqueue_onec(
+                message_id=inserted_id,
+                chat_id=request.chat_id,
+                external_chat_id=external_chat_id,
+                bin_value=chat.get("bin") if chat else None,
+                payload=payload,
+            )
+        except Exception as exc:
+            # не роняем ответ фронту — сообщение оператору уже сохранено
+            # логируем по месту (по желанию)
+            print("outbox enqueue error:", exc)
+
         return {
             "status": "ok",
             "message_id": inserted_id,
             "operator": current_user["name"],
             "dialog_id": resolved_dialog_id,
         }
+
+    # Telegram-ветка
     try:
         sent_message = bot.send_message(request.chat_id, request.text)
     except Exception as exc:  # pragma: no cover - depends on Telegram API
@@ -784,17 +823,14 @@ def create_onec_message(
     }
 
 
-@router.get(
-    "/integrations/1c/messages",
-    response_model=OneCMessagesResponse,
-)
-def list_onec_messages(
-    external_chat_id: str = Query(min_length=1, max_length=128),
-    _: None = Depends(require_onec_token),
-    chat_id: int | None = Query(default=None),
-    dialog_id: int | None = Query(default=None),
-    limit: int = Query(default=200, ge=1, le=500),
-):
+# ------------------ История для 1С ------------------
+
+def _onec_history_core(
+    external_chat_id: str,
+    chat_id: int | None,
+    dialog_id: int | None,
+    limit: int
+) -> OneCMessagesResponse:
     normalized_external = external_chat_id.strip()
     if not normalized_external:
         raise HTTPException(status_code=400, detail="external_chat_id обязателен")
@@ -828,9 +864,7 @@ def list_onec_messages(
             created_at_iso = str(created_at_value)
         messages.append(
             OneCMessageEntry(
-                message_id=int(stored_message_id)
-                if stored_message_id is not None
-                else None,
+                message_id=int(stored_message_id) if stored_message_id is not None else None,
                 chat_id=int(message["chat_id"]),
                 dialog_id=message.get("dialog_id"),
                 direction=str(message["direction"]),
@@ -849,6 +883,85 @@ def list_onec_messages(
         dialog_id=resolved_dialog_id,
         messages=messages,
     )
+
+
+@router.get(
+    "/integrations/1c/messages",
+    response_model=OneCMessagesResponse,
+)
+def list_onec_messages(
+    external_chat_id: str = Query(min_length=1, max_length=128),
+    _: None = Depends(require_onec_token),
+    chat_id: int | None = Query(default=None),
+    dialog_id: int | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+):
+    return _onec_history_core(external_chat_id, chat_id, dialog_id, limit)
+
+
+class OneCHistoryPostRequest(BaseModel):
+    external_chat_id: str = Field(min_length=1, max_length=128)
+    chat_id: int | None = None
+    dialog_id: int | None = None
+    limit: int = Field(default=200, ge=1, le=500)
+
+
+@router.post("/integrations/1c/messages/history", response_model=OneCMessagesResponse)
+def list_onec_messages_post(
+    body: OneCHistoryPostRequest = Body(...),
+    _: None = Depends(require_onec_token),
+):
+    # POST-алиас для 1С, чтобы избежать 422, если клиент шлёт POST + JSON
+    return _onec_history_core(body.external_chat_id, body.chat_id, body.dialog_id, body.limit)
+
+
+# ------------------ Outbox 1С ------------------
+
+class OneCOutboxItem(BaseModel):
+    outbox_id: int
+    payload: dict
+    signature: str | None = None
+
+
+class OneCOutboxResponse(BaseModel):
+    items: List[OneCOutboxItem] = Field(default_factory=list)
+
+
+class OneCAckRequest(BaseModel):
+    delivered_ids: List[int] = Field(default_factory=list)
+    failed_ids: List[Dict[str, object]] = Field(default_factory=list)  # [{"id": 1, "error": "text"}]
+
+
+@router.get("/integrations/1c/outbox", response_model=OneCOutboxResponse)
+def onec_outbox(
+    external_chat_id: str = Query(min_length=1, max_length=128),
+    limit: int = Query(default=100, ge=1, le=500),
+    _: None = Depends(require_onec_token),
+):
+    """1С забирает сообщения оператора (Web->Backend) для указанного external_chat_id."""
+    items = []
+    rows = database.outbox_list_pending_onec(external_chat_id, limit)
+    for r in rows:
+        payload = r["payload"] or {}
+        sig = payload.get("signature") or _sign_payload(payload)
+        items.append(OneCOutboxItem(outbox_id=r["id"], payload=payload, signature=sig or None))
+    return OneCOutboxResponse(items=items)
+
+
+@router.post("/integrations/1c/ack")
+def onec_ack(
+    body: OneCAckRequest,
+    _: None = Depends(require_onec_token),
+):
+    """1С подтверждает доставку (delivered_ids) и/или сообщает failed_ids с ошибкой."""
+    try:
+        if body.delivered_ids:
+            database.outbox_mark_delivered_onec(body.delivered_ids)
+        if body.failed_ids:
+            database.outbox_mark_failed_onec(body.failed_ids)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "ok"}
 
 
 @router.post("/dialogs/{dialog_id}/favorite")

@@ -5,12 +5,13 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import AliasChoices, BaseModel, EmailStr, Field
+from pydantic import AliasChoices, BaseModel, EmailStr, Field, validator
 
 from . import database
 from .telegram_bot import bot
@@ -213,7 +214,7 @@ class DashboardTopQuestion(BaseModel):
 class DashboardSectionQuestions(BaseModel):
     section: Optional[str] = None
     title: str
-    questions: List[DashboardTopQuestion]
+    questions: List[DashboardTopQuestion] = Field(default_factory=list)
 
 
 class DashboardAgentStat(BaseModel):
@@ -242,11 +243,11 @@ class DashboardSummaryResponse(BaseModel):
     avg_dialog_duration_minutes: float | None = None
     avg_response_time_minutes: float | None = None
     avg_response_time_seconds: float | None = None
-    section_breakdown: List[DashboardSectionStat]
-    top_questions: List[DashboardTopQuestion]
-    questions_by_section: List[DashboardSectionQuestions]
-    agent_breakdown: List[DashboardAgentStat]
-    recent_activity: List[DashboardActivityPoint]
+    section_breakdown: List[DashboardSectionStat] = Field(default_factory=list)
+    top_questions: List[DashboardTopQuestion] = Field(default_factory=list)
+    questions_by_section: List[DashboardSectionQuestions] = Field(default_factory=list)
+    agent_breakdown: List[DashboardAgentStat] = Field(default_factory=list)
+    recent_activity: List[DashboardActivityPoint] = Field(default_factory=list)
     updated_at: str
 
 
@@ -663,6 +664,20 @@ def _normalize_optional(value: str | None) -> str | None:
     return trimmed or None
 
 
+def _parse_int_from_string(value: str) -> int:
+    """Парсит целое число из строки, удаляя пробелы и нечисловые символы."""
+    if value is None:
+        return None
+    # Удаляем все пробелы и нечисловые символы, кроме минуса
+    cleaned = re.sub(r'[^\d-]', '', str(value).replace(' ', ''))
+    if not cleaned:
+        return None
+    try:
+        return int(cleaned)
+    except (ValueError, TypeError):
+        return None
+
+
 @router.post("/messages/send")
 def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depends(get_current_user)):
     if current_user["role"] not in (database.ROLE_ADMIN, database.ROLE_MODERATOR):
@@ -892,27 +907,34 @@ def _onec_history_core(
 def list_onec_messages(
     external_chat_id: str = Query(min_length=1, max_length=128),
     _: None = Depends(require_onec_token),
-    chat_id: int | None = Query(default=None),
-    dialog_id: int | None = Query(default=None),
+    chat_id: str | None = Query(default=None),  # ИЗМЕНЕНО: принимаем строку
+    dialog_id: str | None = Query(default=None),  # ИЗМЕНЕНО: принимаем строку
     limit: int = Query(default=200, ge=1, le=500),
 ):
-    return _onec_history_core(external_chat_id, chat_id, dialog_id, limit)
+    # Парсим числовые параметры из строк
+    parsed_chat_id = _parse_int_from_string(chat_id) if chat_id else None
+    parsed_dialog_id = _parse_int_from_string(dialog_id) if dialog_id else None
+    
+    return _onec_history_core(external_chat_id, parsed_chat_id, parsed_dialog_id, limit)
 
 
 class OneCHistoryPostRequest(BaseModel):
     external_chat_id: str = Field(min_length=1, max_length=128)
-    chat_id: int | None = None
-    dialog_id: int | None = None
+    chat_id: str | None = None  # ИЗМЕНЕНО: принимаем строку
+    dialog_id: str | None = None  # ИЗМЕНЕНО: принимаем строку
     limit: int = Field(default=200, ge=1, le=500)
 
 
 @router.post("/integrations/1c/messages/history", response_model=OneCMessagesResponse)
 def list_onec_messages_post(
-    body: OneCHistoryPostRequest = Body(...),
+    body: OneCHistoryPostRequest,
     _: None = Depends(require_onec_token),
 ):
-    # POST-алиас для 1С, чтобы избежать 422, если клиент шлёт POST + JSON
-    return _onec_history_core(body.external_chat_id, body.chat_id, body.dialog_id, body.limit)
+    # Парсим числовые параметры из строк
+    parsed_chat_id = _parse_int_from_string(body.chat_id) if body.chat_id else None
+    parsed_dialog_id = _parse_int_from_string(body.dialog_id) if body.dialog_id else None
+    
+    return _onec_history_core(body.external_chat_id, parsed_chat_id, parsed_dialog_id, body.limit)
 
 
 # ------------------ Outbox 1С ------------------

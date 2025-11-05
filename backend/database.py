@@ -51,7 +51,8 @@ def _init_db() -> None:
                 type TEXT,
                 updated_at TEXT,
                 section TEXT,
-                bin TEXT
+                bin TEXT,
+                external_chat_id TEXT
             )
             """
         )
@@ -64,6 +65,7 @@ def _init_db() -> None:
                 started_at TEXT NOT NULL,
                 ended_at TEXT,
                 last_message_at TEXT,
+                operator_mode INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE
             )
             """
@@ -191,9 +193,11 @@ def _init_db() -> None:
 
     _ensure_column("chats", "section", "TEXT")
     _ensure_column("chats", "bin", "TEXT")
+    _ensure_column("chats", "external_chat_id", "TEXT")
     _ensure_column("messages", "section", "TEXT")
     _ensure_column("messages", "dialog_id", "INTEGER")
     _ensure_column("chat_dialogs", "last_message_at", "TEXT")
+    _ensure_column("chat_dialogs", "operator_mode", "INTEGER DEFAULT 0")
     _ensure_column("users", "job_title", "TEXT")
     _ensure_column("users", "phone", "TEXT")
     _ensure_column("users", "bio", "TEXT")
@@ -208,6 +212,9 @@ def _init_db() -> None:
         )
         _connection.execute(
             "UPDATE users SET role = 'moderator' WHERE role IS NULL OR TRIM(role) = ''"
+        )
+        _connection.execute(
+            "UPDATE chat_dialogs SET operator_mode = 0 WHERE operator_mode IS NULL"
         )
 
     _ensure_admin_account()
@@ -286,8 +293,8 @@ def _ensure_chat_dialog_records() -> None:
             updated_at = row["updated_at"] or datetime.utcnow().isoformat()
             _connection.execute(
                 """
-                INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
+                VALUES (?, ?, ?, ?, 0)
                 """,
                 (row["chat_id"], row["bin"], updated_at, updated_at),
             )
@@ -375,6 +382,7 @@ class Chat:
     updated_at: datetime
     section: str | None
     bin: str | None
+    external_chat_id: str | None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Chat":
@@ -386,6 +394,7 @@ class Chat:
             updated_at=datetime.fromisoformat(row["updated_at"]),
             section=row["section"],
             bin=row["bin"],
+            external_chat_id=row["external_chat_id"],
         )
 
 
@@ -416,20 +425,29 @@ class Message:
         )
 
 
-def upsert_chat(chat_id: int, title: str, username: str | None, chat_type: str) -> None:
+def upsert_chat(
+    chat_id: int,
+    title: str,
+    username: str | None,
+    chat_type: str,
+    *,
+    external_chat_id: str | None = None,
+) -> None:
     now = datetime.utcnow().isoformat()
+    normalized_external = (external_chat_id or "").strip() or None
     with _lock, _connection:
         _connection.execute(
             """
-            INSERT INTO chats (chat_id, title, username, type, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO chats (chat_id, title, username, type, updated_at, external_chat_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(chat_id) DO UPDATE SET
                 title=excluded.title,
                 username=excluded.username,
                 type=excluded.type,
-                updated_at=excluded.updated_at
+                updated_at=excluded.updated_at,
+                external_chat_id=COALESCE(excluded.external_chat_id, chats.external_chat_id)
             """,
-            (chat_id, title, username, chat_type, now),
+            (chat_id, title, username, chat_type, now, normalized_external),
         )
 
 
@@ -477,7 +495,7 @@ def list_chat_dialogs(chat_id: int) -> List[Dict[str, object]]:
     with _lock, _connection:
         rows = _connection.execute(
             """
-            SELECT id, bin, started_at, ended_at, last_message_at
+            SELECT id, bin, started_at, ended_at, last_message_at, operator_mode
             FROM chat_dialogs
             WHERE chat_id = ?
             ORDER BY COALESCE(last_message_at, started_at) DESC
@@ -493,6 +511,7 @@ def list_chat_dialogs(chat_id: int) -> List[Dict[str, object]]:
                 "started_at": row["started_at"],
                 "ended_at": row["ended_at"],
                 "last_message_at": row["last_message_at"],
+                "operator_mode": bool(row["operator_mode"]),
             }
         )
     return result
@@ -502,7 +521,7 @@ def get_chat_dialog(dialog_id: int) -> Optional[Dict[str, object]]:
     with _lock, _connection:
         row = _connection.execute(
             """
-            SELECT id, chat_id, bin, started_at, ended_at, last_message_at
+            SELECT id, chat_id, bin, started_at, ended_at, last_message_at, operator_mode
             FROM chat_dialogs
             WHERE id = ?
             """,
@@ -517,6 +536,7 @@ def get_chat_dialog(dialog_id: int) -> Optional[Dict[str, object]]:
         "started_at": row["started_at"],
         "ended_at": row["ended_at"],
         "last_message_at": row["last_message_at"],
+        "operator_mode": bool(row["operator_mode"]),
     }
 
 
@@ -524,7 +544,7 @@ def get_active_chat_dialog(chat_id: int) -> Optional[Dict[str, object]]:
     with _lock, _connection:
         row = _connection.execute(
             """
-            SELECT id, chat_id, bin, started_at, ended_at, last_message_at
+            SELECT id, chat_id, bin, started_at, ended_at, last_message_at, operator_mode
             FROM chat_dialogs
             WHERE chat_id = ? AND ended_at IS NULL
             ORDER BY started_at DESC
@@ -541,6 +561,7 @@ def get_active_chat_dialog(chat_id: int) -> Optional[Dict[str, object]]:
         "started_at": row["started_at"],
         "ended_at": row["ended_at"],
         "last_message_at": row["last_message_at"],
+        "operator_mode": bool(row["operator_mode"]),
     }
 
 
@@ -549,6 +570,25 @@ def get_active_chat_dialog_id(chat_id: int) -> int | None:
     if dialog is None:
         return None
     return int(dialog["id"])
+
+
+def set_dialog_operator_mode(dialog_id: int, operator_mode: bool) -> None:
+    with _lock, _connection:
+        _connection.execute(
+            "UPDATE chat_dialogs SET operator_mode = ? WHERE id = ?",
+            (1 if operator_mode else 0, dialog_id),
+        )
+
+
+def is_dialog_in_operator_mode(dialog_id: int) -> bool:
+    with _lock, _connection:
+        row = _connection.execute(
+            "SELECT operator_mode FROM chat_dialogs WHERE id = ?",
+            (dialog_id,),
+        ).fetchone()
+    if row is None:
+        return False
+    return bool(row["operator_mode"])
 
 
 def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optional[Dict[str, object]]:
@@ -784,8 +824,8 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
         )
         _connection.execute(
             """
-            INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
+            VALUES (?, ?, ?, ?, 0)
             """,
             (chat_id, normalized, now, now),
         )
@@ -833,14 +873,40 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
             )
             return dialog_id
 
+        # Закрываем активные диалоги с другим БИН, чтобы исключить дубликаты
         _connection.execute(
             "UPDATE chat_dialogs SET ended_at = COALESCE(ended_at, ?), last_message_at = COALESCE(last_message_at, ?) WHERE chat_id = ? AND ended_at IS NULL",
             (now, now, chat_id),
         )
+
+        # Проверяем, существует ли ранее созданный диалог с тем же БИН
+        previous = _connection.execute(
+            """
+            SELECT id
+            FROM chat_dialogs
+            WHERE chat_id = ? AND bin = ?
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (chat_id, normalized),
+        ).fetchone()
+
+        if previous:
+            dialog_id = int(previous["id"])
+            _connection.execute(
+                "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = COALESCE(last_message_at, ?) WHERE id = ?",
+                (now, dialog_id),
+            )
+            _connection.execute(
+                "UPDATE chats SET bin = ?, section = NULL, updated_at = ? WHERE chat_id = ?",
+                (normalized, now, chat_id),
+            )
+            return dialog_id
+
         _connection.execute(
             """
-            INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
+            VALUES (?, ?, ?, ?, 0)
             """,
             (chat_id, normalized, now, now),
         )
@@ -863,7 +929,7 @@ def get_chat(chat_id: int) -> Optional[Dict[str, object]]:
     with _lock, _connection:
         row = _connection.execute(
             """
-            SELECT chat_id, title, username, type, updated_at, section, bin
+            SELECT chat_id, title, username, type, updated_at, section, bin, external_chat_id
             FROM chats
             WHERE chat_id = ?
             """,

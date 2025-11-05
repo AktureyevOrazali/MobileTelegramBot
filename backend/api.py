@@ -1,6 +1,7 @@
 """FastAPI routes serving chat data for the mobile client."""
 from __future__ import annotations
 
+import logging
 import hashlib
 import hmac
 import json
@@ -14,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import AliasChoices, BaseModel, EmailStr, Field, validator
 
 from . import database
+from .ai_manager import ai_manager
 from .telegram_bot import bot
 
 API_TOKEN = os.getenv("MOBILE_API_TOKEN")
@@ -36,6 +38,9 @@ app.add_middleware(
 router = APIRouter()
 
 
+logger = logging.getLogger(__name__)
+
+
 ROLE_LABELS: Dict[str, str] = {
     database.ROLE_ADMIN: "Администратор",
     database.ROLE_MODERATOR: "Модератор",
@@ -49,6 +54,44 @@ def _sign_payload(payload: dict) -> str:
         return ""
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     return hmac.new(ONEC_SHARED_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _enqueue_onec_outgoing_message(
+    *,
+    message_id: int,
+    chat_id: int,
+    dialog_id: int | None,
+    external_chat_id: str,
+    bin_value: str | None,
+    text: str,
+    author: str | None,
+    section: str | None,
+    direction: str = "outgoing",
+) -> None:
+    payload = {
+        "external_chat_id": external_chat_id,
+        "chat_id": chat_id,
+        "dialog_id": dialog_id,
+        "text": text,
+        "author": author,
+        "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "bin": bin_value,
+        "section": section,
+        "direction": direction,
+    }
+    signature = _sign_payload(payload)
+    if signature:
+        payload["signature"] = signature
+    try:
+        database.outbox_enqueue_onec(
+            message_id=message_id,
+            chat_id=chat_id,
+            external_chat_id=external_chat_id,
+            bin_value=bin_value,
+            payload=payload,
+        )
+    except Exception as exc:  # pragma: no cover - best-effort side effect
+        logger.exception("Failed to enqueue 1C outbox message: %s", exc)
 
 
 class RegisterRequest(BaseModel):
@@ -705,6 +748,11 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
                 chat_title = f"1C клиент {bin_hint}"
             else:
                 chat_title = f"1C чат {request.chat_id}"
+        external_chat_id_value = None
+        if chat:
+            external_chat_id_value = chat.get("external_chat_id")
+        if not external_chat_id_value:
+            external_chat_id_value = str(request.chat_id)
         inserted_id = database.save_message(
             chat_id=request.chat_id,
             direction="outgoing",
@@ -717,32 +765,18 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
             section=section,
             dialog_id=resolved_dialog_id,
         )
-        # ---- NEW: кладём в outbox для 1С
-        external_chat_id = str(request.chat_id)  # если есть хранение настоящего external_id — подставь его здесь
-        payload = {
-            "external_chat_id": external_chat_id,
-            "bin": chat.get("bin") if chat else None,
-            "chat_id": request.chat_id,
-            "dialog_id": resolved_dialog_id,
-            "text": request.text,
-            "author": current_user["name"],
-            "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-        }
-        signature = _sign_payload(payload)
-        if signature:
-            payload["signature"] = signature
-        try:
-            database.outbox_enqueue_onec(
-                message_id=inserted_id,
-                chat_id=request.chat_id,
-                external_chat_id=external_chat_id,
-                bin_value=chat.get("bin") if chat else None,
-                payload=payload,
-            )
-        except Exception as exc:
-            # не роняем ответ фронту — сообщение оператору уже сохранено
-            # логируем по месту (по желанию)
-            print("outbox enqueue error:", exc)
+        if resolved_dialog_id:
+            database.set_dialog_operator_mode(resolved_dialog_id, True)
+        _enqueue_onec_outgoing_message(
+            message_id=inserted_id,
+            chat_id=request.chat_id,
+            dialog_id=resolved_dialog_id,
+            external_chat_id=external_chat_id_value,
+            bin_value=chat.get("bin") if chat else None,
+            text=request.text,
+            author=current_user["name"],
+            section=section,
+        )
 
         return {
             "status": "ok",
@@ -809,7 +843,13 @@ def create_onec_message(
     title_candidate = _normalize_optional(request.title)
     chat_title = title_candidate or f"1С клиент {external_chat_id}"  # ← Здесь меняем
 
-    database.upsert_chat(chat_id, chat_title, None, "onec")
+    database.upsert_chat(
+        chat_id,
+        chat_title,
+        None,
+        "onec",
+        external_chat_id=external_chat_id,
+    )
     try:
         # БИН сохраняем для диалога, но не для названия
         dialog_id = database.ensure_active_chat_dialog(chat_id, bin_value)
@@ -833,6 +873,78 @@ def create_onec_message(
 
     if section_id:
         database.set_chat_section(chat_id, section_id)
+
+    chat_record = database.get_chat(chat_id)
+    chat_section = section_id or (chat_record.get("section") if chat_record else None)
+    chat_bin = chat_record.get("bin") if chat_record else None
+    dialog_external_id = (
+        (chat_record.get("external_chat_id") if chat_record else None) or external_chat_id
+    )
+
+    normalized_text = message_text.lower()
+
+    if normalized_text == "оператор":
+        database.set_dialog_operator_mode(dialog_id, True)
+        operator_notice = "👨‍💼 Подключаю оператора..."
+        notice_message_id = database.save_message(
+            chat_id=chat_id,
+            direction="outgoing",
+            text=operator_notice,
+            message_id=None,
+            author="System",
+            chat_title=chat_title,
+            username=None,
+            chat_type="onec",
+            section=chat_section,
+            dialog_id=dialog_id,
+        )
+        if dialog_external_id:
+            _enqueue_onec_outgoing_message(
+                message_id=notice_message_id,
+                chat_id=chat_id,
+                dialog_id=dialog_id,
+                external_chat_id=dialog_external_id,
+                bin_value=chat_bin,
+                text=operator_notice,
+                author="System",
+                section=chat_section,
+            )
+    else:
+        if not database.is_dialog_in_operator_mode(dialog_id):
+            history = database.get_messages(chat_id, limit=6, dialog_id=dialog_id)
+            if ai_manager is not None:
+                ai_reply = ai_manager.generate_response(message_text, history)
+            else:
+                ai_reply = (
+                    "Извините, AI помощник временно недоступен. Пожалуйста, напишите 'оператор' "
+                    "для связи с консультантом."
+                )
+            ai_reply = (ai_reply or "").strip()
+            if ai_reply:
+                database.set_dialog_operator_mode(dialog_id, False)
+                ai_message_id = database.save_message(
+                    chat_id=chat_id,
+                    direction="outgoing",
+                    text=ai_reply,
+                    message_id=None,
+                    author="AI Assistant",
+                    chat_title=chat_title,
+                    username=None,
+                    chat_type="onec",
+                    section=chat_section,
+                    dialog_id=dialog_id,
+                )
+                if dialog_external_id:
+                    _enqueue_onec_outgoing_message(
+                        message_id=ai_message_id,
+                        chat_id=chat_id,
+                        dialog_id=dialog_id,
+                        external_chat_id=dialog_external_id,
+                        bin_value=chat_bin,
+                        text=ai_reply,
+                        author="AI Assistant",
+                        section=chat_section,
+                    )
 
     return {
         "status": "ok",

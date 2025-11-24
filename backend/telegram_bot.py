@@ -548,24 +548,26 @@ def _send_bin_selection_menu(chat_id: int) -> None:
 
 
 def _try_auto_answer(message: telebot.types.Message, section_id: str) -> None:
-    entries = FAQ_BY_SECTION.get(section_id) or []
-    normalized = (message.text or "").lower()
-    for entry in entries:
-        for keyword in entry.get("keywords", []):
-            if keyword in normalized:
-                sent = bot.send_message(message.chat.id, entry["answer"])
-                database.save_message(
-                    chat_id=message.chat.id,
-                    direction="outgoing",
-                    text=entry["answer"],
-                    message_id=sent.message_id,
-                    author="AutoBot",
-                    chat_title=sent.chat.title or sent.chat.username or str(sent.chat.id),
-                    username=sent.chat.username,
-                    chat_type=sent.chat.type,
-                    section=section_id,
-                )
-                return
+    entry = database.find_faq_entry_by_keywords(message.text or "", section_id)
+    if not entry:
+        return
+
+    answer_text = entry.get("answer", "")
+    if not answer_text:
+        return
+
+    sent = bot.send_message(message.chat.id, answer_text)
+    database.save_message(
+        chat_id=message.chat.id,
+        direction="outgoing",
+        text=answer_text,
+        message_id=sent.message_id,
+        author="AutoBot",
+        chat_title=sent.chat.title or sent.chat.username or str(sent.chat.id),
+        username=sent.chat.username,
+        chat_type=sent.chat.type,
+        section=entry.get("section") or section_id,
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("faq:"))

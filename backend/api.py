@@ -883,6 +883,8 @@ def create_onec_message(
 
     normalized_text = message_text.lower()
 
+    auto_reply_sent = False
+
     if normalized_text == "оператор":
         database.set_dialog_operator_mode(dialog_id, True)
         operator_notice = "👨‍💼 Подключаю оператора..."
@@ -909,25 +911,30 @@ def create_onec_message(
                 author="System",
                 section=chat_section,
             )
+        auto_reply_sent = True
     else:
         if not database.is_dialog_in_operator_mode(dialog_id):
-            history = database.get_messages(chat_id, limit=6, dialog_id=dialog_id)
-            if ai_manager is not None:
-                ai_reply = ai_manager.generate_response(message_text, history)
-            else:
-                ai_reply = (
-                    "Извините, AI помощник временно недоступен. Пожалуйста, напишите 'оператор' "
-                    "для связи с консультантом."
-                )
-            ai_reply = (ai_reply or "").strip()
-            if ai_reply:
+            faq_entry = database.find_faq_entry_by_keywords(message_text, chat_section)
+            if faq_entry:
+                response_section = faq_entry.get("section") or chat_section
+                response_text = faq_entry.get("answer", "").strip()
+                response_question = faq_entry.get("question", "").strip()
+                if response_question:
+                    response_text = f"📚 Частый вопрос:\n{response_question}\n\n{response_text}" if response_text else response_question
+                if not response_text:
+                    response_text = "Пока нет готового ответа. Напишите 'оператор', чтобы связаться с консультантом."
+
+                if response_section and response_section != chat_section:
+                    database.set_chat_section(chat_id, response_section)
+                    chat_section = response_section
+
                 database.set_dialog_operator_mode(dialog_id, False)
-                ai_message_id = database.save_message(
+                faq_message_id = database.save_message(
                     chat_id=chat_id,
                     direction="outgoing",
-                    text=ai_reply,
+                    text=response_text,
                     message_id=None,
-                    author="AI Assistant",
+                    author="AutoBot",
                     chat_title=chat_title,
                     username=None,
                     chat_type="onec",
@@ -936,15 +943,53 @@ def create_onec_message(
                 )
                 if dialog_external_id:
                     _enqueue_onec_outgoing_message(
-                        message_id=ai_message_id,
+                        message_id=faq_message_id,
                         chat_id=chat_id,
                         dialog_id=dialog_id,
                         external_chat_id=dialog_external_id,
                         bin_value=chat_bin,
-                        text=ai_reply,
-                        author="AI Assistant",
+                        text=response_text,
+                        author="AutoBot",
                         section=chat_section,
                     )
+                auto_reply_sent = True
+
+            if not auto_reply_sent:
+                history = database.get_messages(chat_id, limit=6, dialog_id=dialog_id)
+                if ai_manager is not None:
+                    ai_reply = ai_manager.generate_response(message_text, history)
+                else:
+                    ai_reply = (
+                        "Извините, AI помощник временно недоступен. Пожалуйста, напишите 'оператор' "
+                        "для связи с консультантом."
+                    )
+                ai_reply = (ai_reply or "").strip()
+                if ai_reply:
+                    database.set_dialog_operator_mode(dialog_id, False)
+                    ai_message_id = database.save_message(
+                        chat_id=chat_id,
+                        direction="outgoing",
+                        text=ai_reply,
+                        message_id=None,
+                        author="AI Assistant",
+                        chat_title=chat_title,
+                        username=None,
+                        chat_type="onec",
+                        section=chat_section,
+                        dialog_id=dialog_id,
+                    )
+                    if dialog_external_id:
+                        _enqueue_onec_outgoing_message(
+                            message_id=ai_message_id,
+                            chat_id=chat_id,
+                            dialog_id=dialog_id,
+                            external_chat_id=dialog_external_id,
+                            bin_value=chat_bin,
+                            text=ai_reply,
+                            author="AI Assistant",
+                            section=chat_section,
+                        )
+                    auto_reply_sent = True
 
     return {
         "status": "ok",
@@ -959,7 +1004,8 @@ def _onec_history_core(
     external_chat_id: str,
     chat_id: int | None,
     dialog_id: int | None,
-    limit: int
+    bin_value: str | None,
+    limit: int,
 ) -> OneCMessagesResponse:
     normalized_external = external_chat_id.strip()
     if not normalized_external:
@@ -967,10 +1013,27 @@ def _onec_history_core(
 
     resolved_chat_id = _resolve_onec_chat_id(normalized_external, chat_id)
 
+    # Если явно передали dialog_id – проверяем его и используем как есть
     if dialog_id is not None:
         dialog = database.get_chat_dialog(dialog_id)
         if dialog is None or dialog["chat_id"] != resolved_chat_id:
             raise HTTPException(status_code=404, detail="Диалог не найден")
+        resolved_dialog_id = dialog_id
+    else:
+        # Если dialog_id нет, но есть BIN – применяем ту же логику, что в create_onec_message:
+        normalized_bin = (bin_value or "").strip() or None
+        if normalized_bin is not None:
+            try:
+                resolved_dialog_id = database.ensure_active_chat_dialog(
+                    resolved_chat_id, normalized_bin
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except RuntimeError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+        else:
+            # Совместимость: как раньше, без фильтра по диалогу
+            resolved_dialog_id = None
 
     chat = database.get_chat(resolved_chat_id)
     if chat and chat.get("type") not in (None, "onec"):
@@ -979,7 +1042,7 @@ def _onec_history_core(
     raw_messages = database.get_messages(
         resolved_chat_id,
         limit=limit,
-        dialog_id=dialog_id,
+        dialog_id=resolved_dialog_id,
     )
 
     messages: List[OneCMessageEntry] = []
@@ -1005,7 +1068,9 @@ def _onec_history_core(
             )
         )
 
-    resolved_dialog_id = dialog_id or database.get_active_chat_dialog_id(resolved_chat_id)
+    # Если диалог не был определён выше – берём активный (как и раньше)
+    if resolved_dialog_id is None:
+        resolved_dialog_id = database.get_active_chat_dialog_id(resolved_chat_id)
 
     return OneCMessagesResponse(
         external_chat_id=normalized_external,
@@ -1015,6 +1080,7 @@ def _onec_history_core(
     )
 
 
+
 @router.get(
     "/integrations/1c/messages",
     response_model=OneCMessagesResponse,
@@ -1022,22 +1088,31 @@ def _onec_history_core(
 def list_onec_messages(
     external_chat_id: str = Query(min_length=1, max_length=128),
     _: None = Depends(require_onec_token),
-    chat_id: str | None = Query(default=None),  # ИЗМЕНЕНО: принимаем строку
-    dialog_id: str | None = Query(default=None),  # ИЗМЕНЕНО: принимаем строку
+    chat_id: str | None = Query(default=None),
+    dialog_id: str | None = Query(default=None),
+    bin: str | None = Query(default=None),  # НОВЫЙ ПАРАМЕТР
     limit: int = Query(default=200, ge=1, le=500),
 ):
-    # Парсим числовые параметры из строк
     parsed_chat_id = _parse_int_from_string(chat_id) if chat_id else None
     parsed_dialog_id = _parse_int_from_string(dialog_id) if dialog_id else None
-    
-    return _onec_history_core(external_chat_id, parsed_chat_id, parsed_dialog_id, limit)
+
+    return _onec_history_core(
+        external_chat_id,
+        parsed_chat_id,
+        parsed_dialog_id,
+        bin,
+        limit,
+    )
+
 
 
 class OneCHistoryPostRequest(BaseModel):
     external_chat_id: str = Field(min_length=1, max_length=128)
-    chat_id: str | None = None  # ИЗМЕНЕНО: принимаем строку
-    dialog_id: str | None = None  # ИЗМЕНЕНО: принимаем строку
+    chat_id: str | None = None
+    dialog_id: str | None = None
+    bin: str | None = None             # НОВОЕ ПОЛЕ
     limit: int = Field(default=200, ge=1, le=500)
+
 
 
 @router.post("/integrations/1c/messages/history", response_model=OneCMessagesResponse)
@@ -1045,11 +1120,17 @@ def list_onec_messages_post(
     body: OneCHistoryPostRequest,
     _: None = Depends(require_onec_token),
 ):
-    # Парсим числовые параметры из строк
     parsed_chat_id = _parse_int_from_string(body.chat_id) if body.chat_id else None
     parsed_dialog_id = _parse_int_from_string(body.dialog_id) if body.dialog_id else None
-    
-    return _onec_history_core(body.external_chat_id, parsed_chat_id, parsed_dialog_id, body.limit)
+
+    return _onec_history_core(
+        body.external_chat_id,
+        parsed_chat_id,
+        parsed_dialog_id,
+        body.bin,
+        body.limit,
+    )
+
 
 
 # ------------------ Outbox 1С ------------------

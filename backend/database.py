@@ -1655,6 +1655,31 @@ def list_faq(section: str | None = None) -> List[dict]:
     return list(FAQ_ENTRIES)
 
 
+def find_faq_entry_by_keywords(text: str, section: str | None = None) -> Optional[dict]:
+    """Возвращает FAQ запись, ключевые слова которой встречаются в тексте."""
+
+    normalized = (text or "").strip().lower()
+    if not normalized:
+        return None
+
+    entries: List[dict] = []
+    if section:
+        entries.extend(list_faq(section))
+
+    entries.extend(
+        entry
+        for entry in FAQ_ENTRIES
+        if not section or entry["section"] != section
+    )
+
+    for entry in entries:
+        for keyword in entry.get("keywords", []):
+            normalized_keyword = keyword.lower()
+            if normalized_keyword and normalized_keyword in normalized:
+                return entry
+    return None
+
+
 def get_dashboard_summary(
     *, days: int = 7, questions_limit: int = 5, operator_id: int | None = None
 ) -> dict:

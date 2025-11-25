@@ -1,15 +1,22 @@
 """Entry point launching both the Telegram bot and the HTTP API."""
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import threading
+import time
 from typing import Optional
 
 import uvicorn
+from requests import exceptions as requests_exceptions
+from urllib3.exceptions import ReadTimeoutError
 
 from .api import app
 from .telegram_bot import bot
+
+
+logger = logging.getLogger(__name__)
 
 
 class BotPollingThread(threading.Thread):
@@ -19,11 +26,30 @@ class BotPollingThread(threading.Thread):
         self._stopping = threading.Event()
 
     def run(self) -> None:  # pragma: no cover - long running thread
-        try:
-            # pyTelegramBotAPI: infinity_polling блокирующий, но умеет останавливаться через .stop_polling()
-            bot.infinity_polling(skip_pending=True, timeout=20)
-        except BaseException as exc:  # pylint: disable=broad-except
-            self._exception = exc
+        while not self._stopping.is_set():
+            try:
+                # pyTelegramBotAPI: infinity_polling блокирующий, но умеет останавливаться через .stop_polling()
+                bot.infinity_polling(skip_pending=True, timeout=20, long_polling_timeout=20)
+            except (
+                requests_exceptions.ReadTimeout,
+                requests_exceptions.ConnectionError,
+                ReadTimeoutError,
+            ) as exc:
+                # Перехватываем сетевые таймауты, чтобы не падать и перезапускать polling
+                logger.warning("Polling interrupted by network timeout, restarting: %s", exc)
+                try:
+                    bot.stop_polling()
+                except Exception:
+                    pass
+                # Небольшая пауза, чтобы не попасть в бесконечный цикл при нестабильной сети
+                self._stopping.wait(timeout=2)
+                continue
+            except BaseException as exc:  # pylint: disable=broad-except
+                self._exception = exc
+                break
+            else:
+                # infinity_polling завершилось без ошибок (например, при остановке)
+                break
 
     def stop(self) -> None:
         # Безопасно просим бота остановиться

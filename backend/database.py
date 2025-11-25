@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -13,14 +14,17 @@ from uuid import uuid4
 
 import psycopg2
 from psycopg2.extras import DictCursor
-from psycopg2.extensions import make_dsn
 
 
 class PostgresConnection:
     """Lightweight wrapper that mimics sqlite3.Connection's interface."""
 
-    def __init__(self, dsn: str):
-        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
+    def __init__(self, config: Mapping[str, str]):
+        self._config = config
+        try:
+            self._conn = psycopg2.connect(cursor_factory=DictCursor, **config)
+        except UnicodeDecodeError as exc:
+            raise RuntimeError(_format_connection_error(config)) from exc
 
     def __enter__(self) -> "PostgresConnection":
         return self
@@ -38,19 +42,53 @@ class PostgresConnection:
         return cursor
 
 
-def _sanitize_text(raw: str) -> str:
-    """Remove invalid UTF-8 sequences from a DSN component."""
+def _sanitize_text(raw: str | bytes) -> str:
+    """Normalize DSN components to UTF-8 safe strings.
 
-    # psycopg2 expects UTF-8 strings for all connection parameters. If the
-    # environment variables were populated from a non-UTF-8 source (e.g.
-    # Windows shell), re-encoding with ``errors="replace"`` avoids
-    # ``UnicodeDecodeError`` while keeping readable characters intact.
-    return raw.encode("utf-8", errors="replace").decode("utf-8")
+    The Windows shell can populate environment variables with bytes outside of
+    UTF-8. Psycopg2 parses the DSN string and attempts to decode it as UTF-8,
+    so we defensively re-encode any incoming value, replacing undecodable
+    sequences to avoid ``UnicodeDecodeError`` during connection creation.
+    """
+
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace")
+
+    try:
+        return raw.encode("utf-8", errors="strict").decode("utf-8")
+    except UnicodeEncodeError:
+        # ``raw`` may contain surrogate characters if it originated from a
+        # non-UTF-8 source. ``errors="replace"`` keeps the string readable
+        # while ensuring psycopg2 receives valid UTF-8 input.
+        return raw.encode("utf-8", errors="replace").decode("utf-8")
 
 
-def _build_dsn() -> str:
+def _mask_sensitive_value(raw: str) -> str:
+    if not raw:
+        return raw
+    # Mask passwords present in URI-style DSNs: postgres://user:password@host:port/db
+    masked_uri = re.sub(r":([^:@/]+)@", r":***@", raw)
+    masked_kv = re.sub(r"(password=)([^\s]+)", r"\1***", masked_uri)
+    if masked_kv != raw:
+        return masked_kv
+    return "***"
+
+
+def _format_connection_error(config: Mapping[str, str]) -> str:
+    safe_config = {
+        key: _mask_sensitive_value(value) if key in {"password", "dsn"} else value
+        for key, value in config.items()
+    }
+    return (
+        "Не удалось декодировать параметры подключения к PostgreSQL как UTF-8. "
+        "Проверьте кодировку файла .env/переменных окружения (UTF-8 без BOM) и значения POSTGRES_* или DATABASE_URL. "
+        f"Текущие параметры (без пароля): {safe_config}"
+    )
+
+
+def _build_connection_settings() -> Mapping[str, str]:
     if dsn := os.getenv("DATABASE_URL"):
-        return _sanitize_text(dsn)
+        return {"dsn": _sanitize_text(dsn)}
 
     params = {
         "host": os.getenv("POSTGRES_HOST", "localhost"),
@@ -60,11 +98,10 @@ def _build_dsn() -> str:
         "dbname": os.getenv("POSTGRES_DB", "telegram_bot"),
     }
 
-    sanitized_params = {key: _sanitize_text(value) for key, value in params.items()}
-    return make_dsn(**sanitized_params)
+    return {key: _sanitize_text(value) for key, value in params.items()}
 
 
-_connection = PostgresConnection(_build_dsn())
+_connection = PostgresConnection(_build_connection_settings())
 _lock = threading.Lock()
 
 USER_COLUMN_NAMES = (

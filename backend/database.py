@@ -1,62 +1,55 @@
-"""SQLite helpers for storing Telegram chat history, users and sections."""
+"""PostgreSQL helpers for storing Telegram chat history, users and sections."""
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import sqlite3
-import sys
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from uuid import uuid4
 
-
-def _resolve_db_path() -> Path:
-    """Return a writable path for the SQLite database.
-
-    - If ``DB_PATH`` environment variable is provided, use it as-is.
-    - Otherwise, place ``bot.db`` next to the running executable when bundled
-      with PyInstaller, or next to this module when running from source.
-    """
-
-    if env_path := os.getenv("DB_PATH"):
-        return Path(env_path).expanduser().resolve()
-
-    # When packaged as an .exe we still want to reuse the existing SQLite file
-    # from the source checkout if it is available. This keeps sessions and
-    # tokens intact to avoid spurious 401/404s when the bundled app starts with
-    # an empty DB. If no repo DB exists, fall back to placing the database next
-    # to the executable so the folder remains self-contained.
-    if getattr(sys, "frozen", False):  # PyInstaller executable
-        exe_path = Path(sys.executable).resolve()
-
-        candidate_roots = []
-        # cwd differs between "run in console" and "double-click" launches.
-        candidate_roots.append(Path.cwd())
-        # dist/ (where the .exe lives) and its parent (repo root when built
-        # from project root) cover both launch styles.
-        candidate_roots.append(exe_path.parent)
-        candidate_roots.append(exe_path.parent.parent)
-
-        for root in candidate_roots:
-            repo_db = root / "backend" / "bot.db"
-            if repo_db.exists():
-                return repo_db.resolve()
-
-        return exe_path.parent / "bot.db"
-
-    return Path(__file__).resolve().parent / "bot.db"
+import psycopg2
+from psycopg2.extras import DictCursor
 
 
-DB_PATH = _resolve_db_path()
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+class PostgresConnection:
+    """Lightweight wrapper that mimics sqlite3.Connection's interface."""
 
-_connection = sqlite3.connect(DB_PATH, check_same_thread=False)
-_connection.row_factory = sqlite3.Row
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
+
+    def __enter__(self) -> "PostgresConnection":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if exc_type:
+            self._conn.rollback()
+        else:
+            self._conn.commit()
+
+    def execute(self, query: str, params: Sequence[object] | None = None):
+        normalized_query = query.replace("?", "%s")
+        cursor = self._conn.cursor()
+        cursor.execute(normalized_query, params or ())
+        return cursor
+
+
+def _build_dsn() -> str:
+    if dsn := os.getenv("DATABASE_URL"):
+        return dsn
+    
+    host = os.getenv("POSTGRES_HOST", "localhost")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    user = os.getenv("POSTGRES_USER", "postgres")
+    password = os.getenv("POSTGRES_PASSWORD", "postgres")
+    dbname = os.getenv("POSTGRES_DB", "telegram_bot")
+    return f"dbname={dbname} user={user} password={password} host={host} port={port}"
+
+
+_connection = PostgresConnection(_build_dsn())
 _lock = threading.Lock()
 
 USER_COLUMN_NAMES = (
@@ -87,7 +80,7 @@ def _init_db() -> None:
         _connection.execute(
             """
             CREATE TABLE IF NOT EXISTS chats (
-                chat_id INTEGER PRIMARY KEY,
+                chat_id BIGINT PRIMARY KEY,
                 title TEXT,
                 username TEXT,
                 type TEXT,
@@ -101,8 +94,8 @@ def _init_db() -> None:
         _connection.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_dialogs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                chat_id BIGINT NOT NULL,
                 bin TEXT NOT NULL,
                 started_at TEXT NOT NULL,
                 ended_at TEXT,
@@ -115,8 +108,8 @@ def _init_db() -> None:
         _connection.execute(
             """
             CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                chat_id BIGINT NOT NULL,
                 direction TEXT NOT NULL,
                 text TEXT NOT NULL,
                 message_id INTEGER,
@@ -132,7 +125,7 @@ def _init_db() -> None:
         _connection.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
                 name TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
@@ -194,7 +187,7 @@ def _init_db() -> None:
         _connection.execute(
             """
             CREATE TABLE IF NOT EXISTS notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 kind TEXT NOT NULL,
                 payload TEXT NOT NULL,
@@ -207,8 +200,8 @@ def _init_db() -> None:
         _connection.execute(
             """
             CREATE TABLE IF NOT EXISTS outbox_onec (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                chat_id BIGINT NOT NULL,
                 external_chat_id TEXT NOT NULL,
                 bin TEXT,
                 message_id INTEGER,              -- локальный ID из messages
@@ -266,9 +259,9 @@ def _init_db() -> None:
 
 def _ensure_column(table: str, column: str, definition: str) -> None:
     with _lock, _connection:
-        info = _connection.execute(f"PRAGMA table_info({table})").fetchall()
-        if not any(row[1] == column for row in info):
-            _connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        _connection.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}"
+        )
 
 
 ROLE_ADMIN = "admin"
@@ -299,21 +292,22 @@ def _ensure_admin_account() -> None:
             )
             return
     now = datetime.utcnow().isoformat()
-    _connection.execute(
-        """
-        INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role)
-        VALUES (?, ?, ?, ?, ?, '', '', ?, ?)
-        """,
-        (
-            "admin@example.com",
-            "Администратор",
-            password_hash,
-            now,
-            "Администратор",
-            "admin",
-            ROLE_ADMIN,
-        ),
-    )
+    with _lock, _connection:
+        _connection.execute(
+            """
+            INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role)
+            VALUES (?, ?, ?, ?, ?, '', '', ?, ?)
+            """,
+            (
+                "admin@example.com",
+                "Администратор",
+                password_hash,
+                now,
+                "Администратор",
+                "admin",
+                ROLE_ADMIN,
+            ),
+        )
 
 
 def _ensure_chat_dialog_records() -> None:
@@ -345,8 +339,14 @@ def _ensure_chat_dialog_records() -> None:
 def _ensure_favorites_schema() -> None:
     """Мигрирует таблицу избранного на привязку к диалогам."""
     with _lock, _connection:
-        info = _connection.execute("PRAGMA table_info(favorites)").fetchall()
-        columns = {row["name"] for row in info}
+        info = _connection.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'favorites'
+            """
+        ).fetchall()
+        columns = {row["column_name"] for row in info}
         if "dialog_id" in columns:
             return
 
@@ -380,8 +380,9 @@ def _ensure_favorites_schema() -> None:
                 continue
             _connection.execute(
                 """
-                INSERT OR IGNORE INTO favorites_new (user_id, dialog_id, created_at)
+                INSERT INTO favorites_new (user_id, dialog_id, created_at)
                 VALUES (?, ?, ?)
+                ON CONFLICT (user_id, dialog_id) DO NOTHING
                 """,
                 (row["user_id"], dialog_row["id"], row["created_at"]),
             )
@@ -427,7 +428,7 @@ class Chat:
     external_chat_id: str | None
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "Chat":
+    def from_row(cls, row: Mapping[str, Any]) -> "Chat":
         return cls(
             chat_id=row["chat_id"],
             title=row["title"],
@@ -453,7 +454,7 @@ class Message:
     dialog_id: int | None
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "Message":
+    def from_row(cls, row: Mapping[str, Any]) -> "Message":
         return cls(
             id=row["id"],
             chat_id=row["chat_id"],
@@ -517,6 +518,7 @@ def save_message(
             """
             INSERT INTO messages (chat_id, direction, text, message_id, author, created_at, section, dialog_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
             """,
             (chat_id, direction, text, message_id, author, now, section, resolved_dialog_id),
         )
@@ -525,7 +527,8 @@ def save_message(
                 "UPDATE chat_dialogs SET last_message_at = ? WHERE id = ?",
                 (now, resolved_dialog_id),
             )
-        inserted_raw = cursor.lastrowid
+        inserted_row = cursor.fetchone()
+        inserted_raw = inserted_row["id"] if inserted_row else None
         if inserted_raw is None:
             raise RuntimeError("Failed to persist message")
         inserted_id = int(inserted_raw)
@@ -864,14 +867,15 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
             "UPDATE chat_dialogs SET ended_at = ? WHERE chat_id = ? AND ended_at IS NULL",
             (now, chat_id),
         )
-        _connection.execute(
+        cursor = _connection.execute(
             """
             INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
             VALUES (?, ?, ?, ?, 0)
+            RETURNING id
             """,
             (chat_id, normalized, now, now),
         )
-        dialog_id_row = _connection.execute("SELECT last_insert_rowid()").fetchone()
+        dialog_id_row = cursor.fetchone()
         _connection.execute(
             """
             UPDATE chats
@@ -880,7 +884,7 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
             """,
             (normalized, now, chat_id),
         )
-    return int(dialog_id_row[0]) if dialog_id_row else None
+    return int(dialog_id_row["id"]) if dialog_id_row else None
 
 
 def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
@@ -945,14 +949,15 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
             )
             return dialog_id
 
-        _connection.execute(
+        cursor = _connection.execute(
             """
             INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
             VALUES (?, ?, ?, ?, 0)
+            RETURNING id
             """,
             (chat_id, normalized, now, now),
         )
-        dialog_id_row = _connection.execute("SELECT last_insert_rowid()").fetchone()
+        dialog_id_row = cursor.fetchone()
         _connection.execute(
             """
             UPDATE chats
@@ -964,7 +969,7 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
 
     if not dialog_id_row:
         raise RuntimeError("Failed to create chat dialog")
-    return int(dialog_id_row[0])
+    return int(dialog_id_row["id"])
 
 
 def get_chat(chat_id: int) -> Optional[Dict[str, object]]:
@@ -1006,8 +1011,9 @@ def set_user_sections(user_id: int, sections: Iterable[str]) -> List[str]:
         for section in normalized:
             _connection.execute(
                 """
-                INSERT OR IGNORE INTO user_sections (user_id, section, created_at)
+                INSERT INTO user_sections (user_id, section, created_at)
                 VALUES (?, ?, ?)
+                ON CONFLICT (user_id, section) DO NOTHING
                 """,
                 (user_id, section, now),
             )
@@ -1203,8 +1209,9 @@ def set_favorite_dialog(user_id: int, dialog_id: int, favorite: bool) -> None:
             now = datetime.utcnow().isoformat()
             _connection.execute(
                 """
-                INSERT OR REPLACE INTO favorites (user_id, dialog_id, created_at)
+                INSERT INTO favorites (user_id, dialog_id, created_at)
                 VALUES (?, ?, ?)
+                ON CONFLICT (user_id, dialog_id) DO UPDATE SET created_at = EXCLUDED.created_at
                 """,
                 (user_id, dialog_id, now),
             )
@@ -1407,7 +1414,7 @@ def delete_chat_dialog(dialog_id: int) -> None:
             )
 
 
-def _row_to_user(row: sqlite3.Row | None) -> dict | None:
+def _row_to_user(row: Mapping[str, Any] | None) -> dict | None:
     if row is None:
         return None
     return {
@@ -1469,6 +1476,7 @@ def create_user(
             """
             INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
             """,
             (
                 email,
@@ -1482,7 +1490,10 @@ def create_user(
                 role,
             ),
         )
-        user_id = cursor.lastrowid
+        inserted = cursor.fetchone()
+        user_id = inserted["id"] if inserted else None
+        if user_id is None:
+            raise RuntimeError("Failed to create user record")
     return _sanitize_user_payload(
         {
             "id": user_id,
@@ -1586,7 +1597,7 @@ def update_user_profile(
                 """,
                 (name, job_title, phone, bio, email or "", user_id),
             )
-        except sqlite3.IntegrityError as exc:
+        except psycopg2.IntegrityError as exc:
             raise ValueError("Адрес электронной почты уже используется") from exc
     return _sanitize_user_payload(get_user_by_id(user_id))
 
@@ -2285,10 +2296,12 @@ def outbox_enqueue_onec(
             """
             INSERT INTO outbox_onec (chat_id, external_chat_id, bin, message_id, payload, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+            RETURNING id
             """,
             (chat_id, external_chat_id, (bin_value or None), message_id, serialized, now, now),
         )
-        inserted = cursor.lastrowid
+        inserted_row = cursor.fetchone()
+        inserted = inserted_row["id"] if inserted_row else None
         if inserted is None:
             raise RuntimeError("Failed to enqueue 1C outbox item")
         return int(inserted)

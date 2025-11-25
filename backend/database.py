@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import psycopg2
 from psycopg2.extras import DictCursor
+from psycopg2.extensions import make_dsn
 
 
 class PostgresConnection:
@@ -37,16 +38,30 @@ class PostgresConnection:
         return cursor
 
 
+def _sanitize_text(raw: str) -> str:
+    """Remove invalid UTF-8 sequences from a DSN component."""
+
+    # psycopg2 expects UTF-8 strings for all connection parameters. If the
+    # environment variables were populated from a non-UTF-8 source (e.g.
+    # Windows shell), re-encoding with ``errors="replace"`` avoids
+    # ``UnicodeDecodeError`` while keeping readable characters intact.
+    return raw.encode("utf-8", errors="replace").decode("utf-8")
+
+
 def _build_dsn() -> str:
     if dsn := os.getenv("DATABASE_URL"):
-        return dsn
-    
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    user = os.getenv("POSTGRES_USER", "postgres")
-    password = os.getenv("POSTGRES_PASSWORD", "postgres")
-    dbname = os.getenv("POSTGRES_DB", "telegram_bot")
-    return f"dbname={dbname} user={user} password={password} host={host} port={port}"
+        return _sanitize_text(dsn)
+
+    params = {
+        "host": os.getenv("POSTGRES_HOST", "localhost"),
+        "port": os.getenv("POSTGRES_PORT", "5432"),
+        "user": os.getenv("POSTGRES_USER", "postgres"),
+        "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+        "dbname": os.getenv("POSTGRES_DB", "telegram_bot"),
+    }
+
+    sanitized_params = {key: _sanitize_text(value) for key, value in params.items()}
+    return make_dsn(**sanitized_params)
 
 
 _connection = PostgresConnection(_build_dsn())

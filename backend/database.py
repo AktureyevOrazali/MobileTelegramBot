@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import sys
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -12,7 +14,47 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from uuid import uuid4
 
-DB_PATH = Path(__file__).resolve().parent / "bot.db"
+
+def _resolve_db_path() -> Path:
+    """Return a writable path for the SQLite database.
+
+    - If ``DB_PATH`` environment variable is provided, use it as-is.
+    - Otherwise, place ``bot.db`` next to the running executable when bundled
+      with PyInstaller, or next to this module when running from source.
+    """
+
+    if env_path := os.getenv("DB_PATH"):
+        return Path(env_path).expanduser().resolve()
+
+    # When packaged as an .exe we still want to reuse the existing SQLite file
+    # from the source checkout if it is available. This keeps sessions and
+    # tokens intact to avoid spurious 401/404s when the bundled app starts with
+    # an empty DB. If no repo DB exists, fall back to placing the database next
+    # to the executable so the folder remains self-contained.
+    if getattr(sys, "frozen", False):  # PyInstaller executable
+        exe_path = Path(sys.executable).resolve()
+
+        candidate_roots = []
+        # cwd differs between "run in console" and "double-click" launches.
+        candidate_roots.append(Path.cwd())
+        # dist/ (where the .exe lives) and its parent (repo root when built
+        # from project root) cover both launch styles.
+        candidate_roots.append(exe_path.parent)
+        candidate_roots.append(exe_path.parent.parent)
+
+        for root in candidate_roots:
+            repo_db = root / "backend" / "bot.db"
+            if repo_db.exists():
+                return repo_db.resolve()
+
+        return exe_path.parent / "bot.db"
+
+    return Path(__file__).resolve().parent / "bot.db"
+
+
+DB_PATH = _resolve_db_path()
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 _connection = sqlite3.connect(DB_PATH, check_same_thread=False)
 _connection.row_factory = sqlite3.Row
 _lock = threading.Lock()

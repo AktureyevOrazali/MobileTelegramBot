@@ -1,10 +1,8 @@
-"""PostgreSQL helpers for storing Telegram chat history, users and sections."""
+"""Database helpers for storing Telegram chat history, users and sections."""
 from __future__ import annotations
 
 import hashlib
 import json
-import os
-import re
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -13,96 +11,38 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 from uuid import uuid4
 
 import psycopg2
-from psycopg2.extras import DictCursor
+import psycopg2.extras
 
 
-class PostgresConnection:
-    """Lightweight wrapper that mimics sqlite3.Connection's interface."""
-
-    def __init__(self, config: Mapping[str, str]):
-        self._config = config
-        try:
-            self._conn = psycopg2.connect(cursor_factory=DictCursor, **config)
-        except UnicodeDecodeError as exc:
-            raise RuntimeError(_format_connection_error(config)) from exc
-
-    def __enter__(self) -> "PostgresConnection":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        if exc_type:
-            self._conn.rollback()
-        else:
-            self._conn.commit()
-
-    def execute(self, query: str, params: Sequence[object] | None = None):
-        normalized_query = query.replace("?", "%s")
-        cursor = self._conn.cursor()
-        cursor.execute(normalized_query, params or ())
-        return cursor
-
-
-def _sanitize_text(raw: str | bytes) -> str:
-    """Normalize DSN components to UTF-8 safe strings.
-
-    The Windows shell can populate environment variables with bytes outside of
-    UTF-8. Psycopg2 parses the DSN string and attempts to decode it as UTF-8,
-    so we defensively re-encode any incoming value, replacing undecodable
-    sequences to avoid ``UnicodeDecodeError`` during connection creation.
-    """
-
-    if isinstance(raw, bytes):
-        return raw.decode("utf-8", errors="replace")
-
-    try:
-        return raw.encode("utf-8", errors="strict").decode("utf-8")
-    except UnicodeEncodeError:
-        # ``raw`` may contain surrogate characters if it originated from a
-        # non-UTF-8 source. ``errors="replace"`` keeps the string readable
-        # while ensuring psycopg2 receives valid UTF-8 input.
-        return raw.encode("utf-8", errors="replace").decode("utf-8")
-
-
-def _mask_sensitive_value(raw: str) -> str:
-    if not raw:
-        return raw
-    # Mask passwords present in URI-style DSNs: postgres://user:password@host:port/db
-    masked_uri = re.sub(r":([^:@/]+)@", r":***@", raw)
-    masked_kv = re.sub(r"(password=)([^\s]+)", r"\1***", masked_uri)
-    if masked_kv != raw:
-        return masked_kv
-    return "***"
-
-
-def _format_connection_error(config: Mapping[str, str]) -> str:
-    safe_config = {
-        key: _mask_sensitive_value(value) if key in {"password", "dsn"} else value
-        for key, value in config.items()
-    }
-    return (
-        "Не удалось декодировать параметры подключения к PostgreSQL как UTF-8. "
-        "Проверьте кодировку файла .env/переменных окружения (UTF-8 без BOM) и значения POSTGRES_* или DATABASE_URL. "
-        f"Текущие параметры (без пароля): {safe_config}"
+def _connect():
+    return psycopg2.connect(
+        dbname="mobile_telegram_bot",
+        user="postgres",
+        password="SayCheese228",
+        host="localhost",
+        port=5432,
     )
 
 
-def _build_connection_settings() -> Mapping[str, str]:
-    if dsn := os.getenv("DATABASE_URL"):
-        return {"dsn": _sanitize_text(dsn)}
-
-    params = {
-        "host": os.getenv("POSTGRES_HOST", "localhost"),
-        "port": os.getenv("POSTGRES_PORT", "5432"),
-        "user": os.getenv("POSTGRES_USER", "postgres"),
-        "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
-        "dbname": os.getenv("POSTGRES_DB", "telegram_bot"),
-    }
-
-    return {key: _sanitize_text(value) for key, value in params.items()}
-
-
-_connection = PostgresConnection(_build_connection_settings())
+_connection = _connect()
+_connection.autocommit = True
 _lock = threading.Lock()
+
+
+def get_cursor():
+    global _connection
+    try:
+        return _connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    except psycopg2.OperationalError:
+        _connection = _connect()
+        _connection.autocommit = True
+        return _connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+
+def execute(sql: str, params: Sequence[Any] | None = None):
+    cursor = get_cursor()
+    cursor.execute(sql, params or ())
+    return cursor
 
 USER_COLUMN_NAMES = (
     "id",
@@ -128,192 +68,13 @@ def _user_columns(prefix: str | None = None) -> str:
 
 
 def _init_db() -> None:
-    with _connection:
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS chats (
-                chat_id BIGINT PRIMARY KEY,
-                title TEXT,
-                username TEXT,
-                type TEXT,
-                updated_at TEXT,
-                section TEXT,
-                bin TEXT,
-                external_chat_id TEXT
-            )
-            """
-        )
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS chat_dialogs (
-                id SERIAL PRIMARY KEY,
-                chat_id BIGINT NOT NULL,
-                bin TEXT NOT NULL,
-                started_at TEXT NOT NULL,
-                ended_at TEXT,
-                last_message_at TEXT,
-                operator_mode INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY(chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE
-            )
-            """
-        )
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS messages (
-                id SERIAL PRIMARY KEY,
-                chat_id BIGINT NOT NULL,
-                direction TEXT NOT NULL,
-                text TEXT NOT NULL,
-                message_id INTEGER,
-                author TEXT,
-                created_at TEXT NOT NULL,
-                section TEXT,
-                dialog_id INTEGER,
-                FOREIGN KEY(chat_id) REFERENCES chats(chat_id),
-                FOREIGN KEY(dialog_id) REFERENCES chat_dialogs(id) ON DELETE SET NULL
-            )
-            """
-        )
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                email TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                job_title TEXT,
-                phone TEXT,
-                bio TEXT,
-                login TEXT UNIQUE,
-                role TEXT
-            )
-            """
-        )
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sessions (
-                token TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-            """
-        )
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_sections (
-                user_id INTEGER NOT NULL,
-                section TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                PRIMARY KEY (user_id, section),
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-            """
-        )
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_bins (
-                user_id INTEGER NOT NULL,
-                bin TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                expires_at TEXT,
-                assigned_by INTEGER,
-                PRIMARY KEY (user_id, bin),
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-            """
-        )
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS favorites (
-                user_id INTEGER NOT NULL,
-                dialog_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                PRIMARY KEY (user_id, dialog_id),
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY(dialog_id) REFERENCES chat_dialogs(id) ON DELETE CASCADE
-            )
-            """
-        )
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS notifications (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                kind TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-            """
-        )
-        # --- NEW: outbox для 1С ---
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS outbox_onec (
-                id SERIAL PRIMARY KEY,
-                chat_id BIGINT NOT NULL,
-                external_chat_id TEXT NOT NULL,
-                bin TEXT,
-                message_id INTEGER,              -- локальный ID из messages
-                payload TEXT NOT NULL,           -- JSON с полем text, author, created_at и т.п.
-                status TEXT NOT NULL DEFAULT 'pending',  -- pending | delivered | failed
-                error TEXT,                      -- текст ошибки, если failed
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        _connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_outbox_onec_status_ext_id
-            ON outbox_onec(status, external_chat_id, id)
-            """
-        )
-        _connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_outbox_onec_message
-            ON outbox_onec(message_id)
-            """
-        )
-
-    _ensure_column("chats", "section", "TEXT")
-    _ensure_column("chats", "bin", "TEXT")
-    _ensure_column("chats", "external_chat_id", "TEXT")
-    _ensure_column("messages", "section", "TEXT")
-    _ensure_column("messages", "dialog_id", "INTEGER")
-    _ensure_column("chat_dialogs", "last_message_at", "TEXT")
-    _ensure_column("chat_dialogs", "operator_mode", "INTEGER DEFAULT 0")
-    _ensure_column("users", "job_title", "TEXT")
-    _ensure_column("users", "phone", "TEXT")
-    _ensure_column("users", "bio", "TEXT")
-    _ensure_column("users", "login", "TEXT")
-    _ensure_column("users", "role", "TEXT")
-    _ensure_column("user_bins", "expires_at", "TEXT")
-    _ensure_column("user_bins", "assigned_by", "INTEGER")
-
-    with _lock, _connection:
-        _connection.execute(
-            "UPDATE users SET login = email WHERE login IS NULL OR TRIM(login) = ''"
-        )
-        _connection.execute(
-            "UPDATE users SET role = 'moderator' WHERE role IS NULL OR TRIM(role) = ''"
-        )
-        _connection.execute(
-            "UPDATE chat_dialogs SET operator_mode = 0 WHERE operator_mode IS NULL"
-        )
-
-    _ensure_admin_account()
-    _ensure_chat_dialog_records()
-    _ensure_favorites_schema()
+    # NOTE: Schema management is handled separately for PostgreSQL.
+    return
 
 
 def _ensure_column(table: str, column: str, definition: str) -> None:
-    with _lock, _connection:
-        _connection.execute(
-            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}"
-        )
+    # NOTE: Schema management is handled separately for PostgreSQL.
+    return
 
 
 ROLE_ADMIN = "admin"
@@ -324,122 +85,49 @@ ALL_ROLES: Iterable[str] = (ROLE_ADMIN, ROLE_MODERATOR, ROLE_VIEWER)
 
 def _ensure_admin_account() -> None:
     password_hash = hashlib.sha256("admin".encode("utf-8")).hexdigest()
-    with _lock, _connection:
-        row = _connection.execute(
-            "SELECT id FROM users WHERE login = ?", ("admin",)
+    with _lock:
+        row = execute(
+            "SELECT id FROM users WHERE login = %s", ("admin",)
         ).fetchone()
         if row:
-            _connection.execute(
+            execute(
                 """
                 UPDATE users
-                SET role = ?,
-                    password_hash = ?,
-                    name = ?,
-                    email = COALESCE(email, ?),
+                SET role = %s,
+                    password_hash = %s,
+                    name = %s,
+                    email = COALESCE(email, %s),
                     login = 'admin',
                     job_title = COALESCE(job_title, '')
-                WHERE id = ?
+                WHERE id = %s
                 """,
                 (ROLE_ADMIN, password_hash, "Администратор", "admin@example.com", row["id"]),
             )
             return
     now = datetime.utcnow().isoformat()
-    with _lock, _connection:
-        _connection.execute(
-            """
-            INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role)
-            VALUES (?, ?, ?, ?, ?, '', '', ?, ?)
-            """,
-            (
-                "admin@example.com",
-                "Администратор",
-                password_hash,
-                now,
-                "Администратор",
-                "admin",
-                ROLE_ADMIN,
-            ),
-        )
+    execute(
+        """
+        INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role)
+        VALUES (%s, %s, %s, %s, %s, '', '', %s, %s)
+        """,
+        (
+            "admin@example.com",
+            "Администратор",
+            password_hash,
+            now,
+            "Администратор",
+            "admin",
+            ROLE_ADMIN,
+        ),
+    )
 
 
 def _ensure_chat_dialog_records() -> None:
-    with _lock, _connection:
-        rows = _connection.execute(
-            """
-            SELECT chat_id, bin, updated_at
-            FROM chats
-            WHERE bin IS NOT NULL AND TRIM(bin) != ''
-            """
-        ).fetchall()
-        for row in rows:
-            exists = _connection.execute(
-                "SELECT 1 FROM chat_dialogs WHERE chat_id = ? LIMIT 1",
-                (row["chat_id"],),
-            ).fetchone()
-            if exists:
-                continue
-            updated_at = row["updated_at"] or datetime.utcnow().isoformat()
-            _connection.execute(
-                """
-                INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
-                VALUES (?, ?, ?, ?, 0)
-                """,
-                (row["chat_id"], row["bin"], updated_at, updated_at),
-            )
+    return
 
 
 def _ensure_favorites_schema() -> None:
-    """Мигрирует таблицу избранного на привязку к диалогам."""
-    with _lock, _connection:
-        info = _connection.execute(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'favorites'
-            """
-        ).fetchall()
-        columns = {row["column_name"] for row in info}
-        if "dialog_id" in columns:
-            return
-
-        _connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS favorites_new (
-                user_id INTEGER NOT NULL,
-                dialog_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                PRIMARY KEY (user_id, dialog_id),
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY(dialog_id) REFERENCES chat_dialogs(id) ON DELETE CASCADE
-            )
-            """
-        )
-        existing = _connection.execute(
-            "SELECT user_id, chat_id, created_at FROM favorites"
-        ).fetchall()
-        for row in existing:
-            dialog_row = _connection.execute(
-                """
-                SELECT id
-                FROM chat_dialogs
-                WHERE chat_id = ?
-                ORDER BY COALESCE(last_message_at, started_at) DESC
-                LIMIT 1
-                """,
-                (row["chat_id"],),
-            ).fetchone()
-            if not dialog_row:
-                continue
-            _connection.execute(
-                """
-                INSERT INTO favorites_new (user_id, dialog_id, created_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT (user_id, dialog_id) DO NOTHING
-                """,
-                (row["user_id"], dialog_row["id"], row["created_at"]),
-            )
-        _connection.execute("DROP TABLE favorites")
-        _connection.execute("ALTER TABLE favorites_new RENAME TO favorites")
+    return
 
 
 _init_db()
@@ -460,8 +148,8 @@ def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
 
 
 def _fetch_user(where_clause: str, *params: object) -> dict | None:
-    with _lock, _connection:
-        row = _connection.execute(
+    with _lock:
+        row = execute(
             f"SELECT {_user_columns('u')} FROM users u WHERE {where_clause}",
             params,
         ).fetchone()
@@ -530,11 +218,11 @@ def upsert_chat(
 ) -> None:
     now = datetime.utcnow().isoformat()
     normalized_external = (external_chat_id or "").strip() or None
-    with _lock, _connection:
-        _connection.execute(
+    with _lock:
+        execute(
             """
             INSERT INTO chats (chat_id, title, username, type, updated_at, external_chat_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT(chat_id) DO UPDATE SET
                 title=excluded.title,
                 username=excluded.username,
@@ -565,22 +253,20 @@ def save_message(
         active_dialog = get_active_chat_dialog(chat_id)
         if active_dialog:
             resolved_dialog_id = active_dialog["id"]
-    with _lock, _connection:
-        cursor = _connection.execute(
+    with _lock:
+        cursor = execute(
             """
             INSERT INTO messages (chat_id, direction, text, message_id, author, created_at, section, dialog_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (chat_id, direction, text, message_id, author, now, section, resolved_dialog_id),
         )
         if resolved_dialog_id is not None:
-            _connection.execute(
-                "UPDATE chat_dialogs SET last_message_at = ? WHERE id = ?",
+            execute(
+                "UPDATE chat_dialogs SET last_message_at = %s WHERE id = %s",
                 (now, resolved_dialog_id),
             )
-        inserted_row = cursor.fetchone()
-        inserted_raw = inserted_row["id"] if inserted_row else None
+        inserted_raw = cursor.lastrowid
         if inserted_raw is None:
             raise RuntimeError("Failed to persist message")
         inserted_id = int(inserted_raw)
@@ -589,12 +275,12 @@ def save_message(
 
 
 def list_chat_dialogs(chat_id: int) -> List[Dict[str, object]]:
-    with _lock, _connection:
-        rows = _connection.execute(
+    with _lock:
+        rows = execute(
             """
             SELECT id, bin, started_at, ended_at, last_message_at, operator_mode
             FROM chat_dialogs
-            WHERE chat_id = ?
+            WHERE chat_id = %s
             ORDER BY COALESCE(last_message_at, started_at) DESC
             """,
             (chat_id,),
@@ -615,12 +301,12 @@ def list_chat_dialogs(chat_id: int) -> List[Dict[str, object]]:
 
 
 def get_chat_dialog(dialog_id: int) -> Optional[Dict[str, object]]:
-    with _lock, _connection:
-        row = _connection.execute(
+    with _lock:
+        row = execute(
             """
             SELECT id, chat_id, bin, started_at, ended_at, last_message_at, operator_mode
             FROM chat_dialogs
-            WHERE id = ?
+            WHERE id = %s
             """,
             (dialog_id,),
         ).fetchone()
@@ -638,12 +324,12 @@ def get_chat_dialog(dialog_id: int) -> Optional[Dict[str, object]]:
 
 
 def get_active_chat_dialog(chat_id: int) -> Optional[Dict[str, object]]:
-    with _lock, _connection:
-        row = _connection.execute(
+    with _lock:
+        row = execute(
             """
             SELECT id, chat_id, bin, started_at, ended_at, last_message_at, operator_mode
             FROM chat_dialogs
-            WHERE chat_id = ? AND ended_at IS NULL
+            WHERE chat_id = %s AND ended_at IS NULL
             ORDER BY started_at DESC
             LIMIT 1
             """,
@@ -670,17 +356,17 @@ def get_active_chat_dialog_id(chat_id: int) -> int | None:
 
 
 def set_dialog_operator_mode(dialog_id: int, operator_mode: bool) -> None:
-    with _lock, _connection:
-        _connection.execute(
-            "UPDATE chat_dialogs SET operator_mode = ? WHERE id = ?",
+    with _lock:
+        execute(
+            "UPDATE chat_dialogs SET operator_mode = %s WHERE id = %s",
             (1 if operator_mode else 0, dialog_id),
         )
 
 
 def is_dialog_in_operator_mode(dialog_id: int) -> bool:
-    with _lock, _connection:
-        row = _connection.execute(
-            "SELECT operator_mode FROM chat_dialogs WHERE id = ?",
+    with _lock:
+        row = execute(
+            "SELECT operator_mode FROM chat_dialogs WHERE id = %s",
             (dialog_id,),
         ).fetchone()
     if row is None:
@@ -690,9 +376,9 @@ def is_dialog_in_operator_mode(dialog_id: int) -> bool:
 
 def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optional[Dict[str, object]]:
     now = datetime.utcnow().isoformat()
-    with _lock, _connection:
-        dialog_row = _connection.execute(
-            "SELECT id, chat_id, bin FROM chat_dialogs WHERE id = ?",
+    with _lock:
+        dialog_row = execute(
+            "SELECT id, chat_id, bin FROM chat_dialogs WHERE id = %s",
             (dialog_id,),
         ).fetchone()
         if dialog_row is None:
@@ -700,38 +386,38 @@ def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optio
         if chat_id is not None and dialog_row["chat_id"] != chat_id:
             return None
         chat_id_value = dialog_row["chat_id"]
-        _connection.execute(
-            "UPDATE chat_dialogs SET ended_at = ? WHERE chat_id = ? AND ended_at IS NULL AND id != ?",
+        execute(
+            "UPDATE chat_dialogs SET ended_at = %s WHERE chat_id = %s AND ended_at IS NULL AND id != %s",
             (now, chat_id_value, dialog_id),
         )
-        _connection.execute(
-            "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = COALESCE(last_message_at, started_at) WHERE id = ?",
+        execute(
+            "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = COALESCE(last_message_at, started_at) WHERE id = %s",
             (dialog_id,),
         )
-        section_row = _connection.execute(
+        section_row = execute(
             """
             SELECT section
             FROM messages
-            WHERE dialog_id = ? AND section IS NOT NULL
+            WHERE dialog_id = %s AND section IS NOT NULL
             ORDER BY created_at DESC
             LIMIT 1
             """,
             (dialog_id,),
         ).fetchone()
         section_value = section_row["section"] if section_row else None
-        _connection.execute(
+        execute(
             """
             UPDATE chats
-            SET bin = ?, section = ?, updated_at = ?
-            WHERE chat_id = ?
+            SET bin = %s, section = %s, updated_at = %s
+            WHERE chat_id = %s
             """,
             (dialog_row["bin"], section_value, now, chat_id_value),
         )
-        dialog = _connection.execute(
+        dialog = execute(
             """
             SELECT id, chat_id, bin, started_at, ended_at, last_message_at
             FROM chat_dialogs
-            WHERE id = ?
+            WHERE id = %s
             """,
             (dialog_id,),
         ).fetchone()
@@ -749,23 +435,23 @@ def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optio
 
 def close_active_chat_dialog(chat_id: int) -> None:
     now = datetime.utcnow().isoformat()
-    with _lock, _connection:
-        active = _connection.execute(
+    with _lock:
+        active = execute(
             """
             SELECT id FROM chat_dialogs
-            WHERE chat_id = ? AND ended_at IS NULL
+            WHERE chat_id = %s AND ended_at IS NULL
             ORDER BY started_at DESC
             LIMIT 1
             """,
             (chat_id,),
         ).fetchone()
         if active:
-            _connection.execute(
-                "UPDATE chat_dialogs SET ended_at = ?, last_message_at = COALESCE(last_message_at, ?) WHERE id = ?",
+            execute(
+                "UPDATE chat_dialogs SET ended_at = %s, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
                 (now, now, active["id"]),
             )
-        _connection.execute(
-            "UPDATE chats SET bin = NULL, section = NULL, updated_at = ? WHERE chat_id = ?",
+        execute(
+            "UPDATE chats SET bin = NULL, section = NULL, updated_at = %s WHERE chat_id = %s",
             (now, chat_id),
         )
 
@@ -793,7 +479,7 @@ def list_chats_for_user(
         "  f.user_id AS fav_user_id",
         "FROM chat_dialogs cd",
         "JOIN chats c ON c.chat_id = cd.chat_id",
-        "LEFT JOIN favorites f ON f.dialog_id = cd.id AND f.user_id = ?",
+        "LEFT JOIN favorites f ON f.dialog_id = cd.id AND f.user_id = %s",
     ]
     params: List[object] = [user_id]
     filters: List[str] = []
@@ -802,16 +488,16 @@ def list_chats_for_user(
         assigned_bins = get_user_bins(user_id)
         if not allowed_sections or not assigned_bins:
             return []
-        section_placeholders = ",".join("?" for _ in allowed_sections)
+        section_placeholders = ",".join("%s" for _ in allowed_sections)
         filters.append(f"c.section IN ({section_placeholders})")
         params.extend(allowed_sections)
-        bin_placeholders = ",".join("?" for _ in assigned_bins)
+        bin_placeholders = ",".join("%s" for _ in assigned_bins)
         filters.append(f"cd.bin IN ({bin_placeholders})")
         params.extend(assigned_bins)
     if favorite_only:
         filters.append("f.user_id IS NOT NULL")
     if bin_query:
-        filters.append("cd.bin LIKE ?")
+        filters.append("cd.bin LIKE %s")
         params.append(f"%{bin_query.strip()}%")
     if filters:
         query_parts.append("WHERE " + " AND ".join(filters))
@@ -819,8 +505,8 @@ def list_chats_for_user(
         "ORDER BY COALESCE(cd.last_message_at, c.updated_at, cd.started_at) DESC"
     )
     sql = "\n".join(query_parts)
-    with _lock, _connection:
-        rows = _connection.execute(sql, params).fetchall()
+    with _lock:
+        rows = execute(sql, params).fetchall()
     chats: List[dict] = []
     for row in rows:
         updated_raw = (
@@ -858,16 +544,16 @@ def get_messages(
     query_parts = [
         "SELECT id, chat_id, direction, text, message_id, author, created_at, section, dialog_id",
         "FROM messages",
-        "WHERE chat_id = ?",
+        "WHERE chat_id = %s",
     ]
     params: List[object] = [chat_id]
     if dialog_id is not None:
-        query_parts.append("AND dialog_id = ?")
+        query_parts.append("AND dialog_id = %s")
         params.append(dialog_id)
     if allowed_sections is not None:
         allowed_list = [section for section in allowed_sections if section]
         if allowed_list:
-            placeholders = ",".join("?" for _ in allowed_list)
+            placeholders = ",".join("%s" for _ in allowed_list)
             query_parts.append(
                 f"AND (section IS NULL OR section IN ({placeholders}))"
             )
@@ -875,11 +561,11 @@ def get_messages(
         else:
             query_parts.append("AND section IS NULL")
     query_parts.append("ORDER BY created_at DESC")
-    query_parts.append("LIMIT ?")
+    query_parts.append("LIMIT %s")
     params.append(limit)
     sql = "\n".join(query_parts)
-    with _lock, _connection:
-        rows = _connection.execute(sql, params).fetchall()
+    with _lock:
+        rows = execute(sql, params).fetchall()
     messages = []
     for row in rows:
         message = asdict(Message.from_row(row))
@@ -889,9 +575,9 @@ def get_messages(
 
 
 def set_chat_section(chat_id: int, section: str | None) -> None:
-    with _lock, _connection:
-        _connection.execute(
-            "UPDATE chats SET section = ? WHERE chat_id = ?",
+    with _lock:
+        execute(
+            "UPDATE chats SET section = %s WHERE chat_id = %s",
             (section, chat_id),
         )
 
@@ -899,40 +585,40 @@ def set_chat_section(chat_id: int, section: str | None) -> None:
 def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
     normalized = (bin_value or "").strip()
     now = datetime.utcnow().isoformat()
-    with _lock, _connection:
+    with _lock:
         if not normalized:
-            _connection.execute(
+            execute(
                 """
                 UPDATE chats
-                SET bin = NULL, section = NULL, updated_at = ?
-                WHERE chat_id = ?
+                SET bin = NULL, section = NULL, updated_at = %s
+                WHERE chat_id = %s
                 """,
                 (now, chat_id),
             )
-            _connection.execute(
-                "UPDATE chat_dialogs SET ended_at = COALESCE(ended_at, ?) WHERE chat_id = ? AND ended_at IS NULL",
+            execute(
+                "UPDATE chat_dialogs SET ended_at = COALESCE(ended_at, %s) WHERE chat_id = %s AND ended_at IS NULL",
                 (now, chat_id),
             )
             return None
 
-        _connection.execute(
-            "UPDATE chat_dialogs SET ended_at = ? WHERE chat_id = ? AND ended_at IS NULL",
+        execute(
+            "UPDATE chat_dialogs SET ended_at = %s WHERE chat_id = %s AND ended_at IS NULL",
             (now, chat_id),
         )
-        cursor = _connection.execute(
+        cursor = execute(
             """
             INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
-            VALUES (?, ?, ?, ?, 0)
+            VALUES (%s, %s, %s, %s, 0)
             RETURNING id
             """,
             (chat_id, normalized, now, now),
         )
         dialog_id_row = cursor.fetchone()
-        _connection.execute(
+        execute(
             """
             UPDATE chats
-            SET bin = ?, section = NULL, updated_at = ?
-            WHERE chat_id = ?
+            SET bin = %s, section = NULL, updated_at = %s
+            WHERE chat_id = %s
             """,
             (normalized, now, chat_id),
         )
@@ -947,12 +633,12 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
         raise ValueError("BIN value is required to create a dialog")
 
     now = datetime.utcnow().isoformat()
-    with _lock, _connection:
-        existing = _connection.execute(
+    with _lock:
+        existing = execute(
             """
             SELECT id, bin
             FROM chat_dialogs
-            WHERE chat_id = ? AND ended_at IS NULL
+            WHERE chat_id = %s AND ended_at IS NULL
             ORDER BY started_at DESC
             LIMIT 1
             """,
@@ -961,28 +647,28 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
 
         if existing and existing["bin"] == normalized:
             dialog_id = int(existing["id"])
-            _connection.execute(
-                "UPDATE chat_dialogs SET last_message_at = COALESCE(last_message_at, ?) WHERE id = ?",
+            execute(
+                "UPDATE chat_dialogs SET last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
                 (now, dialog_id),
             )
-            _connection.execute(
-                "UPDATE chats SET bin = ?, updated_at = ? WHERE chat_id = ?",
+            execute(
+                "UPDATE chats SET bin = %s, updated_at = %s WHERE chat_id = %s",
                 (normalized, now, chat_id),
             )
             return dialog_id
 
         # Закрываем активные диалоги с другим БИН, чтобы исключить дубликаты
-        _connection.execute(
-            "UPDATE chat_dialogs SET ended_at = COALESCE(ended_at, ?), last_message_at = COALESCE(last_message_at, ?) WHERE chat_id = ? AND ended_at IS NULL",
+        execute(
+            "UPDATE chat_dialogs SET ended_at = COALESCE(ended_at, %s), last_message_at = COALESCE(last_message_at, %s) WHERE chat_id = %s AND ended_at IS NULL",
             (now, now, chat_id),
         )
 
         # Проверяем, существует ли ранее созданный диалог с тем же БИН
-        previous = _connection.execute(
+        previous = execute(
             """
             SELECT id
             FROM chat_dialogs
-            WHERE chat_id = ? AND bin = ?
+            WHERE chat_id = %s AND bin = %s
             ORDER BY started_at DESC
             LIMIT 1
             """,
@@ -991,30 +677,30 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
 
         if previous:
             dialog_id = int(previous["id"])
-            _connection.execute(
-                "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = COALESCE(last_message_at, ?) WHERE id = ?",
+            execute(
+                "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
                 (now, dialog_id),
             )
-            _connection.execute(
-                "UPDATE chats SET bin = ?, section = NULL, updated_at = ? WHERE chat_id = ?",
+            execute(
+                "UPDATE chats SET bin = %s, section = NULL, updated_at = %s WHERE chat_id = %s",
                 (normalized, now, chat_id),
             )
             return dialog_id
 
-        cursor = _connection.execute(
+        execute(
             """
             INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
-            VALUES (?, ?, ?, ?, 0)
+            VALUES (%s, %s, %s, %s, 0)
             RETURNING id
             """,
             (chat_id, normalized, now, now),
         )
         dialog_id_row = cursor.fetchone()
-        _connection.execute(
+        execute(
             """
             UPDATE chats
-            SET bin = ?, section = NULL, updated_at = ?
-            WHERE chat_id = ?
+            SET bin = %s, section = NULL, updated_at = %s
+            WHERE chat_id = %s
             """,
             (normalized, now, chat_id),
         )
@@ -1025,12 +711,12 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
 
 
 def get_chat(chat_id: int) -> Optional[Dict[str, object]]:
-    with _lock, _connection:
-        row = _connection.execute(
+    with _lock:
+        row = execute(
             """
             SELECT chat_id, title, username, type, updated_at, section, bin, external_chat_id
             FROM chats
-            WHERE chat_id = ?
+            WHERE chat_id = %s
             """,
             (chat_id,),
         ).fetchone()
@@ -1040,9 +726,9 @@ def get_chat(chat_id: int) -> Optional[Dict[str, object]]:
 
 
 def get_user_sections(user_id: int) -> List[str]:
-    with _lock, _connection:
-        rows = _connection.execute(
-            "SELECT section FROM user_sections WHERE user_id = ? ORDER BY section ASC",
+    with _lock:
+        rows = execute(
+            "SELECT section FROM user_sections WHERE user_id = %s ORDER BY section ASC",
             (user_id,),
         ).fetchall()
     return [row["section"] for row in rows]
@@ -1051,20 +737,20 @@ def get_user_sections(user_id: int) -> List[str]:
 def set_user_sections(user_id: int, sections: Iterable[str]) -> List[str]:
     normalized = sorted({section.strip() for section in sections if section and section.strip()})
     now = datetime.utcnow().isoformat()
-    with _lock, _connection:
+    with _lock:
         if normalized:
-            placeholders = ",".join("?" for _ in normalized)
-            _connection.execute(
-                f"DELETE FROM user_sections WHERE user_id = ? AND section NOT IN ({placeholders})",
+            placeholders = ",".join("%s" for _ in normalized)
+            execute(
+                f"DELETE FROM user_sections WHERE user_id = %s AND section NOT IN ({placeholders})",
                 (user_id, *normalized),
             )
         else:
-            _connection.execute("DELETE FROM user_sections WHERE user_id = ?", (user_id,))
+            execute("DELETE FROM user_sections WHERE user_id = %s", (user_id,))
         for section in normalized:
-            _connection.execute(
+            execute(
                 """
                 INSERT INTO user_sections (user_id, section, created_at)
-                VALUES (?, ?, ?)
+                VALUES (%s, %s, %s)
                 ON CONFLICT (user_id, section) DO NOTHING
                 """,
                 (user_id, section, now),
@@ -1119,22 +805,22 @@ def _normalize_bin_assignment_payload(bins: Iterable[Any]) -> Dict[str, str | No
 def refresh_bin_assignments(now: datetime | None = None) -> None:
     current_time = now or datetime.utcnow()
     now_iso = current_time.isoformat()
-    with _lock, _connection:
-        rows = _connection.execute(
+    with _lock:
+        rows = execute(
             """
             SELECT user_id, bin
             FROM user_bins
             WHERE expires_at IS NOT NULL
               AND TRIM(expires_at) != ''
-              AND expires_at <= ?
+              AND expires_at <= %s
             """,
             (now_iso,),
         ).fetchall()
         for row in rows:
             user_id = int(row["user_id"])
             bin_value = row["bin"]
-            _connection.execute(
-                "DELETE FROM user_bins WHERE user_id = ? AND bin = ?",
+            execute(
+                "DELETE FROM user_bins WHERE user_id = %s AND bin = %s",
                 (user_id, bin_value),
             )
 
@@ -1147,16 +833,16 @@ def get_user_bin_assignments(user_id: int, *, include_expired: bool = False) -> 
     query_parts = [
         "SELECT bin, created_at, expires_at, assigned_by",
         "FROM user_bins",
-        "WHERE user_id = ?",
+        "WHERE user_id = %s",
     ]
     params: List[object] = [user_id]
     if not include_expired:
-        query_parts.append("AND (expires_at IS NULL OR expires_at > ?)")
+        query_parts.append("AND (expires_at IS NULL OR expires_at > %s)")
         params.append(reference)
     query_parts.append("ORDER BY bin ASC")
     sql = "\n".join(query_parts)
-    with _lock, _connection:
-        rows = _connection.execute(sql, params).fetchall()
+    with _lock:
+        rows = execute(sql, params).fetchall()
     assignments: List[Dict[str, object]] = []
     for row in rows:
         assignments.append(
@@ -1183,40 +869,40 @@ def set_user_bins(
     normalized = _normalize_bin_assignment_payload(bins)
     now = datetime.utcnow()
     now_iso = now.isoformat()
-    with _lock, _connection:
-        existing_rows = _connection.execute(
-            "SELECT bin FROM user_bins WHERE user_id = ?",
+    with _lock:
+        existing_rows = execute(
+            "SELECT bin FROM user_bins WHERE user_id = %s",
             (user_id,),
         ).fetchall()
         current_bins = {row["bin"] for row in existing_rows}
         new_bins = set(normalized.keys())
         if new_bins:
-            placeholders = ",".join("?" for _ in new_bins)
-            _connection.execute(
-                f"DELETE FROM user_bins WHERE user_id = ? AND bin NOT IN ({placeholders})",
+            placeholders = ",".join("%s" for _ in new_bins)
+            execute(
+                f"DELETE FROM user_bins WHERE user_id = %s AND bin NOT IN ({placeholders})",
                 (user_id, *new_bins),
             )
         else:
-            _connection.execute("DELETE FROM user_bins WHERE user_id = ?", (user_id,))
+            execute("DELETE FROM user_bins WHERE user_id = %s", (user_id,))
         
         added_bins = sorted(new_bins - current_bins)
         for bin_value in new_bins:
             expires_at = normalized[bin_value]
             if bin_value in current_bins:
-                _connection.execute(
+                execute(
                     """
                     UPDATE user_bins
-                    SET expires_at = ?,
-                        assigned_by = CASE WHEN ? IS NOT NULL THEN ? ELSE assigned_by END
-                    WHERE user_id = ? AND bin = ?
+                    SET expires_at = %s,
+                        assigned_by = CASE WHEN %s IS NOT NULL THEN %s ELSE assigned_by END
+                    WHERE user_id = %s AND bin = %s
                     """,
                     (expires_at, assigned_by, assigned_by, user_id, bin_value),
                 )
             else:
-                _connection.execute(
+                execute(
                     """
                     INSERT INTO user_bins (user_id, bin, created_at, expires_at, assigned_by)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s)
                     """,
                     (user_id, bin_value, now_iso, expires_at, assigned_by),
                 )
@@ -1234,50 +920,49 @@ def set_user_bins(
 
 
 def delete_user(user_id: int) -> None:
-    with _lock, _connection:
-        cursor = _connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    with _lock:
+        cursor = execute("DELETE FROM users WHERE id = %s", (user_id,))
         if cursor.rowcount == 0:
             raise ValueError("Пользователь не найден")
 
 
 def list_favorite_dialog_ids(user_id: int) -> List[int]:
-    with _lock, _connection:
-        rows = _connection.execute(
-            "SELECT dialog_id FROM favorites WHERE user_id = ? ORDER BY created_at DESC",
+    with _lock:
+        rows = execute(
+            "SELECT dialog_id FROM favorites WHERE user_id = %s ORDER BY created_at DESC",
             (user_id,),
         ).fetchall()
     return [int(row["dialog_id"]) for row in rows]
 
 
 def set_favorite_dialog(user_id: int, dialog_id: int, favorite: bool) -> None:
-    with _lock, _connection:
-        dialog = _connection.execute(
-            "SELECT id FROM chat_dialogs WHERE id = ?",
+    with _lock:
+        dialog = execute(
+            "SELECT id FROM chat_dialogs WHERE id = %s",
             (dialog_id,),
         ).fetchone()
         if dialog is None:
             raise ValueError("Диалог не найден")
         if favorite:
             now = datetime.utcnow().isoformat()
-            _connection.execute(
+            execute(
                 """
-                INSERT INTO favorites (user_id, dialog_id, created_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT (user_id, dialog_id) DO UPDATE SET created_at = EXCLUDED.created_at
+                INSERT OR REPLACE INTO favorites (user_id, dialog_id, created_at)
+                VALUES (%s, %s, %s)
                 """,
                 (user_id, dialog_id, now),
             )
         else:
-            _connection.execute(
-                "DELETE FROM favorites WHERE user_id = ? AND dialog_id = ?",
+            execute(
+                "DELETE FROM favorites WHERE user_id = %s AND dialog_id = %s",
                 (user_id, dialog_id),
             )
 
 
 def is_favorite_dialog(user_id: int, dialog_id: int) -> bool:
-    with _lock, _connection:
-        row = _connection.execute(
-            "SELECT 1 FROM favorites WHERE user_id = ? AND dialog_id = ?",
+    with _lock:
+        row = execute(
+            "SELECT 1 FROM favorites WHERE user_id = %s AND dialog_id = %s",
             (user_id, dialog_id),
         ).fetchone()
     return row is not None
@@ -1290,20 +975,20 @@ def list_bins(query: str | None = None) -> List[str]:
     ]
     params: List[object] = []
     if query:
-        clauses.append("AND bin LIKE ?")
+        clauses.append("AND bin LIKE %s")
         params.append(f"%{query.strip()}%")
     clauses.append("ORDER BY bin ASC")
     sql = "\n".join(clauses)
-    with _lock, _connection:
-        rows = _connection.execute(sql, params).fetchall()
+    with _lock:
+        rows = execute(sql, params).fetchall()
     return [row["bin"] for row in rows]
 
 
 def list_unassigned_bins() -> List[Dict[str, object]]:
     refresh_bin_assignments()
     reference = datetime.utcnow().isoformat()
-    with _lock, _connection:
-        rows = _connection.execute(
+    with _lock:
+        rows = execute(
             """
             WITH active_dialogs AS (
                 SELECT
@@ -1320,7 +1005,7 @@ def list_unassigned_bins() -> List[Dict[str, object]]:
                 FROM user_bins
                 WHERE bin IS NOT NULL
                   AND TRIM(bin) != ''
-                  AND (expires_at IS NULL OR expires_at > ?)
+                  AND (expires_at IS NULL OR expires_at > %s)
             )
             SELECT
                 ad.bin AS bin,
@@ -1351,11 +1036,11 @@ def _create_notification(
 ) -> None:
     timestamp = created_at or datetime.utcnow().isoformat()
     serialized = json.dumps(payload, ensure_ascii=False)
-    with _lock, _connection:
-        _connection.execute(
+    with _lock:
+        execute(
             """
             INSERT INTO notifications (user_id, kind, payload, created_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
             """,
             (user_id, kind, serialized, timestamp),
         )
@@ -1365,16 +1050,16 @@ def list_notifications_since(user_id: int, since: Optional[datetime] = None) -> 
     query = [
         "SELECT id, kind, payload, created_at",
         "FROM notifications",
-        "WHERE user_id = ?",
+        "WHERE user_id = %s",
     ]
     params: List[object] = [user_id]
     if since is not None:
-        query.append("AND created_at > ?")
+        query.append("AND created_at > %s")
         params.append(since.isoformat())
     query.append("ORDER BY created_at ASC, id ASC")
     sql = "\n".join(query)
-    with _lock, _connection:
-        rows = _connection.execute(sql, params).fetchall()
+    with _lock:
+        rows = execute(sql, params).fetchall()
     notifications: List[dict] = []
     for row in rows:
         created_at = datetime.fromisoformat(row["created_at"])
@@ -1394,49 +1079,49 @@ def list_notifications_since(user_id: int, since: Optional[datetime] = None) -> 
 
 
 def delete_chat(chat_id: int) -> None:
-    with _lock, _connection:
-        existing = _connection.execute(
-            "SELECT chat_id FROM chats WHERE chat_id = ?",
+    with _lock:
+        existing = execute(
+            "SELECT chat_id FROM chats WHERE chat_id = %s",
             (chat_id,),
         ).fetchone()
         if existing is None:
             raise ValueError("Chat not found")
-        _connection.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
-        dialog_rows = _connection.execute(
-            "SELECT id FROM chat_dialogs WHERE chat_id = ?",
+        execute("DELETE FROM messages WHERE chat_id = %s", (chat_id,))
+        dialog_rows = execute(
+            "SELECT id FROM chat_dialogs WHERE chat_id = %s",
             (chat_id,),
         ).fetchall()
         dialog_ids = [row["id"] for row in dialog_rows]
         if dialog_ids:
-            placeholders = ",".join("?" for _ in dialog_ids)
-            _connection.execute(
+            placeholders = ",".join("%s" for _ in dialog_ids)
+            execute(
                 f"DELETE FROM favorites WHERE dialog_id IN ({placeholders})",
                 dialog_ids,
             )
-        _connection.execute("DELETE FROM chat_dialogs WHERE chat_id = ?", (chat_id,))
-        _connection.execute("DELETE FROM chats WHERE chat_id = ?", (chat_id,))
+        execute("DELETE FROM chat_dialogs WHERE chat_id = %s", (chat_id,))
+        execute("DELETE FROM chats WHERE chat_id = %s", (chat_id,))
 
 
 def delete_chat_dialog(dialog_id: int) -> None:
-    with _lock, _connection:
-        dialog_row = _connection.execute(
-            "SELECT id, chat_id FROM chat_dialogs WHERE id = ?",
+    with _lock:
+        dialog_row = execute(
+            "SELECT id, chat_id FROM chat_dialogs WHERE id = %s",
             (dialog_id,),
         ).fetchone()
         if dialog_row is None:
             raise ValueError("Диалог не найден")
         chat_id = dialog_row["chat_id"]
-        _connection.execute("DELETE FROM messages WHERE dialog_id = ?", (dialog_id,))
-        _connection.execute(
-            "DELETE FROM favorites WHERE dialog_id = ?",
+        execute("DELETE FROM messages WHERE dialog_id = %s", (dialog_id,))
+        execute(
+            "DELETE FROM favorites WHERE dialog_id = %s",
             (dialog_id,),
         )
-        _connection.execute("DELETE FROM chat_dialogs WHERE id = ?", (dialog_id,))
-        latest = _connection.execute(
+        execute("DELETE FROM chat_dialogs WHERE id = %s", (dialog_id,))
+        latest = execute(
             """
             SELECT id, bin, started_at, last_message_at
             FROM chat_dialogs
-            WHERE chat_id = ?
+            WHERE chat_id = %s
             ORDER BY started_at DESC
             LIMIT 1
             """,
@@ -1444,29 +1129,29 @@ def delete_chat_dialog(dialog_id: int) -> None:
         ).fetchone()
         if latest:
             timestamp = latest["last_message_at"] or latest["started_at"] or datetime.utcnow().isoformat()
-            section_row = _connection.execute(
+            section_row = execute(
                 """
                 SELECT section
                 FROM messages
-                WHERE dialog_id = ? AND section IS NOT NULL
+                WHERE dialog_id = %s AND section IS NOT NULL
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
                 (latest["id"],),
             ).fetchone()
             section_value = section_row["section"] if section_row else None
-            _connection.execute(
-                "UPDATE chats SET bin = ?, section = ?, updated_at = ? WHERE chat_id = ?",
+            execute(
+                "UPDATE chats SET bin = %s, section = %s, updated_at = %s WHERE chat_id = %s",
                 (latest["bin"], section_value, timestamp, chat_id),
             )
         else:
-            _connection.execute(
-                "UPDATE chats SET bin = NULL, section = NULL WHERE chat_id = ?",
+            execute(
+                "UPDATE chats SET bin = NULL, section = NULL WHERE chat_id = %s",
                 (chat_id,),
             )
 
 
-def _row_to_user(row: Mapping[str, Any] | None) -> dict | None:
+def _row_to_user(row: sqlite3.Row | None) -> dict | None:
     if row is None:
         return None
     return {
@@ -1523,12 +1208,11 @@ def create_user(
     if existing_login:
         raise ValueError("Login already exists")
     now = datetime.utcnow().isoformat()
-    with _lock, _connection:
-        cursor = _connection.execute(
+    with _lock:
+        cursor = execute(
             """
             INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 email,
@@ -1542,10 +1226,7 @@ def create_user(
                 role,
             ),
         )
-        inserted = cursor.fetchone()
-        user_id = inserted["id"] if inserted else None
-        if user_id is None:
-            raise RuntimeError("Failed to create user record")
+        user_id = cursor.lastrowid
     return _sanitize_user_payload(
         {
             "id": user_id,
@@ -1563,11 +1244,11 @@ def create_user(
 
 
 def find_user_by_email(email: str) -> Optional[dict]:
-    return _fetch_user("email = ?", email)
+    return _fetch_user("email = %s", email)
 
 
 def find_user_by_login(login: str) -> Optional[dict]:
-    return _fetch_user("login = ?", login)
+    return _fetch_user("login = %s", login)
 
 
 def find_user_by_identifier(identifier: str) -> Optional[dict]:
@@ -1579,13 +1260,13 @@ def find_user_by_identifier(identifier: str) -> Optional[dict]:
 
 
 def get_user_by_id(user_id: int) -> Optional[dict]:
-    return _fetch_user("id = ?", user_id)
+    return _fetch_user("id = %s", user_id)
 
 
 def verify_user_password(user_id: int, password_hash: str) -> bool:
-    with _lock, _connection:
-        row = _connection.execute(
-            "SELECT password_hash FROM users WHERE id = ?",
+    with _lock:
+        row = execute(
+            "SELECT password_hash FROM users WHERE id = %s",
             (user_id,),
         ).fetchone()
     if row is None:
@@ -1594,37 +1275,37 @@ def verify_user_password(user_id: int, password_hash: str) -> bool:
 
 
 def delete_sessions_for_user(user_id: int) -> None:
-    with _lock, _connection:
-        _connection.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    with _lock:
+        execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))
 
 
 def update_user_password(user_id: int, password_hash: str) -> dict:
-    with _lock, _connection:
-        cursor = _connection.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+    with _lock:
+        cursor = execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s",
             (password_hash, user_id),
         )
         if cursor.rowcount == 0:
             raise ValueError("User not found")
-        _connection.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))
     return _sanitize_user_payload(get_user_by_id(user_id))
 
 
 def create_session(user_id: int) -> str:
     token = uuid4().hex
     now = datetime.utcnow().isoformat()
-    with _lock, _connection:
-        _connection.execute(
-            "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
+    with _lock:
+        execute(
+            "INSERT INTO sessions (token, user_id, created_at) VALUES (%s, %s, %s)",
             (token, user_id, now),
         )
     return token
 
 
 def get_user_by_session(token: str) -> Optional[dict]:
-    with _lock, _connection:
-        row = _connection.execute(
-            f"SELECT {_user_columns('u')} FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?",
+    with _lock:
+        row = execute(
+            f"SELECT {_user_columns('u')} FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = %s",
             (token,),
         ).fetchone()
     return _row_to_user(row)
@@ -1639,17 +1320,17 @@ def update_user_profile(
     bio: str,
     email: str | None,
 ) -> dict:
-    with _lock, _connection:
+    with _lock:
         try:
-            _connection.execute(
+            execute(
                 """
                 UPDATE users
-                SET name = ?, job_title = ?, phone = ?, bio = ?, email = ?
-                WHERE id = ?
+                SET name = %s, job_title = %s, phone = %s, bio = %s, email = %s
+                WHERE id = %s
                 """,
                 (name, job_title, phone, bio, email or "", user_id),
             )
-        except psycopg2.IntegrityError as exc:
+        except sqlite3.IntegrityError as exc:
             raise ValueError("Адрес электронной почты уже используется") from exc
     return _sanitize_user_payload(get_user_by_id(user_id))
 
@@ -1660,15 +1341,15 @@ def list_users(query: str | None = None) -> List[dict]:
     if query:
         normalized = f"%{query.strip().lower()}%"
         filters.append(
-            "(LOWER(email) LIKE ? OR LOWER(login) LIKE ? OR LOWER(name) LIKE ?)"
+            "(LOWER(email) LIKE %s OR LOWER(login) LIKE %s OR LOWER(name) LIKE %s)"
         )
         params.extend([normalized, normalized, normalized])
-    with _lock, _connection:
+    with _lock:
         sql = [f"SELECT {_user_columns('u')}", "FROM users u"]
         if filters:
             sql.append("WHERE " + " AND ".join(filters))
         sql.append("ORDER BY u.created_at ASC")
-        rows = _connection.execute("\n".join(sql), params).fetchall()
+        rows = execute("\n".join(sql), params).fetchall()
     return [
         _sanitize_user_payload(_row_to_user(row))  # type: ignore[arg-type]
         for row in rows
@@ -1678,9 +1359,9 @@ def list_users(query: str | None = None) -> List[dict]:
 def update_user_role(user_id: int, role: str) -> dict:
     if role not in ALL_ROLES:
         raise ValueError("Invalid role")
-    with _lock, _connection:
-        _connection.execute(
-            "UPDATE users SET role = ? WHERE id = ?",
+    with _lock:
+        execute(
+            "UPDATE users SET role = %s WHERE id = %s",
             (role, user_id),
         )
     return _sanitize_user_payload(get_user_by_id(user_id))
@@ -1705,25 +1386,25 @@ def get_section_by_title(title: str) -> Optional[dict]:
 FAQ_ENTRIES: List[dict] = [
     {
         "section": "general",
-        "question": "Как получить доступ к консультациям по 1С?",
+        "question": "Как получить доступ к консультациям по 1С%s",
         "answer": "Отправьте нам номер договора или БИН, и консультант откроет доступ к чату и вебинарам по 1С.",
         "keywords": ["доступ", "1с", "консультац"],
     },
     {
         "section": "general",
-        "question": "Сколько стоит сопровождение?",
+        "question": "Сколько стоит сопровождение%s",
         "answer": "Базовый тариф включает 10 консультаций в месяц. Расширенные пакеты уточните у оператора.",
         "keywords": ["стоим", "тариф", "цен"],
     },
     {
         "section": "finance",
-        "question": "Как выгрузить отчёт по НДС в 1С?",
+        "question": "Как выгрузить отчёт по НДС в 1С%s",
         "answer": "Откройте раздел 'Отчётность', выберите период и используйте отчёт 'Декларация по НДС'.",
         "keywords": ["ндс", "отчет", "выгруз"],
     },
     {
         "section": "finance",
-        "question": "Как исправить ошибку при проведении платежа?",
+        "question": "Как исправить ошибку при проведении платежа%s",
         "answer": "Проверьте реквизиты платежа и перепроведите документ. Если ошибка сохраняется — напишите оператору.",
         "keywords": ["ошиб", "платеж", "проведен"],
     },
@@ -1735,19 +1416,19 @@ FAQ_ENTRIES: List[dict] = [
     },
     {
         "section": "support",
-        "question": "Как подключить удалённого бухгалтера?",
+        "question": "Как подключить удалённого бухгалтера%s",
         "answer": "Добавьте его в группу доступа и отправьте приглашение из раздела 'Сотрудники'.",
         "keywords": ["удален", "бухгалтер", "подключ"],
     },
     {
         "section": "hr",
-        "question": "Как выгрузить форму Т-2?",
+        "question": "Как выгрузить форму Т-2%s",
         "answer": "Перейдите в 'Кадровый учёт' → 'Сотрудники' → 'Карточка сотрудника' и нажмите 'Печать формы Т-2'.",
         "keywords": ["т-2", "форма", "кадров"],
     },
     {
         "section": "hr",
-        "question": "Как оформить отпуск сотруднику?",
+        "question": "Как оформить отпуск сотруднику%s",
         "answer": "Создайте документ 'Отпуск' в разделе 'Кадровый учёт', укажите даты и вид отпуска, затем проведите документ.",
         "keywords": ["отпуск", "оформ"],
     },
@@ -1831,10 +1512,10 @@ def get_dashboard_summary(
     if assigned_bins is not None and not assigned_bins:
         return _empty_summary()
 
-    placeholders = ", ".join("?" for _ in assigned_bins) if assigned_bins is not None else ""
+    placeholders = ", ".join("%s" for _ in assigned_bins) if assigned_bins is not None else ""
 
-    with _lock, _connection:
-        total_dialogs = _connection.execute(
+    with _lock:
+        total_dialogs = execute(
             "SELECT COUNT(*) AS total FROM chat_dialogs"
             + (
                 f" WHERE bin IN ({placeholders})"
@@ -1843,7 +1524,7 @@ def get_dashboard_summary(
             ),
             tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
-        open_dialogs = _connection.execute(
+        open_dialogs = execute(
             "SELECT COUNT(*) AS total FROM chat_dialogs WHERE ended_at IS NULL"
             + (
                 f" AND bin IN ({placeholders})"
@@ -1852,7 +1533,7 @@ def get_dashboard_summary(
             ),
             tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
-        total_incoming = _connection.execute(
+        total_incoming = execute(
             """
             SELECT COUNT(*) AS total
             FROM messages m
@@ -1867,7 +1548,7 @@ def get_dashboard_summary(
             ),
             tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
-        total_outgoing = _connection.execute(
+        total_outgoing = execute(
             """
             SELECT COUNT(*) AS total
             FROM messages m
@@ -1883,7 +1564,7 @@ def get_dashboard_summary(
             tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
         total_messages = total_incoming + total_outgoing
-        total_chats = _connection.execute(
+        total_chats = execute(
             "SELECT COUNT(DISTINCT chat_id) AS total FROM chat_dialogs"
             + (
                 f" WHERE bin IN ({placeholders})"
@@ -1892,7 +1573,7 @@ def get_dashboard_summary(
             ),
             tuple(assigned_bins or []),
         ).fetchone()["total"] or 0
-        section_rows = _connection.execute(
+        section_rows = execute(
             """
             SELECT COALESCE(c.section, '') AS section_id, COUNT(*) AS dialog_count
             FROM chat_dialogs cd
@@ -1909,7 +1590,7 @@ def get_dashboard_summary(
             """,
             tuple(assigned_bins or []),
         ).fetchall()
-        duration_rows = _connection.execute(
+        duration_rows = execute(
             "SELECT started_at, ended_at FROM chat_dialogs"
             " WHERE started_at IS NOT NULL AND ended_at IS NOT NULL"
             + (
@@ -1919,11 +1600,11 @@ def get_dashboard_summary(
             ),
             tuple(assigned_bins or []),
         ).fetchall()
-        dialogs_by_day_rows = _connection.execute(
+        dialogs_by_day_rows = execute(
             """
             SELECT substr(started_at, 1, 10) AS day, COUNT(*) AS cnt
             FROM chat_dialogs
-            WHERE started_at IS NOT NULL AND started_at >= ?
+            WHERE started_at IS NOT NULL AND started_at >= %s
         """
             + (
                 f" AND bin IN ({placeholders})"
@@ -1936,13 +1617,13 @@ def get_dashboard_summary(
             """,
             (start_iso, * (assigned_bins or [])),
         ).fetchall()
-        incoming_by_day_rows = _connection.execute(
+        incoming_by_day_rows = execute(
             """
             SELECT substr(m.created_at, 1, 10) AS day, COUNT(*) AS cnt
             FROM messages m
             LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
             LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.created_at >= ? AND m.direction = 'incoming'
+            WHERE m.created_at >= %s AND m.direction = 'incoming'
         """
             + (
                 f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
@@ -1955,7 +1636,7 @@ def get_dashboard_summary(
             """,
             (start_iso, * (assigned_bins or [])),
         ).fetchall()
-        question_rows = _connection.execute(
+        question_rows = execute(
             """
            SELECT m.text, m.created_at, m.section
             FROM messages m
@@ -1970,7 +1651,7 @@ def get_dashboard_summary(
             ),
             tuple(assigned_bins or []),
         ).fetchall()
-        agent_rows = _connection.execute(
+        agent_rows = execute(
             """
             SELECT
                 TRIM(COALESCE(m.author, '')) AS author,
@@ -1995,7 +1676,7 @@ def get_dashboard_summary(
             tuple(assigned_bins or []),
         ).fetchall()
 
-        operator_request_rows = _connection.execute(
+        operator_request_rows = execute(
             """
             SELECT m.id, m.chat_id, m.dialog_id, m.created_at
             FROM messages m
@@ -2017,7 +1698,7 @@ def get_dashboard_summary(
         ).fetchall()
 
         if operator_request_rows:
-            automation_author_placeholders = ", ".join("?" for _ in AUTOMATION_AUTHOR_NAMES)
+            automation_author_placeholders = ", ".join("%s" for _ in AUTOMATION_AUTHOR_NAMES)
             automation_clause = (
                 f"AND TRIM(author) NOT IN ({automation_author_placeholders})"
                 if AUTOMATION_AUTHOR_NAMES
@@ -2036,15 +1717,15 @@ def get_dashboard_summary(
                     "LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id",
                     "LEFT JOIN chats c ON c.chat_id = m.chat_id",
                     "WHERE m.direction = 'outgoing'",
-                    "  AND m.chat_id = ?",
-                    "  AND m.created_at > ?",
+                    "  AND m.chat_id = %s",
+                    "  AND m.created_at > %s",
                     "  AND m.author IS NOT NULL",
                     "  AND TRIM(m.author) != ''",
                 ]
                 params: List[object] = [request_row["chat_id"], request_created_raw]
                 dialog_id = request_row["dialog_id"]
                 if dialog_id is not None:
-                    query_parts.append("  AND m.dialog_id = ?")
+                    query_parts.append("  AND m.dialog_id = %s")
                     params.append(dialog_id)
                 if automation_clause:
                     query_parts.append(f"  {automation_clause.replace('author', 'm.author')}")
@@ -2056,7 +1737,7 @@ def get_dashboard_summary(
                     params.extend(assigned_bins)
                 query_parts.append("ORDER BY created_at ASC LIMIT 1")
                 sql = "\n".join(query_parts)
-                candidate = _connection.execute(sql, params).fetchone()
+                candidate = execute(sql, params).fetchone()
                 if candidate is None:
                     continue
                 reply_at = _parse_datetime(candidate["created_at"])
@@ -2237,12 +1918,12 @@ def user_can_access_chat(
         return False
     section = chat.get("section")
     if section is None and dialog_id is not None:
-        with _lock, _connection:
-            section_row = _connection.execute(
+        with _lock:
+            section_row = execute(
                 """
                 SELECT section
                 FROM messages
-                WHERE dialog_id = ? AND section IS NOT NULL
+                WHERE dialog_id = %s AND section IS NOT NULL
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
@@ -2280,21 +1961,21 @@ def list_updates_since(
             "WHERE m.direction = 'incoming'",
         ]
         if since is not None:
-            query_parts.append("AND m.created_at > ?")
+            query_parts.append("AND m.created_at > %s")
             params.append(since.isoformat())
         if role != ROLE_ADMIN and allowed_sections and assigned_bins:
-            section_placeholders = ",".join("?" for _ in allowed_sections)
+            section_placeholders = ",".join("%s" for _ in allowed_sections)
             query_parts.append(
                 f"AND (m.section IS NULL OR m.section IN ({section_placeholders}))"
             )
             params.extend(allowed_sections)
-            bin_placeholders = ",".join("?" for _ in assigned_bins)
+            bin_placeholders = ",".join("%s" for _ in assigned_bins)
             query_parts.append(f"AND COALESCE(cd.bin, c.bin) IN ({bin_placeholders})")
             params.extend(assigned_bins)
         query_parts.append("ORDER BY m.created_at ASC")
         sql = "\n".join(query_parts)
-        with _lock, _connection:
-            rows = _connection.execute(sql, params).fetchall()
+        with _lock:
+            rows = execute(sql, params).fetchall()
         for row in rows:
             created_at = datetime.fromisoformat(row["created_at"])
             updates.append(
@@ -2343,17 +2024,15 @@ def outbox_enqueue_onec(
     """Кладёт сообщение оператора в outbox для 1С."""
     now = datetime.utcnow().isoformat()
     serialized = json.dumps(dict(payload), ensure_ascii=False, separators=(",", ":"))
-    with _lock, _connection:
-        cursor = _connection.execute(
+    with _lock:
+        cursor = execute(
             """
             INSERT INTO outbox_onec (chat_id, external_chat_id, bin, message_id, payload, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-            RETURNING id
+            VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
             """,
             (chat_id, external_chat_id, (bin_value or None), message_id, serialized, now, now),
         )
-        inserted_row = cursor.fetchone()
-        inserted = inserted_row["id"] if inserted_row else None
+        inserted = cursor.lastrowid
         if inserted is None:
             raise RuntimeError("Failed to enqueue 1C outbox item")
         return int(inserted)
@@ -2364,14 +2043,14 @@ def outbox_list_pending_onec(external_chat_id: str, limit: int = 100) -> List[Di
     normalized = (external_chat_id or "").strip()
     if not normalized:
         return []
-    with _lock, _connection:
-        rows = _connection.execute(
+    with _lock:
+        rows = execute(
             """
             SELECT id, chat_id, external_chat_id, bin, message_id, payload, status, error, created_at, updated_at
             FROM outbox_onec
-            WHERE status = 'pending' AND external_chat_id = ?
+            WHERE status = 'pending' AND external_chat_id = %s
             ORDER BY id ASC
-            LIMIT ?
+            LIMIT %s
             """,
             (normalized, limit),
         ).fetchall()
@@ -2403,10 +2082,10 @@ def outbox_mark_delivered_onec(ids: Sequence[int]) -> None:
     if not ids:
         return
     now = datetime.utcnow().isoformat()
-    placeholders = ",".join("?" for _ in ids)
-    with _lock, _connection:
-        _connection.execute(
-            f"UPDATE outbox_onec SET status = 'delivered', error = NULL, updated_at = ? WHERE id IN ({placeholders})",
+    placeholders = ",".join("%s" for _ in ids)
+    with _lock:
+        execute(
+            f"UPDATE outbox_onec SET status = 'delivered', error = NULL, updated_at = %s WHERE id IN ({placeholders})",
             (now, *ids),
         )
 
@@ -2418,13 +2097,13 @@ def outbox_mark_failed_onec(failed: Sequence[Mapping[str, Any]]) -> None:
     if not failed:
         return
     now = datetime.utcnow().isoformat()
-    with _lock, _connection:
+    with _lock:
         for item in failed:
             outbox_id = item.get("id")
             err_text = item.get("error")
             if not outbox_id:
                 continue
-            _connection.execute(
-                "UPDATE outbox_onec SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
+            execute(
+                "UPDATE outbox_onec SET status = 'failed', error = %s, updated_at = %s WHERE id = %s",
                 (str(err_text) if err_text is not None else "", now, int(outbox_id)),
             )

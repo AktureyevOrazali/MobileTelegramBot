@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import psycopg2
 import psycopg2.extras
+from psycopg2 import sql
 
 
 def _connect():
@@ -68,13 +69,176 @@ def _user_columns(prefix: str | None = None) -> str:
 
 
 def _init_db() -> None:
-    # NOTE: Schema management is handled separately for PostgreSQL.
-    return
+    tables_sql = [
+        """
+        CREATE TABLE IF NOT EXISTS chats (
+            chat_id BIGINT PRIMARY KEY,
+            title TEXT NOT NULL,
+            username TEXT,
+            type TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            section TEXT,
+            bin TEXT,
+            external_chat_id TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS chat_dialogs (
+            id BIGSERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_message_at TEXT,
+            operator_mode INTEGER DEFAULT 0
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS messages (
+            id BIGSERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
+            direction TEXT NOT NULL,
+            text TEXT NOT NULL,
+            message_id BIGINT,
+            author TEXT,
+            created_at TEXT NOT NULL,
+            section TEXT,
+            dialog_id BIGINT REFERENCES chat_dialogs(id) ON DELETE SET NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            job_title TEXT,
+            phone TEXT,
+            bio TEXT,
+            login TEXT UNIQUE,
+            role TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS user_sections (
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            section TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, section)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS user_bins (
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            bin TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT,
+            assigned_by BIGINT,
+            PRIMARY KEY (user_id, bin)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS favorites (
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            dialog_id BIGINT NOT NULL REFERENCES chat_dialogs(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, dialog_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS notifications (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS outbox_onec (
+            id BIGSERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            external_chat_id TEXT NOT NULL,
+            bin TEXT,
+            message_id BIGINT,
+            payload TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_outbox_onec_status_ext_id
+        ON outbox_onec(status, external_chat_id, id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_outbox_onec_message
+        ON outbox_onec(message_id)
+        """,
+    ]
+
+    with _lock:
+        for statement in tables_sql:
+            execute(statement)
+
+    _ensure_column("chats", "section", "TEXT")
+    _ensure_column("chats", "bin", "TEXT")
+    _ensure_column("chats", "external_chat_id", "TEXT")
+    _ensure_column("messages", "section", "TEXT")
+    _ensure_column("messages", "dialog_id", "BIGINT")
+    _ensure_column("chat_dialogs", "last_message_at", "TEXT")
+    _ensure_column("chat_dialogs", "operator_mode", "INTEGER DEFAULT 0")
+    _ensure_column("users", "job_title", "TEXT")
+    _ensure_column("users", "phone", "TEXT")
+    _ensure_column("users", "bio", "TEXT")
+    _ensure_column("users", "login", "TEXT")
+    _ensure_column("users", "role", "TEXT")
+    _ensure_column("user_bins", "expires_at", "TEXT")
+    _ensure_column("user_bins", "assigned_by", "BIGINT")
+
+    with _lock:
+        execute("UPDATE users SET login = email WHERE login IS NULL OR TRIM(login) = ''")
+        execute(
+            "UPDATE users SET role = 'moderator' WHERE role IS NULL OR TRIM(role) = ''"
+        )
+        execute(
+            "UPDATE chat_dialogs SET operator_mode = 0 WHERE operator_mode IS NULL"
+        )
+
+
+def _column_exists(table: str, column: str) -> bool:
+    cursor = execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = %s AND column_name = %s
+        """,
+        (table, column),
+    )
+    return cursor.fetchone() is not None
 
 
 def _ensure_column(table: str, column: str, definition: str) -> None:
-    # NOTE: Schema management is handled separately for PostgreSQL.
-    return
+    if _column_exists(table, column):
+        return
+
+    with _lock:
+        if _column_exists(table, column):
+            return
+        query = sql.SQL("ALTER TABLE {} ADD COLUMN {} {} ").format(
+            sql.Identifier(table),
+            sql.Identifier(column),
+            sql.SQL(definition),
+        )
+        execute(query.as_string(_connection))
 
 
 ROLE_ADMIN = "admin"
@@ -1330,7 +1494,7 @@ def update_user_profile(
                 """,
                 (name, job_title, phone, bio, email or "", user_id),
             )
-        except sqlite3.IntegrityError as exc:
+        except psycopg2.errors.UniqueViolation as exc:
             raise ValueError("Адрес электронной почты уже используется") from exc
     return _sanitize_user_payload(get_user_by_id(user_id))
 

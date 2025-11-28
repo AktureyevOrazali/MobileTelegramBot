@@ -1133,8 +1133,10 @@ def set_favorite_dialog(user_id: int, dialog_id: int, favorite: bool) -> None:
             now = datetime.utcnow().isoformat()
             execute(
                 """
-                INSERT OR REPLACE INTO favorites (user_id, dialog_id, created_at)
+                INSERT INTO favorites (user_id, dialog_id, created_at)
                 VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, dialog_id) DO UPDATE
+                SET created_at = EXCLUDED.created_at
                 """,
                 (user_id, dialog_id, now),
             )

@@ -214,6 +214,26 @@ def _init_db() -> None:
         )
 
 
+def _sync_sequence(table: str, column: str = "id") -> None:
+    with _lock:
+        execute(
+            sql.SQL(
+                """
+                SELECT setval(
+                    pg_get_serial_sequence(%s, %s),
+                    GREATEST(COALESCE((SELECT MAX({column}) FROM {table}), 0), 1)
+                )
+                """
+            ).format(table=sql.Identifier(table), column=sql.Identifier(column)),
+            (table, column),
+        )
+
+
+def _sync_sequences() -> None:
+    for table in ("users", "chat_dialogs", "messages", "notifications", "outbox_onec"):
+        _sync_sequence(table)
+
+
 def _column_exists(table: str, column: str) -> bool:
     cursor = execute(
         """
@@ -295,6 +315,7 @@ def _ensure_favorites_schema() -> None:
 
 
 _init_db()
+_sync_sequences()
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:

@@ -671,11 +671,12 @@ def list_chats_for_user(
     if role != ROLE_ADMIN:
         allowed_sections = get_user_sections(user_id)
         assigned_bins = get_user_bins(user_id)
-        if not allowed_sections or not assigned_bins:
+        if not assigned_bins:
             return []
-        section_placeholders = ",".join("%s" for _ in allowed_sections)
-        filters.append(f"c.section IN ({section_placeholders})")
-        params.extend(allowed_sections)
+        if allowed_sections:
+            section_placeholders = ",".join("%s" for _ in allowed_sections)
+            filters.append(f"c.section IN ({section_placeholders})")
+            params.extend(allowed_sections)
         bin_placeholders = ",".join("%s" for _ in assigned_bins)
         filters.append(f"cd.bin IN ({bin_placeholders})")
         params.extend(assigned_bins)
@@ -1296,6 +1297,17 @@ def delete_chat_dialog(dialog_id: int) -> None:
         if dialog_row is None:
             raise ValueError("Диалог не найден")
         chat_id = dialog_row["chat_id"]
+        message_rows = execute(
+            "SELECT id, message_id FROM messages WHERE dialog_id = %s",
+            (dialog_id,),
+        ).fetchall()
+        message_ids = [row["message_id"] for row in message_rows if row["message_id"] is not None]
+        if message_ids:
+            placeholders = ",".join("%s" for _ in message_ids)
+            execute(
+                f"DELETE FROM outbox_onec WHERE message_id IN ({placeholders})",
+                message_ids,
+            )
         execute("DELETE FROM messages WHERE dialog_id = %s", (dialog_id,))
         execute(
             "DELETE FROM favorites WHERE dialog_id = %s",
@@ -2117,11 +2129,17 @@ def user_can_access_chat(
         if section_row is not None:
             section = section_row["section"]
     chat_bin = dialog_bin or chat.get("bin")
-    if section is None or chat_bin is None:
+    if chat_bin is None:
+        return False
+    assigned_bins = set(get_user_bins(user_id))
+    if not assigned_bins:
         return False
     allowed = set(get_user_sections(user_id))
-    assigned_bins = set(get_user_bins(user_id))
-    return section in allowed and chat_bin in assigned_bins
+    if allowed and section is not None and section not in allowed:
+        return False
+    if allowed and section is None:
+        return False
+    return chat_bin in assigned_bins
 
 
 def list_updates_since(
@@ -2136,7 +2154,7 @@ def list_updates_since(
         assigned_bins = get_user_bins(user_id)
     updates: List[dict] = []
     params: List[object] = []
-    if role == ROLE_ADMIN or (allowed_sections and assigned_bins):
+    if role == ROLE_ADMIN or assigned_bins:
         query_parts = [
             "SELECT m.id, m.chat_id, m.text, m.created_at, m.section, m.dialog_id, c.title,",
             "       COALESCE(cd.bin, c.bin) AS dialog_bin",
@@ -2148,12 +2166,13 @@ def list_updates_since(
         if since is not None:
             query_parts.append("AND m.created_at > %s")
             params.append(since.isoformat())
-        if role != ROLE_ADMIN and allowed_sections and assigned_bins:
-            section_placeholders = ",".join("%s" for _ in allowed_sections)
-            query_parts.append(
-                f"AND (m.section IS NULL OR m.section IN ({section_placeholders}))"
-            )
-            params.extend(allowed_sections)
+        if role != ROLE_ADMIN and assigned_bins:
+            if allowed_sections:
+                section_placeholders = ",".join("%s" for _ in allowed_sections)
+                query_parts.append(
+                    f"AND (m.section IS NULL OR m.section IN ({section_placeholders}))"
+                )
+                params.extend(allowed_sections)
             bin_placeholders = ",".join("%s" for _ in assigned_bins)
             query_parts.append(f"AND COALESCE(cd.bin, c.bin) IN ({bin_placeholders})")
             params.extend(assigned_bins)

@@ -357,19 +357,21 @@ def register_user(request: RegisterRequest, _: None = Depends(require_api_token)
     if existing:
         raise HTTPException(status_code=409, detail="User already exists")
     password_hash = hashlib.sha256(request.password.encode("utf-8")).hexdigest()
-    user = database.create_user(
-        request.email,
-        request.name,
-        password_hash,
-        login=request.email,
-        role=database.ROLE_VIEWER,
-    )
-    # Refresh from DB to include persisted metadata
-    created_user = database.get_user_by_id(user["id"])
-    if created_user is None:
+    try:
+        created_user = database.create_user(
+            request.email,
+            request.name,
+            password_hash,
+            login=request.email,
+            role=database.ROLE_VIEWER,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if created_user is None or created_user.get("id") is None:
         raise HTTPException(status_code=500, detail="Failed to create user")
-    token = database.create_session(user["id"])
-    return AuthResponse(token=token, user=UserResponse(**_sanitize_user(created_user)))
+    token = database.create_session(created_user["id"])
+    sanitized = _sanitize_user(created_user)
+    return AuthResponse(token=token, user=UserResponse(**sanitized))
 
 
 @router.post("/auth/login", response_model=AuthResponse)

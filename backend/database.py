@@ -97,8 +97,11 @@ def _init_db() -> None:
         CREATE TABLE IF NOT EXISTS chat_dialogs (
             id BIGSERIAL PRIMARY KEY,
             chat_id BIGINT NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
-            title TEXT NOT NULL,
-            created_at TEXT NOT NULL,
+            bin TEXT,
+            title TEXT,
+            created_at TEXT,
+            started_at TEXT,
+            ended_at TEXT,
             last_message_at TEXT,
             operator_mode INTEGER DEFAULT 0
         )
@@ -205,6 +208,9 @@ def _init_db() -> None:
     _ensure_column("chats", "external_chat_id", "TEXT")
     _ensure_column("messages", "section", "TEXT")
     _ensure_column("messages", "dialog_id", "BIGINT")
+    _ensure_column("chat_dialogs", "bin", "TEXT")
+    _ensure_column("chat_dialogs", "started_at", "TEXT")
+    _ensure_column("chat_dialogs", "ended_at", "TEXT")
     _ensure_column("chat_dialogs", "last_message_at", "TEXT")
     _ensure_column("chat_dialogs", "operator_mode", "INTEGER DEFAULT 0")
     _ensure_column("users", "job_title", "TEXT")
@@ -1423,6 +1429,7 @@ def create_user(
             """
             INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (
                 email,
@@ -1436,7 +1443,10 @@ def create_user(
                 role,
             ),
         )
-        user_id = cursor.lastrowid
+        user_row = cursor.fetchone()
+        if not user_row:
+            raise RuntimeError("Failed to insert user")
+        user_id = int(user_row["id"])
     return _sanitize_user_payload(
         {
             "id": user_id,

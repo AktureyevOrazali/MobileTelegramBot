@@ -1,10 +1,11 @@
 """Backend package bootstrap."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+from typing import Optional
 
-from pathlib import Path        # ✅ нужно импортировать Path
 from dotenv import load_dotenv
 
 # Загружаем .env из текущей папки (backend/.env)
@@ -31,3 +32,25 @@ def _load_env() -> None:
 
 
 _load_env()
+
+
+def require_env(name: str, *, allow_blank: bool = False, default: Optional[str] = None) -> str:
+    """Fetch a required environment variable with explicit error messaging.
+
+    Args:
+        name: Variable name to read.
+        allow_blank: Whether an empty string is acceptable.
+        default: Optional fallback. If provided and the variable is missing,
+            the default will be used.
+
+    Raises:
+        RuntimeError: If the variable is missing (and no default is provided)
+            or blank when blanks are not allowed.
+    """
+
+    value = os.getenv(name, default)
+    if value is None:
+        raise RuntimeError(f"Environment variable {name} is required")
+    if value == "" and not allow_blank:
+        raise RuntimeError(f"Environment variable {name} cannot be empty")
+    return value

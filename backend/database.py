@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -15,11 +14,16 @@ import psycopg2
 import psycopg2.extras
 from psycopg2 import sql
 
-DB_NAME = os.getenv("DB_NAME", "mobile_telegram_bot")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = int(os.getenv("DB_PORT", "5432"))
+from . import require_env
+
+DB_NAME = require_env("DB_NAME")
+DB_USER = require_env("DB_USER")
+DB_PASSWORD = require_env("DB_PASSWORD")
+DB_HOST = require_env("DB_HOST")
+try:
+    DB_PORT = int(require_env("DB_PORT"))
+except ValueError as exc:  # pragma: no cover - defensive
+    raise RuntimeError("DB_PORT must be an integer") from exc
 
 
 
@@ -45,7 +49,6 @@ def get_cursor():
     except psycopg2.OperationalError:
         _connection = _connect()
         _connection.autocommit = True
-        return _connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
 
 def execute(sql: str, params: Sequence[Any] | None = None):

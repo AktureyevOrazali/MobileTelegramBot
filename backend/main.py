@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import signal
 import threading
 import time
@@ -12,6 +11,7 @@ import uvicorn
 from requests import exceptions as requests_exceptions
 from urllib3.exceptions import ReadTimeoutError
 
+from . import require_env
 from .api import app
 from .telegram_bot import bot
 
@@ -65,8 +65,12 @@ class BotPollingThread(threading.Thread):
 
 
 def main() -> None:
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8000"))
+    host = require_env("HOST")
+    log_level = require_env("LOG_LEVEL")
+    try:
+        port = int(require_env("PORT"))
+    except ValueError as exc:  # pragma: no cover - defensive
+        raise RuntimeError("PORT must be an integer") from exc
 
     bot_thread = BotPollingThread()
     bot_thread.start()
@@ -76,7 +80,7 @@ def main() -> None:
         app,
         host=host,
         port=port,
-        log_level=os.getenv("LOG_LEVEL", "info"),
+        log_level=log_level,
         workers=1,                      # при встроенном запуске оставляем 1 процесс
         loop="auto",
         lifespan="on",                  # чтобы fastapi lifespan-события отрабатывали

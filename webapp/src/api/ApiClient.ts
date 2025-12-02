@@ -33,11 +33,8 @@ export class ApiError extends Error {
   }
 }
 
-const DEFAULT_BASE_URL =
-  typeof window !== 'undefined' && window.location
-    ? window.location.origin
-    : 'http://localhost:8000';
-const DEFAULT_API_TOKEN = 'MySecretTokenSayCheese';
+const BUILD_TIME_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim();
+const BUILD_TIME_API_TOKEN = (import.meta.env.VITE_API_TOKEN ?? '').trim();
 
 export interface ApiClientOptions {
   baseUrl?: string;
@@ -54,8 +51,17 @@ export class ApiClient {
   private currentUserProfile: UserProfile | null = null;
 
   constructor(options: ApiClientOptions = {}) {
-    this.baseUrl = (options.baseUrl || import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '');
-    this.apiToken = options.apiToken || import.meta.env.VITE_API_TOKEN || DEFAULT_API_TOKEN;
+    const resolvedBaseUrl = (options.baseUrl ?? BUILD_TIME_BASE_URL).replace(/\/$/, '');
+    if (!resolvedBaseUrl) {
+      throw new Error('API base URL is required. Set VITE_API_BASE_URL or pass it via ApiClient options.');
+    }
+    const resolvedToken = options.apiToken ?? BUILD_TIME_API_TOKEN;
+    if (!resolvedToken) {
+      throw new Error('API token is required. Set VITE_API_TOKEN or pass it via ApiClient options.');
+    }
+
+    this.baseUrl = resolvedBaseUrl;
+    this.apiToken = resolvedToken;
   }
 
   get currentUser(): UserProfile | null {

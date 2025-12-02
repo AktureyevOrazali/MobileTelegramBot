@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -14,14 +15,21 @@ import psycopg2
 import psycopg2.extras
 from psycopg2 import sql
 
+DB_NAME = os.getenv("DB_NAME", "mobile_telegram_bot")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
+
+
 
 def _connect():
     return psycopg2.connect(
-        dbname="mobile_telegram_bot",
-        user="postgres",
-        password="SayCheese228",
-        host="localhost",
-        port=5432,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
     )
 
 

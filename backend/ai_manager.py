@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 class OllamaManager:
     def __init__(self):
-        self.model = "mistral:7b"
+        self.model = "groq-ollama-7b"  # Название модели Ollama
         self.system_prompt = self._create_kazakhstan_prompt()
         self._check_ollama()
     

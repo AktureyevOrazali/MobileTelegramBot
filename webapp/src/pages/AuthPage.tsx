@@ -14,10 +14,12 @@ const AuthPage: React.FC<AuthPageProps> = ({ apiClient, onAuthenticated }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    setInfo(null);
     if (mode === 'register' && name.trim().length < 2) {
       setError('Имя должно содержать минимум 2 символа.');
       return;
@@ -28,11 +30,16 @@ const AuthPage: React.FC<AuthPageProps> = ({ apiClient, onAuthenticated }) => {
     }
     setLoading(true);
     try {
-      const session =
-        mode === 'login'
-          ? await apiClient.login(identifier.trim(), password)
-          : await apiClient.register(name.trim(), identifier.trim(), password);
-      onAuthenticated(session);
+      if (mode === 'login') {
+        const session = await apiClient.login(identifier.trim(), password);
+        onAuthenticated(session);
+        return;
+      }
+
+      await apiClient.register(name.trim(), identifier.trim(), password);
+      setMode('login');
+      setPassword('');
+      setInfo('Аккаунт создан. Войдите, используя свои учетные данные.');
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -91,6 +98,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ apiClient, onAuthenticated }) => {
               required
             />
           </label>
+          {info && <div className="alert alert--success">{info}</div>}
           {error && <div className="alert">{error}</div>}
           <button className="button" type="submit" disabled={loading}>
             {loading ? 'Проверяем...' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}

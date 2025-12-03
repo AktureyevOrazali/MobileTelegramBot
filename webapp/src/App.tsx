@@ -11,7 +11,7 @@ type TabKey = (typeof tabs)[number];
 
 type ThemeMode = 'light' | 'dark';
 
-const THEME_STORAGE_KEY = 'telegram-companion-theme';
+const THEME_STORAGE_KEY = 'mobilebot-companion-theme';
 
 const App: React.FC = () => {
   const { session, apiClient, setSession, logout } = useApi();
@@ -91,8 +91,8 @@ const App: React.FC = () => {
       <header style={{ padding: '24px 0 0 0' }}>
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h1 className="heading" style={{ fontSize: '1.8rem' }}>Telegram Companion Web</h1>
-            <p className="text-muted" style={{ marginTop: 6 }}>Единый веб-интерфейс для операторов Telegram бота</p>
+            <h1 className="heading" style={{ fontSize: '1.8rem' }}>MobileBot Companion</h1>
+            <p className="text-muted" style={{ marginTop: 6 }}>Единый веб-интерфейс для операторов MobileBot</p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

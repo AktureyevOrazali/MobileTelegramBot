@@ -27,7 +27,7 @@ ONEC_CHAT_ID_SPACE = 1_000_000_000_000
 # Опциональный общий секрет для подписи HMAC нагрузки, которую 1С забирает из outbox
 ONEC_SHARED_SECRET = os.getenv("ONEC_SHARED_SECRET", "")
 
-app = FastAPI(title="Telegram Mobile Companion API")
+app = FastAPI(title="MobileBot Companion API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

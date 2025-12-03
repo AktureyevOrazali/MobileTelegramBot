@@ -333,6 +333,7 @@ def _ensure_favorites_schema() -> None:
 
 _init_db()
 _sync_sequences()
+_ensure_admin_account()
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:

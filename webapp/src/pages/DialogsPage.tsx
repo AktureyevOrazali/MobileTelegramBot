@@ -504,7 +504,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       ) : filteredChats.length === 0 ? (
         <div className="card" style={{ textAlign: 'center' }}>
           <h3 style={{ marginBottom: 8 }}>Нет активных диалогов</h3>
-          <p className="text-muted">Сообщения из Telegram появятся здесь автоматически.</p>
+          <p className="text-muted">Сообщения из MobileBot появятся здесь автоматически.</p>
         </div>
       ) : (
         filteredChats.map((chat) => (

@@ -16,8 +16,8 @@ interface ApiContextValue {
   logout: () => void;
 }
 
-const SESSION_KEY = 'telegram-companion-session';
-const STAMP_KEY = 'telegram-companion-server-stamp';
+const SESSION_KEY = 'mobilebot-companion-session';
+const STAMP_KEY = 'mobilebot-companion-server-stamp';
 
 const ApiContext = createContext<ApiContextValue | undefined>(undefined);
 

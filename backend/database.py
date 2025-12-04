@@ -679,6 +679,7 @@ def list_chats_for_user(
         "  cd.started_at AS dialog_started_at,",
         "  cd.ended_at AS dialog_ended_at,",
         "  cd.last_message_at AS dialog_last_message_at,",
+        "  cd.operator_mode AS dialog_operator_mode,",
         "  f.user_id AS fav_user_id",
         "FROM chat_dialogs cd",
         "JOIN chats c ON c.chat_id = cd.chat_id",
@@ -733,6 +734,7 @@ def list_chats_for_user(
                 "section": row["section"],
                 "bin": row["dialog_bin"],
                 "is_favorite": bool(row["fav_user_id"]),
+                "operator_mode": bool(row["dialog_operator_mode"]),
             }
         )
     return chats

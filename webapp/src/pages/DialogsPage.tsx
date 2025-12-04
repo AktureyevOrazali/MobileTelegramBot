@@ -233,9 +233,18 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [dialogDeleteLoading, setDialogDeleteLoading] = useState(false);
   const [updatesCursor, setUpdatesCursor] = useState<Date | null>(null);
   const [aiToggleDialogId, setAiToggleDialogId] = useState<number | null>(null);
+  const [aiManuallyDisabled, setAiManuallyDisabled] = useState<Set<number>>(new Set());
 
   const currentUser = session.user;
   const canDeleteDialog = currentUser.isAdmin;
+
+  const applyAiOverrides = useCallback(
+    (list: ChatSummary[]) =>
+      list.map((chat) =>
+        aiManuallyDisabled.has(chat.dialogId) ? { ...chat, aiEnabled: false } : chat,
+      ),
+    [aiManuallyDisabled],
+  );
 
   const loadSectionsAndChats = useCallback(
     async (withLoading = true, overrides?: { bin?: string | null; favoritesOnly?: boolean }) => {
@@ -258,7 +267,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           : loadedSections.filter((section) => currentUser.sections.includes(section.id));
 
         setSections(visibleSections);
-        setChats(loadedChats);
+        setChats(applyAiOverrides(loadedChats));
 
         setLoading(false);
         setError(null);
@@ -270,7 +279,15 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
         setLoading(false);
       }
     },
-    [apiClient, currentUser.isAdmin, currentUser.sections, selectedBin, showFavoritesOnly, updatesCursor],
+    [
+      apiClient,
+      applyAiOverrides,
+      currentUser.isAdmin,
+      currentUser.sections,
+      selectedBin,
+      showFavoritesOnly,
+      updatesCursor,
+    ],
   );
 
   const loadBins = useCallback(async () => {
@@ -305,6 +322,11 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     const timer = setTimeout(() => setBanner(null), 6000);
     return () => clearTimeout(timer);
   }, [banner]);
+
+  useEffect(() => {
+    setChats((prev) => applyAiOverrides(prev));
+    setActiveChat((prev) => (prev ? applyAiOverrides([prev])[0] : prev));
+  }, [applyAiOverrides]);
 
   const handleUpdates = useCallback(
     (updates: MessageNotification[]) => {
@@ -458,10 +480,21 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       try {
         if (chat.aiEnabled) {
           await apiClient.disableDialogAI(chat.dialogId);
+          setAiManuallyDisabled((prev) => {
+            const next = new Set(prev);
+            next.add(chat.dialogId);
+            return next;
+          });
           updateChatAiStatus(chat.dialogId, false);
           setBanner('AI помощник отключён. Клиенту отправлено уведомление.');
         } else {
           await apiClient.enableDialogAI(chat.dialogId);
+          setAiManuallyDisabled((prev) => {
+            if (!prev.has(chat.dialogId)) return prev;
+            const next = new Set(prev);
+            next.delete(chat.dialogId);
+            return next;
+          });
           updateChatAiStatus(chat.dialogId, true);
           setBanner('AI помощник включён для этого диалога.');
         }

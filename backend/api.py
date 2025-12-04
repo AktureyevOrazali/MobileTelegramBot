@@ -16,7 +16,7 @@ from pydantic import AliasChoices, BaseModel, EmailStr, Field, validator
 
 from . import database
 from .ai_manager import ai_manager
-from .telegram_bot import bot
+from .telegram_bot import bot, enable_ai_session
 
 API_TOKEN = os.getenv("MOBILE_API_TOKEN")
 ONEC_INTEGRATION_TOKEN = os.getenv("ONEC_INTEGRATION_TOKEN")
@@ -814,6 +814,178 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
         "message_id": sent_message.message_id,
         "operator": current_user["name"],
         "dialog_id": resolved_dialog_id,
+    }
+
+
+@router.post("/dialogs/{dialog_id}/ai/enable")
+def enable_ai_for_dialog(
+    dialog_id: int, current_user: Dict[str, object] = Depends(get_current_user)
+):
+    dialog = database.get_chat_dialog(dialog_id)
+    if dialog is None:
+        raise HTTPException(status_code=404, detail="Диалог не найден")
+
+    chat_id = int(dialog["chat_id"])
+    if not database.user_can_access_chat(
+        current_user["id"], current_user["role"], chat_id, dialog_id
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
+
+    chat = database.get_chat(chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+
+    database.set_dialog_operator_mode(dialog_id, False)
+
+    section = chat.get("section") if chat else None
+    chat_title = chat.get("title") if chat else None
+    chat_type = chat.get("type") if chat else None
+    notification_text = (
+        "🤖 AI помощник снова включён для этого диалога. Можно продолжать задавать вопросы."
+    )
+
+    if chat_type == "onec":
+        message_id = database.save_message(
+            chat_id=chat_id,
+            direction="outgoing",
+            text=notification_text,
+            message_id=None,
+            author="System",
+            chat_title=chat_title or str(chat_id),
+            username=None,
+            chat_type=chat_type,
+            section=section,
+            dialog_id=dialog_id,
+        )
+        external_chat_id = chat.get("external_chat_id") or str(chat_id)
+        _enqueue_onec_outgoing_message(
+            message_id=message_id,
+            chat_id=chat_id,
+            dialog_id=dialog_id,
+            external_chat_id=external_chat_id,
+            bin_value=chat.get("bin"),
+            text=notification_text,
+            author="System",
+            section=section,
+        )
+        return {
+            "status": "ok",
+            "chat_id": chat_id,
+            "dialog_id": dialog_id,
+            "message_id": message_id,
+        }
+
+    try:
+        sent_message = bot.send_message(chat_id, notification_text)
+    except Exception as exc:  # pragma: no cover - depends on Telegram API
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    enable_ai_session(chat_id)
+
+    database.save_message(
+        chat_id=chat_id,
+        direction="outgoing",
+        text=notification_text,
+        message_id=sent_message.message_id,
+        author="System",
+        chat_title=chat_title or sent_message.chat.title or sent_message.chat.username or str(chat_id),
+        username=sent_message.chat.username,
+        chat_type=sent_message.chat.type,
+        section=section,
+        dialog_id=dialog_id,
+    )
+    return {
+        "status": "ok",
+        "chat_id": chat_id,
+        "dialog_id": dialog_id,
+        "message_id": sent_message.message_id,
+    }
+
+
+@router.post("/dialogs/{dialog_id}/ai/disable")
+def disable_ai_for_dialog(
+    dialog_id: int, current_user: Dict[str, object] = Depends(get_current_user)
+):
+    dialog = database.get_chat_dialog(dialog_id)
+    if dialog is None:
+        raise HTTPException(status_code=404, detail="Диалог не найден")
+
+    chat_id = int(dialog["chat_id"])
+    if not database.user_can_access_chat(
+        current_user["id"], current_user["role"], chat_id, dialog_id
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
+
+    chat = database.get_chat(chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+
+    database.set_dialog_operator_mode(dialog_id, True)
+
+    section = chat.get("section") if chat else None
+    chat_title = chat.get("title") if chat else None
+    chat_type = chat.get("type") if chat else None
+    notification_text = (
+        "👨‍💼 Оператор подключён. AI помощник отключён для этого диалога."
+    )
+
+    if chat_type == "onec":
+        message_id = database.save_message(
+            chat_id=chat_id,
+            direction="outgoing",
+            text=notification_text,
+            message_id=None,
+            author="System",
+            chat_title=chat_title or str(chat_id),
+            username=None,
+            chat_type=chat_type,
+            section=section,
+            dialog_id=dialog_id,
+        )
+        external_chat_id = chat.get("external_chat_id") or str(chat_id)
+        _enqueue_onec_outgoing_message(
+            message_id=message_id,
+            chat_id=chat_id,
+            dialog_id=dialog_id,
+            external_chat_id=external_chat_id,
+            bin_value=chat.get("bin"),
+            text=notification_text,
+            author="System",
+            section=section,
+        )
+        return {
+            "status": "ok",
+            "chat_id": chat_id,
+            "dialog_id": dialog_id,
+            "message_id": message_id,
+        }
+
+    try:
+        sent_message = bot.send_message(chat_id, notification_text)
+    except Exception as exc:  # pragma: no cover - depends on Telegram API
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    database.save_message(
+        chat_id=chat_id,
+        direction="outgoing",
+        text=notification_text,
+        message_id=sent_message.message_id,
+        author="System",
+        chat_title=chat_title
+        or sent_message.chat.title
+        or sent_message.chat.username
+        or str(chat_id),
+        username=sent_message.chat.username,
+        chat_type=sent_message.chat.type,
+        section=section,
+        dialog_id=dialog_id,
+    )
+
+    return {
+        "status": "ok",
+        "chat_id": chat_id,
+        "dialog_id": dialog_id,
+        "message_id": sent_message.message_id,
     }
 
 

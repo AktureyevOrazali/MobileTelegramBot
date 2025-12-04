@@ -46,6 +46,19 @@ def get_ai_session(chat_id: int) -> dict:
         }
     return AI_SESSIONS[chat_id]
 
+def enable_ai_session(chat_id: int) -> None:
+    """Сбрасывает флаги и включает AI для указанного чата."""
+    session = get_ai_session(chat_id)
+    session['ai_enabled'] = True
+    session['operator_requested'] = False
+
+    if session.get('waiting_message_id'):
+        try:
+            bot.delete_message(chat_id, session['waiting_message_id'])
+        except Exception:
+            pass
+        session['waiting_message_id'] = None
+        
 def _section_keyboard() -> types.ReplyKeyboardMarkup:
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
     keyboard.add(types.KeyboardButton(START_BUTTON))

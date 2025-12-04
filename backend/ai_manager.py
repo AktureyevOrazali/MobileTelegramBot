@@ -1,102 +1,92 @@
-# backend/ai_manager.py
-import ollama
+"""AI manager powered by Groq chat completions."""
+from __future__ import annotations
+
 import logging
+import os
 from typing import Dict, List, Optional
+
+from groq import Groq
+
+from . import require_env
 
 logger = logging.getLogger(__name__)
 
-class OllamaManager:
-    def __init__(self):
-        self.model = "groq-ollama-7b"  # Название модели Ollama
+class GroqAIManager:
+    def __init__(self) -> None:
+        self.model = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+        api_key = require_env("GROQ_API_KEY")
+        self.client = Groq(api_key=api_key)
         self.system_prompt = self._create_kazakhstan_prompt()
-        self._check_ollama()
-    
-    def _check_ollama(self):
-        """Проверяем доступность Ollama"""
-        try:
-            models = ollama.list()
-            logger.info(f"✅ Ollama доступен. Модели: {[m['name'] for m in models['models']]}")
-            
-            # Проверяем что нужная модель есть
-            model_names = [m['name'] for m in models['models']]
-            if self.model not in model_names:
-                logger.warning(f"Модель {self.model} не найдена. Доступные: {model_names}")
-                # Пробуем использовать первую доступную модель
-                if model_names:
-                    self.model = model_names[0]
-                    logger.info(f"Используем модель: {self.model}")
-            
-        except Exception as e:
-            logger.error(f"❌ Ollama не доступен: {e}")
-            raise Exception("Ollama не запущен. Запустите: ollama serve")
-    
+        logger.info("✅ Groq AI менеджер инициализирован. Модель: %s", self.model)
+
+
     def _create_kazakhstan_prompt(self) -> str:
         return """Ты — профессиональный AI-ассистент бухгалтерской компании, работающей в Казахстане.  
 Твоя задача — помогать пользователям с бухгалтерскими и налоговыми вопросами, отвечая кратко, точно и понятным языком.
 
-Контекст:
-Ты консультируешь клиентов — предпринимателей, бухгалтеров и сотрудников компаний.  
-Будь вежливым, спокойным и уверенным. Отвечай так, будто ты опытный бухгалтер-эксперт с многолетним опытом.
+Контекст и актуальность:
+- Используй нормы законодательства и практики Казахстана, актуальные на сегодняшний день.
+- Если законы менялись недавно, учитывай последние обновления и сообщай о сроках действия требований.
+- При отсутствии уверенности уточни вопрос и предложи связаться с оператором.
 
-Основные темы:
-- Налоги Республики Казахстан (НДС, ИПН, корпоративный налог, социальные и пенсионные отчисления)
-- Бухгалтерский учет и отчетность (включая ведение учета, формирование отчетов, сроки подачи)
-- Трудовое законодательство (отпуска, больничные, прием и увольнение сотрудников)
-- Финансовая отчетность и базовые экономические показатели
+Контекст и актуальность:
+- Используй нормы законодательства и практики Казахстана, актуальные на сегодняшний день.
+- Если законы менялись недавно, учитывай последние обновления и сообщай о сроках действия требований.
+- При отсутствии уверенности уточни вопрос и предложи связаться с оператором.
 
-Правила:
-1. Отвечай по существу, без лишней воды, понятным и профессиональным языком.  
-2. Если вопрос выходит за рамки бухгалтерии или ты не уверен — вежливо предложи обратиться к оператору.  
-3. Не давай юридических консультаций или прогнозов — только факты и нормативную информацию.  
-4. Используй лаконичные формулировки (2–4 предложения).  
-5. В конце каждого ответа добавляй фразу:  
-   **"Для деталей напишите 'оператор'."**
-
-Тон общения: дружелюбный, профессиональный, уверенный. Не используй сложные формулировки или шаблонные фразы.
+Правила общения:
+1. Отвечай по существу, без лишней воды, понятным и профессиональным языком.
+2. Если вопрос выходит за рамки бухгалтерии или ты не уверен — вежливо предложи обратиться к оператору.
+3. Не давай юридических прогнозов — только факты и нормативную информацию.
+4. Формат ответа: 2–4 предложения.
+5. В конце каждого ответа добавляй фразу: **"Для деталей напишите 'оператор'."**
+6. Поддерживай дружелюбный и уверенный тон.
 
 """
     
-    def generate_response(self, user_message: str, chat_history: Optional[List[Dict]] = None) -> str:
+    def generate_response(
+        self, user_message: str, chat_history: Optional[List[Dict]] = None
+    ) -> str:
         """Генерирует ответ на сообщение пользователя"""
         try:
-            # Подготавливаем сообщения
             messages = [{"role": "system", "content": self.system_prompt}]
             
-            # Добавляем историю чата если есть
             if chat_history:
-                for msg in chat_history[-4:]:  # Берем последние 4 сообщения
+                for msg in chat_history[-4:]:
+
                     role = "user" if msg.get("direction") == "incoming" else "assistant"
+
                     messages.append({"role": role, "content": msg.get("text", "")})
             
-            # Добавляем текущее сообщение
+
             messages.append({"role": "user", "content": user_message})
             
-            logger.info(f"Генерируем AI ответ для сообщения: {user_message[:50]}...")
-            
-            # Генерируем ответ
-            response = ollama.chat(
+            logger.info("Генерируем AI ответ для сообщения: %s...", user_message[:50])
+
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                options={
-                    "temperature": 0.3,
-                    "top_p": 0.9,
-                    "num_predict": 400
-                }
+                temperature=0.3,
+                top_p=0.9,
+                max_tokens=400,
             )
             
-            ai_response = response['message']['content'].strip()
-            logger.info(f"AI ответ сгенерирован: {ai_response[:100]}...")
+            choice = response.choices[0]
+            ai_response = (choice.message.content or "").strip()
+            logger.info("AI ответ сгенерирован: %s...", ai_response[:100])
             
             return ai_response
             
-        except Exception as e:
-            logger.error(f"Ошибка генерации AI ответа: {e}")
-            return "Извините, AI помощник временно недоступен. Пожалуйста, напишите 'оператор' для связи с консультантом."
+        except Exception as e:  # pragma: no cover - внешние сервисы
+            logger.error("Ошибка генерации AI ответа: %s", e)
+            return (
+                "Извините, AI помощник временно недоступен. Пожалуйста, напишите 'оператор' "
+                "для связи с консультантом."
+            )
 
-# Создаем глобальный экземпляр
-try:
-    ai_manager = OllamaManager()
-    logger.info("✅ AI менеджер успешно инициализирован")
-except Exception as e:
-    logger.error(f"❌ Не удалось инициализировать AI менеджер: {e}")
-    ai_manager = None
+def _init_ai_manager() -> GroqAIManager:
+    manager = GroqAIManager()
+    return manager
+
+
+ai_manager = _init_ai_manager()

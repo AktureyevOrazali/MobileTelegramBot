@@ -365,6 +365,20 @@ export class ApiClient {
     }
   }
 
+  async enableDialogAI(dialogId: number): Promise<void> {
+    await this.request(`dialogs/${dialogId}/ai/enable`, {
+      method: 'POST',
+      expectJson: false,
+    });
+  }
+
+  async disableDialogAI(dialogId: number): Promise<void> {
+    await this.request(`dialogs/${dialogId}/ai/disable`, {
+      method: 'POST',
+      expectJson: false,
+    });
+  }
+
   async deleteDialog(dialogId: number): Promise<void> {
     await this.request(`dialogs/${dialogId}`, {
       method: 'DELETE',

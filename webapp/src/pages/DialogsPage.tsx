@@ -232,6 +232,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [dialogToDelete, setDialogToDelete] = useState<ChatSummary | null>(null);
   const [dialogDeleteLoading, setDialogDeleteLoading] = useState(false);
   const [updatesCursor, setUpdatesCursor] = useState<Date | null>(null);
+  const [aiToggleDialogId, setAiToggleDialogId] = useState<number | null>(null);
 
   const currentUser = session.user;
   const canDeleteDialog = currentUser.isAdmin;
@@ -446,6 +447,40 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     }
   }, [activeChat, apiClient, dialogToDelete]);
 
+  const updateChatAiStatus = useCallback((dialogId: number, aiEnabled: boolean) => {
+    setChats((prev) => prev.map((item) => (item.dialogId === dialogId ? { ...item, aiEnabled } : item)));
+    setActiveChat((prev) => (prev && prev.dialogId === dialogId ? { ...prev, aiEnabled } : prev));
+  }, []);
+
+  const handleToggleAi = useCallback(
+    async (chat: ChatSummary) => {
+      setAiToggleDialogId(chat.dialogId);
+      try {
+        if (chat.aiEnabled) {
+          await apiClient.disableDialogAI(chat.dialogId);
+          updateChatAiStatus(chat.dialogId, false);
+          setBanner('AI помощник отключён. Клиенту отправлено уведомление.');
+        } else {
+          await apiClient.enableDialogAI(chat.dialogId);
+          updateChatAiStatus(chat.dialogId, true);
+          setBanner('AI помощник включён для этого диалога.');
+        }
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+            ? err.message
+            : 'Не удалось обновить режим AI.';
+        setBanner(`Ошибка: ${message}`);
+      } finally {
+        setAiToggleDialogId(null);
+      }
+    },
+    [apiClient, updateChatAiStatus],
+  );
+
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
       {banner && (<div className="alert" onAnimationEnd={() => setBanner(null)}>{banner}</div>)}
@@ -556,10 +591,23 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                   {chat.sectionTitle && <span className="chip">{chat.sectionTitle}</span>}
                   {chat.bin && <span className="chip">БИН: {chat.bin}</span>}
                   <span className="chip">Обновлён {formatDateTime(chat.updatedAt)}</span>
+                  <span className="chip">AI: {chat.aiEnabled ? 'включён' : 'отключён'}</span>
                 </div>
               </div>
 
               <div className="flex-gap" style={{ alignItems: 'center' }}>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => handleToggleAi(chat)}
+                  disabled={aiToggleDialogId === chat.dialogId}
+                >
+                  {aiToggleDialogId === chat.dialogId
+                    ? 'Сохраняем...'
+                    : chat.aiEnabled
+                    ? 'Отключить AI'
+                    : 'Включить AI'}
+                </button>
                 <button className="button" type="button" onClick={() => setActiveChat(chat)}>
                   Открыть диалог
                 </button>

@@ -98,6 +98,7 @@ export function mapSession(raw: AuthSessionRaw): AuthSession {
 }
 
 export function mapChatSummary(raw: ChatSummaryRaw): ChatSummary {
+  const operatorMode = Boolean(raw.operator_mode);
   return {
     chatId: raw.chat_id,
     dialogId: raw.dialog_id ?? raw.chat_id,
@@ -111,6 +112,7 @@ export function mapChatSummary(raw: ChatSummaryRaw): ChatSummary {
     sectionTitle: raw.section_title ?? null,
     bin: raw.bin ?? null,
     isFavorite: Boolean(raw.is_favorite),
+    aiEnabled: !operatorMode,
   };
 }
 

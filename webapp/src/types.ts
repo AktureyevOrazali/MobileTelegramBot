@@ -60,6 +60,7 @@ export interface ChatSummaryRaw {
   section_title?: string | null;
   bin?: string | null;
   is_favorite: boolean;
+  operator_mode?: boolean;
 }
 
 export interface MessageRaw {
@@ -126,6 +127,7 @@ export interface ChatSummary {
   sectionTitle?: string | null;
   bin?: string | null;
   isFavorite: boolean;
+  aiEnabled: boolean;
 }
 
 export interface Message {

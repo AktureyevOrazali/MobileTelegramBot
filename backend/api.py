@@ -228,6 +228,7 @@ class ChatResponse(BaseModel):
     section_title: str | None = None
     bin: str | None = None
     is_favorite: bool = False
+    operator_mode: bool = False
 
 
 class NotificationResponse(BaseModel):
@@ -634,6 +635,7 @@ def list_chats(
                 section_title=section_title,
                 bin=chat.get("bin"),
                 is_favorite=bool(chat.get("is_favorite")),
+                operator_mode=bool(chat.get("operator_mode")),
             )
         )
     return enriched

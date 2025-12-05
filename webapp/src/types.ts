@@ -63,6 +63,13 @@ export interface ChatSummaryRaw {
   operator_mode?: boolean;
 }
 
+export interface DialogStatusUpdateRaw {
+  chat_id: number;
+  dialog_id: number;
+  dialog_closed_at?: string | null;
+  ai_enabled?: boolean;
+}
+
 export interface MessageRaw {
   id: number;
   chat_id: number;
@@ -127,6 +134,13 @@ export interface ChatSummary {
   sectionTitle?: string | null;
   bin?: string | null;
   isFavorite: boolean;
+  aiEnabled: boolean;
+}
+
+export interface DialogStatusUpdate {
+  chatId: number;
+  dialogId: number;
+  dialogClosedAt: Date | null;
   aiEnabled: boolean;
 }
 

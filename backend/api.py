@@ -231,6 +231,14 @@ class ChatResponse(BaseModel):
     operator_mode: bool = False
 
 
+class DialogStatusResponse(BaseModel):
+    status: str = Field(default="ok")
+    chat_id: int
+    dialog_id: int
+    dialog_closed_at: str | None = None
+    ai_enabled: bool = True
+
+
 class NotificationResponse(BaseModel):
     type: str = Field(default="message")
     chat_id: int | None = None
@@ -990,6 +998,127 @@ def disable_ai_for_dialog(
         "message_id": sent_message.message_id,
     }
 
+
+@router.post("/dialogs/{dialog_id}/close", response_model=DialogStatusResponse)
+def close_dialog(
+    dialog_id: int, current_user: Dict[str, object] = Depends(get_current_user)
+):
+    dialog = database.get_chat_dialog(dialog_id)
+    if dialog is None:
+        raise HTTPException(status_code=404, detail="Диалог не найден")
+
+    chat_id = int(dialog["chat_id"])
+    if not database.user_can_access_chat(
+        current_user["id"], current_user["role"], chat_id, dialog_id
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
+
+    chat = database.get_chat(chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+
+    if database.close_chat_dialog(dialog_id) is None:
+        raise HTTPException(status_code=404, detail="Диалог не найден")
+
+    database.set_dialog_operator_mode(dialog_id, False)
+
+    section = chat.get("section") if chat else None
+    chat_title = chat.get("title") if chat else None
+    chat_type = chat.get("type") if chat else None
+    notification_text = (
+        "Диалог закрыт. 🤖 AI снова включён. Напишите новое сообщение, чтобы открыть его заново."
+    )
+
+    closed_at = datetime.utcnow().isoformat()
+
+    if chat_type == "onec":
+        message_id = database.save_message(
+            chat_id=chat_id,
+            direction="outgoing",
+            text=notification_text,
+            message_id=None,
+            author="System",
+            chat_title=chat_title or str(chat_id),
+            username=None,
+            chat_type=chat_type,
+            section=section,
+            dialog_id=dialog_id,
+        )
+        external_chat_id = chat.get("external_chat_id") or str(chat_id)
+        _enqueue_onec_outgoing_message(
+            message_id=message_id,
+            chat_id=chat_id,
+            dialog_id=dialog_id,
+            external_chat_id=external_chat_id,
+            bin_value=chat.get("bin"),
+            text=notification_text,
+            author="System",
+            section=section,
+        )
+        return DialogStatusResponse(
+            chat_id=chat_id,
+            dialog_id=dialog_id,
+            dialog_closed_at=closed_at,
+            ai_enabled=True,
+        )
+
+    try:
+        sent_message = bot.send_message(chat_id, notification_text)
+    except Exception as exc:  # pragma: no cover - depends on Telegram API
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    enable_ai_session(chat_id)
+
+    database.save_message(
+        chat_id=chat_id,
+        direction="outgoing",
+        text=notification_text,
+        message_id=sent_message.message_id,
+        author="System",
+        chat_title=chat_title
+        or sent_message.chat.title
+        or sent_message.chat.username
+        or str(chat_id),
+        username=sent_message.chat.username,
+        chat_type=sent_message.chat.type,
+        section=section,
+        dialog_id=dialog_id,
+    )
+
+    return DialogStatusResponse(
+        chat_id=chat_id,
+        dialog_id=dialog_id,
+        dialog_closed_at=closed_at,
+        ai_enabled=True,
+    )
+
+
+@router.post("/dialogs/{dialog_id}/open", response_model=DialogStatusResponse)
+def open_dialog(
+    dialog_id: int, current_user: Dict[str, object] = Depends(get_current_user)
+):
+    dialog = database.get_chat_dialog(dialog_id)
+    if dialog is None:
+        raise HTTPException(status_code=404, detail="Диалог не найден")
+
+    chat_id = int(dialog["chat_id"])
+    if not database.user_can_access_chat(
+        current_user["id"], current_user["role"], chat_id, dialog_id
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
+
+    activated = database.activate_chat_dialog(dialog_id, chat_id=chat_id)
+    if activated is None:
+        raise HTTPException(status_code=404, detail="Диалог не найден")
+
+    database.set_dialog_operator_mode(dialog_id, False)
+
+    return DialogStatusResponse(
+        chat_id=chat_id,
+        dialog_id=dialog_id,
+        dialog_closed_at=None,
+        ai_enabled=not database.is_dialog_in_operator_mode(dialog_id),
+    )
 
 @router.post("/integrations/1c/messages")
 def create_onec_message(

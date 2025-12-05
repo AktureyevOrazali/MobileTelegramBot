@@ -636,6 +636,29 @@ def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optio
     }
 
 
+def close_chat_dialog(dialog_id: int) -> Optional[int]:
+    """Закрывает указанный диалог, сохраняя BIN и раздел у чата."""
+
+    now = datetime.utcnow().isoformat()
+    with _lock:
+        dialog_row = execute(
+            "SELECT chat_id FROM chat_dialogs WHERE id = %s",
+            (dialog_id,),
+        ).fetchone()
+        if dialog_row is None:
+            return None
+        chat_id = int(dialog_row["chat_id"])
+        execute(
+            """
+            UPDATE chat_dialogs
+            SET ended_at = %s, last_message_at = COALESCE(last_message_at, %s), operator_mode = 0
+            WHERE id = %s
+            """,
+            (now, now, dialog_id),
+        )
+    return chat_id
+
+
 def close_active_chat_dialog(chat_id: int) -> None:
     now = datetime.utcnow().isoformat()
     with _lock:
@@ -653,10 +676,6 @@ def close_active_chat_dialog(chat_id: int) -> None:
                 "UPDATE chat_dialogs SET ended_at = %s, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
                 (now, now, active["id"]),
             )
-        execute(
-            "UPDATE chats SET bin = NULL, section = NULL, updated_at = %s WHERE chat_id = %s",
-            (now, chat_id),
-        )
 
 
 def list_chats_for_user(

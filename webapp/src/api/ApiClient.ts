@@ -5,6 +5,8 @@ import {
   ChatSummaryRaw,
   DashboardSummary,
   DashboardSummaryRaw,
+  DialogStatusUpdate,
+  DialogStatusUpdateRaw,
   Message,
   MessageNotification,
   MessageNotificationRaw,
@@ -377,6 +379,30 @@ export class ApiClient {
       method: 'POST',
       expectJson: false,
     });
+  }
+
+  async closeDialog(dialogId: number): Promise<DialogStatusUpdate> {
+    const response = await this.request<DialogStatusUpdateRaw>(`dialogs/${dialogId}/close`, {
+      method: 'POST',
+    });
+    return {
+      chatId: response.chat_id,
+      dialogId: response.dialog_id,
+      dialogClosedAt: response.dialog_closed_at ? new Date(response.dialog_closed_at) : new Date(),
+      aiEnabled: response.ai_enabled !== false,
+    };
+  }
+
+  async openDialog(dialogId: number): Promise<DialogStatusUpdate> {
+    const response = await this.request<DialogStatusUpdateRaw>(`dialogs/${dialogId}/open`, {
+      method: 'POST',
+    });
+    return {
+      chatId: response.chat_id,
+      dialogId: response.dialog_id,
+      dialogClosedAt: response.dialog_closed_at ? new Date(response.dialog_closed_at) : null,
+      aiEnabled: response.ai_enabled !== false,
+    };
   }
 
   async deleteDialog(dialogId: number): Promise<void> {

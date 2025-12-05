@@ -16,6 +16,7 @@ interface DialogsPageProps {
 interface ChatDetailModalProps {
   apiClient: ApiClient;
   chat: ChatSummary;
+  onToggleStatus: (chat: ChatSummary) => void;
   onClose: () => void;
 }
 
@@ -23,6 +24,7 @@ interface ChatDetailModalProps {
 const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   apiClient,
   chat,
+  onToggleStatus,
   onClose,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -42,6 +44,18 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   const isClosed = Boolean(chat.dialogClosedAt);
   const statusLabel = isClosed ? 'Закрыт' : 'Открыт';
   const statusClassName = `status-badge ${isClosed ? 'status-badge--closed' : 'status-badge--open'}`;
+  const statusBadge = canReply ? (
+    <button
+      type="button"
+      className={`${statusClassName} status-badge-btn status-badge--clickable`}
+      onClick={() => onToggleStatus(chat)}
+      title={isClosed ? 'Открыть диалог' : 'Закрыть диалог'}
+    >
+      {statusLabel}
+    </button>
+  ) : (
+    <span className={statusClassName}>{statusLabel}</span>
+  );
 
   const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollRef.current;
@@ -141,7 +155,7 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
               <span className="text-muted" style={{ fontSize: '0.9rem' }}>
                 {chat.username ? `@${chat.username}` : chat.type}
               </span>
-              <span className={statusClassName}>{statusLabel}</span>
+              {statusBadge}
             </div>
             <div className="dialog-meta" style={{ marginTop: 12 }}>
               {chat.sectionTitle && <span className="chip">Раздел: {chat.sectionTitle}</span>}
@@ -234,6 +248,8 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [updatesCursor, setUpdatesCursor] = useState<Date | null>(null);
   const [aiToggleDialogId, setAiToggleDialogId] = useState<number | null>(null);
   const [aiManuallyDisabled, setAiManuallyDisabled] = useState<Set<number>>(new Set());
+  const [dialogStatusTarget, setDialogStatusTarget] = useState<{ chat: ChatSummary; action: 'open' | 'close' } | null>(null);
+  const [dialogStatusLoading, setDialogStatusLoading] = useState(false);
 
   const currentUser = session.user;
   const canDeleteDialog = currentUser.isAdmin;
@@ -469,6 +485,81 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     }
   }, [activeChat, apiClient, dialogToDelete]);
 
+  const requestStatusChange = useCallback((chat: ChatSummary) => {
+    setDialogStatusTarget({ chat, action: chat.dialogClosedAt ? 'open' : 'close' });
+  }, []);
+
+  const handleDialogStatusChange = useCallback(async () => {
+    if (!dialogStatusTarget) return;
+    setDialogStatusLoading(true);
+    try {
+      const { chat, action } = dialogStatusTarget;
+      const response =
+        action === 'close'
+          ? await apiClient.closeDialog(chat.dialogId)
+          : await apiClient.openDialog(chat.dialogId);
+      const closedAt = response.dialogClosedAt ?? null;
+      const aiEnabled = response.aiEnabled;
+
+      setChats((prev) =>
+        prev.map((item) =>
+          item.dialogId === chat.dialogId
+            ? { ...item, dialogClosedAt: closedAt, aiEnabled }
+            : item,
+        ),
+      );
+      setActiveChat((prev) =>
+        prev && prev.dialogId === chat.dialogId
+          ? { ...prev, dialogClosedAt: closedAt, aiEnabled }
+          : prev,
+      );
+      setAiManuallyDisabled((prev) => {
+        if (!aiEnabled && prev.has(chat.dialogId)) return prev;
+        const next = new Set(prev);
+        if (aiEnabled) next.delete(chat.dialogId);
+        return next;
+      });
+
+      setBanner(
+        action === 'close'
+          ? 'Диалог закрыт. Клиент уведомлён и AI снова включён.'
+          : 'Диалог открыт снова и готов к сообщениям.',
+      );
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : 'Не удалось обновить статус диалога.';
+      setBanner(`Ошибка: ${message}`);
+    } finally {
+      setDialogStatusLoading(false);
+      setDialogStatusTarget(null);
+    }
+  }, [apiClient, dialogStatusTarget]);
+
+  const renderStatusBadge = useCallback(
+    (chat: ChatSummary) => {
+      const className = `status-badge ${chat.dialogClosedAt ? 'status-badge--closed' : 'status-badge--open'}`;
+      const label = chat.dialogClosedAt ? 'Закрыт' : 'Открыт';
+      if (!currentUser.canReply) {
+        return <span className={className}>{label}</span>;
+      }
+      return (
+        <button
+          type="button"
+          className={`${className} status-badge-btn status-badge--clickable`}
+          onClick={() => requestStatusChange(chat)}
+          title={chat.dialogClosedAt ? 'Открыть диалог' : 'Закрыть диалог'}
+        >
+          {label}
+        </button>
+      );
+    },
+    [currentUser.canReply, requestStatusChange],
+  );
+
   const updateChatAiStatus = useCallback((dialogId: number, aiEnabled: boolean) => {
     setChats((prev) => prev.map((item) => (item.dialogId === dialogId ? { ...item, aiEnabled } : item)));
     setActiveChat((prev) => (prev && prev.dialogId === dialogId ? { ...prev, aiEnabled } : prev));
@@ -616,9 +707,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                   <span className="text-muted">
                     {chat.username ? `@${chat.username}` : chat.type}
                   </span>
-                  <span className={`status-badge ${chat.dialogClosedAt ? 'status-badge--closed' : 'status-badge--open'}`}>
-                    {chat.dialogClosedAt ? 'Закрыт' : 'Открыт'}
-                  </span>
+                  {renderStatusBadge(chat)}
                 </div>
                 <div className="flex-gap" style={{ marginTop: 8 }}>
                   {chat.sectionTitle && <span className="chip">{chat.sectionTitle}</span>}
@@ -646,8 +735,9 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                 </button>
                 {canDeleteDialog && (
                   <button className="button danger" type="button" onClick={() => setDialogToDelete(chat)}>
-                    Удалить
+                    ✖
                   </button>
+
                 )}
               </div>
             </div>
@@ -659,9 +749,35 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
         <ChatDetailModal
           apiClient={apiClient}
           chat={activeChat}
+          onToggleStatus={requestStatusChange}
           onClose={() => setActiveChat(null)}
         />
       )}
+
+      <ConfirmModal
+        open={Boolean(dialogStatusTarget)}
+        title={dialogStatusTarget?.action === 'close' ? 'Закрыть диалог?' : 'Открыть диалог?'}
+        description={
+          dialogStatusTarget
+            ? dialogStatusTarget.action === 'close'
+              ? (
+                <>
+                  Клиент получит уведомление о закрытии, AI включится автоматически.
+                  Новый входящий запрос снова откроет диалог.
+                </>
+              )
+              : (
+                <>Диалог станет активным. AI останется включённым и готовым к ответам.</>
+              )
+            : undefined
+        }
+        tone={dialogStatusTarget?.action === 'close' ? 'danger' : 'default'}
+        confirmLabel={dialogStatusTarget?.action === 'close' ? 'Закрыть' : 'Открыть'}
+        cancelLabel="Отмена"
+        loading={dialogStatusLoading}
+        onCancel={() => setDialogStatusTarget(null)}
+        onConfirm={handleDialogStatusChange}
+      />
 
       <ConfirmModal
         open={Boolean(dialogToDelete)}

@@ -180,6 +180,22 @@ input, textarea, select { font-family: inherit; }
   line-height: 1.2;
 }
 
+.status-badge-btn {
+  border: none;
+  background: none;
+}
+
+.status-badge--clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.status-badge--clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  opacity: 0.92;
+}
+
 .status-badge--open {
   background: rgba(46, 164, 79, 0.16);
   color: #1b7f2b;
@@ -414,7 +430,7 @@ input, textarea, select { font-family: inherit; }
 .textarea--autogrow { overflow: hidden; }
 
 /* типографика */
-:root{ --font-sans: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji','Segoe UI Emoji'; }
+:root{ --font-sans: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji'; }
 html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; letter-spacing: .01em; }
 .heading { letter-spacing: .005em; }
 

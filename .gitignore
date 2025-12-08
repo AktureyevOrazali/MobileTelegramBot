@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 .venv/
 .env
+!mobile/.env
+!backend/.env
 backend/bot.db
 
 # Flutter / Dart
@@ -16,4 +18,7 @@ ios/
 
 # IDE
 .idea/
-.vscode/
+.vscode/moblie.zip
+
+*.zip
+

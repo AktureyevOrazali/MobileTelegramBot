@@ -5973,6 +5973,14 @@ class ChatSummary {
         : DateTime.now().toUtc();
     final startedAt = _parseDateTime(json['dialog_started_at']);
     final closedAt = _parseDateTime(json['dialog_closed_at']);
+    final operatorModeRaw = json['operator_mode'];
+    final operatorMode = operatorModeRaw is bool ? operatorModeRaw : operatorModeRaw == true;
+    final aiEnabledRaw = json['ai_enabled'];
+    final aiEnabled = aiEnabledRaw is bool
+        ? aiEnabledRaw
+        : aiEnabledRaw == false
+            ? false
+            : !operatorMode;
     return ChatSummary(
       chatId: chatId,
       dialogId: dialogId,
@@ -5984,7 +5992,7 @@ class ChatSummary {
       sectionTitle: json['section_title'] as String?,
       bin: json['bin'] as String?,
       isFavorite: json['is_favorite'] as bool? ?? false,
-      aiEnabled: json['ai_enabled'] as bool? ?? true,
+      aiEnabled: aiEnabled,
       dialogStartedAt: startedAt,
       dialogClosedAt: closedAt,
     );

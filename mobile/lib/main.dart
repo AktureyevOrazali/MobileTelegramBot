@@ -10,6 +10,50 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'network_exceptions.dart';
 
+class _BadgeColors {
+  final Color background;
+  final Color border;
+  final Color foreground;
+
+  const _BadgeColors({required this.background, required this.border, required this.foreground});
+}
+
+_BadgeColors _statusBadgeColors(ThemeData theme, {required bool isClosed}) {
+  final isDark = theme.brightness == Brightness.dark;
+
+  if (isClosed) {
+    return _BadgeColors(
+      background: isDark ? const Color(0xFF3A2226) : Colors.red.shade50,
+      border: isDark ? const Color(0xFF6A2D35) : Colors.red.shade200,
+      foreground: isDark ? const Color(0xFFFFB3C0) : Colors.red.shade700,
+    );
+  }
+
+  return _BadgeColors(
+    background: isDark ? const Color(0xFF1F3326) : Colors.green.shade50,
+    border: isDark ? const Color(0xFF2F5D3A) : Colors.green.shade200,
+    foreground: isDark ? const Color(0xFF9CE6B3) : Colors.green.shade700,
+  );
+}
+
+_BadgeColors _aiBadgeColors(ThemeData theme, {required bool enabled}) {
+  final isDark = theme.brightness == Brightness.dark;
+
+  if (enabled) {
+    return _BadgeColors(
+      background: isDark ? const Color(0xFF1F2B46) : Colors.indigo.shade50,
+      border: isDark ? const Color(0xFF304B7A) : Colors.indigo.shade200,
+      foreground: isDark ? const Color(0xFFB8CCFF) : Colors.indigo.shade700,
+    );
+  }
+
+  return _BadgeColors(
+    background: isDark ? const Color(0xFF2A2C33) : Colors.grey.shade200,
+    border: isDark ? const Color(0xFF3C4048) : Colors.grey.shade300,
+    foreground: isDark ? const Color(0xFFB0B4BE) : Colors.grey.shade700,
+  );
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
@@ -2096,26 +2140,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
         )
       else
         ...chats.map((chat) {
-          final updatedAt = DateFormat('dd.MM.yyyy HH:mm').format(chat.updatedAt.toLocal());
-          final startedAt = chat.dialogStartedAt != null
-              ? DateFormat('dd.MM.yyyy HH:mm').format(chat.dialogStartedAt!.toLocal())
-              : null;
-          final closedAt = chat.dialogClosedAt != null
-              ? DateFormat('dd.MM.yyyy HH:mm').format(chat.dialogClosedAt!.toLocal())
-              : null;
           final statusLabel = chat.isClosed ? 'Закрыт' : 'Открыт';
-          final MaterialColor statusPalette = chat.isClosed ? Colors.red : Colors.green;
-          final statusBackground = statusPalette.shade100.withOpacity(0.4);
-          final statusBorder = statusPalette.shade200.withOpacity(0.6);
-          final statusTextColor = statusPalette.shade700;
-          final aiPalette = chat.aiEnabled ? Colors.indigo : Colors.grey;
-          final aiBackground = chat.aiEnabled
-              ? aiPalette.shade100.withOpacity(0.5)
-              : aiPalette.shade100.withOpacity(0.3);
-          final aiBorder = chat.aiEnabled
-              ? aiPalette.shade200.withOpacity(0.6)
-              : aiPalette.shade200.withOpacity(0.5);
-          final aiTextColor = chat.aiEnabled ? aiPalette.shade700 : aiPalette.shade600;
+          final statusColors = _statusBadgeColors(theme, isClosed: chat.isClosed);
+          final aiColors = _aiBadgeColors(theme, enabled: chat.aiEnabled);
           final isStatusUpdating = _statusUpdatingDialogId == chat.dialogId;
           final isAiUpdating = _aiTogglingDialogId == chat.dialogId;
           return Padding(
@@ -2169,9 +2196,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 10, vertical: 6),
                                       decoration: BoxDecoration(
-                                        color: statusBackground,
+                                        color: statusColors.background,
                                         borderRadius: BorderRadius.circular(999),
-                                        border: Border.all(color: statusBorder, width: 1),
+                                        border:
+                                            Border.all(color: statusColors.border, width: 1),
                                       ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -2182,20 +2210,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                               height: 14,
                                               child: CircularProgressIndicator(
                                                 strokeWidth: 2,
-                                                color: statusTextColor,
+                                                color: statusColors.foreground,
                                               ),
                                             )
                                           else
                                             Icon(
                                               chat.isClosed ? Icons.lock : Icons.lock_open,
                                               size: 14,
-                                              color: statusTextColor,
+                                              color: statusColors.foreground,
                                             ),
                                           const SizedBox(width: 6),
                                           Text(
                                             statusLabel,
                                             style: theme.textTheme.labelSmall?.copyWith(
-                                              color: statusTextColor,
+                                              color: statusColors.foreground,
                                               fontWeight: FontWeight.w700,
                                               letterSpacing: 0.2,
                                             ),
@@ -2207,9 +2235,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 10, vertical: 6),
                                       decoration: BoxDecoration(
-                                        color: aiBackground,
+                                        color: aiColors.background,
                                         borderRadius: BorderRadius.circular(999),
-                                        border: Border.all(color: aiBorder, width: 1),
+                                        border: Border.all(color: aiColors.border, width: 1),
                                       ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -2220,7 +2248,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                               height: 14,
                                               child: CircularProgressIndicator(
                                                 strokeWidth: 2,
-                                                color: aiTextColor,
+                                                color: aiColors.foreground,
                                               ),
                                             )
                                           else
@@ -2229,13 +2257,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                                   ? Icons.smart_toy
                                                   : Icons.smart_toy_outlined,
                                               size: 14,
-                                              color: aiTextColor,
+                                              color: aiColors.foreground,
                                             ),
                                           const SizedBox(width: 6),
                                           Text(
                                             chat.aiEnabled ? 'AI' : 'AI выкл',
                                             style: theme.textTheme.labelSmall?.copyWith(
-                                              color: aiTextColor,
+                                              color: aiColors.foreground,
                                               fontWeight: FontWeight.w700,
                                               letterSpacing: 0.2,
                                             ),
@@ -2348,23 +2376,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       const SizedBox(height: 8),
                       Text(
                         chat.username != null ? '@${chat.username}' : 'Тип: ${chat.type}',
-                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 4),
-                      if (startedAt != null)
-                        Text(
-                          'Начат: $startedAt',
-                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                      if (closedAt != null)
-                        Text(
-                          'Закрыт: $closedAt',
-                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                      if (startedAt != null || closedAt != null)
-                        const SizedBox(height: 2),
-                      Text(
-                        'Обновлён: $updatedAt',
                         style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                       ),
                     ],
@@ -2793,18 +2804,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final colorScheme = theme.colorScheme;
     final isClosed = _chat.isClosed;
     final statusLabel = isClosed ? 'Закрыт' : 'Открыт';
-    final MaterialColor statusPalette = isClosed ? Colors.red : Colors.green;
-    final statusBackground = statusPalette.shade100.withOpacity(0.4);
-    final statusBorder = statusPalette.shade200.withOpacity(0.6);
-    final statusTextColor = statusPalette.shade700;
-    final aiPalette = _chat.aiEnabled ? Colors.indigo : Colors.grey;
-    final aiBackground = _chat.aiEnabled
-        ? aiPalette.shade100.withOpacity(0.5)
-        : aiPalette.shade100.withOpacity(0.3);
-    final aiBorder = _chat.aiEnabled
-        ? aiPalette.shade200.withOpacity(0.6)
-        : aiPalette.shade200.withOpacity(0.5);
-    final aiTextColor = _chat.aiEnabled ? aiPalette.shade700 : aiPalette.shade600;
+    final statusColors = _statusBadgeColors(theme, isClosed: isClosed);
+    final aiColors = _aiBadgeColors(theme, enabled: _chat.aiEnabled);
     final startedAtLabel = _chat.dialogStartedAt != null
         ? DateFormat('dd.MM.yyyy HH:mm').format(_chat.dialogStartedAt!.toLocal())
         : null;
@@ -2895,9 +2896,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: statusBackground,
+                        color: statusColors.background,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: statusBorder, width: 1),
+                        border: Border.all(color: statusColors.border, width: 1),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -2908,20 +2909,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                               height: 16,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: statusTextColor,
+                                color: statusColors.foreground,
                               ),
                             )
                           else
                             Icon(
                               isClosed ? Icons.lock : Icons.lock_open,
                               size: 16,
-                              color: statusTextColor,
+                              color: statusColors.foreground,
                             ),
                           const SizedBox(width: 8),
                           Text(
                             statusLabel,
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: statusTextColor,
+                              color: statusColors.foreground,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -2932,9 +2933,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: aiBackground,
+                        color: aiColors.background,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: aiBorder, width: 1),
+                        border: Border.all(color: aiColors.border, width: 1),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -2945,20 +2946,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                               height: 16,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: aiTextColor,
+                                color: aiColors.foreground,
                               ),
                             )
                           else
                             Icon(
                               _chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
                               size: 16,
-                              color: aiTextColor,
+                              color: aiColors.foreground,
                             ),
                           const SizedBox(width: 8),
                           Text(
                             _chat.aiEnabled ? 'AI' : 'AI выключен',
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: aiTextColor,
+                              color: aiColors.foreground,
                               fontWeight: FontWeight.w700,
                             ),
                           ),

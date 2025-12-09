@@ -1,23 +1,28 @@
-"""AI manager powered by Groq chat completions."""
+"""AI manager powered by DeepSeek chat completions."""
 from __future__ import annotations
 
 import logging
 import os
 from typing import Dict, List, Optional
 
-from groq import Groq
+from openai import OpenAI
 
 from . import require_env
 
 logger = logging.getLogger(__name__)
 
-class GroqAIManager:
+class DeepSeekAIManager:
     def __init__(self) -> None:
-        self.model = os.getenv("GROQ_MODEL", "llama3-70b-8192")
-        api_key = require_env("GROQ_API_KEY")
-        self.client = Groq(api_key=api_key)
+        self.model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        api_key = require_env("DEEPSEEK_API_KEY")
+        base_url = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.system_prompt = self._create_kazakhstan_prompt()
-        logger.info("✅ Groq AI менеджер инициализирован. Модель: %s", self.model)
+        logger.info(
+            "✅ DeepSeek AI менеджер инициализирован. Модель: %s, base_url: %s",
+            self.model,
+            base_url,
+        )
 
 
     def _create_kazakhstan_prompt(self) -> str:
@@ -84,8 +89,8 @@ class GroqAIManager:
                 "для связи с консультантом."
             )
 
-def _init_ai_manager() -> GroqAIManager:
-    manager = GroqAIManager()
+def _init_ai_manager() -> DeepSeekAIManager:
+    manager = DeepSeekAIManager()
     return manager
 
 

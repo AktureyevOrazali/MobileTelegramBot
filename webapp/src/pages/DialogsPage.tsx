@@ -7,6 +7,11 @@ import StarButton from "../components/StarButton";
 import Modal from "../components/Modal";
 import ConfirmModal from "../components/ConfirmModal";
 
+const PRESET_MESSAGES = [
+  'Здравствуйте! Чем я могу вам помочь?',
+  'Спасибо за обращение! Готовы помочь в любое время!',
+];
+
 /* -------------------- Props -------------------- */
 interface DialogsPageProps {
   apiClient: ApiClient;
@@ -122,6 +127,17 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
     if (taRef.current) autosize(taRef.current);
   }, [input, autosize]);
 
+  const handlePresetClick = useCallback(
+    (text: string) => {
+      setInput(text);
+      if (taRef.current) {
+        taRef.current.focus();
+        requestAnimationFrame(() => autosize(taRef.current!));
+      }
+    },
+    [autosize],
+  );
+
   const handleSend = async () => {
     if (!input.trim()) return;
     setSending(true);
@@ -197,6 +213,20 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
         <div className="separator" />
 
         {/* Composer */}
+        {canReply && (
+          <div className="preset-replies">
+            {PRESET_MESSAGES.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className="preset-reply"
+                onClick={() => handlePresetClick(preset)}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="dialog-composer">
           <textarea
             ref={taRef}

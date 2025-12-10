@@ -220,7 +220,7 @@ input, textarea, select { font-family: inherit; }
 .flex { display: flex; }
 .flex-gap { display: flex; gap: 12px; flex-wrap: wrap; }
 .text-muted { color: var(--text-muted); }
-.separator { height: 1px; background: var(--border-color); margin: 24px 0; }
+.separator { height: 1px; background: var(--border-color); margin: 4px 0; }
 
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td { text-align: left; padding: 12px; border-bottom: 1px solid var(--table-border); }
@@ -312,8 +312,8 @@ input, textarea, select { font-family: inherit; }
 
 .modal-overlay--dialog {
   align-items: flex-start;
-  padding-top: 48px;
-  padding-bottom: 48px;
+  padding-top: 32px;
+  padding-bottom: 32px;
 }
 
 /* базовая модалка: компактная ширина, подходит для confirm и форм */
@@ -728,7 +728,32 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 }
 .dialog-composer__actions { display: flex; flex-direction: column; gap: 8px; min-width: auto; }
 .dialog-composer .button { height: 44px; white-space: nowrap; flex: 0 0 auto; }
+.preset-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
 
+.preset-reply {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-soft-color);
+  color: inherit;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.preset-reply:hover {
+  background: var(--surface-color);
+  border-color: var(--accent-color); /* будет переопределено ниже */
+}
+
+.preset-reply:active {
+  transform: translateY(1px);
+}
 .dialog-meta { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .admin-user-card {
@@ -821,15 +846,15 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 
 .modal.modal--dialog {
   width: min(96vw, 960px);
-  max-height: min(92vh, 880px);
+  max-height: min(100%, 880px);
   padding: 32px;
-  overflow: hidden; /* скролл внутри */
+  overflow: hidden; /* скролл только внутри контента */
 }
 
 .modal.modal--dialog .modal__content {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 4px;
   height: 100%;
   min-height: 0;
   position: relative;
@@ -870,12 +895,12 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 .separator { flex-shrink: 0; }
 
 /* прокручиваемая центральная зона с сообщениями */
-.modal.modal--dialog .modal__scroll{
+.modal.modal--dialog .modal__scroll {
   flex: 1;
-  min-height: 320px;  /* гарантируем место для истории */
+  min-height: 0;      /* убрать жёсткие 320px */
   overflow: auto;
   padding: 0;
-  margin: 0 -4px 0 0; /* небольшой запас для скроллбара */
+  margin: 0 -4px 0 0;
 }
 
 /* сообщение: уберём жёсткий max-height у списка из прежних стилей */
@@ -889,4 +914,64 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
   border-radius: 999px;
 }
 
+/* ===== ДОПОЛНИТЕЛЬНЫЕ ПРАВКИ ДЛЯ КОМПАКТНОЙ ДИАЛОГОВОЙ МОДАЛКИ ===== */
 
+/* меню: ограничиваем высоту и включаем скролл */
+.menu{
+  max-height: min(260px, calc(100vh - 120px));
+  overflow: auto;
+}
+
+/* фикс неизвестной переменной accent-color */
+.preset-reply:hover {
+  background: var(--surface-color);
+  border-color: var(--brand-color);
+}
+
+/* делаем диалоговую модалку компактнее и вписываем в окно */
+.modal.modal--dialog {
+  width: min(96vw, 920px);
+  max-height: min(calc(100vh - 48px), 820px);
+  padding: 24px;
+}
+
+/* немного компактнее заголовок и мета */
+.modal.modal--dialog .modal__title {
+  font-size: 1rem;
+}
+
+.modal.modal--dialog .dialog-meta,
+.modal.modal--dialog .badge,
+.modal.modal--dialog .chip {
+  font-size: 0.8rem;
+}
+
+/* сообщения — чуть меньше шрифт и паддинги, чтобы влезало больше строк */
+.modal.modal--dialog .message-bubble {
+  font-size: 0.9rem;
+  padding: 10px 12px;
+}
+
+/* пресеты — компактнее */
+.modal.modal--dialog .preset-reply {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+
+/* нижняя панель: более низкая и компактная */
+.modal.modal--dialog .dialog-composer {
+  gap: 8px;
+}
+
+.modal.modal--dialog .dialog-composer .textarea {
+  min-height: 34px;
+  max-height: 120px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+.modal.modal--dialog .dialog-composer .button {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 0.9rem;
+}

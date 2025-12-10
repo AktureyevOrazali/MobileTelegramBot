@@ -477,6 +477,70 @@ def save_message(
     return inserted_id
 
 
+def list_user_ids_by_bin(bin_value: str) -> List[int]:
+    refresh_bin_assignments()
+    now_iso = datetime.utcnow().isoformat()
+    with _lock:
+        rows = execute(
+            """
+            SELECT DISTINCT user_id
+            FROM user_bins
+            WHERE bin = %s
+              AND (expires_at IS NULL OR expires_at > %s)
+            """,
+            (bin_value, now_iso),
+        ).fetchall()
+    return [int(row["user_id"]) for row in rows]
+
+
+def create_operator_request_notifications(
+    chat_id: int,
+    *,
+    dialog_id: int | None = None,
+    chat_title: str | None = None,
+    section: str | None = None,
+    bin_value: str | None = None,
+    created_at: str | None = None,
+) -> None:
+    resolved_dialog_bin = bin_value
+    resolved_chat_title = chat_title
+
+    if dialog_id and not resolved_dialog_bin:
+        dialog = get_chat_dialog(dialog_id)
+        if dialog:
+            resolved_dialog_bin = dialog.get("bin") or resolved_dialog_bin
+
+    chat_record = get_chat(chat_id)
+    if chat_record:
+        resolved_chat_title = resolved_chat_title or chat_record.get("title") or str(chat_id)
+        resolved_dialog_bin = resolved_dialog_bin or chat_record.get("bin")
+        section = section or chat_record.get("section")
+
+    if not resolved_dialog_bin:
+        return
+
+    recipients = list_user_ids_by_bin(resolved_dialog_bin)
+    if not recipients:
+        return
+
+    payload = {
+        "chat_id": chat_id,
+        "chat_title": resolved_chat_title or str(chat_id),
+        "text": "Клиент запросил оператора.",
+        "section": section,
+        "bin": resolved_dialog_bin,
+        "dialog_id": dialog_id,
+    }
+
+    for user_id in recipients:
+        _create_notification(
+            user_id,
+            "operator_request",
+            payload,
+            created_at=created_at,
+        )
+
+
 def list_chat_dialogs(chat_id: int) -> List[Dict[str, object]]:
     with _lock:
         rows = execute(

@@ -1143,7 +1143,9 @@ def create_onec_message(
 
     chat_id = _resolve_onec_chat_id(external_chat_id, request.chat_id)
     author = _normalize_optional(request.author)
-    
+    normalized_text = message_text.lower()
+    stored_text = "[ЗАПРОС ОПЕРАТОРА]" if normalized_text == "оператор" else message_text
+
     # ИСПРАВЛЕНИЕ: В названии используем external_chat_id вместо BIN
     title_candidate = _normalize_optional(request.title)
     chat_title = title_candidate or f"1С клиент {external_chat_id}"  # ← Здесь меняем
@@ -1166,7 +1168,7 @@ def create_onec_message(
     database.save_message(
         chat_id=chat_id,
         direction="incoming",
-        text=message_text,
+        text=stored_text,
         message_id=None,
         author=author,
         chat_title=chat_title,
@@ -1185,8 +1187,6 @@ def create_onec_message(
     dialog_external_id = (
         (chat_record.get("external_chat_id") if chat_record else None) or external_chat_id
     )
-
-    normalized_text = message_text.lower()
 
     auto_reply_sent = False
 
@@ -1217,6 +1217,13 @@ def create_onec_message(
                 section=chat_section,
             )
         auto_reply_sent = True
+        database.create_operator_request_notifications(
+            chat_id,
+            dialog_id=dialog_id,
+            chat_title=chat_title,
+            section=chat_section,
+            bin_value=chat_bin,
+        )
     else:
         if not database.is_dialog_in_operator_mode(dialog_id):
             faq_entry = database.find_faq_entry_by_keywords(message_text, chat_section)

@@ -520,6 +520,28 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
   color: #2563eb;
 }
 
+.unread-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  font-weight: 600;
+  line-height: 1;
+  font-size: 0.85rem;
+}
+
+.unread-badge__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px #fee2e2 inset;
+}
+
 .pending-bin-chip {
   flex-direction: column;
   align-items: flex-start;

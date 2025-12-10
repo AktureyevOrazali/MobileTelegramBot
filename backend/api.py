@@ -229,6 +229,7 @@ class ChatResponse(BaseModel):
     bin: str | None = None
     is_favorite: bool = False
     operator_mode: bool = False
+    unread_count: int = 0
 
 
 class DialogStatusResponse(BaseModel):
@@ -644,6 +645,7 @@ def list_chats(
                 bin=chat.get("bin"),
                 is_favorite=bool(chat.get("is_favorite")),
                 operator_mode=bool(chat.get("operator_mode")),
+                unread_count=int(chat.get("unread_count") or 0),
             )
         )
     return enriched
@@ -673,6 +675,16 @@ def get_chat_messages(
         allowed_sections=allowed_sections,
         dialog_id=dialog_id,
     )
+    resolved_dialog_id = dialog_id
+    if resolved_dialog_id is None:
+        resolved_dialog_id = next(
+            (entry.get("dialog_id") for entry in reversed(messages) if entry.get("dialog_id") is not None),
+            None,
+        )
+    if resolved_dialog_id is None:
+        active_dialog = database.get_active_chat_dialog(chat_id)
+        if active_dialog:
+            resolved_dialog_id = int(active_dialog.get("id"))
     result: List[MessageResponse] = []
     for message in messages:
         section_id = message.get("section")
@@ -701,6 +713,8 @@ def get_chat_messages(
                 dialog_id=message.get("dialog_id"),
             )
         )
+    if resolved_dialog_id is not None:
+        database.mark_dialog_read(current_user["id"], resolved_dialog_id)
     return result
 
 

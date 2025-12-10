@@ -706,6 +706,12 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <h3 style={{ margin: 0 }}>{chat.title}</h3>
+                  {chat.unreadCount > 0 && (
+                    <span className="unread-badge" title="Есть непрочитанные сообщения">
+                      <span className="unread-badge__dot" />
+                      {chat.unreadCount}
+                    </span>
+                  )}
                   <StarButton
                     active={Boolean(chat.isFavorite)}
                     onToggle={async () => {
@@ -735,11 +741,11 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                 </div>
                 <div className="dialog-status-row" style={{ marginTop: 4 }}>
                   <span className="text-muted">
-                    {chat.username ? `@${chat.username}` : chat.type}
-                  </span>
-                  {renderStatusBadge(chat)}
-                </div>
-                <div className="flex-gap" style={{ marginTop: 8 }}>
+                  {chat.username ? `@${chat.username}` : chat.type}
+                </span>
+                {renderStatusBadge(chat)}
+              </div>
+              <div className="flex-gap" style={{ marginTop: 8 }}>
                   {chat.sectionTitle && <span className="chip">{chat.sectionTitle}</span>}
                   {chat.bin && <span className="chip">БИН: {chat.bin}</span>}
                   <span className="chip">Обновлён {formatDateTime(chat.updatedAt)}</span>
@@ -760,7 +766,20 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                     ? 'Отключить AI'
                     : 'Включить AI'}
                 </button>
-                <button className="button" type="button" onClick={() => setActiveChat(chat)}>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    if (chat.unreadCount > 0) {
+                      setChats((prev) =>
+                        prev.map((item) =>
+                          item.dialogId === chat.dialogId ? { ...item, unreadCount: 0 } : item,
+                        ),
+                      );
+                    }
+                    setActiveChat(chat.unreadCount > 0 ? { ...chat, unreadCount: 0 } : chat);
+                  }}
+                >
                   Открыть диалог
                 </button>
                 {canDeleteDialog && (

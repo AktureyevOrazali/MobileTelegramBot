@@ -167,6 +167,14 @@ def _init_db() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS dialog_reads (
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            dialog_id BIGINT NOT NULL REFERENCES chat_dialogs(id) ON DELETE CASCADE,
+            last_read_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, dialog_id)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS notifications (
             id BIGSERIAL PRIMARY KEY,
             user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -763,12 +771,21 @@ def list_chats_for_user(
         "  cd.ended_at AS dialog_ended_at,",
         "  cd.last_message_at AS dialog_last_message_at,",
         "  cd.operator_mode AS dialog_operator_mode,",
-        "  f.user_id AS fav_user_id",
+        "  f.user_id AS fav_user_id,",
+        "  dr.last_read_at AS last_read_at,",
+        "  COALESCE((",
+        "    SELECT COUNT(*) FROM messages m",
+        "    WHERE m.chat_id = c.chat_id",
+        "      AND m.dialog_id = cd.id",
+        "      AND m.direction = 'incoming'",
+        "      AND (dr.last_read_at IS NULL OR m.created_at > dr.last_read_at)",
+        "  ), 0) AS unread_count",
         "FROM chat_dialogs cd",
         "JOIN chats c ON c.chat_id = cd.chat_id",
         "LEFT JOIN favorites f ON f.dialog_id = cd.id AND f.user_id = %s",
+        "LEFT JOIN dialog_reads dr ON dr.dialog_id = cd.id AND dr.user_id = %s",
     ]
-    params: List[object] = [user_id]
+    params: List[object] = [user_id, user_id]
     filters: List[str] = []
     if role != ROLE_ADMIN:
         allowed_sections = get_user_sections(user_id)
@@ -818,9 +835,24 @@ def list_chats_for_user(
                 "bin": row["dialog_bin"],
                 "is_favorite": bool(row["fav_user_id"]),
                 "operator_mode": bool(row["dialog_operator_mode"]),
+                "unread_count": int(row["unread_count"] or 0),
             }
         )
     return chats
+
+
+def mark_dialog_read(user_id: int, dialog_id: int) -> None:
+    now = datetime.utcnow().isoformat()
+    with _lock:
+        execute(
+            """
+            INSERT INTO dialog_reads (user_id, dialog_id, last_read_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, dialog_id)
+            DO UPDATE SET last_read_at = excluded.last_read_at
+            """,
+            (user_id, dialog_id, now),
+        )
 
 
 def get_messages(

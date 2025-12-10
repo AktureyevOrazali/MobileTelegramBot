@@ -113,6 +113,7 @@ export function mapChatSummary(raw: ChatSummaryRaw): ChatSummary {
     bin: raw.bin ?? null,
     isFavorite: Boolean(raw.is_favorite),
     aiEnabled: !operatorMode,
+    unreadCount: typeof raw.unread_count === 'number' ? raw.unread_count : 0,
   };
 }
 

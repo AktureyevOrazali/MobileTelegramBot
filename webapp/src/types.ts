@@ -61,6 +61,7 @@ export interface ChatSummaryRaw {
   bin?: string | null;
   is_favorite: boolean;
   operator_mode?: boolean;
+  unread_count?: number;
 }
 
 export interface DialogStatusUpdateRaw {
@@ -135,6 +136,7 @@ export interface ChatSummary {
   bin?: string | null;
   isFavorite: boolean;
   aiEnabled: boolean;
+  unreadCount: number;
 }
 
 export interface DialogStatusUpdate {

@@ -2147,15 +2147,28 @@ class _ChatListScreenState extends State<ChatListScreen> {
           final isAiUpdating = _aiTogglingDialogId == chat.dialogId;
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Card(
+              child: Card(
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () async {
+                  final chatToOpen =
+                      chat.unreadCount > 0 ? chat.copyWith(unreadCount: 0) : chat;
+                  if (chat.unreadCount > 0) {
+                    setState(() {
+                      _allChats = _allChats
+                          .map(
+                            (item) => item.dialogId == chat.dialogId
+                                ? item.copyWith(unreadCount: 0)
+                                : item,
+                          )
+                          .toList();
+                    });
+                  }
                   final deleted = await Navigator.of(context).push<bool>(
                     MaterialPageRoute(
                       builder: (_) => ChatDetailScreen(
                         apiClient: widget.apiClient,
-                        chat: chat,
+                        chat: chatToOpen,
                       ),
                     ),
                   );
@@ -2182,10 +2195,54 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  chat.title,
-                                  style: theme.textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        chat.title,
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(fontWeight: FontWeight.w600),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (chat.unreadCount > 0)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.errorContainer,
+                                          borderRadius: BorderRadius.circular(999),
+                                          border: Border.all(
+                                            color:
+                                                theme.colorScheme.error.withOpacity(0.35),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.mark_chat_unread,
+                                              size: 16,
+                                              color: theme.colorScheme.onErrorContainer,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              '${chat.unreadCount}',
+                                              style: theme.textTheme.labelMedium?.copyWith(
+                                                color:
+                                                    theme.colorScheme.onErrorContainer,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 const SizedBox(height: 8),
                                 Wrap(
@@ -5923,6 +5980,7 @@ class ChatSummary {
     required this.aiEnabled,
     required this.dialogStartedAt,
     required this.dialogClosedAt,
+    required this.unreadCount,
   });
 
   final int chatId;
@@ -5938,6 +5996,7 @@ class ChatSummary {
   final bool aiEnabled;
   final DateTime? dialogStartedAt;
   final DateTime? dialogClosedAt;
+  final int unreadCount;
 
   String get updatedAtLabel => DateFormat('HH:mm').format(updatedAt.toLocal());
   bool get isClosed => dialogClosedAt != null;
@@ -5947,6 +6006,7 @@ class ChatSummary {
     bool? aiEnabled,
     DateTime? dialogStartedAt,
     DateTime? dialogClosedAt,
+    int? unreadCount,
   }) {
     return ChatSummary(
       chatId: chatId,
@@ -5962,6 +6022,7 @@ class ChatSummary {
       aiEnabled: aiEnabled ?? this.aiEnabled,
       dialogStartedAt: dialogStartedAt ?? this.dialogStartedAt,
       dialogClosedAt: dialogClosedAt ?? this.dialogClosedAt,
+      unreadCount: unreadCount ?? this.unreadCount,
     );
   }
 
@@ -5982,6 +6043,7 @@ class ChatSummary {
         : aiEnabledRaw == false
             ? false
             : !operatorMode;
+    final unreadCount = _parseIntValue(json['unread_count']) ?? 0;
     return ChatSummary(
       chatId: chatId,
       dialogId: dialogId,
@@ -5996,6 +6058,7 @@ class ChatSummary {
       aiEnabled: aiEnabled,
       dialogStartedAt: startedAt,
       dialogClosedAt: closedAt,
+      unreadCount: unreadCount,
     );
   }
 }

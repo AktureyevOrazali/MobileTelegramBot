@@ -176,21 +176,27 @@ class _MobileBotAppState extends State<MobileBotApp> {
   ThemeData _buildTheme(ColorScheme colorScheme) {
     final outlineBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
-      borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.4)),
+      borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.25)),
     );
     return ThemeData(
       colorScheme: colorScheme,
       useMaterial3: true,
-      scaffoldBackgroundColor: colorScheme.surface,
+      scaffoldBackgroundColor:
+          colorScheme.brightness == Brightness.light ? const Color(0xFFF6F7F9) : colorScheme.surface,
       appBarTheme: AppBarTheme(
-        backgroundColor: colorScheme.surface,
+        backgroundColor: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
         elevation: 0,
         centerTitle: false,
       ),
+      cardTheme: CardThemeData(
+        color: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: colorScheme.surfaceVariant.withOpacity(0.35),
+        fillColor: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surfaceVariant,
         border: outlineBorder,
         enabledBorder: outlineBorder,
         focusedBorder: outlineBorder.copyWith(
@@ -213,6 +219,8 @@ class _MobileBotAppState extends State<MobileBotApp> {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -220,6 +228,8 @@ class _MobileBotAppState extends State<MobileBotApp> {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          foregroundColor: colorScheme.primary,
+          side: BorderSide(color: colorScheme.primary),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
@@ -229,7 +239,7 @@ class _MobileBotAppState extends State<MobileBotApp> {
 
   @override
   Widget build(BuildContext context) {
-    const seedColor = Color(0xFF3E5AA8);
+    const seedColor = Color(0xFF2FB24C);
     final lightTheme = _buildTheme(ColorScheme.fromSeed(
       seedColor: seedColor,
       brightness: Brightness.light,
@@ -1115,7 +1125,6 @@ class _AuthScreenState extends State<AuthScreen> {
     final themeToggleIcon = isDarkModeActive ? Icons.light_mode : Icons.dark_mode;
     final themeToggleTooltip = isDarkModeActive ? 'Светлый режим' : 'Тёмный режим';
     final nextThemeMode = isDarkModeActive ? ThemeMode.light : ThemeMode.dark;
-    final title = _isLogin ? 'Добро пожаловать' : 'Создание аккаунта';
     final description = _isLogin
         ? 'Введите логин или e-mail и пароль, чтобы продолжить работу.'
         : 'Заполните форму, чтобы подключиться. Пароль должен содержать минимум 5 символов.';
@@ -1127,176 +1136,196 @@ class _AuthScreenState extends State<AuthScreen> {
         tooltip: themeToggleTooltip,
         child: Icon(themeToggleIcon),
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              theme.colorScheme.primaryContainer.withOpacity(0.4),
-              theme.colorScheme.surface,
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final availableHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0.0;
-              final effectiveMinHeight = availableHeight > 48 ? availableHeight - 48 : 0.0;
-              return SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: effectiveMinHeight),
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 440),
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Form(
-                            key: _formKey,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  title,
-                                  style: theme.textTheme.headlineMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    color: theme.colorScheme.onSurface,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  description,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                if (!_isLogin)
-                                  TextFormField(
-                                    controller: _nameController,
-                                    decoration: const InputDecoration(labelText: 'Имя и фамилия'),
-                                    textCapitalization: TextCapitalization.words,
-                                    textInputAction: TextInputAction.next,
-                                    validator: (value) {
-                                      final trimmed = value?.trim() ?? '';
-                                      if (trimmed.runes.length < 2) {
-                                        return 'Имя должно содержать минимум 2 символа.';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                if (!_isLogin) const SizedBox(height: 16),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final availableHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0.0;
+            final effectiveMinHeight = availableHeight > 48 ? availableHeight - 48 : 0.0;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: effectiveMinHeight),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 12),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary.withOpacity(0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _isLogin ? Icons.work_outline_rounded : Icons.person_add_alt_1,
+                            color: theme.colorScheme.primary,
+                            size: 64,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'MobileBot Companion',
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _isLogin ? 'Вход' : 'Регистрация',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          description,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (!_isLogin)
                                 TextFormField(
-                                  controller: _emailController,
-                                  decoration: InputDecoration(
-                                    labelText: _isLogin ? 'Логин или e-mail' : 'Рабочий e-mail',
+                                  controller: _nameController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Имя и фамилия',
+                                    prefixIcon: Icon(Icons.badge_outlined),
                                   ),
-                                  keyboardType:
-                                      _isLogin ? TextInputType.text : TextInputType.emailAddress,
+                                  textCapitalization: TextCapitalization.words,
                                   textInputAction: TextInputAction.next,
                                   validator: (value) {
                                     final trimmed = value?.trim() ?? '';
-                                    if (_isLogin) {
-                                      if (trimmed.isEmpty) {
-                                        return 'Введите логин или e-mail.';
-                                      }
-                                      return null;
-                                    }
-                                    if (trimmed.isEmpty || !trimmed.contains('@')) {
-                                      return 'Укажите корректный e-mail.';
+                                    if (trimmed.runes.length < 2) {
+                                      return 'Имя должно содержать минимум 2 символа.';
                                     }
                                     return null;
                                   },
                                 ),
-                                const SizedBox(height: 16),
-                                TextFormField(
-                                  controller: _passwordController,
-                                  decoration: const InputDecoration(labelText: 'Пароль'),
-                                  obscureText: true,
-                                  textInputAction: TextInputAction.done,
-                                  onFieldSubmitted: (_) => _loading ? null : _submit(),
-                                  validator: (value) {
-                                    if (value == null || value.trim().length < 5) {
-                                      return 'Пароль должен содержать минимум 5 символов.';
+                              if (!_isLogin) const SizedBox(height: 16),
+                              TextFormField(
+                                controller: _emailController,
+                                decoration: InputDecoration(
+                                  labelText: _isLogin ? 'Логин или e-mail' : 'Рабочий e-mail',
+                                  prefixIcon: const Icon(Icons.alternate_email_outlined),
+                                ),
+                                keyboardType: _isLogin ? TextInputType.text : TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
+                                validator: (value) {
+                                  final trimmed = value?.trim() ?? '';
+                                  if (_isLogin) {
+                                    if (trimmed.isEmpty) {
+                                      return 'Введите логин или e-mail.';
                                     }
                                     return null;
-                                  },
+                                  }
+                                  if (trimmed.isEmpty || !trimmed.contains('@')) {
+                                    return 'Укажите корректный e-mail.';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              TextFormField(
+                                controller: _passwordController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Пароль',
+                                  prefixIcon: Icon(Icons.lock_outline_rounded),
                                 ),
-                                const SizedBox(height: 16),
-                                AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 250),
-                                  child: _error == null
-                                      ? const SizedBox.shrink()
-                                      : Container(
-                                          key: ValueKey<String?>(_error),
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            color: theme.colorScheme.errorContainer,
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            _error!,
-                                            style: TextStyle(
-                                              color: theme.colorScheme.onErrorContainer,
-                                            ),
+                                obscureText: true,
+                                textInputAction: TextInputAction.done,
+                                onFieldSubmitted: (_) => _loading ? null : _submit(),
+                                validator: (value) {
+                                  if (value == null || value.trim().length < 5) {
+                                    return 'Пароль должен содержать минимум 5 символов.';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 250),
+                                child: _error == null
+                                    ? const SizedBox.shrink()
+                                    : Container(
+                                        key: ValueKey<String?>(_error),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.errorContainer,
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          _error!,
+                                          style: TextStyle(
+                                            color: theme.colorScheme.onErrorContainer,
                                           ),
                                         ),
-                                ),
-                                const SizedBox(height: 24),
-                                FilledButton.icon(
-                                  onPressed: _loading ? null : _submit,
-                                  icon: _loading
-                                      ? SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(
-                                              theme.colorScheme.onPrimary,
-                                            ),
+                                      ),
+                              ),
+                              const SizedBox(height: 18),
+                              ElevatedButton.icon(
+                                onPressed: _loading ? null : _submit,
+                                icon: _loading
+                                    ? SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(
+                                            theme.colorScheme.onPrimary,
                                           ),
-                                        )
-                                      : Icon(_isLogin ? Icons.login : Icons.person_add_alt_1),
-                                  label: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 2),
-                                    child:
-                                        Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
-                                  ),
-                                  style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                  ),
+                                        ),
+                                      )
+                                    : Icon(_isLogin ? Icons.login_rounded : Icons.check_circle_outline),
+                                label: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  child: Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
                                 ),
-                                const SizedBox(height: 12),
-                                TextButton(
-                                  onPressed: _loading
-                                      ? null
-                                      : () {
-                                          setState(() {
-                                            _isLogin = !_isLogin;
-                                            _error = null;
-                                          });
-                                        },
-                                  child: Text(
-                                    _isLogin
-                                        ? 'Создать новый аккаунт'
-                                        : 'У меня уже есть аккаунт',
-                                  ),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
                                 ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 10),
+                              OutlinedButton(
+                                onPressed: _loading
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _isLogin = !_isLogin;
+                                          _error = null;
+                                        });
+                                      },
+                                child: Text(
+                                  _isLogin ? 'Регистрация' : 'У меня уже есть аккаунт',
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
       ),
     );

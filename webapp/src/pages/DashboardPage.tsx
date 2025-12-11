@@ -13,6 +13,9 @@ type LoadMode = 'initial' | 'refresh';
 type QuestionSection = DashboardSummary['questionsBySection'][number] & { totalCount: number };
 type QuestionSectionEntry = { key: string; title: string; section: QuestionSection };
 
+const FAQ_PREFIX_REGEX = /^\[(faq)\]\s*/i;
+const COMMAND_TAG_REGEX = /^\[[^\]]*команда[^\]]*\]/i;
+
 const EMPTY_SUMMARY: DashboardSummary = {
   totalDialogs: 0,
   openDialogs: 0,
@@ -161,6 +164,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     return found?.name || found?.login || `ID ${selectedOperatorId}`;
   }, [operators, selectedOperatorId]);
 
+  const operatorNameSet = useMemo(() => {
+    const names = new Set<string>();
+    operators.forEach((operator) => {
+      const push = (value?: string | null) => {
+        const normalized = value?.trim().toLowerCase();
+        if (normalized) {
+          names.add(normalized);
+        }
+      };
+      push(operator.name);
+      push(operator.login);
+    });
+    return names;
+  }, [operators]);
+
   const statCards = [
     { label: 'Всего обращений', value: data.totalDialogs },
     { label: 'Открытые диалоги', value: data.openDialogs },
@@ -170,28 +188,36 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     { label: 'Исходящих сообщений', value: data.totalOutgoingMessages },
   ];
 
-  const sectionTitleSet = useMemo(
-    () =>
-      new Set(
-        data.sectionBreakdown
-          .map((item) => item.title.trim().toLowerCase())
-          .filter((title) => title.length > 0),
-      ),
-    [data.sectionBreakdown],
-  );
+  const normalizeQuestionText = useCallback((raw: string) => {
+    const trimmed = raw.trim();
+    const withoutFaq = trimmed.replace(FAQ_PREFIX_REGEX, '');
+    return withoutFaq.trim().toLowerCase();
+  }, []);
+
+  const normalizedSectionTitles = useMemo(() => {
+    const titles = new Set<string>();
+    const addTitle = (title: string) => {
+      const normalized = title.trim().toLowerCase();
+      if (normalized) {
+        titles.add(normalized);
+      }
+    };
+    data.sectionBreakdown.forEach((item) => addTitle(item.title));
+    data.questionsBySection.forEach((section) => addTitle(section.title));
+    return titles;
+  }, [data.questionsBySection, data.sectionBreakdown]);
 
   const topQuestions = useMemo(() => {
     const seen = new Set<string>();
     const filtered = data.topQuestions.filter((item) => {
-      const trimmed = item.question.trim();
-      if (!trimmed) {
+      const normalized = normalizeQuestionText(item.question);
+      if (!normalized) {
         return false;
       }
-      const normalized = trimmed.toLowerCase();
-      if (sectionTitleSet.has(normalized)) {
+      if (normalizedSectionTitles.has(normalized)) {
         return false;
       }
-      if (/^\[[^\]]*команда[^\]]*\]/i.test(trimmed)) {
+      if (COMMAND_TAG_REGEX.test(item.question.trim())) {
         return false;
       }
       if (seen.has(normalized)) {
@@ -201,18 +227,44 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       return true;
     });
     return filtered.slice(0, 5);
-  }, [sectionTitleSet, data.topQuestions]);
+  }, [data.topQuestions, normalizeQuestionText, normalizedSectionTitles]);
 
   const questionsBySection = useMemo(
     () =>
       data.questionsBySection
-        .map((section) => ({
-          ...section,
-          totalCount: section.questions.reduce((acc, question) => acc + question.count, 0),
-        }))
+        .map((section) => {
+          const normalizedTitle = section.title.trim().toLowerCase();
+          const seenQuestions = new Set<string>();
+          const filteredQuestions = section.questions.filter((question) => {
+            const normalizedQuestion = normalizeQuestionText(question.question);
+            if (!normalizedQuestion) {
+              return false;
+            }
+            if (normalizedSectionTitles.has(normalizedQuestion)) {
+              return false;
+            }
+            if (normalizedTitle && normalizedQuestion === normalizedTitle) {
+              return false;
+            }
+            if (COMMAND_TAG_REGEX.test(question.question.trim())) {
+              return false;
+            }
+            if (seenQuestions.has(normalizedQuestion)) {
+              return false;
+            }
+            seenQuestions.add(normalizedQuestion);
+            return true;
+          });
+
+          return {
+            ...section,
+            questions: filteredQuestions,
+            totalCount: filteredQuestions.reduce((acc, question) => acc + question.count, 0),
+          };
+        })
         .filter((section) => section.questions.length > 0)
         .sort((a, b) => b.totalCount - a.totalCount),
-    [data.questionsBySection],
+    [data.questionsBySection, normalizeQuestionText, normalizedSectionTitles],
   ) as QuestionSection[];
 
   const questionSectionEntries = useMemo(() => {
@@ -268,6 +320,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
   const agentStats = useMemo(() => {
     const systemKeywords = ['admin', 'administrator', 'администратор', 'ai assistant'];
+    const hasOperatorNames = operatorNameSet.size > 0;
     return data.agentBreakdown
       .filter((agent) => {
         const normalized = agent.name.trim().toLowerCase();
@@ -280,6 +333,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
         if (/\b(bot|бот)\b/.test(normalized)) {
           return false;
         }
+        if (hasOperatorNames && !operatorNameSet.has(normalized)) {
+          return false;
+        }
         return true;
       })
       .map((agent) => ({
@@ -289,11 +345,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
           : 0,
       }))
       .sort((a, b) => b.messages - a.messages);
-  }, [data.agentBreakdown]);
+  }, [data.agentBreakdown, operatorNameSet]);
 
   const parseQuestion = useCallback((raw: string) => {
     const trimmed = raw.trim();
-    const match = trimmed.match(/^\[(faq)\]\s*/i);
+    const match = trimmed.match(FAQ_PREFIX_REGEX);
     return {
       text: match ? trimmed.slice(match[0].length) : trimmed,
       badge: match ? match[1].toUpperCase() : null,

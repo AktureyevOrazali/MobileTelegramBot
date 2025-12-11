@@ -3418,6 +3418,39 @@ class _DashboardViewState extends State<DashboardView> {
     final responseTimeLabel = _formatResponseTime(data.avgResponseTimeMinutes);
     final responseTimeMood = _describeResponseTime(data.avgResponseTimeMinutes);
 
+    final faqPrefixRegex = RegExp(r'^\[(faq)\]\s*', caseSensitive: false);
+    final commandTagRegex = RegExp(r'^\[[^\]]*команда[^\]]*\]', caseSensitive: false);
+
+    String normalizeQuestion(String raw) {
+      final withoutFaq = raw.trim().replaceFirst(faqPrefixRegex, '');
+      return withoutFaq.trim().toLowerCase();
+    }
+
+    final normalizedSectionTitles = <String>{};
+    for (final section in data.sectionBreakdown) {
+      final normalized = section.title.trim().toLowerCase();
+      if (normalized.isNotEmpty) {
+        normalizedSectionTitles.add(normalized);
+      }
+    }
+    for (final section in data.questionsBySection) {
+      final normalized = section.title.trim().toLowerCase();
+      if (normalized.isNotEmpty) {
+        normalizedSectionTitles.add(normalized);
+      }
+    }
+
+    final operatorNameSet = <String>{};
+    for (final operator in _operators) {
+      if (operator.name.trim().isNotEmpty) {
+        operatorNameSet.add(operator.name.trim().toLowerCase());
+      }
+      if (operator.login.trim().isNotEmpty) {
+        operatorNameSet.add(operator.login.trim().toLowerCase());
+      }
+    }
+    final hasOperatorNames = operatorNameSet.isNotEmpty;
+
     final operatorItems = <DropdownMenuItem<int?>>[
       const DropdownMenuItem<int?>(
         value: null,
@@ -3439,12 +3472,43 @@ class _DashboardViewState extends State<DashboardView> {
         continue;
       }
       seenKeys.add(key);
-      final totalCount = section.questions.fold<int>(0, (acc, question) => acc + question.count);
+      final normalizedTitle = section.title.trim().toLowerCase();
+      final seenQuestions = <String>{};
+      final filteredQuestions = section.questions.where((question) {
+        final normalizedQuestion = normalizeQuestion(question.question);
+        if (normalizedQuestion.isEmpty) {
+          return false;
+        }
+        if (normalizedSectionTitles.contains(normalizedQuestion)) {
+          return false;
+        }
+        if (normalizedTitle.isNotEmpty && normalizedQuestion == normalizedTitle) {
+          return false;
+        }
+        if (commandTagRegex.hasMatch(question.question.trim())) {
+          return false;
+        }
+        if (seenQuestions.contains(normalizedQuestion)) {
+          return false;
+        }
+        seenQuestions.add(normalizedQuestion);
+        return true;
+      }).toList();
+
+      if (filteredQuestions.isEmpty) {
+        continue;
+      }
+
+      final totalCount = filteredQuestions.fold<int>(0, (acc, question) => acc + question.count);
       sectionEntries.add(
         _QuestionSectionEntry(
           key: key,
           title: section.title.isNotEmpty ? section.title : 'Без раздела',
-          section: section,
+          section: DashboardSectionTopQuestions(
+            section: section.section,
+            title: section.title,
+            questions: filteredQuestions,
+          ),
           totalCount: totalCount,
         ),
       );
@@ -3460,6 +3524,27 @@ class _DashboardViewState extends State<DashboardView> {
         ),
       ),
     ];
+
+    final filteredTopQuestions = () {
+      final seen = <String>{};
+      return data.topQuestions.where((question) {
+        final normalized = normalizeQuestion(question.question);
+        if (normalized.isEmpty) {
+          return false;
+        }
+        if (normalizedSectionTitles.contains(normalized)) {
+          return false;
+        }
+        if (commandTagRegex.hasMatch(question.question.trim())) {
+          return false;
+        }
+        if (seen.contains(normalized)) {
+          return false;
+        }
+        seen.add(normalized);
+        return true;
+      }).take(5).toList();
+    }();
 
     final selectedSectionTitle = _selectedQuestionSection == 'all'
         ? 'Все разделы'
@@ -3481,7 +3566,7 @@ class _DashboardViewState extends State<DashboardView> {
 
     final selectedQuestions = () {
       if (_selectedQuestionSection == 'all') {
-        return data.topQuestions.take(5).toList();
+        return filteredTopQuestions;
       }
       final match = sectionEntries.firstWhere(
         (entry) => entry.key == _selectedQuestionSection,
@@ -3501,14 +3586,20 @@ class _DashboardViewState extends State<DashboardView> {
 
     final agentStats = data.agentBreakdown
         .where((agent) {
-          final normalized = agent.name.toLowerCase();
-          if (normalized.trim().isEmpty) {
+          final normalized = agent.name.trim().toLowerCase();
+          if (normalized.isEmpty) {
             return false;
           }
           if (normalized.contains('bot') || normalized.contains('бот')) {
             return false;
           }
           if (normalized.contains('admin') || normalized.contains('administrator') || normalized.contains('администратор')) {
+            return false;
+          }
+          if (normalized.contains('ai assistant')) {
+            return false;
+          }
+          if (hasOperatorNames && !operatorNameSet.contains(normalized)) {
             return false;
           }
           return true;

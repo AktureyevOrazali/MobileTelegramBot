@@ -7,6 +7,9 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'bottom_bar/bottom_bar_divider.dart';
+import 'bottom_bar/tab_item.dart';
+
 
 import 'network_exceptions.dart';
 
@@ -2484,84 +2487,96 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final currentUser = widget.apiClient.currentUser ?? widget.session.user;
-    final isAdmin = currentUser.isAdmin;
+Widget build(BuildContext context) {
+  final currentUser = widget.apiClient.currentUser ?? widget.session.user;
+  final isAdmin = currentUser.isAdmin;
 
-    final tabs = <Widget>[_buildChatTab()];
-    final destinations = <NavigationDestination>[
-      const NavigationDestination(
-        icon: Icon(Icons.chat_bubble_outline),
-        selectedIcon: Icon(Icons.chat_bubble),
-        label: 'Диалоги',
+  final tabs = <Widget>[_buildChatTab()];
+  final barItems = <TabItem>[
+    const TabItem(
+      icon: Icons.chat_bubble_outline,
+      title: 'Диалоги',
+      key: 'dialogs',
+    ),
+  ];
+  final callbacks = <VoidCallback?>[
+    () => _loadData(),
+  ];
+
+  if (isAdmin) {
+    tabs.add(
+      DashboardView(
+        key: _dashboardKey,
+        apiClient: widget.apiClient,
       ),
-    ];
-    final callbacks = <VoidCallback?>[
-      () => _loadData(),
-    ];
-
-    if (isAdmin) {
-      tabs.add(
-        DashboardView(
-          key: _dashboardKey,
-          apiClient: widget.apiClient,
-        ),
-      );
-      destinations.add(
-        const NavigationDestination(
-          icon: Icon(Icons.analytics_outlined),
-          selectedIcon: Icon(Icons.analytics),
-          label: 'Дэшборд',
-        ),
-      );
-      callbacks.add(() => _dashboardKey.currentState?.reloadSummary());
-
-      tabs.add(
-        AdminUserManagementView(
-          key: _adminKey,
-          apiClient: widget.apiClient,
-          currentUser: currentUser,
-        ),
-      );
-      destinations.add(
-        const NavigationDestination(
-          icon: Icon(Icons.admin_panel_settings_outlined),
-          selectedIcon: Icon(Icons.admin_panel_settings),
-          label: 'Администрирование',
-        ),
-      );
-      callbacks.add(() => _adminKey.currentState?.refreshAdminData());
-    }
+    );
+    barItems.add(
+      const TabItem(
+        icon: Icons.analytics_outlined,
+        title: 'Дэшборд',
+        key: 'dashboard',
+      ),
+    );
+    callbacks.add(() => _dashboardKey.currentState?.reloadSummary());
 
     tabs.add(
-      OperatorProfileView(
-        key: _profileKey,
+      AdminUserManagementView(
+        key: _adminKey,
         apiClient: widget.apiClient,
-        onProfileUpdated: widget.onProfileUpdated,
-        onSessionRefreshed: widget.onSessionRefreshed,
+        currentUser: currentUser,
       ),
     );
-    destinations.add(
-      const NavigationDestination(
-        icon: Icon(Icons.person_outline),
-        selectedIcon: Icon(Icons.person),
-        label: 'Профиль',
+    barItems.add(
+      const TabItem(
+        icon: Icons.admin_panel_settings_outlined,
+        title: 'Администрация',
+        key: 'admin',
       ),
     );
-    callbacks.add(() => _profileKey.currentState?.refreshProfile());
+    callbacks.add(() => _adminKey.currentState?.refreshAdminData());
+  }
 
-    final currentIndex = _tabIndex.clamp(0, tabs.length - 1);
+  tabs.add(
+    OperatorProfileView(
+      key: _profileKey,
+      apiClient: widget.apiClient,
+      onProfileUpdated: widget.onProfileUpdated,
+      onSessionRefreshed: widget.onSessionRefreshed,
+    ),
+  );
+  barItems.add(
+    const TabItem(
+      icon: Icons.person_outline,
+      title: 'Профиль',
+      key: 'profile',
+    ),
+  );
+  callbacks.add(() => _profileKey.currentState?.refreshProfile());
 
-    return Scaffold(
-      appBar: _buildAppBar(currentIndex, isAdmin),
-      body: IndexedStack(
-        index: currentIndex,
-        children: tabs,
+  final currentIndex = _tabIndex.clamp(0, tabs.length - 1);
+  final theme = Theme.of(context);
+  final colorScheme = theme.colorScheme;
+
+  final navigationBarBackgroundColor =
+      colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surface;
+
+  return Scaffold(
+    appBar: _buildAppBar(currentIndex, isAdmin),
+    body: IndexedStack(
+      index: currentIndex,
+      children: tabs,
+    ),
+    bottomNavigationBar: DecoratedBox(
+      decoration: BoxDecoration(
+        color: navigationBarBackgroundColor,
+        border: Border(
+          top: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.6)),
+        ),
       ),
-      bottomNavigationBar: NavigationBar(
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-        selectedIndex: currentIndex,
-        onDestinationSelected: (index) {
+      child: BottomBarDivider(
+        items: barItems,
+        indexSelected: currentIndex,
+        onTap: (index) {
           final callback = callbacks[index];
           if (currentIndex == index) {
             callback?.call();
@@ -2572,10 +2587,24 @@ class _ChatListScreenState extends State<ChatListScreen> {
           });
           callback?.call();
         },
-        destinations: destinations,
+        backgroundColor: Colors.transparent, // фон уже задан DecoratedBox'ом выше
+        color: colorScheme.onSurfaceVariant,
+        colorSelected: colorScheme.primary,
+        iconSize: 26,
+        titleStyle: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+        styleDivider: StyleDivider.top,
+        enableShadow: false,
+        top: 12,
+        bottom: 0,
+        pad: 4,
       ),
-    );
-  }
+    ),
+  );
+}
+
 }
 class ChatDetailScreen extends StatefulWidget {
   const ChatDetailScreen({required this.apiClient, required this.chat, super.key});
@@ -3660,7 +3689,12 @@ class _DashboardViewState extends State<DashboardView> {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final maxWidth = constraints.maxWidth;
-                  final tileWidth = maxWidth > 520 ? (maxWidth - 12) / 2 : maxWidth;
+                  final columns = maxWidth >= 640
+                      ? 3
+                      : maxWidth >= 440
+                          ? 2
+                          : 1;
+                  final tileWidth = (maxWidth - (columns - 1) * 12) / columns;
                   final statCards = <Widget>[
                     _DashboardStatCard(label: 'Всего обращений', value: numberFormatter.format(data.totalDialogs)),
                     _DashboardStatCard(label: 'Открытые диалоги', value: numberFormatter.format(data.openDialogs)),
@@ -3671,13 +3705,15 @@ class _DashboardViewState extends State<DashboardView> {
                     _DashboardStatCard(label: 'Среднее сообщений в диалоге', value: avgMessagesLabel),
                     _DashboardStatCard(label: 'Среднее время ответа', value: responseTimeLabel, hint: responseTimeMood),
                   ];
+
                   return Wrap(
                     spacing: 12,
                     runSpacing: 12,
+                    alignment: WrapAlignment.start,
                     children: statCards
                         .map(
                           (card) => SizedBox(
-                            width: tileWidth,
+                            width: columns == 1 ? maxWidth : tileWidth,
                             child: card,
                           ),
                         )
@@ -3855,48 +3891,161 @@ class _DashboardViewState extends State<DashboardView> {
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 )
               else ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(flex: 2, child: Text('Сотрудник', style: theme.textTheme.labelMedium)),
-                      Expanded(child: Text('Диалогов', textAlign: TextAlign.right, style: theme.textTheme.labelMedium)),
-                      Expanded(child: Text('Сообщений', textAlign: TextAlign.right, style: theme.textTheme.labelMedium)),
-                      Expanded(child: Text('Среднее', textAlign: TextAlign.right, style: theme.textTheme.labelMedium)),
-                      Expanded(flex: 2, child: Text('Последняя активность', textAlign: TextAlign.right, style: theme.textTheme.labelMedium)),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                ...agentStats.map((agent) {
-                  final lastActivityLabel = agent.lastActivity != null
-                      ? DateFormat('dd.MM.yyyy HH:mm').format(agent.lastActivity!.toLocal())
-                      : '—';
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isCompact = constraints.maxWidth < 520;
+
+                    if (isCompact) {
+                      return Column(
+                        children: agentStats.map((agent) {
+                          final lastActivityLabel = agent.lastActivity != null
+                              ? DateFormat('dd.MM.yyyy HH:mm').format(agent.lastActivity!.toLocal())
+                              : '—';
+
+                          return Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(agent.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 6,
+                                  children: [
+                                    _AgentStatChip(label: 'Диалогов', value: numberFormatter.format(agent.dialogs)),
+                                    _AgentStatChip(label: 'Сообщений', value: numberFormatter.format(agent.messages)),
+                                    _AgentStatChip(label: 'Среднее', value: agent.avgMessagesPerDialog.toStringAsFixed(1)),
+                                    _AgentStatChip(
+                                      label: 'Активность',
+                                      value: lastActivityLabel,
+                                      muted: true,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    }
+
+                    return Column(
                       children: [
-                        Expanded(flex: 2, child: Text(agent.name, style: theme.textTheme.bodyMedium)),
-                        Expanded(child: Text(numberFormatter.format(agent.dialogs), textAlign: TextAlign.right)),
-                        Expanded(child: Text(numberFormatter.format(agent.messages), textAlign: TextAlign.right)),
-                        Expanded(child: Text(agent.avgMessagesPerDialog.toStringAsFixed(1), textAlign: TextAlign.right)),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            lastActivityLabel,
-                            textAlign: TextAlign.right,
-                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  'Сотрудник',
+                                  style: theme.textTheme.labelMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  'Диалогов',
+                                  textAlign: TextAlign.right,
+                                  style: theme.textTheme.labelMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  'Сообщений',
+                                  textAlign: TextAlign.right,
+                                  style: theme.textTheme.labelMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  'Среднее',
+                                  textAlign: TextAlign.right,
+                                  style: theme.textTheme.labelMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  'Последняя активность',
+                                  textAlign: TextAlign.right,
+                                  style: theme.textTheme.labelMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        ...agentStats.map((agent) {
+                          final lastActivityLabel = agent.lastActivity != null
+                              ? DateFormat('dd.MM.yyyy HH:mm').format(agent.lastActivity!.toLocal())
+                              : '—';
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    agent.name,
+                                    style: theme.textTheme.bodyMedium,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    numberFormatter.format(agent.dialogs),
+                                    textAlign: TextAlign.right,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    numberFormatter.format(agent.messages),
+                                    textAlign: TextAlign.right,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    agent.avgMessagesPerDialog.toStringAsFixed(1),
+                                    textAlign: TextAlign.right,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    lastActivityLabel,
+                                    textAlign: TextAlign.right,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
                       ],
-                    ),
-                  );
-                }),
+                    );
+                  },
+                ),
               ],
             ],
           ),
@@ -3985,6 +4134,7 @@ class _DashboardStatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
+      constraints: const BoxConstraints(minHeight: 110),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
@@ -3995,20 +4145,67 @@ class _DashboardStatCard extends StatelessWidget {
         children: [
           Text(
             label,
+            maxLines: 2,
+            softWrap: true,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 6),
           Text(
             value,
+            maxLines: 2,
+            softWrap: true,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           if (hint != null) ...[
             const SizedBox(height: 4),
             Text(
               hint!,
+              maxLines: 2,
+              softWrap: true,
+              overflow: TextOverflow.fade,
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AgentStatChip extends StatelessWidget {
+  const _AgentStatChip({required this.label, required this.value, this.muted = false});
+
+  final String label;
+  final String value;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withOpacity(muted ? 0.25 : 0.4),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
         ],
       ),
     );

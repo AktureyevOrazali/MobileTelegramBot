@@ -13,6 +13,76 @@ import 'bottom_bar/tab_item.dart';
 
 import 'network_exceptions.dart';
 
+const Color brandPrimaryGreen = Color(0xFF4CAF50);
+const Color brandTeal = Color(0xFF0F7F71);
+const Color brandScaffoldBackground = Color(0xFFF1F6EF);
+const Color brandBottomInactive = Color(0xFF9E9E9E);
+const Color brandPrimaryText = Color(0xFF1F1F1F);
+const Color brandSecondaryText = Color(0xFF6F6F6F);
+const Color brandError = Color(0xFFB00020);
+
+const ColorScheme brandLightColorScheme = ColorScheme(
+  brightness: Brightness.light,
+  primary: brandPrimaryGreen,
+  onPrimary: Colors.white,
+  primaryContainer: Color(0xFFC8E6C9),
+  onPrimaryContainer: brandPrimaryText,
+  secondary: brandTeal,
+  onSecondary: Colors.white,
+  secondaryContainer: Color(0xFFB2DFDB),
+  onSecondaryContainer: brandPrimaryText,
+  tertiary: Color(0xFF4DB6AC),
+  onTertiary: Colors.white,
+  tertiaryContainer: Color(0xFFB2EBF2),
+  onTertiaryContainer: brandPrimaryText,
+  error: brandError,
+  onError: Colors.white,
+  background: brandScaffoldBackground,
+  onBackground: brandPrimaryText,
+  surface: Colors.white,
+  onSurface: brandPrimaryText,
+  surfaceVariant: Color(0xFFE5E8E3),
+  onSurfaceVariant: brandSecondaryText,
+  outline: Color(0xFFBDBDBD),
+  outlineVariant: Color(0xFFE0E0E0),
+  shadow: Colors.black,
+  scrim: Colors.black,
+  inverseSurface: Color(0xFF2E2E2E),
+  onInverseSurface: Colors.white,
+  inversePrimary: brandPrimaryGreen,
+);
+
+final ColorScheme brandDarkColorScheme = ColorScheme(
+  brightness: Brightness.dark,
+  primary: brandPrimaryGreen,
+  onPrimary: Colors.white,
+  primaryContainer: const Color(0xFF1B5E20),
+  onPrimaryContainer: Colors.white,
+  secondary: brandTeal,
+  onSecondary: Colors.white,
+  secondaryContainer: const Color(0xFF0C5F56),
+  onSecondaryContainer: Colors.white,
+  tertiary: const Color(0xFF26A69A),
+  onTertiary: Colors.black,
+  tertiaryContainer: const Color(0xFF16433E),
+  onTertiaryContainer: Colors.white,
+  error: brandError,
+  onError: Colors.white,
+  background: const Color(0xFF121212),
+  onBackground: Colors.white,
+  surface: const Color(0xFF1E1E1E),
+  onSurface: Colors.white,
+  surfaceVariant: const Color(0xFF2C2F2B),
+  onSurfaceVariant: Colors.white70,
+  outline: Colors.white24,
+  outlineVariant: Colors.white10,
+  shadow: Colors.black,
+  scrim: Colors.black,
+  inverseSurface: Colors.white,
+  onInverseSurface: brandPrimaryText,
+  inversePrimary: brandPrimaryGreen,
+);
+
 class _BadgeColors {
   final Color background;
   final Color border;
@@ -185,10 +255,10 @@ class _MobileBotAppState extends State<MobileBotApp> {
       colorScheme: colorScheme,
       useMaterial3: true,
       scaffoldBackgroundColor:
-          colorScheme.brightness == Brightness.light ? const Color(0xFFF6F7F9) : colorScheme.surface,
+          colorScheme.brightness == Brightness.light ? brandScaffoldBackground : colorScheme.surface,
       appBarTheme: AppBarTheme(
-        backgroundColor: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
+        backgroundColor: colorScheme.brightness == Brightness.light ? brandTeal : colorScheme.surface,
+        foregroundColor: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.onSurface,
         elevation: 0,
         centerTitle: false,
       ),
@@ -213,11 +283,19 @@ class _MobileBotAppState extends State<MobileBotApp> {
         contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: colorScheme.surface,
-        indicatorColor: colorScheme.primaryContainer.withOpacity(0.6),
+        backgroundColor: Colors.white,
+        indicatorColor: brandTeal,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-        labelTextStyle: MaterialStateProperty.all(
-          TextStyle(color: colorScheme.onSurface, fontWeight: FontWeight.w600),
+        labelTextStyle: MaterialStateProperty.resolveWith(
+          (states) => TextStyle(
+            color: states.contains(MaterialState.selected) ? brandTeal : brandBottomInactive,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        iconTheme: MaterialStateProperty.resolveWith(
+          (states) => IconThemeData(
+            color: states.contains(MaterialState.selected) ? brandTeal : brandBottomInactive,
+          ),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -242,15 +320,8 @@ class _MobileBotAppState extends State<MobileBotApp> {
 
   @override
   Widget build(BuildContext context) {
-    const seedColor = Color(0xFF2FB24C);
-    final lightTheme = _buildTheme(ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: Brightness.light,
-    ));
-    final darkTheme = _buildTheme(ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: Brightness.dark,
-    ));
+    final lightTheme = _buildTheme(brandLightColorScheme);
+    final darkTheme = _buildTheme(brandDarkColorScheme);
 
     final home = _session == null
         ? AuthScreen(

@@ -3045,7 +3045,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(88),
+          preferredSize: const Size.fromHeight(55),
           child: Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Column(
@@ -3235,7 +3235,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     controller: _messageController,
                     decoration: InputDecoration(
                       hintText: canSend
-                          ? 'Ваш ответ...$operatorSuffix'
+                          ? 'Напишите сообщение...'
                           : 'Только просмотр. Свяжитесь с администратором для прав ответа.',
                       contentPadding:
                           const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

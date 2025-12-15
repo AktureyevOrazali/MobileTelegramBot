@@ -263,7 +263,12 @@ class _MobileBotAppState extends State<MobileBotApp> {
         backgroundColor: colorScheme.brightness == Brightness.light ? brandTeal : colorScheme.surface,
         foregroundColor: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.onSurface,
         elevation: 0,
-        centerTitle: false,
+        centerTitle: true,
+        titleTextStyle: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.onSurface,
+        ),
       ),
       cardTheme: CardThemeData(
         color: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surface,
@@ -2003,16 +2008,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
       return AppBar(
         title: const Text('Диалоги MobileBot'),
         actions: [
-          IconButton(
-            tooltip: 'Фильтры',
-            icon: const Icon(Icons.filter_alt_outlined),
-            onPressed: _showFiltersSheet,
-          ),
-          IconButton(
-            tooltip: 'Обновить',
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _loadData(),
-          ),
           themeButton,
           logoutButton,
         ],
@@ -2022,15 +2017,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     Widget buildProfileAppBar() {
       return AppBar(
         title: const Text('Профиль оператора'),
-        actions: [
-          IconButton(
-            tooltip: 'Обновить',
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _profileKey.currentState?.refreshProfile(),
-          ),
-          themeButton,
-          logoutButton,
-        ],
+        actions: [themeButton, logoutButton],
       );
     }
 
@@ -2044,29 +2031,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
     if (index == 1) {
       return AppBar(
         title: const Text('Дэшборд обращений'),
-        actions: [
-          IconButton(
-            tooltip: 'Обновить дэшборд',
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _dashboardKey.currentState?.reloadSummary(),
-          ),
-          themeButton,
-          logoutButton,
-        ],
+        actions: [themeButton, logoutButton],
       );
     }
     if (index == 2) {
       return AppBar(
         title: const Text('Администрирование'),
-        actions: [
-          IconButton(
-            tooltip: 'Обновить список',
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _adminKey.currentState?.refreshAdminData(),
-          ),
-          themeButton,
-          logoutButton,
-        ],
+        actions: [themeButton, logoutButton],
       );
     }
     return buildProfileAppBar() as PreferredSizeWidget;
@@ -2625,7 +2596,7 @@ Widget build(BuildContext context) {
       key: 'profile',
     ),
   );
-  callbacks.add(() => _profileKey.currentState?.refreshProfile());
+    callbacks.add(() => _profileKey.currentState?.refreshProfile(showLoading: false));
 
   final currentIndex = _tabIndex.clamp(0, tabs.length - 1);
   final theme = Theme.of(context);
@@ -3158,11 +3129,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text('Раздел: $sectionTitle'),
-                if (_chat.bin != null && _chat.bin!.isNotEmpty)
-                  Text('БИН: ${_chat.bin}', style: const TextStyle(fontSize: 12)),
-                if (startedAtLabel != null)
-                  Text('Начат: $startedAtLabel', style: const TextStyle(fontSize: 12)),
                 if (closedAtLabel != null)
                   Text('Закрыт: $closedAtLabel', style: const TextStyle(fontSize: 12)),
               ],
@@ -5449,11 +5415,13 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     }
   }
 
-  Future<void> refreshProfile() async {
+  Future<void> refreshProfile({bool showLoading = true}) async {
     setState(() {
-      _loading = true;
       _error = null;
       _successMessage = null;
+      if (showLoading) {
+        _loading = true;
+      }
     });
     try {
       final profile = await widget.apiClient.fetchProfile();
@@ -5860,225 +5828,229 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     final isAdmin = profile?.isAdmin ?? false;
 
     final theme = Theme.of(context);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildProfileHeader(theme),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.photo_camera_back_outlined),
-                      label: const Text('Изменить фото профиля'),
-                      onPressed: _pickProfileImage,
+    return RefreshIndicator(
+      onRefresh: () => refreshProfile(showLoading: false),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(bottom: 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildProfileHeader(theme),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.photo_camera_back_outlined),
+                        label: const Text('Изменить фото профиля'),
+                        onPressed: _pickProfileImage,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Основная информация',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildTextFieldCard(
-                    controller: _nameController,
-                    label: 'ФИО',
-                    icon: Icons.badge,
-                    validator: (value) {
-                      final trimmed = value?.trim() ?? '';
-                      if (trimmed.runes.length < 2) {
-                        return 'Введите имя длиной не менее 2 символов';
-                      }
-                      return null;
-                    },
-                  ),
-                  _buildTextFieldCard(
-                    controller: _emailController,
-                    label: 'E-mail',
-                    icon: Icons.alternate_email,
-                    readOnly: true,
-                  ),
-                  _buildTextFieldCard(
-                    controller: _loginController,
-                    label: 'Логин для входа',
-                    icon: Icons.lock_person_outlined,
-                    readOnly: true,
-                  ),
-                  _buildTextFieldCard(
-                    controller: _jobTitleController,
-                    label: 'Должность/роль',
-                    icon: Icons.assignment_ind_outlined,
-                    textCapitalization: TextCapitalization.sentences,
-                  ),
-                  _buildTextFieldCard(
-                    controller: _phoneController,
-                    label: 'Номер телефона',
-                    icon: Icons.phone_iphone,
-                    keyboardType: TextInputType.phone,
-                  ),
-                  _buildTextFieldCard(
-                    controller: _bioController,
-                    label: 'О себе и компетенции',
-                    icon: Icons.description_outlined,
-                    maxLines: 3,
-                  ),
-                  if (profile != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 12),
                     Text(
-                      'Данные профиля',
+                      'Основная информация',
                       style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    _buildInfoTile(
-                      icon: Icons.calendar_month_outlined,
-                      label: 'Аккаунт создан',
-                      value: DateFormat('dd.MM.yyyy HH:mm').format(profile.createdAt.toLocal()),
+                    _buildTextFieldCard(
+                      controller: _nameController,
+                      label: 'ФИО',
+                      icon: Icons.badge,
+                      validator: (value) {
+                        final trimmed = value?.trim() ?? '';
+                        if (trimmed.runes.length < 2) {
+                          return 'Введите имя длиной не менее 2 символов';
+                        }
+                        return null;
+                      },
                     ),
-                    _buildInfoTile(
-                      icon: Icons.verified_user_outlined,
-                      label: 'Текущая роль',
-                      value: profile.roleLabel,
+                    _buildTextFieldCard(
+                      controller: _emailController,
+                      label: 'E-mail',
+                      icon: Icons.alternate_email,
+                      readOnly: true,
                     ),
-                    if (!isAdmin)
-                  Card(
-                    elevation: 0,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    color: theme.colorScheme.surfaceVariant,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.dashboard_customize_outlined,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Назначенные разделы',
-                                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              if (profile.sections.isEmpty)
-                                const Text('Разделы ещё не назначены. Обратитесь к администратору.')
-                              else
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 4,
-                                  children: profile.sections.map((sectionId) {
-                                    final match = _sections.firstWhere(
-                                      (section) => section.id == sectionId,
-                                      orElse: () => Section(id: sectionId, title: sectionId),
-                                    );
-                                    return Chip(label: Text(match.title));
-                                  }).toList(),
+                    _buildTextFieldCard(
+                      controller: _loginController,
+                      label: 'Логин для входа',
+                      icon: Icons.lock_person_outlined,
+                      readOnly: true,
+                    ),
+                    _buildTextFieldCard(
+                      controller: _jobTitleController,
+                      label: 'Должность/роль',
+                      icon: Icons.assignment_ind_outlined,
+                      textCapitalization: TextCapitalization.sentences,
+                    ),
+                    _buildTextFieldCard(
+                      controller: _phoneController,
+                      label: 'Номер телефона',
+                      icon: Icons.phone_iphone,
+                      keyboardType: TextInputType.phone,
+                    ),
+                    _buildTextFieldCard(
+                      controller: _bioController,
+                      label: 'О себе и компетенции',
+                      icon: Icons.description_outlined,
+                      maxLines: 3,
+                    ),
+                    if (profile != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Данные профиля',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildInfoTile(
+                        icon: Icons.calendar_month_outlined,
+                        label: 'Аккаунт создан',
+                        value: DateFormat('dd.MM.yyyy HH:mm').format(profile.createdAt.toLocal()),
+                      ),
+                      _buildInfoTile(
+                        icon: Icons.verified_user_outlined,
+                        label: 'Текущая роль',
+                        value: profile.roleLabel,
+                      ),
+                      if (!isAdmin)
+                        Card(
+                          elevation: 0,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          color: theme.colorScheme.surfaceVariant,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.dashboard_customize_outlined,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Назначенные разделы',
+                                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
                                 ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.business_center_outlined,
-                                    color: theme.colorScheme.onSurfaceVariant,
+                                const SizedBox(height: 8),
+                                if (profile.sections.isEmpty)
+                                  const Text('Разделы ещё не назначены. Обратитесь к администратору.')
+                                else
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: profile.sections.map((sectionId) {
+                                      final match = _sections.firstWhere(
+                                        (section) => section.id == sectionId,
+                                        orElse: () => Section(id: sectionId, title: sectionId),
+                                      );
+                                      return Chip(label: Text(match.title));
+                                    }).toList(),
                                   ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Назначенные БИНы',
-                                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              if (profile.binAssignments.isEmpty)
-                                const Text('БИНы ещё не назначены. Обратитесь к администратору.')
-                              else
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 4,
-                                  children: profile.binAssignments.map((assignment) {
-                                    final expiresLabel = assignment.expiresAt != null
-                                        ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
-                                        : 'без срока';
-                                    return Chip(
-                                      label: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(assignment.bin),
-                                          Text(
-                                            expiresLabel,
-                                            style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }).toList(),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.business_center_outlined,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Назначенные БИНы',
+                                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
                                 ),
-                            ],
+                                const SizedBox(height: 8),
+                                if (profile.binAssignments.isEmpty)
+                                  const Text('БИНы ещё не назначены. Обратитесь к администратору.')
+                                else
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: profile.binAssignments.map((assignment) {
+                                      final expiresLabel = assignment.expiresAt != null
+                                          ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
+                                          : 'без срока';
+                                      return Chip(
+                                        label: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(assignment.bin),
+                                            Text(
+                                              expiresLabel,
+                                              style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    _buildInfoTile(
-                      icon: Icons.star_outline,
-                      label: 'Избранные диалоги',
-                      value: profile.favoriteDialogIds.length.toString(),
-                    ),
-                  ],
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        _error!,
-                        style: const TextStyle(color: Colors.red),
-                      ),
-                    ),
-                  if (_successMessage != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        _successMessage!,
-                        style: const TextStyle(color: Colors.green),
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: _saving ? null : _save,
-                        icon: const Icon(Icons.save),
-                        label: _saving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Сохранить'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _saving ? null : _changeOwnPassword,
-                        icon: const Icon(Icons.lock_outline),
-                        label: const Text('Сменить пароль'),
+                      _buildInfoTile(
+                        icon: Icons.star_outline,
+                        label: 'Избранные диалоги',
+                        value: profile.favoriteDialogIds.length.toString(),
                       ),
                     ],
-                  ),
-                ],
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    if (_successMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _successMessage!,
+                          style: const TextStyle(color: Colors.green),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _saving ? null : _save,
+                          icon: const Icon(Icons.save),
+                          label: _saving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Сохранить'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _saving ? null : _changeOwnPassword,
+                          icon: const Icon(Icons.lock_outline),
+                          label: const Text('Сменить пароль'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

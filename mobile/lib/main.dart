@@ -250,81 +250,98 @@ class _MobileBotAppState extends State<MobileBotApp> {
   }
 
   ThemeData _buildTheme(ColorScheme colorScheme) {
-    final outlineBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.25)),
-    );
-    return ThemeData(
-      colorScheme: colorScheme,
-      useMaterial3: true,
-      scaffoldBackgroundColor:
-          colorScheme.brightness == Brightness.light ? brandScaffoldBackground : colorScheme.surface,
-      appBarTheme: AppBarTheme(
-        backgroundColor: colorScheme.brightness == Brightness.light ? brandTeal : colorScheme.surface,
-        foregroundColor: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.onSurface,
+  final outlineBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(14),
+    borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.25)),
+  );
+
+  final isLight = colorScheme.brightness == Brightness.light;
+
+  return ThemeData(
+    colorScheme: colorScheme,
+    useMaterial3: true,
+
+    // ВАЖНО: в тёмной теме фон должен быть background, а не surface,
+    // иначе карточки (surface) сливаются с фоном и "слои" пропадают.
+    scaffoldBackgroundColor: isLight ? brandScaffoldBackground : colorScheme.background,
+
+    appBarTheme: AppBarTheme(
+      backgroundColor: isLight ? brandTeal : colorScheme.background,
+      foregroundColor: isLight ? Colors.white : colorScheme.onBackground,
+      elevation: 0,
+      centerTitle: true,
+      titleTextStyle: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: isLight ? Colors.white : colorScheme.onBackground,
+      ),
+    ),
+
+    cardTheme: CardThemeData(
+      color: isLight ? Colors.white : colorScheme.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: colorScheme.brightness == Brightness.light
+          ? Colors.white
+          : colorScheme.background, // <-- было surfaceVariant
+      border: outlineBorder,
+      enabledBorder: outlineBorder,
+      focusedBorder: outlineBorder.copyWith(
+        borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    ),
+
+
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: colorScheme.inverseSurface,
+      contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
+    ),
+
+    // ВАЖНО: сейчас у тебя всегда белый navigation bar — в тёмной теме это ломает стиль.
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: isLight ? Colors.white : colorScheme.surface,
+      indicatorColor: brandTeal,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+      labelTextStyle: MaterialStateProperty.resolveWith(
+        (states) => TextStyle(
+          color: states.contains(MaterialState.selected) ? brandTeal : brandBottomInactive,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      iconTheme: MaterialStateProperty.resolveWith(
+        (states) => IconThemeData(
+          color: states.contains(MaterialState.selected) ? brandTeal : brandBottomInactive,
+        ),
+      ),
+    ),
+
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
         elevation: 0,
-        centerTitle: true,
-        titleTextStyle: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
-          color: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.onSurface,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      cardTheme: CardThemeData(
-        color: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surface,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: colorScheme.primary,
+        side: BorderSide(color: colorScheme.primary),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surfaceVariant,
-        border: outlineBorder,
-        enabledBorder: outlineBorder,
-        focusedBorder: outlineBorder.copyWith(
-          borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      ),
-      snackBarTheme: SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: colorScheme.inverseSurface,
-        contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
-      ),
-      navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: Colors.white,
-        indicatorColor: brandTeal,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-        labelTextStyle: MaterialStateProperty.resolveWith(
-          (states) => TextStyle(
-            color: states.contains(MaterialState.selected) ? brandTeal : brandBottomInactive,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        iconTheme: MaterialStateProperty.resolveWith(
-          (states) => IconThemeData(
-            color: states.contains(MaterialState.selected) ? brandTeal : brandBottomInactive,
-          ),
-        ),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: colorScheme.primary,
-          side: BorderSide(color: colorScheme.primary),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-      ),
-    );
-  }
+    ),
+  );
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -3684,10 +3701,6 @@ class _DashboardViewState extends State<DashboardView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Дэшборд обращений',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-              ),
               const SizedBox(height: 4),
               Text(
                 'Обновлено: $updatedAtLabel',
@@ -5694,7 +5707,9 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     final jobTitle = _jobTitleController.text.trim();
     final avatar = _buildProfileImageProvider();
     final headerColor =
-        theme.brightness == Brightness.dark ? theme.colorScheme.surface : brandTeal;
+    theme.brightness == Brightness.dark ? theme.colorScheme.background : brandTeal;
+
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(

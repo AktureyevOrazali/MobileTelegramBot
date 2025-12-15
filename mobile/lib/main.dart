@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'bottom_bar/bottom_bar_divider.dart';
 import 'bottom_bar/tab_item.dart';
@@ -5399,11 +5402,51 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   String? _successMessage;
   UserProfile? _profile;
   List<Section> _sections = [];
+  File? _profileImageFile;
+  String? _profileImagePath;
 
   @override
   void initState() {
     super.initState();
+    _nameController.addListener(_handleProfileHeaderChange);
+    _jobTitleController.addListener(_handleProfileHeaderChange);
+    _loadSavedProfileImage();
     refreshProfile();
+  }
+
+  void _handleProfileHeaderChange() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _loadSavedProfileImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedPath = prefs.getString('profile_image_path');
+    if (storedPath == null) {
+      return;
+    }
+    final file = File(storedPath);
+    if (await file.exists()) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _profileImagePath = storedPath;
+        _profileImageFile = file;
+      });
+    } else {
+      await prefs.remove('profile_image_path');
+    }
+  }
+
+  Future<void> _saveProfileImagePath(String? path) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (path == null || path.isEmpty) {
+      await prefs.remove('profile_image_path');
+    } else {
+      await prefs.setString('profile_image_path', path);
+    }
   }
 
   Future<void> refreshProfile() async {
@@ -5426,6 +5469,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
       _jobTitleController.text = profile.jobTitle;
       _phoneController.text = profile.phone;
       _bioController.text = profile.bio;
+      _handleProfileHeaderChange();
       setState(() {
         _sections = sections;
         _loading = false;
@@ -5602,6 +5646,8 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
 
   @override
   void dispose() {
+    _nameController.removeListener(_handleProfileHeaderChange);
+    _jobTitleController.removeListener(_handleProfileHeaderChange);
     _nameController.dispose();
     _emailController.dispose();
     _loginController.dispose();
@@ -5609,6 +5655,192 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     _phoneController.dispose();
     _bioController.dispose();
     super.dispose();
+  }
+
+  ImageProvider<Object>? _buildProfileImageProvider() {
+    final file = _profileImageFile;
+    if (file != null && file.existsSync()) {
+      return FileImage(file);
+    }
+    return null;
+  }
+
+  Future<void> _pickProfileImage() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (picked == null) {
+        return;
+      }
+
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        compressFormat: ImageCompressFormat.jpg,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Обрезать фото',
+            toolbarColor: brandPrimaryGreen,
+            toolbarWidgetColor: Colors.white,
+            activeControlsWidgetColor: brandPrimaryGreen,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+          ),
+          IOSUiSettings(
+            title: 'Обрезать фото',
+            aspectRatioLockEnabled: true,
+          ),
+        ],
+      );
+
+      final resultingPath = cropped?.path ?? picked.path;
+      final file = File(resultingPath);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _profileImagePath = resultingPath;
+        _profileImageFile = file;
+        _successMessage = 'Фото профиля обновлено';
+      });
+      await _saveProfileImagePath(resultingPath);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = 'Не удалось обновить фото: $error';
+      });
+    }
+  }
+
+  String get _displayName {
+    final edited = _nameController.text.trim();
+    if (edited.isNotEmpty) {
+      return edited;
+    }
+    return _profile?.name ?? '';
+  }
+
+  Widget _buildProfileHeader(ThemeData theme) {
+    final jobTitle = _jobTitleController.text.trim();
+    final avatar = _buildProfileImageProvider();
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: brandTeal,
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              CircleAvatar(
+                radius: 44,
+                backgroundColor: Colors.white,
+                backgroundImage: avatar,
+                child: avatar == null
+                    ? const Icon(Icons.person, size: 52, color: brandPrimaryGreen)
+                    : null,
+              ),
+              Material(
+                color: Colors.white,
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: 'Изменить фото профиля',
+                  icon: const Icon(Icons.camera_alt, color: brandPrimaryGreen),
+                  onPressed: _pickProfileImage,
+                  constraints: const BoxConstraints.tightFor(width: 38, height: 38),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _displayName.isEmpty ? 'Профиль' : _displayName,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (jobTitle.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                jobTitle,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextFieldCard({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    String? hint,
+    TextInputType keyboardType = TextInputType.text,
+    bool readOnly = false,
+    int maxLines = 1,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+    String? Function(String?)? validator,
+  }) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: Colors.grey.shade100,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: TextFormField(
+          controller: controller,
+          readOnly: readOnly,
+          maxLines: maxLines,
+          keyboardType: keyboardType,
+          textCapitalization: textCapitalization,
+          validator: validator,
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            prefixIcon: Icon(icon, color: Colors.grey.shade700),
+            suffixIcon: readOnly
+                ? const Icon(Icons.lock_outline, size: 18)
+                : const Icon(Icons.edit_outlined),
+            border: InputBorder.none,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoTile({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: Colors.grey.shade100,
+      child: ListTile(
+        leading: Icon(icon, color: Colors.grey.shade700),
+        title: Text(label),
+        subtitle: Text(value),
+      ),
+    );
   }
 
   @override
@@ -5619,170 +5851,220 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     final profile = _profile;
     final isAdmin = profile?.isAdmin ?? false;
 
-
+    final theme = Theme.of(context);
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Имя'),
-              textCapitalization: TextCapitalization.words,
-              validator: (value) {
-                final trimmed = value?.trim() ?? '';
-                if (trimmed.runes.length < 2) {
-                  return 'Введите имя длиной не менее 2 символов';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _emailController,
-              decoration: const InputDecoration(labelText: 'Email'),
-              readOnly: true,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _loginController,
-              decoration: const InputDecoration(labelText: 'Логин для входа'),
-              readOnly: true,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _jobTitleController,
-              decoration: const InputDecoration(labelText: 'Должность/роль'),
-              textCapitalization: TextCapitalization.sentences,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _phoneController,
-              decoration: const InputDecoration(labelText: 'Телефон'),
-              keyboardType: TextInputType.phone,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _bioController,
-              decoration: const InputDecoration(labelText: 'О себе и компетенции'),
-              maxLines: 4,
-            ),
-            const SizedBox(height: 16),
-            if (profile != null)
-              Text(
-                'Аккаунт создан: ${DateFormat('dd.MM.yyyy HH:mm').format(profile.createdAt.toLocal())}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            if (profile != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'Текущая роль: ${profile.roleLabel}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-            if (profile != null) ...[
-              const SizedBox(height: 12),
-              if (!isAdmin) ...[
-                Text(
-                  'Назначенные разделы:',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                if (profile.sections.isEmpty)
-                  const Text(
-                    'Разделы ещё не назначены. Обратитесь к администратору.',
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: profile.sections.map((sectionId) {
-                      final match = _sections.firstWhere(
-                        (section) => section.id == sectionId,
-                        orElse: () => Section(id: sectionId, title: sectionId),
-                      );
-                      return Chip(label: Text(match.title));
-                    }).toList(),
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildProfileHeader(theme),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.photo_camera_back_outlined),
+                      label: const Text('Изменить фото профиля'),
+                      onPressed: _pickProfileImage,
+                    ),
                   ),
-                const SizedBox(height: 8),
-                Text(
-                  'Назначенные БИНы:',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                if (profile.binAssignments.isEmpty)
-                  const Text(
-                    'БИНы ещё не назначены. Обратитесь к администратору.',
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: profile.binAssignments.map((assignment) {
-                      final expiresLabel = assignment.expiresAt != null
-                          ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
-                          : 'без срока';
-                      return Chip(
-                        label: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(assignment.bin),
-                            Text(
-                              expiresLabel,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
-                            ),
-                          ],
+                  const SizedBox(height: 12),
+                  Text(
+                    'Основная информация',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildTextFieldCard(
+                    controller: _nameController,
+                    label: 'ФИО',
+                    icon: Icons.badge,
+                    validator: (value) {
+                      final trimmed = value?.trim() ?? '';
+                      if (trimmed.runes.length < 2) {
+                        return 'Введите имя длиной не менее 2 символов';
+                      }
+                      return null;
+                    },
+                  ),
+                  _buildTextFieldCard(
+                    controller: _emailController,
+                    label: 'E-mail',
+                    icon: Icons.alternate_email,
+                    readOnly: true,
+                  ),
+                  _buildTextFieldCard(
+                    controller: _loginController,
+                    label: 'Логин для входа',
+                    icon: Icons.lock_person_outlined,
+                    readOnly: true,
+                  ),
+                  _buildTextFieldCard(
+                    controller: _jobTitleController,
+                    label: 'Должность/роль',
+                    icon: Icons.assignment_ind_outlined,
+                    textCapitalization: TextCapitalization.sentences,
+                  ),
+                  _buildTextFieldCard(
+                    controller: _phoneController,
+                    label: 'Номер телефона',
+                    icon: Icons.phone_iphone,
+                    keyboardType: TextInputType.phone,
+                  ),
+                  _buildTextFieldCard(
+                    controller: _bioController,
+                    label: 'О себе и компетенции',
+                    icon: Icons.description_outlined,
+                    maxLines: 3,
+                  ),
+                  if (profile != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Данные профиля',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildInfoTile(
+                      icon: Icons.calendar_month_outlined,
+                      label: 'Аккаунт создан',
+                      value: DateFormat('dd.MM.yyyy HH:mm').format(profile.createdAt.toLocal()),
+                    ),
+                    _buildInfoTile(
+                      icon: Icons.verified_user_outlined,
+                      label: 'Текущая роль',
+                      value: profile.roleLabel,
+                    ),
+                    if (!isAdmin)
+                      Card(
+                        elevation: 0,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        color: Colors.grey.shade100,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.dashboard_customize_outlined, color: Colors.grey.shade700),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Назначенные разделы',
+                                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              if (profile.sections.isEmpty)
+                                const Text('Разделы ещё не назначены. Обратитесь к администратору.')
+                              else
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  children: profile.sections.map((sectionId) {
+                                    final match = _sections.firstWhere(
+                                      (section) => section.id == sectionId,
+                                      orElse: () => Section(id: sectionId, title: sectionId),
+                                    );
+                                    return Chip(label: Text(match.title));
+                                  }).toList(),
+                                ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Icon(Icons.business_center_outlined, color: Colors.grey.shade700),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Назначенные БИНы',
+                                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              if (profile.binAssignments.isEmpty)
+                                const Text('БИНы ещё не назначены. Обратитесь к администратору.')
+                              else
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  children: profile.binAssignments.map((assignment) {
+                                    final expiresLabel = assignment.expiresAt != null
+                                        ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
+                                        : 'без срока';
+                                    return Chip(
+                                      label: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(assignment.bin),
+                                          Text(
+                                            expiresLabel,
+                                            style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                            ],
+                          ),
                         ),
-                      );
-                    }).toList(),
+                      ),
+                    _buildInfoTile(
+                      icon: Icons.star_outline,
+                      label: 'Избранные диалоги',
+                      value: profile.favoriteDialogIds.length.toString(),
+                    ),
+                  ],
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  if (_successMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _successMessage!,
+                        style: const TextStyle(color: Colors.green),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _saving ? null : _save,
+                        icon: const Icon(Icons.save),
+                        label: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Сохранить'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _saving ? null : _changeOwnPassword,
+                        icon: const Icon(Icons.lock_outline),
+                        label: const Text('Сменить пароль'),
+                      ),
+                    ],
                   ),
-                const SizedBox(height: 8),
-              ],
-              Text(
-                'Избранных диалогов: ${profile.favoriteDialogIds.length}',
-                style: Theme.of(context).textTheme.bodySmall,
+                ],
               ),
-            ],
-            const SizedBox(height: 12),
-            if (_error != null)
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.red),
-              ),
-            if (_successMessage != null)
-              Text(
-                _successMessage!,
-                style: const TextStyle(color: Colors.green),
-              ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _saving ? null : _save,
-                  icon: const Icon(Icons.save),
-                  label: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Сохранить'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _saving ? null : _changeOwnPassword,
-                  icon: const Icon(Icons.lock_outline),
-                  label: const Text('Сменить пароль'),
-                ),
-              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

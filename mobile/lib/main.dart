@@ -5725,11 +5725,13 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   Widget _buildProfileHeader(ThemeData theme) {
     final jobTitle = _jobTitleController.text.trim();
     final avatar = _buildProfileImageProvider();
+    final headerColor =
+        theme.brightness == Brightness.dark ? theme.colorScheme.surface : brandTeal;
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(
-        color: brandTeal,
-        borderRadius: BorderRadius.only(
+      decoration: BoxDecoration(
+        color: headerColor,
+        borderRadius: const BorderRadius.only(
           bottomLeft: Radius.circular(24),
           bottomRight: Radius.circular(24),
         ),
@@ -5797,11 +5799,13 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     TextCapitalization textCapitalization = TextCapitalization.none,
     String? Function(String?)? validator,
   }) {
+    final theme = Theme.of(context);
+    final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: Colors.grey.shade100,
+      color: theme.colorScheme.surfaceVariant,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: TextFormField(
@@ -5814,10 +5818,13 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
           decoration: InputDecoration(
             labelText: label,
             hintText: hint,
-            prefixIcon: Icon(icon, color: Colors.grey.shade700),
-            suffixIcon: readOnly
-                ? const Icon(Icons.lock_outline, size: 18)
-                : const Icon(Icons.edit_outlined),
+            prefixIcon: Icon(icon, color: onSurfaceVariant),
+            suffixIcon: IconTheme(
+              data: IconThemeData(color: onSurfaceVariant),
+              child: readOnly
+                  ? const Icon(Icons.lock_outline, size: 18)
+                  : const Icon(Icons.edit_outlined),
+            ),
             border: InputBorder.none,
           ),
         ),
@@ -5830,13 +5837,14 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     required String label,
     required String value,
   }) {
+    final theme = Theme.of(context);
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: Colors.grey.shade100,
+      color: theme.colorScheme.surfaceVariant,
       child: ListTile(
-        leading: Icon(icon, color: Colors.grey.shade700),
+        leading: Icon(icon, color: theme.colorScheme.onSurfaceVariant),
         title: Text(label),
         subtitle: Text(value),
       ),
@@ -5939,23 +5947,26 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                       value: profile.roleLabel,
                     ),
                     if (!isAdmin)
-                      Card(
-                        elevation: 0,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        color: Colors.grey.shade100,
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                  Card(
+                    elevation: 0,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    color: theme.colorScheme.surfaceVariant,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.dashboard_customize_outlined, color: Colors.grey.shade700),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Назначенные разделы',
-                                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                              Icon(
+                                Icons.dashboard_customize_outlined,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Назначенные разделы',
+                                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                                   ),
                                 ],
                               ),
@@ -5977,7 +5988,10 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                               const SizedBox(height: 12),
                               Row(
                                 children: [
-                                  Icon(Icons.business_center_outlined, color: Colors.grey.shade700),
+                                  Icon(
+                                    Icons.business_center_outlined,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
                                   const SizedBox(width: 8),
                                   Text(
                                     'Назначенные БИНы',

@@ -12,122 +12,17 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'bottom_bar/bottom_bar_divider.dart';
 import 'bottom_bar/tab_item.dart';
-
-
 import 'network_exceptions.dart';
+import 'theme/app_theme.dart';
 
-const Color brandPrimaryGreen = Color(0xFF4CAF50);
-const Color brandTeal = Color(0xFF0F7F71);
-const Color brandScaffoldBackground = Color(0xFFF1F6EF);
-const Color brandBottomInactive = Color(0xFF9E9E9E);
-const Color brandPrimaryText = Color(0xFF1F1F1F);
-const Color brandSecondaryText = Color(0xFF6F6F6F);
-const Color brandError = Color(0xFFB00020);
-
-const ColorScheme brandLightColorScheme = ColorScheme(
-  brightness: Brightness.light,
-  primary: brandPrimaryGreen,
-  onPrimary: Colors.white,
-  primaryContainer: Color(0xFFC8E6C9),
-  onPrimaryContainer: brandPrimaryText,
-  secondary: brandTeal,
-  onSecondary: Colors.white,
-  secondaryContainer: Color(0xFFB2DFDB),
-  onSecondaryContainer: brandPrimaryText,
-  tertiary: Color(0xFF4DB6AC),
-  onTertiary: Colors.white,
-  tertiaryContainer: Color(0xFFB2EBF2),
-  onTertiaryContainer: brandPrimaryText,
-  error: brandError,
-  onError: Colors.white,
-  background: brandScaffoldBackground,
-  onBackground: brandPrimaryText,
-  surface: Colors.white,
-  onSurface: brandPrimaryText,
-  surfaceVariant: Color(0xFFE5E8E3),
-  onSurfaceVariant: brandSecondaryText,
-  outline: Color(0xFFBDBDBD),
-  outlineVariant: Color(0xFFE0E0E0),
-  shadow: Colors.black,
-  scrim: Colors.black,
-  inverseSurface: Color(0xFF2E2E2E),
-  onInverseSurface: Colors.white,
-  inversePrimary: brandPrimaryGreen,
-);
-
-final ColorScheme brandDarkColorScheme = ColorScheme(
-  brightness: Brightness.dark,
-  primary: brandPrimaryGreen,
-  onPrimary: Colors.white,
-  primaryContainer: const Color(0xFF1B5E20),
-  onPrimaryContainer: Colors.white,
-  secondary: brandTeal,
-  onSecondary: Colors.white,
-  secondaryContainer: const Color(0xFF0C5F56),
-  onSecondaryContainer: Colors.white,
-  tertiary: const Color(0xFF26A69A),
-  onTertiary: Colors.black,
-  tertiaryContainer: const Color(0xFF16433E),
-  onTertiaryContainer: Colors.white,
-  error: brandError,
-  onError: Colors.white,
-  background: const Color(0xFF121212),
-  onBackground: Colors.white,
-  surface: const Color(0xFF1E1E1E),
-  onSurface: Colors.white,
-  surfaceVariant: const Color(0xFF2C2F2B),
-  onSurfaceVariant: Colors.white70,
-  outline: Colors.white24,
-  outlineVariant: Colors.white10,
-  shadow: Colors.black,
-  scrim: Colors.black,
-  inverseSurface: Colors.white,
-  onInverseSurface: brandPrimaryText,
-  inversePrimary: brandPrimaryGreen,
-);
-
-class _BadgeColors {
-  final Color background;
-  final Color border;
-  final Color foreground;
-
-  const _BadgeColors({required this.background, required this.border, required this.foreground});
+AppBadgeColors _statusBadgeColors(ThemeData theme, {required bool isClosed}) {
+  final palette = theme.extension<AppColors>()!;
+  return isClosed ? palette.statusClosedBadge : palette.statusOpenBadge;
 }
 
-_BadgeColors _statusBadgeColors(ThemeData theme, {required bool isClosed}) {
-  final isDark = theme.brightness == Brightness.dark;
-
-  if (isClosed) {
-    return _BadgeColors(
-      background: isDark ? const Color(0xFF3A2226) : Colors.red.shade50,
-      border: isDark ? const Color(0xFF6A2D35) : Colors.red.shade200,
-      foreground: isDark ? const Color(0xFFFFB3C0) : Colors.red.shade700,
-    );
-  }
-
-  return _BadgeColors(
-    background: isDark ? const Color(0xFF1F3326) : Colors.green.shade50,
-    border: isDark ? const Color(0xFF2F5D3A) : Colors.green.shade200,
-    foreground: isDark ? const Color(0xFF9CE6B3) : Colors.green.shade700,
-  );
-}
-
-_BadgeColors _aiBadgeColors(ThemeData theme, {required bool enabled}) {
-  final isDark = theme.brightness == Brightness.dark;
-
-  if (enabled) {
-    return _BadgeColors(
-      background: isDark ? const Color(0xFF1F2B46) : Colors.indigo.shade50,
-      border: isDark ? const Color(0xFF304B7A) : Colors.indigo.shade200,
-      foreground: isDark ? const Color(0xFFB8CCFF) : Colors.indigo.shade700,
-    );
-  }
-
-  return _BadgeColors(
-    background: isDark ? const Color(0xFF2A2C33) : Colors.grey.shade200,
-    border: isDark ? const Color(0xFF3C4048) : Colors.grey.shade300,
-    foreground: isDark ? const Color(0xFFB0B4BE) : Colors.grey.shade700,
-  );
+AppBadgeColors _aiBadgeColors(ThemeData theme, {required bool enabled}) {
+  final palette = theme.extension<AppColors>()!;
+  return enabled ? palette.aiEnabledBadge : palette.aiDisabledBadge;
 }
 
 Future<void> main() async {
@@ -249,104 +144,109 @@ class _MobileBotAppState extends State<MobileBotApp> {
     }
   }
 
-  ThemeData _buildTheme(ColorScheme colorScheme) {
-  final outlineBorder = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(14),
-    borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.25)),
-  );
+  ThemeData _buildTheme(ColorScheme colorScheme, AppColors appColors) {
+    final outlineBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.25)),
+    );
 
-  final isLight = colorScheme.brightness == Brightness.light;
+    final isLight = colorScheme.brightness == Brightness.light;
 
-  return ThemeData(
-    colorScheme: colorScheme,
-    useMaterial3: true,
+    return ThemeData(
+      colorScheme: colorScheme,
+      useMaterial3: true,
+      extensions: <ThemeExtension<dynamic>>[appColors],
 
-    // ВАЖНО: в тёмной теме фон должен быть background, а не surface,
-    // иначе карточки (surface) сливаются с фоном и "слои" пропадают.
-    scaffoldBackgroundColor: isLight ? brandScaffoldBackground : colorScheme.background,
+      // ВАЖНО: в тёмной теме фон должен быть background, а не surface,
+      // иначе карточки (surface) сливаются с фоном и "слои" пропадают.
+      scaffoldBackgroundColor: isLight ? appColors.scaffoldBackground : colorScheme.background,
 
-    appBarTheme: AppBarTheme(
-      backgroundColor: isLight ? brandTeal : colorScheme.background,
-      foregroundColor: isLight ? Colors.white : colorScheme.onBackground,
-      elevation: 0,
-      centerTitle: true,
-      titleTextStyle: TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w700,
-        color: isLight ? Colors.white : colorScheme.onBackground,
-      ),
-    ),
-
-    cardTheme: CardThemeData(
-      color: isLight ? Colors.white : colorScheme.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    ),
-
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: colorScheme.brightness == Brightness.light
-          ? Colors.white
-          : colorScheme.background, // <-- было surfaceVariant
-      border: outlineBorder,
-      enabledBorder: outlineBorder,
-      focusedBorder: outlineBorder.copyWith(
-        borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    ),
-
-
-    snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: colorScheme.inverseSurface,
-      contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
-    ),
-
-    // ВАЖНО: сейчас у тебя всегда белый navigation bar — в тёмной теме это ломает стиль.
-    navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: isLight ? Colors.white : colorScheme.surface,
-      indicatorColor: brandTeal,
-      labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-      labelTextStyle: MaterialStateProperty.resolveWith(
-        (states) => TextStyle(
-          color: states.contains(MaterialState.selected) ? brandTeal : brandBottomInactive,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      iconTheme: MaterialStateProperty.resolveWith(
-        (states) => IconThemeData(
-          color: states.contains(MaterialState.selected) ? brandTeal : brandBottomInactive,
-        ),
-      ),
-    ),
-
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
+      appBarTheme: AppBarTheme(
+        backgroundColor: appColors.appBarColor,
+        foregroundColor: isLight ? appColors.appBarForeground : colorScheme.onBackground,
         elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        centerTitle: true,
+        titleTextStyle: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: isLight ? appColors.appBarForeground : colorScheme.onBackground,
+        ),
       ),
-    ),
 
-    outlinedButtonTheme: OutlinedButtonThemeData(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: colorScheme.primary,
-        side: BorderSide(color: colorScheme.primary),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      cardTheme: CardThemeData(
+        color: isLight ? Colors.white : colorScheme.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
-    ),
-  );
-}
+
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: colorScheme.brightness == Brightness.light
+            ? Colors.white
+            : colorScheme.background, // <-- было surfaceVariant
+        border: outlineBorder,
+        enabledBorder: outlineBorder,
+        focusedBorder: outlineBorder.copyWith(
+          borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+
+
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: colorScheme.inverseSurface,
+        contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
+      ),
+
+      // ВАЖНО: сейчас у тебя всегда белый navigation bar — в тёмной теме это ломает стиль.
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: isLight ? Colors.white : colorScheme.surface,
+        indicatorColor: colorScheme.secondary,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+        labelTextStyle: MaterialStateProperty.resolveWith(
+          (states) => TextStyle(
+            color: states.contains(MaterialState.selected)
+                ? colorScheme.secondary
+                : appColors.bottomBarInactive,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        iconTheme: MaterialStateProperty.resolveWith(
+          (states) => IconThemeData(
+            color: states.contains(MaterialState.selected)
+                ? colorScheme.secondary
+                : appColors.bottomBarInactive,
+          ),
+        ),
+      ),
+
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      ),
+
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: colorScheme.primary,
+          side: BorderSide(color: colorScheme.primary),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      ),
+    );
+  }
 
 
   @override
   Widget build(BuildContext context) {
-    final lightTheme = _buildTheme(brandLightColorScheme);
-    final darkTheme = _buildTheme(brandDarkColorScheme);
+    final lightTheme = _buildTheme(brandLightColorScheme, AppColors.light);
+    final darkTheme = _buildTheme(brandDarkColorScheme, AppColors.dark);
 
     final home = _session == null
         ? AuthScreen(
@@ -2979,6 +2879,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final canDelete = (user?.isAdmin ?? false) || (user?.canReply ?? false);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final appColors = theme.extension<AppColors>()!;
     final isClosed = _chat.isClosed;
     final statusLabel = isClosed ? 'Закрыт' : 'Открыт';
     final statusColors = _statusBadgeColors(theme, isClosed: isClosed);
@@ -3181,11 +3082,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                           final message = _messages[index];
                           final isOutgoing = message.direction == 'outgoing';
                           final bubbleColor = isOutgoing
-                              ? colorScheme.primary
-                              : colorScheme.surfaceVariant;
+                              ? appColors.outgoingMessageBackground
+                              : appColors.incomingMessageBackground;
                           final textColor = isOutgoing
-                              ? colorScheme.onPrimary
-                              : colorScheme.onSurface;
+                              ? appColors.outgoingMessageText
+                              : appColors.incomingMessageText;
                           final alignment = isOutgoing ? Alignment.centerRight : Alignment.centerLeft;
                           return Align(
                             alignment: alignment,
@@ -5706,8 +5607,9 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   Widget _buildProfileHeader(ThemeData theme) {
     final jobTitle = _jobTitleController.text.trim();
     final avatar = _buildProfileImageProvider();
-    final headerColor =
-    theme.brightness == Brightness.dark ? theme.colorScheme.background : brandTeal;
+    final headerColor = theme.brightness == Brightness.dark
+        ? theme.colorScheme.background
+        : theme.extension<AppColors>()!.appBarColor;
 
 
     return Container(

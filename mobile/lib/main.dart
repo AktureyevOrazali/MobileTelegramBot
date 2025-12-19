@@ -3047,8 +3047,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                if (closedAtLabel != null)
-                  Text('Закрыт: $closedAtLabel', style: const TextStyle(fontSize: 12)),
               ],
             ),
           ),
@@ -3120,15 +3118,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                                     style: theme.textTheme.bodyMedium?.copyWith(color: textColor),
                                   ),
                                   if (message.sectionTitle != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        'Раздел: ${message.sectionTitle}',
-                                        style: theme.textTheme.labelSmall?.copyWith(
-                                          color: textColor.withOpacity(0.7),
-                                        ),
-                                      ),
-                                    ),
+
                                   const SizedBox(height: 4),
                                   Text(
                                     message.createdAtLabel,

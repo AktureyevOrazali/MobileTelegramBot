@@ -2328,82 +2328,94 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              IconButton(
-                                icon: Icon(chat.isFavorite ? Icons.star : Icons.star_border),
-                                color: chat.isFavorite
-                                    ? theme.colorScheme.tertiary
-                                    : theme.colorScheme.onSurfaceVariant,
-                                tooltip: chat.isFavorite
-                                    ? 'Убрать из избранного'
-                                    : 'Добавить в избранное',
-                                onPressed: () => _toggleFavorite(chat),
-                              ),
-                              const SizedBox(height: 6),
-                              PopupMenuButton<String>(
-                                enabled: canManageDialogs && !isStatusUpdating && !isAiUpdating,
-                                onSelected: (value) {
-                                  switch (value) {
-                                    case 'toggle_status':
-                                      _toggleDialogStatus(chat);
-                                      break;
-                                    case 'toggle_ai':
-                                      _toggleAi(chat);
-                                      break;
-                                    case 'delete':
-                                      _confirmDeleteChat(chat);
-                                      break;
-                                  }
-                                },
-                                itemBuilder: (context) {
-                                  return [
-                                    PopupMenuItem(
-                                      value: 'toggle_status',
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            chat.isClosed ? Icons.lock_open : Icons.lock_outline,
-                                            size: 18,
-                                            color: theme.colorScheme.onSurfaceVariant,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(chat.isClosed ? 'Открыть диалог' : 'Закрыть диалог'),
-                                        ],
-                                      ),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'toggle_ai',
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            chat.aiEnabled
-                                                ? Icons.smart_toy
-                                                : Icons.smart_toy_outlined,
-                                            size: 18,
-                                            color: theme.colorScheme.onSurfaceVariant,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(chat.aiEnabled ? 'Отключить AI' : 'Включить AI'),
-                                        ],
-                                      ),
-                                    ),
-                                    if (canDeleteChats)
+                          Align(
+                            alignment: Alignment.topRight,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(chat.isFavorite
+                                      ? Icons.star
+                                      : Icons.star_border),
+                                  color: chat.isFavorite
+                                      ? theme.colorScheme.tertiary
+                                      : theme.colorScheme.onSurfaceVariant,
+                                  tooltip: chat.isFavorite
+                                      ? 'Убрать из избранного'
+                                      : 'Добавить в избранное',
+                                  onPressed: () => _toggleFavorite(chat),
+                                ),
+                                const SizedBox(width: 4),
+                                PopupMenuButton<String>(
+                                  enabled:
+                                      canManageDialogs && !isStatusUpdating && !isAiUpdating,
+                                  onSelected: (value) {
+                                    switch (value) {
+                                      case 'toggle_status':
+                                        _toggleDialogStatus(chat);
+                                        break;
+                                      case 'toggle_ai':
+                                        _toggleAi(chat);
+                                        break;
+                                      case 'delete':
+                                        _confirmDeleteChat(chat);
+                                        break;
+                                    }
+                                  },
+                                  itemBuilder: (context) {
+                                    return [
                                       PopupMenuItem(
-                                        value: 'delete',
+                                        value: 'toggle_status',
                                         child: Row(
-                                          children: const [
-                                            Icon(Icons.delete_outline, size: 18),
-                                            SizedBox(width: 8),
-                                            Text('Удалить диалог'),
+                                          children: [
+                                            Icon(
+                                              chat.isClosed
+                                                  ? Icons.lock_open
+                                                  : Icons.lock_outline,
+                                              size: 18,
+                                              color: theme.colorScheme.onSurfaceVariant,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(chat.isClosed
+                                                ? 'Открыть диалог'
+                                                : 'Закрыть диалог'),
                                           ],
                                         ),
                                       ),
-                                  ];
-                                },
-                              ),
-                            ],
+                                      PopupMenuItem(
+                                        value: 'toggle_ai',
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              chat.aiEnabled
+                                                  ? Icons.smart_toy
+                                                  : Icons.smart_toy_outlined,
+                                              size: 18,
+                                              color: theme.colorScheme.onSurfaceVariant,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(chat.aiEnabled
+                                                ? 'Отключить AI'
+                                                : 'Включить AI'),
+                                          ],
+                                        ),
+                                      ),
+                                      if (canDeleteChats)
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: const [
+                                              Icon(Icons.delete_outline, size: 18),
+                                              SizedBox(width: 8),
+                                              Text('Удалить диалог'),
+                                            ],
+                                          ),
+                                        ),
+                                    ];
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),

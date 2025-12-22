@@ -5694,7 +5694,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       color: theme.colorScheme.surfaceVariant,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: TextFormField(
           controller: controller,
           readOnly: readOnly,
@@ -5772,10 +5772,6 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      'Основная информация',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                    ),
                     const SizedBox(height: 8),
                     _buildTextFieldCard(
                       controller: _nameController,

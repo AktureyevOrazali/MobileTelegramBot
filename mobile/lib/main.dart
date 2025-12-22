@@ -418,7 +418,7 @@ class ApiClient {
         headers: _headers,
         body: jsonEncode({'name': name, 'email': email, 'password': password}),
       ),
-      'Не удалось завершить регистрацию.',
+      'Соединение с сервером не удалось.',
     );
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final session = AuthSession.fromJson(decoded);
@@ -434,7 +434,7 @@ class ApiClient {
         headers: _headers,
         body: jsonEncode({'identifier': identifier, 'password': password}),
       ),
-      'Не удалось выполнить вход. Проверьте логин и пароль.',
+      'Соединение с сервером не удалось.',
     );
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final session = AuthSession.fromJson(decoded);

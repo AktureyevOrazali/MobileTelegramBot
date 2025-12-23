@@ -2,3 +2,320 @@
 2025-12-22 09:58:14,970 [INFO] ✅ DeepSeek AI менеджер инициализирован. Модель: deepseek-chat, base_url: https://api.deepseek.com
 2025-12-22 11:51:35,839 [INFO] Starting backend...
 2025-12-22 11:51:36,827 [INFO] ✅ DeepSeek AI менеджер инициализирован. Модель: deepseek-chat, base_url: https://api.deepseek.com
+2025-12-22 13:49:18,898 [ERROR] Infinity polling exception: HTTPSConnectionPool(host='api.telegram.org', port=443): Read timed out. (read timeout=25)
+2025-12-22 13:49:18,903 [ERROR] Exception traceback:
+Traceback (most recent call last):
+  File "urllib3\connectionpool.py", line 534, in _make_request
+  File "urllib3\connection.py", line 565, in getresponse
+  File "http\client.py", line 1395, in getresponse
+  File "http\client.py", line 325, in begin
+  File "http\client.py", line 286, in _read_status
+  File "socket.py", line 706, in readinto
+  File "ssl.py", line 1314, in recv_into
+  File "ssl.py", line 1166, in read
+TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "requests\adapters.py", line 644, in send
+  File "urllib3\connectionpool.py", line 841, in urlopen
+  File "urllib3\util\retry.py", line 474, in increment
+  File "urllib3\util\util.py", line 39, in reraise
+  File "urllib3\connectionpool.py", line 787, in urlopen
+  File "urllib3\connectionpool.py", line 536, in _make_request
+  File "urllib3\connectionpool.py", line 367, in _raise_timeout
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='api.telegram.org', port=443): Read timed out. (read timeout=25)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "telebot\__init__.py", line 1016, in infinity_polling
+  File "telebot\__init__.py", line 1104, in polling
+  File "telebot\__init__.py", line 1179, in __threaded_polling
+  File "telebot\__init__.py", line 1140, in __threaded_polling
+  File "telebot\util.py", line 110, in raise_exceptions
+  File "telebot\util.py", line 92, in run
+  File "telebot\__init__.py", line 661, in __retrieve_updates
+  File "telebot\__init__.py", line 633, in get_updates
+  File "telebot\apihelper.py", line 321, in get_updates
+  File "telebot\apihelper.py", line 158, in _make_request
+  File "requests\sessions.py", line 589, in request
+  File "requests\sessions.py", line 703, in send
+  File "requests\adapters.py", line 690, in send
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='api.telegram.org', port=443): Read timed out. (read timeout=25)
+
+2025-12-22 13:49:21,910 [ERROR] Infinity polling exception: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574B7790>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+2025-12-22 13:49:21,912 [ERROR] Exception traceback:
+Traceback (most recent call last):
+  File "urllib3\connection.py", line 198, in _new_conn
+  File "urllib3\util\connection.py", line 60, in create_connection
+  File "socket.py", line 962, in getaddrinfo
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "urllib3\connectionpool.py", line 787, in urlopen
+  File "urllib3\connectionpool.py", line 488, in _make_request
+  File "urllib3\connectionpool.py", line 464, in _make_request
+  File "urllib3\connectionpool.py", line 1093, in _validate_conn
+  File "urllib3\connection.py", line 753, in connect
+  File "urllib3\connection.py", line 205, in _new_conn
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x000001F4574B7790>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "requests\adapters.py", line 644, in send
+  File "urllib3\connectionpool.py", line 841, in urlopen
+  File "urllib3\util\retry.py", line 519, in increment
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574B7790>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "telebot\__init__.py", line 1016, in infinity_polling
+  File "telebot\__init__.py", line 1104, in polling
+  File "telebot\__init__.py", line 1179, in __threaded_polling
+  File "telebot\__init__.py", line 1140, in __threaded_polling
+  File "telebot\util.py", line 110, in raise_exceptions
+  File "telebot\util.py", line 92, in run
+  File "telebot\__init__.py", line 661, in __retrieve_updates
+  File "telebot\__init__.py", line 633, in get_updates
+  File "telebot\apihelper.py", line 321, in get_updates
+  File "telebot\apihelper.py", line 158, in _make_request
+  File "requests\sessions.py", line 589, in request
+  File "requests\sessions.py", line 703, in send
+  File "requests\adapters.py", line 677, in send
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574B7790>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+2025-12-22 13:49:24,917 [ERROR] Infinity polling exception: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574B5950>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+2025-12-22 13:49:24,919 [ERROR] Exception traceback:
+Traceback (most recent call last):
+  File "urllib3\connection.py", line 198, in _new_conn
+  File "urllib3\util\connection.py", line 60, in create_connection
+  File "socket.py", line 962, in getaddrinfo
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "urllib3\connectionpool.py", line 787, in urlopen
+  File "urllib3\connectionpool.py", line 488, in _make_request
+  File "urllib3\connectionpool.py", line 464, in _make_request
+  File "urllib3\connectionpool.py", line 1093, in _validate_conn
+  File "urllib3\connection.py", line 753, in connect
+  File "urllib3\connection.py", line 205, in _new_conn
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x000001F4574B5950>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "requests\adapters.py", line 644, in send
+  File "urllib3\connectionpool.py", line 841, in urlopen
+  File "urllib3\util\retry.py", line 519, in increment
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574B5950>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "telebot\__init__.py", line 1016, in infinity_polling
+  File "telebot\__init__.py", line 1104, in polling
+  File "telebot\__init__.py", line 1179, in __threaded_polling
+  File "telebot\__init__.py", line 1140, in __threaded_polling
+  File "telebot\util.py", line 110, in raise_exceptions
+  File "telebot\util.py", line 92, in run
+  File "telebot\__init__.py", line 661, in __retrieve_updates
+  File "telebot\__init__.py", line 633, in get_updates
+  File "telebot\apihelper.py", line 321, in get_updates
+  File "telebot\apihelper.py", line 158, in _make_request
+  File "requests\sessions.py", line 589, in request
+  File "requests\sessions.py", line 703, in send
+  File "requests\adapters.py", line 677, in send
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574B5950>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+2025-12-22 13:49:27,925 [ERROR] Infinity polling exception: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574AE910>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+2025-12-22 13:49:27,927 [ERROR] Exception traceback:
+Traceback (most recent call last):
+  File "urllib3\connection.py", line 198, in _new_conn
+  File "urllib3\util\connection.py", line 60, in create_connection
+  File "socket.py", line 962, in getaddrinfo
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "urllib3\connectionpool.py", line 787, in urlopen
+  File "urllib3\connectionpool.py", line 488, in _make_request
+  File "urllib3\connectionpool.py", line 464, in _make_request
+  File "urllib3\connectionpool.py", line 1093, in _validate_conn
+  File "urllib3\connection.py", line 753, in connect
+  File "urllib3\connection.py", line 205, in _new_conn
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x000001F4574AE910>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "requests\adapters.py", line 644, in send
+  File "urllib3\connectionpool.py", line 841, in urlopen
+  File "urllib3\util\retry.py", line 519, in increment
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574AE910>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "telebot\__init__.py", line 1016, in infinity_polling
+  File "telebot\__init__.py", line 1104, in polling
+  File "telebot\__init__.py", line 1179, in __threaded_polling
+  File "telebot\__init__.py", line 1140, in __threaded_polling
+  File "telebot\util.py", line 110, in raise_exceptions
+  File "telebot\util.py", line 92, in run
+  File "telebot\__init__.py", line 661, in __retrieve_updates
+  File "telebot\__init__.py", line 633, in get_updates
+  File "telebot\apihelper.py", line 321, in get_updates
+  File "telebot\apihelper.py", line 158, in _make_request
+  File "requests\sessions.py", line 589, in request
+  File "requests\sessions.py", line 703, in send
+  File "requests\adapters.py", line 677, in send
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574AE910>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+2025-12-22 13:49:30,932 [ERROR] Infinity polling exception: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F45748EC10>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+2025-12-22 13:49:30,934 [ERROR] Exception traceback:
+Traceback (most recent call last):
+  File "urllib3\connection.py", line 198, in _new_conn
+  File "urllib3\util\connection.py", line 60, in create_connection
+  File "socket.py", line 962, in getaddrinfo
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "urllib3\connectionpool.py", line 787, in urlopen
+  File "urllib3\connectionpool.py", line 488, in _make_request
+  File "urllib3\connectionpool.py", line 464, in _make_request
+  File "urllib3\connectionpool.py", line 1093, in _validate_conn
+  File "urllib3\connection.py", line 753, in connect
+  File "urllib3\connection.py", line 205, in _new_conn
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x000001F45748EC10>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "requests\adapters.py", line 644, in send
+  File "urllib3\connectionpool.py", line 841, in urlopen
+  File "urllib3\util\retry.py", line 519, in increment
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F45748EC10>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "telebot\__init__.py", line 1016, in infinity_polling
+  File "telebot\__init__.py", line 1104, in polling
+  File "telebot\__init__.py", line 1179, in __threaded_polling
+  File "telebot\__init__.py", line 1140, in __threaded_polling
+  File "telebot\util.py", line 110, in raise_exceptions
+  File "telebot\util.py", line 92, in run
+  File "telebot\__init__.py", line 661, in __retrieve_updates
+  File "telebot\__init__.py", line 633, in get_updates
+  File "telebot\apihelper.py", line 321, in get_updates
+  File "telebot\apihelper.py", line 158, in _make_request
+  File "requests\sessions.py", line 589, in request
+  File "requests\sessions.py", line 703, in send
+  File "requests\adapters.py", line 677, in send
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F45748EC10>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+2025-12-22 13:49:33,942 [ERROR] Infinity polling exception: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4572ECC50>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+2025-12-22 13:49:33,944 [ERROR] Exception traceback:
+Traceback (most recent call last):
+  File "urllib3\connection.py", line 198, in _new_conn
+  File "urllib3\util\connection.py", line 60, in create_connection
+  File "socket.py", line 962, in getaddrinfo
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "urllib3\connectionpool.py", line 787, in urlopen
+  File "urllib3\connectionpool.py", line 488, in _make_request
+  File "urllib3\connectionpool.py", line 464, in _make_request
+  File "urllib3\connectionpool.py", line 1093, in _validate_conn
+  File "urllib3\connection.py", line 753, in connect
+  File "urllib3\connection.py", line 205, in _new_conn
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x000001F4572ECC50>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "requests\adapters.py", line 644, in send
+  File "urllib3\connectionpool.py", line 841, in urlopen
+  File "urllib3\util\retry.py", line 519, in increment
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4572ECC50>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "telebot\__init__.py", line 1016, in infinity_polling
+  File "telebot\__init__.py", line 1104, in polling
+  File "telebot\__init__.py", line 1179, in __threaded_polling
+  File "telebot\__init__.py", line 1140, in __threaded_polling
+  File "telebot\util.py", line 110, in raise_exceptions
+  File "telebot\util.py", line 92, in run
+  File "telebot\__init__.py", line 661, in __retrieve_updates
+  File "telebot\__init__.py", line 633, in get_updates
+  File "telebot\apihelper.py", line 321, in get_updates
+  File "telebot\apihelper.py", line 158, in _make_request
+  File "requests\sessions.py", line 589, in request
+  File "requests\sessions.py", line 703, in send
+  File "requests\adapters.py", line 677, in send
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4572ECC50>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+2025-12-22 13:49:36,953 [ERROR] Infinity polling exception: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574C4A50>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+2025-12-22 13:49:36,957 [ERROR] Exception traceback:
+Traceback (most recent call last):
+  File "urllib3\connection.py", line 198, in _new_conn
+  File "urllib3\util\connection.py", line 60, in create_connection
+  File "socket.py", line 962, in getaddrinfo
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "urllib3\connectionpool.py", line 787, in urlopen
+  File "urllib3\connectionpool.py", line 488, in _make_request
+  File "urllib3\connectionpool.py", line 464, in _make_request
+  File "urllib3\connectionpool.py", line 1093, in _validate_conn
+  File "urllib3\connection.py", line 753, in connect
+  File "urllib3\connection.py", line 205, in _new_conn
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x000001F4574C4A50>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "requests\adapters.py", line 644, in send
+  File "urllib3\connectionpool.py", line 841, in urlopen
+  File "urllib3\util\retry.py", line 519, in increment
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574C4A50>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "telebot\__init__.py", line 1016, in infinity_polling
+  File "telebot\__init__.py", line 1104, in polling
+  File "telebot\__init__.py", line 1179, in __threaded_polling
+  File "telebot\__init__.py", line 1140, in __threaded_polling
+  File "telebot\util.py", line 110, in raise_exceptions
+  File "telebot\util.py", line 92, in run
+  File "telebot\__init__.py", line 661, in __retrieve_updates
+  File "telebot\__init__.py", line 633, in get_updates
+  File "telebot\apihelper.py", line 321, in get_updates
+  File "telebot\apihelper.py", line 158, in _make_request
+  File "requests\sessions.py", line 589, in request
+  File "requests\sessions.py", line 703, in send
+  File "requests\adapters.py", line 677, in send
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8491779607:AAEa9e2ayqi-1S9o076GGgMXoauAx2xJOV8/getUpdates?offset=1&timeout=20 (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001F4574C4A50>: Failed to resolve 'api.telegram.org' ([Errno 11001] getaddrinfo failed)"))
+
+2025-12-23 09:57:04,705 [INFO] Starting backend...
+2025-12-23 09:57:05,684 [INFO] ✅ DeepSeek AI менеджер инициализирован. Модель: deepseek-chat, base_url: https://api.deepseek.com
+2025-12-23 15:33:09,964 [INFO] Starting backend...
+2025-12-23 15:33:11,035 [INFO] ✅ DeepSeek AI менеджер инициализирован. Модель: deepseek-chat, base_url: https://api.deepseek.com

@@ -1124,9 +1124,6 @@ class _AuthScreenState extends State<AuthScreen> {
     final themeToggleIcon = isDarkModeActive ? Icons.light_mode : Icons.dark_mode;
     final themeToggleTooltip = isDarkModeActive ? 'Светлый режим' : 'Тёмный режим';
     final nextThemeMode = isDarkModeActive ? ThemeMode.light : ThemeMode.dark;
-    final description = _isLogin
-        ? 'Введите логин или e-mail и пароль, чтобы продолжить работу.'
-        : 'Заполните форму, чтобы подключиться. Пароль должен содержать минимум 5 символов.';
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.small(
@@ -1183,13 +1180,6 @@ class _AuthScreenState extends State<AuthScreen> {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 12),
-                        Text(
-                          description,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
                       ],
                     ),
                     const SizedBox(height: 28),

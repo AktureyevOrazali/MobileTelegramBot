@@ -828,35 +828,35 @@ class ApiClient {
   Future<http.Response> _sendRequest(
     Future<http.Response> Function() request,
     String fallbackMessage,
-  ) async {
-    try {
-      final response = await request();
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return response;
-      }
-      final message = _extractErrorMessage(response) ?? fallbackMessage;
-      throw ApiException(message);
-    } on TimeoutException {
-      throw const ApiException(
-        'Превышено время ожидания ответа от сервера. Попробуйте снова.',
-      );
-    } on http.ClientException catch (error) {
-      final message = error.message.isNotEmpty
-          ? 'Сетевая ошибка: ${error.message}'
-          : fallbackMessage;
-      throw ApiException(message);
-      } catch (error) {
-      if (error is ApiException) {
-        rethrow;
-      }
-      if (isNetworkException(error)) {
+    ) async {
+      try {
+        final response = await request().timeout(const Duration(seconds: 7));
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return response;
+        }
+        final message = _extractErrorMessage(response) ?? fallbackMessage;
+        throw ApiException(message);
+      } on TimeoutException {
         throw const ApiException(
-          'Не удалось подключиться к серверу. Проверьте интернет-соединение и адрес API.',
+          'Превышено время ожидания ответа от сервера. Попробуйте снова.',
         );
+      } on http.ClientException catch (error) {
+        final message = error.message.isNotEmpty
+            ? 'Сетевая ошибка: ${error.message}'
+            : fallbackMessage;
+        throw ApiException(message);
+      } catch (error) {
+        if (error is ApiException) {
+          rethrow;
+        }
+        if (isNetworkException(error)) {
+          throw const ApiException(
+            'Не удалось подключиться к серверу. Проверьте интернет-соединение и адрес API.',
+          );
+        }
+        throw ApiException(fallbackMessage);
       }
-      throw ApiException(fallbackMessage);
     }
-  }
 
   String? _extractErrorMessage(http.Response response) {
     final body = response.body.trim();

@@ -15,6 +15,55 @@ import 'bottom_bar/tab_item.dart';
 import 'network_exceptions.dart';
 import 'theme/app_theme.dart';
 
+class UiLogger {
+  UiLogger._();
+
+  static final DateFormat _clock = DateFormat('HH:mm:ss.SSS');
+
+  static String _formatDetails(Map<String, Object?>? details) {
+    if (details == null || details.isEmpty) {
+      return '';
+    }
+    return details.entries.map((entry) => '${entry.key}=${entry.value}').join(' · ');
+  }
+
+  static void event(String channel, String message, {Map<String, Object?>? details}) {
+    final timestamp = _clock.format(DateTime.now());
+    final detailText = _formatDetails(details);
+    final suffix = detailText.isEmpty ? '' : '  |  $detailText';
+    debugPrint('✨ [$channel] $timestamp — $message$suffix');
+  }
+
+  static VoidCallback? button(String label, VoidCallback? action, {String scope = 'BUTTON'}) {
+    if (action == null) {
+      return null;
+    }
+    return () {
+      event(scope, 'tap: $label');
+      action();
+    };
+  }
+
+  static void page(String name, {String state = 'opened', Map<String, Object?>? details}) {
+    event('PAGE', '$name $state', details: details);
+  }
+
+  static void navigation(String from, String to, {String? reason, Map<String, Object?>? details}) {
+    event(
+      'NAV',
+      '$from → $to',
+      details: {
+        if (reason != null) 'reason': reason,
+        ...?details,
+      },
+    );
+  }
+
+  static void action(String area, String description, {Map<String, Object?>? details}) {
+    event(area, description, details: details);
+  }
+}
+
 AppBadgeColors _statusBadgeColors(ThemeData theme, {required bool isClosed}) {
   final palette = theme.extension<AppColors>()!;
   return isClosed ? palette.statusClosedBadge : palette.statusOpenBadge;
@@ -23,6 +72,10 @@ AppBadgeColors _statusBadgeColors(ThemeData theme, {required bool isClosed}) {
 AppBadgeColors _aiBadgeColors(ThemeData theme, {required bool enabled}) {
   final palette = theme.extension<AppColors>()!;
   return enabled ? palette.aiEnabledBadge : palette.aiDisabledBadge;
+}
+
+VoidCallback? _logButtonPress(String label, VoidCallback? action) {
+  return UiLogger.button(label, action);
 }
 
 Future<void> main() async {
@@ -61,6 +114,7 @@ class _MobileBotAppState extends State<MobileBotApp> {
   @override
   void initState() {
     super.initState();
+    UiLogger.page('app', state: 'initializing');
     final apiBaseUrl = _requireConfig('API_BASE_URL');
     final apiToken = _requireConfig('API_TOKEN');
     apiClient = ApiClient(apiBaseUrl, apiToken);
@@ -79,10 +133,16 @@ class _MobileBotAppState extends State<MobileBotApp> {
         _session = restored;
         _initializing = false;
       });
+      UiLogger.action(
+        'SESSION',
+        'restored from storage',
+        details: {'user': restored.user.email},
+      );
     } else {
       setState(() {
         _initializing = false;
       });
+      UiLogger.action('SESSION', 'no cached session');
     }
   }
 
@@ -100,6 +160,7 @@ class _MobileBotAppState extends State<MobileBotApp> {
     setState(() {
       _themeMode = mode;
     });
+    UiLogger.action('THEME', 'mode changed', details: {'mode': mode.name});
     unawaited(_themePreferences.save(mode));
   }
 
@@ -108,6 +169,7 @@ class _MobileBotAppState extends State<MobileBotApp> {
     setState(() {
       _session = session;
     });
+    UiLogger.action('SESSION', 'authenticated', details: {'user': session.user.email});
     unawaited(_sessionStorage.save(session));
   }
 
@@ -116,6 +178,7 @@ class _MobileBotAppState extends State<MobileBotApp> {
     setState(() {
       _session = null;
     });
+    UiLogger.action('SESSION', 'logged out');
     unawaited(_sessionStorage.clear());
   }
 
@@ -126,6 +189,7 @@ class _MobileBotAppState extends State<MobileBotApp> {
         _session = _session!.copyWith(user: profile);
       }
     });
+    UiLogger.action('PROFILE', 'updated', details: {'name': profile.name});
     _persistCurrentSession();
   }
 
@@ -134,6 +198,7 @@ class _MobileBotAppState extends State<MobileBotApp> {
     setState(() {
       _session = session;
     });
+    UiLogger.action('SESSION', 'refreshed', details: {'user': session.user.email});
     unawaited(_sessionStorage.save(session));
   }
 
@@ -325,7 +390,8 @@ void showTopMessage(
     actions: [
       TextButton(
         style: TextButton.styleFrom(foregroundColor: bannerTextColor),
-        onPressed: () => messenger.hideCurrentMaterialBanner(),
+        onPressed:
+            _logButtonPress('close notification banner', () => messenger.hideCurrentMaterialBanner()),
         child: const Text('Закрыть'),
       ),
     ],
@@ -830,7 +896,7 @@ class ApiClient {
     String fallbackMessage,
     ) async {
       try {
-        final response = await request().timeout(const Duration(seconds: 7));
+        final response = await request().timeout(const Duration(seconds: 12));
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return response;
         }
@@ -1075,6 +1141,12 @@ class _AuthScreenState extends State<AuthScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    UiLogger.page('Auth', details: {'mode': 'login'});
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
@@ -1086,6 +1158,7 @@ class _AuthScreenState extends State<AuthScreen> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+    UiLogger.action('AUTH', 'form submitted', details: {'mode': _isLogin ? 'login' : 'register'});
     setState(() {
       _loading = true;
       _error = null;
@@ -1101,8 +1174,10 @@ class _AuthScreenState extends State<AuthScreen> {
           _passwordController.text,
         );
       }
+      UiLogger.action('AUTH', 'success', details: {'mode': _isLogin ? 'login' : 'register'});
       widget.onAuthenticated(session);
     } catch (error) {
+      UiLogger.action('AUTH', 'failed', details: {'reason': error.toString()});
       setState(() {
         _error = error.toString();
       });
@@ -1128,7 +1203,10 @@ class _AuthScreenState extends State<AuthScreen> {
     return Scaffold(
       floatingActionButton: FloatingActionButton.small(
         heroTag: 'auth-theme-toggle',
-        onPressed: () => widget.onThemeModeChanged(nextThemeMode),
+        onPressed: _logButtonPress(
+          'toggle theme from auth screen',
+          () => widget.onThemeModeChanged(nextThemeMode),
+        ),
         tooltip: themeToggleTooltip,
         child: Icon(themeToggleIcon),
       ),
@@ -1270,7 +1348,10 @@ class _AuthScreenState extends State<AuthScreen> {
                               ),
                               const SizedBox(height: 18),
                               ElevatedButton.icon(
-                                onPressed: _loading ? null : _submit,
+                                onPressed: _logButtonPress(
+                                  'auth submit',
+                                  _loading ? null : _submit,
+                                ),
                                 icon: _loading
                                     ? SizedBox(
                                         width: 20,
@@ -1293,14 +1374,20 @@ class _AuthScreenState extends State<AuthScreen> {
                               ),
                               const SizedBox(height: 10),
                               OutlinedButton(
-                                onPressed: _loading
-                                    ? null
-                                    : () {
-                                        setState(() {
-                                          _isLogin = !_isLogin;
-                                          _error = null;
-                                        });
-                                      },
+                                onPressed: _logButtonPress(
+                                  'auth toggle mode',
+                                  _loading
+                                      ? null
+                                      : () {
+                                          UiLogger.action('AUTH', 'toggle mode', details: {
+                                            'target': _isLogin ? 'register' : 'login',
+                                          });
+                                          setState(() {
+                                            _isLogin = !_isLogin;
+                                            _error = null;
+                                          });
+                                        },
+                                ),
                                 child: Text(
                                   _isLogin ? 'Регистрация' : 'У меня уже есть аккаунт',
                                 ),
@@ -1388,6 +1475,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   void initState() {
     super.initState();
+    UiLogger.page('Chat list');
     _loadData();
     _loadAvailableBins();
     _updatesTimer = Timer.periodic(const Duration(seconds: 5), (_) => _pollUpdates());
@@ -1400,6 +1488,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Future<void> _loadData({bool showLoading = true}) async {
+    UiLogger.action('CHATS', 'loading list', details: {
+      'favoritesOnly': _showFavoritesOnly,
+      'section': _selectedSection ?? 'all',
+      'bin': _selectedBin ?? 'all',
+    });
     if (showLoading) {
       setState(() {
         _loading = true;
@@ -1429,12 +1522,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
           _selectedSection = null;
         }
       });
+      UiLogger.action('CHATS', 'loaded', details: {'count': chats.length});
       _lastUpdateCursor ??= DateTime.now().toUtc();
     } catch (error) {
       setState(() {
         _error = error.toString();
         _loading = false;
       });
+      UiLogger.action('CHATS', 'load failed', details: {'reason': error.toString()});
     }
   }
 
@@ -1445,6 +1540,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       setState(() {
         _availableBins = bins;
       });
+      UiLogger.action('FILTERS', 'bins loaded', details: {'count': bins.length});
     } catch (error) {
       debugPrint('Не удалось загрузить БИНы: $error');
     }
@@ -1476,6 +1572,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       if (!mounted) {
         return;
       }
+      UiLogger.action('CHATS', 'new updates', details: {'count': updates.length});
       final message = updates.length == 1
           ? 'Новое сообщение: ${updates.first.chatTitle}'
           : 'Новых сообщений: ${updates.length}';
@@ -1646,11 +1743,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
           content: Text('Переписка с "${chat.title}" будет удалена без возможности восстановления.'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
+              onPressed: _logButtonPress(
+                'cancel delete dialog',
+                () => Navigator.of(dialogContext).pop(false),
+              ),
               child: const Text('Отмена'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
+              onPressed: _logButtonPress(
+                'confirm delete dialog',
+                () => Navigator.of(dialogContext).pop(true),
+              ),
               child: const Text('Удалить'),
             ),
           ],
@@ -1837,30 +1940,36 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       Row(
                         children: [
                           TextButton(
-                            onPressed: () {
-                              setModalState(() {
-                                section = null;
-                                bin = null;
-                                favorites = false;
-                                sort = ChatSortOrder.newest;
-                                status = DialogStatusFilter.all;
-                              });
-                            },
+                            onPressed: _logButtonPress(
+                              'reset chat filters',
+                              () {
+                                setModalState(() {
+                                  section = null;
+                                  bin = null;
+                                  favorites = false;
+                                  sort = ChatSortOrder.newest;
+                                  status = DialogStatusFilter.all;
+                                });
+                              },
+                            ),
                             child: const Text('Сбросить'),
                           ),
                           const Spacer(),
                           FilledButton(
-                            onPressed: () {
-                              Navigator.of(sheetContext).pop(
-                                _ChatFiltersResult(
-                                  section: section,
-                                  bin: bin,
-                                  favoritesOnly: favorites,
-                                  sortOrder: sort,
-                                  statusFilter: status,
-                                ),
-                              );
-                            },
+                            onPressed: _logButtonPress(
+                              'apply chat filters',
+                              () {
+                                Navigator.of(sheetContext).pop(
+                                  _ChatFiltersResult(
+                                    section: section,
+                                    bin: bin,
+                                    favoritesOnly: favorites,
+                                    sortOrder: sort,
+                                    statusFilter: status,
+                                  ),
+                                );
+                              },
+                            ),
                             child: const Text('Применить'),
                           ),
                         ],
@@ -1903,12 +2012,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final themeButton = IconButton(
       tooltip: themeToggleTooltip,
       icon: Icon(themeToggleIcon),
-      onPressed: () => widget.onThemeModeChanged(nextMode),
+      onPressed: _logButtonPress(
+        'toggle theme from app bar',
+        () => widget.onThemeModeChanged(nextMode),
+      ),
     );
     final logoutButton = IconButton(
       tooltip: 'Выход',
       icon: const Icon(Icons.logout),
-      onPressed: widget.onLogout,
+      onPressed: _logButtonPress('logout', widget.onLogout),
     );
 
     Widget buildChatAppBar() {
@@ -1962,7 +2074,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             Text('Ошибка: $_error'),
             const SizedBox(height: 12),
             FilledButton(
-              onPressed: () => _loadData(),
+              onPressed: () => _logButtonPress('retry load chats', () => _loadData()),
               child: const Text('Повторить попытку'),
             ),
           ],
@@ -2069,7 +2181,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     ),
                   ),
                   FilledButton.icon(
-                    onPressed: _showFiltersSheet,
+                    onPressed: _logButtonPress('open chat filters', _showFiltersSheet),
                     icon: const Icon(Icons.filter_alt_outlined),
                     label: const Text('Настроить'),
                   ),
@@ -2135,6 +2247,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () async {
+                  UiLogger.navigation('chat_list', 'chat_detail', details: {
+                    'chat': chat.title,
+                    'dialogId': chat.dialogId,
+                  });
                   final chatToOpen =
                       chat.unreadCount > 0 ? chat.copyWith(unreadCount: 0) : chat;
                   if (chat.unreadCount > 0) {
@@ -2333,7 +2449,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                   tooltip: chat.isFavorite
                                       ? 'Убрать из избранного'
                                       : 'Добавить в избранное',
-                                  onPressed: () => _toggleFavorite(chat),
+                                  onPressed: _logButtonPress(
+                                    'toggle favorite for ${chat.title}',
+                                    () => _toggleFavorite(chat),
+                                  ),
                                 ),
                                 const SizedBox(width: 4),
                                 PopupMenuButton<String>(
@@ -2542,10 +2661,14 @@ Widget build(BuildContext context) {
         indexSelected: currentIndex,
         onTap: (index) {
           final callback = callbacks[index];
+          final from = barItems[currentIndex].key ?? '$currentIndex';
+          final to = barItems[index].key ?? '$index';
           if (currentIndex == index) {
+            UiLogger.action('NAV', 'reselected tab', details: {'tab': to});
             callback?.call();
             return;
           }
+          UiLogger.navigation(from, to, reason: 'tab tap');
           setState(() {
             _tabIndex = index;
           });
@@ -2599,6 +2722,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void initState() {
     super.initState();
     _chat = widget.chat;
+    UiLogger.page('Chat detail', details: {
+      'chat': _chat.title,
+      'dialogId': _chat.dialogId,
+    });
     _fetchMessages();
     _timer = Timer.periodic(const Duration(seconds: 3), (_) => _fetchMessages());
     _isFavorite = _chat.isFavorite;
@@ -2606,6 +2733,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   @override
   void dispose() {
+    UiLogger.page('Chat detail', state: 'closed', details: {
+      'chat': _chat.title,
+      'dialogId': _chat.dialogId,
+    });
     _timer.cancel();
     _messageController.dispose();
     _scrollController.dispose();
@@ -2613,6 +2744,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Future<void> _fetchMessages() async {
+    UiLogger.action('MESSAGES', 'fetch', details: {
+      'chat': _chat.title,
+      'dialogId': _chat.dialogId,
+    });
     try {
       final messages = await widget.apiClient.fetchMessages(
         _chat.chatId,
@@ -2626,6 +2761,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         _error = null;
         _lastMessageId = newLastId;
       });
+      UiLogger.action('MESSAGES', 'fetched', details: {'count': messages.length});
       if (newLastId != null && newLastId != previousLastId) {
         _scrollToBottom();
       }
@@ -2634,6 +2770,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         _error = error.toString();
         _loading = false;
       });
+      UiLogger.action('MESSAGES', 'fetch failed', details: {'reason': error.toString()});
     }
   }
 
@@ -2647,6 +2784,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         _chat = refreshed;
         _isFavorite = refreshed.isFavorite;
       });
+      UiLogger.action('CHAT', 'refreshed from server', details: {'dialogId': _chat.dialogId});
     } catch (_) {
       // если не удалось обновить, оставляем локальное состояние
     }
@@ -2657,6 +2795,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (text.isEmpty) {
       return;
     }
+    UiLogger.action('MESSAGES', 'send', details: {'length': text.length});
     setState(() {
       _loading = true;
     });
@@ -2666,6 +2805,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         text,
         dialogId: _chat.dialogId,
       );
+      UiLogger.action('MESSAGES', 'sent', details: {'chat': _chat.title});
       _messageController.clear();
       await _fetchMessages();
       _scrollToBottom();
@@ -2674,6 +2814,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         _error = error.toString();
         _loading = false;
       });
+      UiLogger.action('MESSAGES', 'send failed', details: {'reason': error.toString()});
     }
   }
 
@@ -2697,6 +2838,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (_updatingFavorite) {
       return;
     }
+    UiLogger.action('CHAT', 'toggle favorite', details: {
+      'dialogId': _chat.dialogId,
+      'target': !_isFavorite,
+    });
     setState(() {
       _updatingFavorite = true;
       _isFavorite = !_isFavorite;
@@ -2715,6 +2860,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ? 'Диалог добавлен в избранное'
             : 'Диалог удалён из избранного',
       );
+      UiLogger.action('CHAT', 'favorite updated', details: {'value': _isFavorite});
     } catch (error) {
       if (!mounted) {
         return;
@@ -2727,6 +2873,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         'Не удалось обновить избранное: $error',
         isError: true,
       );
+      UiLogger.action('CHAT', 'favorite update failed', details: {'reason': error.toString()});
     } finally {
       if (mounted) {
         setState(() {
@@ -2740,6 +2887,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (_updatingStatus) {
       return;
     }
+    UiLogger.action('CHAT', 'toggle status', details: {
+      'dialogId': _chat.dialogId,
+      'target': _chat.isClosed ? 'open' : 'close',
+    });
     setState(() {
       _updatingStatus = true;
     });
@@ -2764,12 +2915,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ? 'Диалог открыт снова и готов к сообщениям.'
             : 'Диалог закрыт. Клиент уведомлён и AI снова включён.',
       );
+      UiLogger.action('CHAT', 'status updated', details: {'closed': !wasClosed});
     } catch (error) {
       showTopMessage(
         context,
         'Не удалось обновить статус диалога: $error',
         isError: true,
       );
+      UiLogger.action('CHAT', 'status update failed', details: {'reason': error.toString()});
     } finally {
       if (mounted) {
         setState(() {
@@ -2783,6 +2936,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (_togglingAi) {
       return;
     }
+    UiLogger.action('CHAT', 'toggle ai', details: {
+      'dialogId': _chat.dialogId,
+      'target': !_chat.aiEnabled,
+    });
     setState(() {
       _togglingAi = true;
     });
@@ -2805,12 +2962,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ? 'AI помощник включён для этого диалога.'
             : 'AI помощник отключён. Клиенту отправлено уведомление.',
       );
+      UiLogger.action('CHAT', 'ai toggled', details: {'enabled': _chat.aiEnabled});
     } catch (error) {
       showTopMessage(
         context,
         'Не удалось обновить режим AI: $error',
         isError: true,
       );
+      UiLogger.action('CHAT', 'ai toggle failed', details: {'reason': error.toString()});
     } finally {
       if (mounted) {
         setState(() {
@@ -2823,26 +2982,34 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _deleteChat() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Удалить диалог?'),
-          content: Text('Переписка с "${_chat.title}" будет удалена без возможности восстановления.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Удалить'),
-            ),
-          ],
-        );
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Удалить диалог?'),
+              content: Text('Переписка с "${_chat.title}" будет удалена без возможности восстановления.'),
+              actions: [
+                TextButton(
+                  onPressed: _logButtonPress(
+                    'cancel delete chat from details',
+                    () => Navigator.of(dialogContext).pop(false),
+                  ),
+                  child: const Text('Отмена'),
+                ),
+                FilledButton(
+                  onPressed: _logButtonPress(
+                    'confirm delete chat from details',
+                    () => Navigator.of(dialogContext).pop(true),
+                  ),
+                  child: const Text('Удалить'),
+                ),
+              ],
+            );
       },
     );
     if (confirmed != true) {
+      UiLogger.action('CHAT', 'delete cancelled', details: {'dialogId': _chat.dialogId});
       return;
     }
+    UiLogger.action('CHAT', 'delete confirmed', details: {'dialogId': _chat.dialogId});
     setState(() {
       _deleting = true;
     });
@@ -2851,6 +3018,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       if (!mounted) {
         return;
       }
+      UiLogger.navigation('chat_detail', 'chat_list', reason: 'chat deleted');
       Navigator.of(context).pop(true);
     } catch (error) {
       if (!mounted) {
@@ -2864,6 +3032,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         'Не удалось удалить диалог: $error',
         isError: true,
       );
+      UiLogger.action('CHAT', 'delete failed', details: {'reason': error.toString()});
     }
   }
 
@@ -2900,7 +3069,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             tooltip: _isFavorite ? 'Убрать из избранного' : 'Добавить в избранное',
             icon: Icon(_isFavorite ? Icons.star : Icons.star_border),
             color: _isFavorite ? colorScheme.tertiary : null,
-            onPressed: (_updatingFavorite || _deleting) ? null : _toggleFavorite,
+            onPressed: _logButtonPress(
+              'toggle favorite in chat details',
+              (_updatingFavorite || _deleting) ? null : _toggleFavorite,
+            ),
           ),
           PopupMenuButton<String>(
             enabled: !_deleting,
@@ -3068,7 +3240,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                             Text('Ошибка: $_error'),
                             const SizedBox(height: 12),
                             FilledButton(
-                              onPressed: _fetchMessages,
+                              onPressed: _logButtonPress('retry load messages', _fetchMessages),
                               child: const Text('Обновить'),
                             ),
                           ],
@@ -3160,7 +3332,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 ),
                 const SizedBox(width: 12),
                 IconButton.filled(
-                  onPressed: canSend && !_deleting ? _sendMessage : null,
+                  onPressed: _logButtonPress(
+                    'send chat message',
+                    canSend && !_deleting ? _sendMessage : null,
+                  ),
                   icon: const Icon(Icons.send),
                   tooltip: 'Отправить',
                 ),
@@ -3669,7 +3844,10 @@ class _DashboardViewState extends State<DashboardView> {
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: _refreshing ? null : () => _loadSummary(initial: false),
+                onPressed: _logButtonPress(
+                  'refresh dashboard',
+                  _refreshing ? null : () => _loadSummary(initial: false),
+                ),
                 icon: Icon(_refreshing ? Icons.sync : Icons.refresh),
                 label: Text(_refreshing ? 'Обновляем…' : 'Обновить дэшборд'),
               ),
@@ -4415,10 +4593,13 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                     secondary: IconButton(
                       icon: const Icon(Icons.event_outlined),
                       tooltip: 'Выбрать дату и время',
-                      onPressed: () {
-                        updateSelection(false);
-                        handlePick();
-                      },
+                      onPressed: _logButtonPress(
+                        'open bin expiration picker',
+                        () {
+                          updateSelection(false);
+                          handlePick();
+                        },
+                      ),
                     ),
                   ),
                   if (!indefinite)
@@ -4436,28 +4617,34 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       TextButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        onPressed: _logButtonPress(
+                          'cancel bin assignment',
+                          () => Navigator.of(sheetContext).pop(),
+                        ),
                         child: const Text('Отмена'),
                       ),
                       const SizedBox(width: 12),
                       FilledButton(
-                        onPressed: () {
-                          if (!indefinite && selected == null) {
-                            ScaffoldMessenger.of(sheetContext).showSnackBar(
-                              const SnackBar(content: Text('Укажите срок действия БИНа.')),
+                        onPressed: _logButtonPress(
+                          'save bin assignment',
+                          () {
+                            if (!indefinite && selected == null) {
+                              ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                const SnackBar(content: Text('Укажите срок действия БИНа.')),
+                              );
+                              return;
+                            }
+                            final expiresUtc = indefinite ? null : selected!.toUtc();
+                            Navigator.of(sheetContext).pop(
+                              UserBinAssignment(
+                                bin: bin,
+                                assignedAt: current?.assignedAt ?? DateTime.now().toUtc(),
+                                expiresAt: expiresUtc,
+                                assignedBy: current?.assignedBy,
+                              ),
                             );
-                            return;
-                          }
-                          final expiresUtc = indefinite ? null : selected!.toUtc();
-                          Navigator.of(sheetContext).pop(
-                            UserBinAssignment(
-                              bin: bin,
-                              assignedAt: current?.assignedAt ?? DateTime.now().toUtc(),
-                              expiresAt: expiresUtc,
-                              assignedBy: current?.assignedBy,
-                            ),
-                          );
-                        },
+                          },
+                        ),
                         child: Text(current == null ? 'Назначить' : 'Сохранить'),
                       ),
                     ],
@@ -4480,11 +4667,17 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
           content: Text('БИН ${assignment.bin} станет неразделенным.'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
+              onPressed: _logButtonPress(
+                'cancel remove bin assignment',
+                () => Navigator.of(dialogContext).pop(false),
+              ),
               child: const Text('Отмена'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
+              onPressed: _logButtonPress(
+                'confirm remove bin assignment',
+                () => Navigator.of(dialogContext).pop(true),
+              ),
               style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.error,
               ),
@@ -4626,22 +4819,28 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   Future<void> _deleteUser(UserProfile user) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text('Удалить аккаунт ${user.name}?'),
-          content: const Text('Пользователь потеряет доступ к системе. Действие нельзя отменить.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
-              child: const Text('Удалить'),
-            ),
-          ],
-        );
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: Text('Удалить аккаунт ${user.name}?'),
+              content: const Text('Пользователь потеряет доступ к системе. Действие нельзя отменить.'),
+              actions: [
+                TextButton(
+                  onPressed: _logButtonPress(
+                    'cancel delete user',
+                    () => Navigator.of(dialogContext).pop(false),
+                  ),
+                  child: const Text('Отмена'),
+                ),
+                FilledButton(
+                  onPressed: _logButtonPress(
+                    'confirm delete user',
+                    () => Navigator.of(dialogContext).pop(true),
+                  ),
+                  style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+                  child: const Text('Удалить'),
+                ),
+              ],
+            );
       },
     );
     if (confirmed != true) {
@@ -4725,15 +4924,21 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: _logButtonPress(
+                'cancel change user password',
+                () => Navigator.of(dialogContext).pop(),
+              ),
               child: const Text('Отмена'),
             ),
             FilledButton(
-              onPressed: () {
-                if (formKey.currentState!.validate()) {
-                  Navigator.of(dialogContext).pop(passwordController.text.trim());
-                }
-              },
+              onPressed: _logButtonPress(
+                'save changed user password',
+                () {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.of(dialogContext).pop(passwordController.text.trim());
+                  }
+                },
+              ),
               child: const Text('Сохранить'),
             ),
           ],
@@ -4806,10 +5011,13 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
           suffixIcon: _searchQuery.isEmpty
               ? null
               : IconButton(
-                  onPressed: () {
-                    _searchController.clear();
-                    _onSearchChanged('');
-                  },
+                  onPressed: _logButtonPress(
+                    'clear user search',
+                    () {
+                      _searchController.clear();
+                      _onSearchChanged('');
+                    },
+                  ),
                   icon: const Icon(Icons.close),
                 ),
         ),
@@ -4995,9 +5203,12 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                 tooltip: 'Удалить аккаунт',
                                 icon: const Icon(Icons.delete_outline),
                                 color: theme.colorScheme.error,
-                                onPressed: (isUpdating || isDeleting)
-                                    ? null
-                                    : () => _deleteUser(user),
+                                onPressed: _logButtonPress(
+                                  'delete user from list',
+                                  (isUpdating || isDeleting)
+                                      ? null
+                                      : () => _deleteUser(user),
+                                ),
                               ),
                           ],
                         ),
@@ -5135,25 +5346,31 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                       IconButton(
                                         tooltip: 'Изменить срок',
                                         icon: const Icon(Icons.edit_calendar_outlined),
-                                        onPressed: () async {
-                                          final updatedAssignment = await _showBinAssignmentSheet(
-                                            user: user,
-                                            bin: assignment.bin,
-                                            current: assignment,
-                                          );
-                                          if (updatedAssignment == null) {
-                                            return;
-                                          }
-                                          final updatedAssignments = user.binAssignments
-                                              .map((item) => item.bin == assignment.bin ? updatedAssignment : item)
-                                              .toList();
-                                          await _updateUserBins(user, updatedAssignments);
-                                        },
+                                        onPressed: _logButtonPress(
+                                          'edit bin assignment',
+                                          () async {
+                                            final updatedAssignment = await _showBinAssignmentSheet(
+                                              user: user,
+                                              bin: assignment.bin,
+                                              current: assignment,
+                                            );
+                                            if (updatedAssignment == null) {
+                                              return;
+                                            }
+                                            final updatedAssignments = user.binAssignments
+                                                .map((item) => item.bin == assignment.bin ? updatedAssignment : item)
+                                                .toList();
+                                            await _updateUserBins(user, updatedAssignments);
+                                          },
+                                        ),
                                       ),
                                       IconButton(
                                         tooltip: 'Убрать БИН',
                                         icon: const Icon(Icons.delete_outline),
-                                        onPressed: () => _confirmRemoveBin(user, assignment),
+                                        onPressed: _logButtonPress(
+                                          'remove bin assignment',
+                                          () => _confirmRemoveBin(user, assignment),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -5191,8 +5408,10 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         OutlinedButton.icon(
                           icon: const Icon(Icons.lock_reset),
                           label: const Text('Сменить пароль'),
-                          onPressed:
-                              (isUpdating || isDeleting) ? null : () => _promptResetPassword(user),
+                          onPressed: _logButtonPress(
+                            'reset user password',
+                            (isUpdating || isDeleting) ? null : () => _promptResetPassword(user),
+                          ),
                         ),
                       ],
                     ),
@@ -5242,7 +5461,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                   style: const TextStyle(color: Colors.red),
                 ),
                 TextButton(
-                  onPressed: () => refreshAdminData(),
+                  onPressed: _logButtonPress('retry load admin data', () => refreshAdminData()),
                   child: const Text('Повторить загрузку'),
                 ),
               ],
@@ -5454,18 +5673,24 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: _logButtonPress(
+                'cancel change own password',
+                () => Navigator.of(dialogContext).pop(),
+              ),
               child: const Text('Отмена'),
             ),
             FilledButton(
-              onPressed: () {
-                if (formKey.currentState!.validate()) {
-                  Navigator.of(dialogContext).pop({
-                    'current': currentController.text.trim(),
-                    'new': newController.text.trim(),
-                  });
-                }
-              },
+              onPressed: _logButtonPress(
+                'save changed own password',
+                () {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.of(dialogContext).pop({
+                      'current': currentController.text.trim(),
+                      'new': newController.text.trim(),
+                    });
+                  }
+                },
+              ),
               child: const Text('Сохранить'),
             ),
           ],
@@ -5634,7 +5859,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                 child: IconButton(
                   tooltip: 'Изменить фото профиля',
                   icon: const Icon(Icons.camera_alt, color: brandPrimaryGreen),
-                  onPressed: _pickProfileImage,
+                  onPressed: _logButtonPress('pick profile image', _pickProfileImage),
                   constraints: const BoxConstraints.tightFor(width: 38, height: 38),
                   padding: EdgeInsets.zero,
                 ),
@@ -5758,7 +5983,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                       child: OutlinedButton.icon(
                         icon: const Icon(Icons.photo_camera_back_outlined),
                         label: const Text('Изменить фото профиля'),
-                        onPressed: _pickProfileImage,
+                        onPressed: _logButtonPress('change profile image from settings', _pickProfileImage),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -5933,7 +6158,10 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                       runSpacing: 12,
                       children: [
                         ElevatedButton.icon(
-                          onPressed: _saving ? null : _save,
+                          onPressed: _logButtonPress(
+                            'save profile changes',
+                            _saving ? null : _save,
+                          ),
                           icon: const Icon(Icons.save),
                           label: _saving
                               ? const SizedBox(
@@ -5944,7 +6172,10 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                               : const Text('Сохранить'),
                         ),
                         OutlinedButton.icon(
-                          onPressed: _saving ? null : _changeOwnPassword,
+                          onPressed: _logButtonPress(
+                            'change own password',
+                            _saving ? null : _changeOwnPassword,
+                          ),
                           icon: const Icon(Icons.lock_outline),
                           label: const Text('Сменить пароль'),
                         ),

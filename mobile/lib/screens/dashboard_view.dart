@@ -950,4 +950,3 @@ class _AgentStatChip extends StatelessWidget {
     );
   }
 }
-

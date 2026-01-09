@@ -29,4 +29,3 @@ class _QuestionSectionEntry {
   final DashboardSectionTopQuestions section;
   final int totalCount;
 }
-

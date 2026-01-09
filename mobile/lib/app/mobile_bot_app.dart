@@ -1,13 +1,28 @@
 part of '../main.dart';
 
-class MobileBotApp extends StatefulWidget {
-  const MobileBotApp({super.key});
+class MobileBotModule extends StatefulWidget {
+  const MobileBotModule({
+    super.key,
+    this.apiBaseUrl,
+    this.apiToken,
+    this.isLogin,
+  });
+
+  /// Optional override for API base URL.
+  /// If null, resolves from .env / compile-time value.
+  final String? apiBaseUrl;
+
+  /// Optional override for API token.
+  /// If null, resolves from .env / compile-time value.
+  final String? apiToken;
+
+  final bool? isLogin;
 
   @override
-  State<MobileBotApp> createState() => _MobileBotAppState();
+  State<MobileBotModule> createState() => _MobileBotModuleState();
 }
 
-class _MobileBotAppState extends State<MobileBotApp> {
+class _MobileBotModuleState extends State<MobileBotModule> {
   late final ApiClient apiClient;
   final SessionStorage _sessionStorage = const SessionStorage();
   final ThemePreferences _themePreferences = const ThemePreferences();
@@ -30,10 +45,12 @@ class _MobileBotAppState extends State<MobileBotApp> {
   @override
   void initState() {
     super.initState();
-    UiLogger.page('app', state: 'initializing');
-    final apiBaseUrl = _requireConfig('API_BASE_URL');
-    final apiToken = _requireConfig('API_TOKEN');
+    UiLogger.page('module', state: 'initializing');
+
+    final apiBaseUrl = widget.apiBaseUrl ?? _requireConfig('API_BASE_URL');
+    final apiToken = widget.apiToken ?? _requireConfig('API_TOKEN');
     apiClient = ApiClient(apiBaseUrl, apiToken);
+
     _restoreSession();
     _restoreThemeMode();
   }
@@ -85,7 +102,11 @@ class _MobileBotAppState extends State<MobileBotApp> {
     setState(() {
       _session = session;
     });
-    UiLogger.action('SESSION', 'authenticated', details: {'user': session.user.email});
+    UiLogger.action(
+      'SESSION',
+      'authenticated',
+      details: {'user': session.user.email},
+    );
     unawaited(_sessionStorage.save(session));
   }
 
@@ -114,7 +135,11 @@ class _MobileBotAppState extends State<MobileBotApp> {
     setState(() {
       _session = session;
     });
-    UiLogger.action('SESSION', 'refreshed', details: {'user': session.user.email});
+    UiLogger.action(
+      'SESSION',
+      'refreshed',
+      details: {'user': session.user.email},
+    );
     unawaited(_sessionStorage.save(session));
   }
 
@@ -133,137 +158,184 @@ class _MobileBotAppState extends State<MobileBotApp> {
 
     final isLight = colorScheme.brightness == Brightness.light;
 
-    return ThemeData(
+    // Base theme with guaranteed non-null text styles.
+    final ThemeData base = ThemeData.from(
       colorScheme: colorScheme,
       useMaterial3: true,
+    );
+
+    // Safety: ensure bodyMedium is never null to avoid DefaultTextStyle crashes.
+    final TextTheme safeTextTheme = base.textTheme.copyWith(
+      bodyMedium: base.textTheme.bodyMedium ?? const TextStyle(fontSize: 14),
+    );
+
+    return base.copyWith(
+      textTheme: safeTextTheme,
+      primaryTextTheme: safeTextTheme,
       extensions: <ThemeExtension<dynamic>>[appColors],
-
-      // ВАЖНО: в тёмной теме фон должен быть background, а не surface,
-      // иначе карточки (surface) сливаются с фоном и "слои" пропадают.
-      scaffoldBackgroundColor: isLight ? appColors.scaffoldBackground : colorScheme.background,
-
+      scaffoldBackgroundColor:
+          isLight ? appColors.scaffoldBackground : colorScheme.background,
       appBarTheme: AppBarTheme(
         backgroundColor: appColors.appBarColor,
-        foregroundColor: isLight ? appColors.appBarForeground : colorScheme.onBackground,
+        foregroundColor:
+            isLight ? appColors.appBarForeground : colorScheme.onBackground,
         elevation: 0,
         centerTitle: true,
         titleTextStyle: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w700,
-          color: isLight ? appColors.appBarForeground : colorScheme.onBackground,
+          color:
+              isLight ? appColors.appBarForeground : colorScheme.onBackground,
         ),
       ),
-
       cardTheme: CardThemeData(
         color: isLight ? Colors.white : colorScheme.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
-
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: colorScheme.brightness == Brightness.light
-            ? Colors.white
-            : colorScheme.background, // <-- было surfaceVariant
+        fillColor: isLight ? Colors.white : colorScheme.background,
         border: outlineBorder,
         enabledBorder: outlineBorder,
         focusedBorder: outlineBorder.copyWith(
           borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
       ),
-
-
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: colorScheme.inverseSurface,
         contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
       ),
-
-      // ВАЖНО: сейчас у тебя всегда белый navigation bar — в тёмной теме это ломает стиль.
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: isLight ? Colors.white : colorScheme.surface,
         indicatorColor: colorScheme.secondary,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         labelTextStyle: MaterialStateProperty.resolveWith(
           (states) => TextStyle(
-            color: states.contains(MaterialState.selected)
-                ? colorScheme.secondary
-                : appColors.bottomBarInactive,
+            color:
+                states.contains(MaterialState.selected)
+                    ? colorScheme.secondary
+                    : appColors.bottomBarInactive,
             fontWeight: FontWeight.w600,
           ),
         ),
         iconTheme: MaterialStateProperty.resolveWith(
           (states) => IconThemeData(
-            color: states.contains(MaterialState.selected)
-                ? colorScheme.secondary
-                : appColors.bottomBarInactive,
+            color:
+                states.contains(MaterialState.selected)
+                    ? colorScheme.secondary
+                    : appColors.bottomBarInactive,
           ),
         ),
       ),
-
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: colorScheme.primary,
           foregroundColor: colorScheme.onPrimary,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
       ),
-
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: colorScheme.primary,
           side: BorderSide(color: colorScheme.primary),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
     final lightTheme = _buildTheme(brandLightColorScheme, AppColors.light);
     final darkTheme = _buildTheme(brandDarkColorScheme, AppColors.dark);
 
-    final home = _session == null
-        ? AuthScreen(
-            apiClient: apiClient,
-            onAuthenticated: _handleAuthenticated,
-            themeMode: _themeMode,
-            onThemeModeChanged: _handleThemeModeChanged,
-          )
-        : ChatListScreen(
-            apiClient: apiClient,
-            session: _session!,
-            onLogout: _handleLogout,
-            onProfileUpdated: _handleProfileUpdated,
-            onSessionRefreshed: _handleSessionRefreshed,
-            themeMode: _themeMode,
-            onThemeModeChanged: _handleThemeModeChanged,
-          );
+    final bool isAuth = _session == null;
 
-    if (_initializing) {
-      return MaterialApp(
-        title: 'MobileBot Companion',
-        theme: lightTheme,
-        darkTheme: darkTheme,
-        themeMode: _themeMode,
-        home: const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        ),
-      );
-    }
+    final Widget home =
+        isAuth
+            ? AuthScreen(
+              apiClient: apiClient,
+              onAuthenticated: _handleAuthenticated,
+              themeMode: _themeMode,
+              onThemeModeChanged: _handleThemeModeChanged,
+              isLogin: widget.isLogin,
+            )
+            : ChatListScreen(
+              apiClient: apiClient,
+              session: _session!,
+              onLogout: _handleLogout,
+              onProfileUpdated: _handleProfileUpdated,
+              onSessionRefreshed: _handleSessionRefreshed,
+              themeMode: _themeMode,
+              onThemeModeChanged: _handleThemeModeChanged,
+            );
 
+    final platformBrightness =
+        MediaQuery.maybeOf(context)?.platformBrightness ?? Brightness.light;
+
+    final effectiveBrightness = switch (_themeMode) {
+      ThemeMode.light => Brightness.light,
+      ThemeMode.dark => Brightness.dark,
+      ThemeMode.system => platformBrightness,
+    };
+
+    // IMPORTANT: Auth (login) page is always light.
+    final ThemeData effectiveTheme =
+        isAuth
+            ? lightTheme
+            : (effectiveBrightness == Brightness.dark ? darkTheme : lightTheme);
+
+    final Widget content =
+        _initializing
+            ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+            : home;
+
+    return AnimatedTheme(
+      data: effectiveTheme,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      child: ScaffoldMessenger(child: Material(child: content)),
+    );
+  }
+}
+
+class MobileBotApp extends StatefulWidget {
+  const MobileBotApp({super.key, this.isLogin});
+
+  final bool? isLogin;
+
+  @override
+  State<MobileBotApp> createState() => _MobileBotAppState();
+}
+
+class _MobileBotAppState extends State<MobileBotApp> {
+  @override
+  void initState() {
+    super.initState();
+    UiLogger.page('app', state: 'initializing');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Standalone launcher: keep MaterialApp only here.
+    // For embedding into another app, use [MobileBotModule] directly.
     return MaterialApp(
       title: 'MobileBot Companion',
-      theme: lightTheme,
-      darkTheme: darkTheme,
-      themeMode: _themeMode,
-      home: home,
+      debugShowCheckedModeBanner: false,
+      home: MobileBotModule(isLogin: widget.isLogin),
     );
   }
 }

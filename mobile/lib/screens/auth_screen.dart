@@ -6,9 +6,11 @@ class AuthScreen extends StatefulWidget {
     required this.onAuthenticated,
     required this.themeMode,
     required this.onThemeModeChanged,
+    this.isLogin,
     super.key,
   });
 
+  final bool? isLogin;
   final ApiClient apiClient;
   final void Function(AuthSession session) onAuthenticated;
   final ThemeMode themeMode;
@@ -88,15 +90,15 @@ class _AuthScreenState extends State<AuthScreen> {
     final nextThemeMode = isDarkModeActive ? ThemeMode.light : ThemeMode.dark;
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.small(
-        heroTag: 'auth-theme-toggle',
-        onPressed: _logButtonPress(
-          'toggle theme from auth screen',
-          () => widget.onThemeModeChanged(nextThemeMode),
-        ),
-        tooltip: themeToggleTooltip,
-        child: Icon(themeToggleIcon),
-      ),
+      // floatingActionButton: FloatingActionButton.small(
+      //   heroTag: 'auth-theme-toggle',
+      //   onPressed: _logButtonPress(
+      //     'toggle theme from auth screen',
+      //     () => widget.onThemeModeChanged(nextThemeMode),
+      //   ),
+      //   tooltip: themeToggleTooltip,
+      //   child: Icon(themeToggleIcon),
+      // ),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -294,4 +296,3 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 }
-

@@ -28,13 +28,15 @@ except ValueError as exc:  # pragma: no cover - defensive
 
 
 def _connect():
-    return psycopg2.connect(
+    connection = psycopg2.connect(
         dbname=DB_NAME,
         user=DB_USER,
         password=DB_PASSWORD,
         host=DB_HOST,
         port=DB_PORT,
     )
+    connection.set_client_encoding("UTF8")
+    return connection
 
 
 _connection = _connect()

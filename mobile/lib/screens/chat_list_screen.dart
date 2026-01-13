@@ -1241,6 +1241,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
     return Theme(
       data: theme,
+      child: PopScope(
+        canPop: false, // мы сами решаем, что делать при Back
+        onPopInvoked: (didPop) async {
+          if (didPop) return;
+
+          // 1) Если не на вкладке "Диалоги" -> возвращаем на "Диалоги"
+          if (_tabIndex != 0) {
+            setState(() {
+              _tabIndex = 0;
+           });
+           return;
+         }
+
+          // 2) Если уже на "Диалоги" -> уходим на логин
+          widget.onLogout();
+      },
       child: Scaffold(
         appBar: _buildAppBar(currentIndex, isAdmin),
         body: IndexedStack(
@@ -1288,6 +1304,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 }

@@ -81,6 +81,10 @@ class ApiClient {
         if (_sessionToken != null) 'X-Session-Token': _sessionToken!,
       };
 
+  String _decodeBody(http.Response response) {
+    return utf8.decode(response.bodyBytes);
+  }
+
   Future<AuthSession> register(String name, String email, String password) async {
     final uri = _buildUri('auth/register');
     final response = await _sendRequest(
@@ -91,7 +95,7 @@ class ApiClient {
       ),
       'Соединение с сервером не удалось.',
     );
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     final session = AuthSession.fromJson(decoded);
     setSession(session);
     return session;
@@ -107,7 +111,7 @@ class ApiClient {
       ),
       'Соединение с сервером не удалось.',
     );
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     final session = AuthSession.fromJson(decoded);
     setSession(session);
     return session;
@@ -119,7 +123,7 @@ class ApiClient {
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить список разделов.',
     );
-    final decoded = jsonDecode(response.body) as List<dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
         .map((item) => Section.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -134,13 +138,13 @@ class ApiClient {
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить список БИНов.',
     );
-    final decoded = jsonDecode(response.body) as List<dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded.map((item) => item.toString()).toList();
   }
 
   Future<List<UnassignedBin>> fetchUnassignedBins() async {
     List<UnassignedBin> parseResponse(http.Response response) {
-      final decoded = jsonDecode(response.body) as List<dynamic>;
+      final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
       return decoded
           .whereType<Map<String, dynamic>>()
           .map(UnassignedBin.fromJson)
@@ -174,7 +178,7 @@ class ApiClient {
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить профиль пользователя.',
     );
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     final profile = UserProfile.fromJson(decoded);
     updateCurrentUser(profile);
     return profile;
@@ -200,7 +204,7 @@ class ApiClient {
       ),
       'Не удалось обновить профиль.',
     );
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     final profile = UserProfile.fromJson(decoded);
     updateCurrentUser(profile);
     return profile;
@@ -222,7 +226,7 @@ class ApiClient {
       ),
       'Не удалось обновить пароль.',
     );
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     final session = AuthSession.fromJson(decoded);
     setSession(session);
     return session;
@@ -241,7 +245,7 @@ class ApiClient {
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить список диалогов.',
     );
-    final decoded = jsonDecode(response.body) as List<dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
         .map((item) => ChatSummary.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -267,7 +271,7 @@ class ApiClient {
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить сообщения.',
     );
-    final decoded = jsonDecode(response.body) as List<dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
         .map((item) => Message.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -330,7 +334,7 @@ class ApiClient {
       () => http.post(uri, headers: _headers),
       'Не удалось закрыть диалог.',
     );
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     return DialogStatusUpdate.fromJson(decoded);
   }
 
@@ -340,7 +344,7 @@ class ApiClient {
       () => http.post(uri, headers: _headers),
       'Не удалось открыть диалог.',
     );
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     return DialogStatusUpdate.fromJson(decoded);
   }
 
@@ -368,7 +372,7 @@ class ApiClient {
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить список пользователей.',
     );
-    final decoded = jsonDecode(response.body) as List<dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
         .map((item) => UserProfile.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -380,7 +384,7 @@ class ApiClient {
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить список ролей.',
     );
-    final decoded = jsonDecode(response.body) as List<dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
         .map((item) => RoleInfo.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -396,7 +400,7 @@ class ApiClient {
       ),
       'Не удалось обновить роль пользователя.',
     );
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     final profile = UserProfile.fromJson(decoded);
     if (_currentUser != null && _currentUser!.id == profile.id) {
       updateCurrentUser(profile);
@@ -414,7 +418,7 @@ class ApiClient {
       ),
       'Не удалось обновить назначенные разделы.',
     );
-    return UserProfile.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    return UserProfile.fromJson(jsonDecode(_decodeBody(response)) as Map<String, dynamic>);
   }
 
   Future<UserProfile> updateUserBins(int userId, List<UserBinAssignment> assignments) async {
@@ -428,7 +432,7 @@ class ApiClient {
       ),
       'Не удалось обновить назначенные БИНы.',
     );
-    return UserProfile.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    return UserProfile.fromJson(jsonDecode(_decodeBody(response)) as Map<String, dynamic>);
   }
 
   Future<UserProfile> adminSetUserPassword(int userId, String newPassword) async {
@@ -441,7 +445,7 @@ class ApiClient {
       ),
       'Не удалось обновить пароль пользователя.',
     );
-    return UserProfile.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    return UserProfile.fromJson(jsonDecode(_decodeBody(response)) as Map<String, dynamic>);
   }
 
   Future<void> deleteUser(int userId) async {
@@ -466,7 +470,7 @@ class ApiClient {
       () => http.get(uri, headers: _headers),
       'Не удалось получить обновления.',
     );
-    final decoded = jsonDecode(response.body) as List<dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     final notifications = <MessageNotification>[];
     for (final item in decoded) {
       if (item is! Map<String, dynamic>) {
@@ -492,7 +496,7 @@ class ApiClient {
       () => http.get(uri, headers: _headers),
       'Не удалось загрузить дэшборд.',
     );
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     return DashboardSummary.fromJson(decoded);
   }
 
@@ -530,7 +534,7 @@ class ApiClient {
     }
 
   String? _extractErrorMessage(http.Response response) {
-    final body = response.body.trim();
+    final body = _decodeBody(response).trim();
     if (body.isEmpty) {
       return null;
     }

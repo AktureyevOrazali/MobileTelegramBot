@@ -49,16 +49,64 @@ class UiLogger {
   }
 }
 
+ThemeData _ensureAppColorsTheme(ThemeData theme) {
+  if (theme.extension<AppColors>() != null) {
+    return theme;
+  }
+  final fallback = theme.brightness == Brightness.dark ? AppColors.dark : AppColors.light;
+  final extensions = Map<Type, ThemeExtension<dynamic>>.from(theme.extensions);
+  extensions[AppColors] = fallback;
+  return theme.copyWith(extensions: extensions.values);
+}
+
 AppBadgeColors _statusBadgeColors(ThemeData theme, {required bool isClosed}) {
-  final palette = theme.extension<AppColors>()!;
+  final palette = _ensureAppColorsTheme(theme).extension<AppColors>()!;
   return isClosed ? palette.statusClosedBadge : palette.statusOpenBadge;
 }
 
 AppBadgeColors _aiBadgeColors(ThemeData theme, {required bool enabled}) {
-  final palette = theme.extension<AppColors>()!;
+  final palette = _ensureAppColorsTheme(theme).extension<AppColors>()!;
   return enabled ? palette.aiEnabledBadge : palette.aiDisabledBadge;
 }
 
 VoidCallback? _logButtonPress(String label, VoidCallback? action) {
   return UiLogger.button(label, action);
+}
+
+Future<T?> showThemedDialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool barrierDismissible = true,
+}) {
+  final theme = _ensureAppColorsTheme(Theme.of(context));
+  return showDialog<T>(
+    context: context,
+    useRootNavigator: false,
+    barrierDismissible: barrierDismissible,
+    builder: (dialogContext) {
+      return Theme(
+        data: theme,
+        child: Builder(builder: builder),
+      );
+    },
+  );
+}
+
+Future<T?> showThemedBottomSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool isScrollControlled = false,
+}) {
+  final theme = _ensureAppColorsTheme(Theme.of(context));
+  return showModalBottomSheet<T>(
+    context: context,
+    useRootNavigator: false,
+    isScrollControlled: isScrollControlled,
+    builder: (sheetContext) {
+      return Theme(
+        data: theme,
+        child: Builder(builder: builder),
+      );
+    },
+  );
 }

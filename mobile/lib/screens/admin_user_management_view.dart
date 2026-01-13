@@ -323,7 +323,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   }
 
   Future<void> _confirmRemoveBin(UserProfile user, UserBinAssignment assignment) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showThemedDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -481,30 +481,30 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   }
 
   Future<void> _deleteUser(UserProfile user) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showThemedDialog<bool>(
       context: context,
-          builder: (dialogContext) {
-            return AlertDialog(
-              title: Text('Удалить аккаунт ${user.name}?'),
-              content: const Text('Пользователь потеряет доступ к системе. Действие нельзя отменить.'),
-              actions: [
-                TextButton(
-                  onPressed: _logButtonPress(
-                    'cancel delete user',
-                    () => Navigator.of(dialogContext).pop(false),
-                  ),
-                  child: const Text('Отмена'),
-                ),
-                FilledButton(
-                  onPressed: _logButtonPress(
-                    'confirm delete user',
-                    () => Navigator.of(dialogContext).pop(true),
-                  ),
-                  style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
-                  child: const Text('Удалить'),
-                ),
-              ],
-            );
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('Удалить аккаунт ${user.name}?'),
+          content: const Text('Пользователь потеряет доступ к системе. Действие нельзя отменить.'),
+          actions: [
+            TextButton(
+              onPressed: _logButtonPress(
+                'cancel delete user',
+                () => Navigator.of(dialogContext).pop(false),
+              ),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: _logButtonPress(
+                'confirm delete user',
+                () => Navigator.of(dialogContext).pop(true),
+              ),
+              style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+              child: const Text('Удалить'),
+            ),
+          ],
+        );
       },
     );
     if (confirmed != true) {
@@ -550,7 +550,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
     final formKey = GlobalKey<FormState>();
     final passwordController = TextEditingController();
     final confirmController = TextEditingController();
-    final newPassword = await showDialog<String>(
+    final newPassword = await showThemedDialog<String>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -1284,7 +1284,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     final newController = TextEditingController();
     final confirmController = TextEditingController();
 
-    final result = await showDialog<Map<String, String>>(
+    final result = await showThemedDialog<Map<String, String>>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(

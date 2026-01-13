@@ -85,26 +85,34 @@ class _ChatListScreenState extends State<ChatListScreen> {
       'section': _selectedSection ?? 'all',
       'bin': _selectedBin ?? 'all',
     });
+
     if (showLoading) {
+      if (!mounted) return;
       setState(() {
         _loading = true;
         _error = null;
       });
     } else {
+      if (!mounted) return;
       setState(() {
         _error = null;
       });
     }
+
     try {
       final sections = await widget.apiClient.fetchSections();
       final chats = await widget.apiClient.fetchChats(
         favoritesOnly: _showFavoritesOnly,
         binQuery: _selectedBin,
       );
+
+      if (!mounted) return;
+
       final currentUser = widget.apiClient.currentUser ?? widget.session.user;
       final visibleSections = currentUser.isAdmin
           ? sections
           : sections.where((section) => currentUser.sections.contains(section.id)).toList();
+
       setState(() {
         _sections = visibleSections;
         _allChats = chats;
@@ -114,9 +122,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
           _selectedSection = null;
         }
       });
+
       UiLogger.action('CHATS', 'loaded', details: {'count': chats.length});
       _lastUpdateCursor ??= DateTime.now().toUtc();
     } catch (error) {
+      if (!mounted) return;
       setState(() {
         _error = error.toString();
         _loading = false;
@@ -176,6 +186,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _toggleFavorite(ChatSummary chat) async {
     final newValue = !chat.isFavorite;
+    if (!mounted) return;
     setState(() {
       _allChats = _allChats
           .map((item) => item.dialogId == chat.dialogId
@@ -190,9 +201,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       }
       showTopMessage(
         context,
-        newValue
-            ? 'Диалог добавлен в избранное'
-            : 'Диалог удалён из избранного',
+        newValue ? 'Диалог добавлен в избранное' : 'Диалог удалён из избранного',
       );
     } catch (error) {
       if (!mounted) {
@@ -214,6 +223,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   void _applyDialogStatusUpdate(DialogStatusUpdate update) {
+    if (!mounted) return;
     setState(() {
       _allChats = _allChats
           .map(
@@ -229,12 +239,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   void _updateChatAiStatus(int dialogId, bool aiEnabled) {
+    if (!mounted) return;
     setState(() {
       _allChats = _allChats
-          .map(
-            (item) =>
-                item.dialogId == dialogId ? item.copyWith(aiEnabled: aiEnabled) : item,
-          )
+          .map((item) => item.dialogId == dialogId ? item.copyWith(aiEnabled: aiEnabled) : item)
           .toList();
     });
   }
@@ -251,11 +259,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
             .toList();
       });
     } catch (_) {
-      // тихо игнорируем: отображаем локальное состояние, а ошибки покажут ручные действия
+      // тихо игнорируем
     }
   }
 
   Future<void> _toggleAi(ChatSummary chat) async {
+    if (!mounted) return;
     setState(() {
       _aiTogglingDialogId = chat.dialogId;
     });
@@ -292,6 +301,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Future<void> _toggleDialogStatus(ChatSummary chat) async {
+    if (!mounted) return;
     setState(() {
       _statusUpdatingDialogId = chat.dialogId;
     });
@@ -327,7 +337,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Future<void> _confirmDeleteChat(ChatSummary chat) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showThemedDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -401,7 +411,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Future<void> _showFiltersSheet() async {
-    final result = await showModalBottomSheet<_ChatFiltersResult>(
+    final result = await showThemedBottomSheet<_ChatFiltersResult>(
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) {
@@ -494,9 +504,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           ),
                         ],
                         onChanged: (value) {
-                          if (value == null) {
-                            return;
-                          }
+                          if (value == null) return;
                           setModalState(() => status = value);
                         },
                       ),
@@ -515,9 +523,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           ),
                         ],
                         onChanged: (value) {
-                          if (value == null) {
-                            return;
-                          }
+                          if (value == null) return;
                           setModalState(() => sort = value);
                         },
                       ),
@@ -576,12 +582,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
       },
     );
 
-    if (result == null) {
-      return;
-    }
+    if (result == null) return;
 
-    final shouldReload =
-        result.bin != _selectedBin || result.favoritesOnly != _showFavoritesOnly;
+    final shouldReload = result.bin != _selectedBin || result.favoritesOnly != _showFavoritesOnly;
+    if (!mounted) return;
     setState(() {
       _selectedSection = result.section;
       _selectedBin = result.bin;
@@ -601,6 +605,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final themeToggleIcon = isDarkModeActive ? Icons.light_mode : Icons.dark_mode;
     final themeToggleTooltip = isDarkModeActive ? 'Светлый режим' : 'Тёмный режим';
     final nextMode = isDarkModeActive ? ThemeMode.light : ThemeMode.dark;
+
     final themeButton = IconButton(
       tooltip: themeToggleTooltip,
       icon: Icon(themeToggleIcon),
@@ -673,6 +678,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
       );
     }
+
     final theme = Theme.of(context);
     final String? sectionTitle = _selectedSection == null
         ? null
@@ -682,6 +688,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               orElse: () => Section(id: _selectedSection!, title: _selectedSection!),
             )
             .title;
+
     final statusLabel = () {
       switch (_statusFilter) {
         case DialogStatusFilter.open:
@@ -692,6 +699,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           return null;
       }
     }();
+
     final chips = <Widget>[];
     if (sectionTitle != null && sectionTitle.isNotEmpty) {
       chips.add(
@@ -833,9 +841,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
           final aiColors = _aiBadgeColors(theme, enabled: chat.aiEnabled);
           final isStatusUpdating = _statusUpdatingDialogId == chat.dialogId;
           final isAiUpdating = _aiTogglingDialogId == chat.dialogId;
+
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: Card(
+            child: Card(
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () async {
@@ -843,8 +852,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     'chat': chat.title,
                     'dialogId': chat.dialogId,
                   });
+
+                  // ВАЖНО: фиксируем "правильную" тему модуля ДО пуша
+                  final moduleTheme = _ensureAppColorsTheme(Theme.of(context));
+
                   final chatToOpen =
                       chat.unreadCount > 0 ? chat.copyWith(unreadCount: 0) : chat;
+
                   if (chat.unreadCount > 0) {
                     setState(() {
                       _allChats = _allChats
@@ -856,17 +870,21 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           .toList();
                     });
                   }
+
                   final deleted = await Navigator.of(context).push<bool>(
                     MaterialPageRoute(
-                      builder: (_) => ChatDetailScreen(
-                        apiClient: widget.apiClient,
-                        chat: chatToOpen,
+                      builder: (_) => Theme(
+                        data: moduleTheme,
+                        child: ChatDetailScreen(
+                          apiClient: widget.apiClient,
+                          chat: chatToOpen,
+                        ),
                       ),
                     ),
                   );
-                  if (!mounted) {
-                    return;
-                  }
+
+                  if (!mounted) return;
+
                   if (deleted == true) {
                     setState(() {
                       _allChats = _allChats.where((item) => item.chatId != chat.chatId).toList();
@@ -910,8 +928,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                           color: theme.colorScheme.errorContainer,
                                           borderRadius: BorderRadius.circular(999),
                                           border: Border.all(
-                                            color:
-                                                theme.colorScheme.error.withOpacity(0.35),
+                                            color: theme.colorScheme.error.withOpacity(0.35),
                                           ),
                                         ),
                                         child: Row(
@@ -926,8 +943,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                             Text(
                                               '${chat.unreadCount}',
                                               style: theme.textTheme.labelMedium?.copyWith(
-                                                color:
-                                                    theme.colorScheme.onErrorContainer,
+                                                color: theme.colorScheme.onErrorContainer,
                                                 fontWeight: FontWeight.w700,
                                               ),
                                             ),
@@ -942,13 +958,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                   runSpacing: 6,
                                   children: [
                                     Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                       decoration: BoxDecoration(
                                         color: statusColors.background,
                                         borderRadius: BorderRadius.circular(999),
-                                        border:
-                                            Border.all(color: statusColors.border, width: 1),
+                                        border: Border.all(color: statusColors.border, width: 1),
                                       ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -981,8 +995,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                       ),
                                     ),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                       decoration: BoxDecoration(
                                         color: aiColors.background,
                                         borderRadius: BorderRadius.circular(999),
@@ -1002,9 +1015,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                             )
                                           else
                                             Icon(
-                                              chat.aiEnabled
-                                                  ? Icons.smart_toy
-                                                  : Icons.smart_toy_outlined,
+                                              chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
                                               size: 14,
                                               color: aiColors.foreground,
                                             ),
@@ -1032,15 +1043,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  icon: Icon(chat.isFavorite
-                                      ? Icons.star
-                                      : Icons.star_border),
+                                  icon: Icon(chat.isFavorite ? Icons.star : Icons.star_border),
                                   color: chat.isFavorite
                                       ? theme.colorScheme.tertiary
                                       : theme.colorScheme.onSurfaceVariant,
-                                  tooltip: chat.isFavorite
-                                      ? 'Убрать из избранного'
-                                      : 'Добавить в избранное',
+                                  tooltip: chat.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное',
                                   onPressed: _logButtonPress(
                                     'toggle favorite for ${chat.title}',
                                     () => _toggleFavorite(chat),
@@ -1048,8 +1055,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                 ),
                                 const SizedBox(width: 4),
                                 PopupMenuButton<String>(
-                                  enabled:
-                                      canManageDialogs && !isStatusUpdating && !isAiUpdating,
+                                  enabled: canManageDialogs && !isStatusUpdating && !isAiUpdating,
                                   onSelected: (value) {
                                     switch (value) {
                                       case 'toggle_status':
@@ -1070,16 +1076,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                         child: Row(
                                           children: [
                                             Icon(
-                                              chat.isClosed
-                                                  ? Icons.lock_open
-                                                  : Icons.lock_outline,
+                                              chat.isClosed ? Icons.lock_open : Icons.lock_outline,
                                               size: 18,
                                               color: theme.colorScheme.onSurfaceVariant,
                                             ),
                                             const SizedBox(width: 8),
-                                            Text(chat.isClosed
-                                                ? 'Открыть диалог'
-                                                : 'Закрыть диалог'),
+                                            Text(chat.isClosed ? 'Открыть диалог' : 'Закрыть диалог'),
                                           ],
                                         ),
                                       ),
@@ -1088,16 +1090,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                         child: Row(
                                           children: [
                                             Icon(
-                                              chat.aiEnabled
-                                                  ? Icons.smart_toy
-                                                  : Icons.smart_toy_outlined,
+                                              chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
                                               size: 18,
                                               color: theme.colorScheme.onSurfaceVariant,
                                             ),
                                             const SizedBox(width: 8),
-                                            Text(chat.aiEnabled
-                                                ? 'Отключить AI'
-                                                : 'Включить AI'),
+                                            Text(chat.aiEnabled ? 'Отключить AI' : 'Включить AI'),
                                           ],
                                         ),
                                       ),
@@ -1140,7 +1138,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       const SizedBox(height: 8),
                       Text(
                         chat.username != null ? '@${chat.username}' : 'Тип: ${chat.type}',
-                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -1162,126 +1162,132 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   @override
-Widget build(BuildContext context) {
-  final currentUser = widget.apiClient.currentUser ?? widget.session.user;
-  final isAdmin = currentUser.isAdmin;
+  Widget build(BuildContext context) {
+    final currentUser = widget.apiClient.currentUser ?? widget.session.user;
+    final isAdmin = currentUser.isAdmin;
 
-  final tabs = <Widget>[_buildChatTab()];
-  final barItems = <TabItem>[
-    const TabItem(
-      icon: Icons.chat_bubble_outline,
-      title: 'Диалоги',
-      key: 'dialogs',
-    ),
-  ];
-  final callbacks = <VoidCallback?>[
-    () => _loadData(),
-  ];
+    // КЛЮЧЕВОЕ: применяем тему модуля ко всему экрану списка
+    final moduleTheme = _ensureAppColorsTheme(Theme.of(context));
 
-  if (isAdmin) {
+    final tabs = <Widget>[_buildChatTab()];
+    final barItems = <TabItem>[
+      const TabItem(
+        icon: Icons.chat_bubble_outline,
+        title: 'Диалоги',
+        key: 'dialogs',
+      ),
+    ];
+    final callbacks = <VoidCallback?>[
+      () => _loadData(),
+    ];
+
+    if (isAdmin) {
+      tabs.add(
+        DashboardView(
+          key: _dashboardKey,
+          apiClient: widget.apiClient,
+        ),
+      );
+      barItems.add(
+        const TabItem(
+          icon: Icons.analytics_outlined,
+          title: 'Дэшборд',
+          key: 'dashboard',
+        ),
+      );
+      callbacks.add(() => _dashboardKey.currentState?.reloadSummary());
+
+      tabs.add(
+        AdminUserManagementView(
+          key: _adminKey,
+          apiClient: widget.apiClient,
+          currentUser: currentUser,
+        ),
+      );
+      barItems.add(
+        const TabItem(
+          icon: Icons.admin_panel_settings_outlined,
+          title: 'Администрация',
+          key: 'admin',
+        ),
+      );
+      callbacks.add(() => _adminKey.currentState?.refreshAdminData());
+    }
+
     tabs.add(
-      DashboardView(
-        key: _dashboardKey,
+      OperatorProfileView(
+        key: _profileKey,
         apiClient: widget.apiClient,
+        onProfileUpdated: widget.onProfileUpdated,
+        onSessionRefreshed: widget.onSessionRefreshed,
       ),
     );
     barItems.add(
       const TabItem(
-        icon: Icons.analytics_outlined,
-        title: 'Дэшборд',
-        key: 'dashboard',
+        icon: Icons.person_outline,
+        title: 'Профиль',
+        key: 'profile',
       ),
     );
-    callbacks.add(() => _dashboardKey.currentState?.reloadSummary());
-
-    tabs.add(
-      AdminUserManagementView(
-        key: _adminKey,
-        apiClient: widget.apiClient,
-        currentUser: currentUser,
-      ),
-    );
-    barItems.add(
-      const TabItem(
-        icon: Icons.admin_panel_settings_outlined,
-        title: 'Администрация',
-        key: 'admin',
-      ),
-    );
-    callbacks.add(() => _adminKey.currentState?.refreshAdminData());
-  }
-
-  tabs.add(
-    OperatorProfileView(
-      key: _profileKey,
-      apiClient: widget.apiClient,
-      onProfileUpdated: widget.onProfileUpdated,
-      onSessionRefreshed: widget.onSessionRefreshed,
-    ),
-  );
-  barItems.add(
-    const TabItem(
-      icon: Icons.person_outline,
-      title: 'Профиль',
-      key: 'profile',
-    ),
-  );
     callbacks.add(() => _profileKey.currentState?.refreshProfile(showLoading: false));
 
-  final currentIndex = _tabIndex.clamp(0, tabs.length - 1);
-  final theme = Theme.of(context);
-  final colorScheme = theme.colorScheme;
+    final currentIndex = _tabIndex.clamp(0, tabs.length - 1);
 
-  final navigationBarBackgroundColor =
-      colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surface;
+    final theme = moduleTheme;
+    final colorScheme = theme.colorScheme;
 
-  return Scaffold(
-    appBar: _buildAppBar(currentIndex, isAdmin),
-    body: IndexedStack(
-      index: currentIndex,
-      children: tabs,
-    ),
-    bottomNavigationBar: DecoratedBox(
-      decoration: BoxDecoration(
-        color: navigationBarBackgroundColor,
-        border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.6)),
+    final navigationBarBackgroundColor =
+        colorScheme.brightness == Brightness.light ? Colors.white : colorScheme.surface;
+
+    return Theme(
+      data: theme,
+      child: Scaffold(
+        appBar: _buildAppBar(currentIndex, isAdmin),
+        body: IndexedStack(
+          index: currentIndex,
+          children: tabs,
+        ),
+        bottomNavigationBar: DecoratedBox(
+          decoration: BoxDecoration(
+            color: navigationBarBackgroundColor,
+            border: Border(
+              top: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.6)),
+            ),
+          ),
+          child: BottomBarDivider(
+            items: barItems,
+            indexSelected: currentIndex,
+            onTap: (index) {
+              final callback = callbacks[index];
+              final from = barItems[currentIndex].key ?? '$currentIndex';
+              final to = barItems[index].key ?? '$index';
+              if (currentIndex == index) {
+                UiLogger.action('NAV', 'reselected tab', details: {'tab': to});
+                callback?.call();
+                return;
+              }
+              UiLogger.navigation(from, to, reason: 'tab tap');
+              setState(() {
+                _tabIndex = index;
+              });
+              callback?.call();
+            },
+            backgroundColor: Colors.transparent,
+            color: colorScheme.onSurfaceVariant,
+            colorSelected: colorScheme.primary,
+            iconSize: 26,
+            titleStyle: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+            styleDivider: StyleDivider.top,
+            enableShadow: false,
+            top: 12,
+            bottom: 0,
+            pad: 4,
+          ),
         ),
       ),
-      child: BottomBarDivider(
-        items: barItems,
-        indexSelected: currentIndex,
-        onTap: (index) {
-          final callback = callbacks[index];
-          final from = barItems[currentIndex].key ?? '$currentIndex';
-          final to = barItems[index].key ?? '$index';
-          if (currentIndex == index) {
-            UiLogger.action('NAV', 'reselected tab', details: {'tab': to});
-            callback?.call();
-            return;
-          }
-          UiLogger.navigation(from, to, reason: 'tab tap');
-          setState(() {
-            _tabIndex = index;
-          });
-          callback?.call();
-        },
-        backgroundColor: Colors.transparent, // фон уже задан DecoratedBox'ом выше
-        color: colorScheme.onSurfaceVariant,
-        colorSelected: colorScheme.primary,
-        iconSize: 26,
-        titleStyle: const TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 12,
-        ),
-        styleDivider: StyleDivider.top,
-        enableShadow: false,
-        top: 12,
-        bottom: 0,
-        pad: 4,
-      ),
-    ),
-  );
-}
-
+    );
+  }
 }

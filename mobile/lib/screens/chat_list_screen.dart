@@ -52,7 +52,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   String? _selectedBin;
   bool _loading = true;
   String? _error;
-  int _tabIndex = 0;
+  String _activeTabKey = 'dialogs';
   bool _showFavoritesOnly = false;
   ChatSortOrder _sortOrder = ChatSortOrder.newest;
   DialogStatusFilter _statusFilter = DialogStatusFilter.all;
@@ -1231,7 +1231,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
     callbacks.add(() => _profileKey.currentState?.refreshProfile(showLoading: false));
 
-    final currentIndex = _tabIndex.clamp(0, tabs.length - 1);
+    String resolvedTabKey() {
+      final exists = barItems.any((item) => item.key == _activeTabKey);
+      return exists ? _activeTabKey : 'dialogs';
+    }
+
+    final currentTabKey = resolvedTabKey();
+    final currentIndex =
+        barItems.indexWhere((item) => item.key == currentTabKey).clamp(0, tabs.length - 1);
 
     final theme = moduleTheme;
     final colorScheme = theme.colorScheme;
@@ -1246,17 +1253,37 @@ class _ChatListScreenState extends State<ChatListScreen> {
         onPopInvoked: (didPop) async {
           if (didPop) return;
 
-          // 1) Если не на вкладке "Диалоги" -> возвращаем на "Диалоги"
-          if (_tabIndex != 0) {
-            setState(() {
-              _tabIndex = 0;
-           });
-           return;
-         }
+          switch (currentTabKey) {
+            case 'dialogs':
+              // Диалоги -> Логин
+              widget.onLogout();
+              break;
+            case 'dashboard':
+              // Дэшборд -> Диалоги
+              setState(() {
+                _activeTabKey = 'dialogs';
+              });
+              break;
+            case 'admin':
+              // Администрация -> Диалоги
+              setState(() {
+                _activeTabKey = 'dialogs';
+              });
+              break;
+            case 'profile':
+              // Профиль -> Диалоги
+              setState(() {
+                _activeTabKey = 'dialogs';
+              });
+              break;
+            default:
+              // Любой неизвестный экран -> Диалоги
+              setState(() {
+                _activeTabKey = 'dialogs';
+              });
+          }
+        },
 
-          // 2) Если уже на "Диалоги" -> уходим на логин
-          widget.onLogout();
-      },
       child: Scaffold(
         appBar: _buildAppBar(currentIndex, isAdmin),
         body: IndexedStack(
@@ -1284,7 +1311,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               }
               UiLogger.navigation(from, to, reason: 'tab tap');
               setState(() {
-                _tabIndex = index;
+                _activeTabKey = barItems[index].key ?? 'dialogs';
               });
               callback?.call();
             },

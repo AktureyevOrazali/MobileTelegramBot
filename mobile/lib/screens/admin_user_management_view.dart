@@ -1510,7 +1510,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
             alignment: Alignment.bottomRight,
             children: [
               CircleAvatar(
-                radius: 44,
+                radius: 55,
                 backgroundColor: Colors.white,
                 backgroundImage: avatar,
                 child: avatar == null

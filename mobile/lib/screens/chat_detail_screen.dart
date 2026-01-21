@@ -24,8 +24,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   bool _togglingAi = false;
   bool _updatingStatus = false;
   int? _lastMessageId;
-  bool _didInitialJumpToBottom = false;
-
 
   @override
   void initState() {
@@ -76,8 +74,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       });
 
       UiLogger.action('MESSAGES', 'fetched', details: {'count': messages.length});
-      if (newLastId != null && newLastId != previousLastId) {
-        _scrollToBottom();
+
+      // Автоскроллим только если пришли новые сообщения
+      // и пользователь не читает историю (не отскроллил вверх).
+      if (newLastId != null && newLastId != previousLastId && _shouldAutoScroll()) {
+        _scrollToBottom(animated: true);
       }
     } catch (error) {
       if (!mounted) return;
@@ -88,6 +89,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       });
       UiLogger.action('MESSAGES', 'fetch failed', details: {'reason': error.toString()});
     }
+  }
+
+  bool _shouldAutoScroll() {
+    if (!_scrollController.hasClients) return true;
+
+    // При reverse=true "низ" = offset 0.0.
+    // Если пользователь ушёл вверх, offset становится больше.
+    const threshold = 120.0;
+    final offset = _scrollController.offset;
+    return offset <= threshold;
   }
 
   Future<void> _refreshChatFromServer() async {
@@ -102,7 +113,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       });
       UiLogger.action('CHAT', 'refreshed from server', details: {'dialogId': _chat.dialogId});
     } catch (_) {
-      // если не удалось обновить, оставляем локальное состояние
+      // ignore
     }
   }
 
@@ -113,7 +124,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
     UiLogger.action('MESSAGES', 'send', details: {'length': text.length});
 
-    // Не включаем глобальный _loading, чтобы экран не мигал/не сбрасывал UI
     setState(() {
       _error = null;
     });
@@ -129,8 +139,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
       UiLogger.action('MESSAGES', 'sent', details: {'chat': _chat.title});
       _messageController.clear();
+
       await _fetchMessages();
-      _scrollToBottom();
+      _scrollToBottom(animated: true);
     } catch (error) {
       if (!mounted) return;
 
@@ -142,43 +153,34 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
+  /// Для reverse=true "нижняя точка (последнее сообщение)" = offset 0.0
   void _scrollToBottom({bool animated = false}) {
-  if (!mounted) return;
+    if (!mounted) return;
 
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
-    if (!_scrollController.hasClients) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!_scrollController.hasClients) return;
 
-    void jump() {
-      final target = _scrollController.position.maxScrollExtent;
-      _scrollController.jumpTo(target);
-    }
+      void jump() => _scrollController.jumpTo(0.0);
 
-    void animate() {
-      final target = _scrollController.position.maxScrollExtent;
-      _scrollController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
-    }
+      Future<void> animate() async {
+        await _scrollController.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
 
-    // 1) сразу
-    if (animated) {
-      animate();
-    } else {
+      if (animated) {
+        await animate();
+      } else {
+        jump();
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      if (!mounted || !_scrollController.hasClients) return;
       jump();
-    }
-
-    // 2) ещё раз после того, как лэйаут "дособерётся"
-    await Future<void>.delayed(const Duration(milliseconds: 40));
-    if (!mounted || !_scrollController.hasClients) return;
-
-    // всегда добиваем jump, чтобы гарантированно попасть в конец
-    jump();
-  });
-}
-
-
+    });
+  }
 
   Future<void> _toggleFavorite() async {
     if (_updatingFavorite) {
@@ -411,7 +413,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final statusColors = _statusBadgeColors(theme, isClosed: isClosed);
     final aiColors = _aiBadgeColors(theme, enabled: _chat.aiEnabled);
 
-    // переменные оставлены, но в этом файле ниже не используются — если хотите, уберите
     final startedAtLabel = _chat.dialogStartedAt != null
         ? DateFormat('dd.MM.yyyy HH:mm').format(_chat.dialogStartedAt!.toLocal())
         : null;
@@ -422,8 +423,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     (startedAtLabel, closedAtLabel, sectionTitle, operatorSuffix);
 
     return Theme(
-      data: theme, // КЛЮЧЕВОЕ: применяем тему к Scaffold/AppBar/TextField
+      data: theme,
       child: Scaffold(
+        // ВАЖНО: оставляем true, чтобы Scaffold сам корректно поднимал body при клавиатуре.
+        // И одновременно НЕ добавляем viewInsets.bottom в список (иначе будет "двойной" отступ).
+        resizeToAvoidBottomInset: true,
+
         appBar: AppBar(
           title: Text(_chat.title),
           actions: [
@@ -588,6 +593,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
           ),
         ),
+
         body: Column(
           children: [
             if (_deleting) const LinearProgressIndicator(),
@@ -610,10 +616,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         )
                       : ListView.builder(
                           controller: _scrollController,
+                          reverse: true, // сообщения снизу, пустота сверху
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                           itemCount: _messages.length,
                           itemBuilder: (context, index) {
-                            final message = _messages[index];
+                            final message = _messages[_messages.length - 1 - index];
+
                             final isOutgoing = message.direction == 'outgoing';
                             final bubbleColor = isOutgoing
                                 ? appColors.outgoingMessageBackground
@@ -679,40 +688,52 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                           },
                         ),
             ),
+
             const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      decoration: InputDecoration(
-                        hintText: canSend
-                            ? 'Напишите сообщение...'
-                            : 'Только просмотр. Свяжитесь с администратором для прав ответа.',
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+
+            // ФИКС iOS + корректная работа с клавиатурой:
+            // 1) SafeArea(bottom: true) чтобы инпут не залезал под home-indicator.
+            // 2) Никаких ручных padding’ов viewInsets.bottom здесь не нужно —
+            //    Scaffold(resizeToAvoidBottomInset: true) сам поднимет всё.
+            SafeArea(
+              top: false,
+              bottom: true,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _messageController,
+                        decoration: InputDecoration(
+                          hintText: canSend
+                              ? 'Напишите сообщение...'
+                              : 'Только просмотр. Свяжитесь с администратором для прав ответа.',
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        ),
+                        enabled: canSend && !_deleting,
+                        keyboardType: TextInputType.multiline,
+                        textCapitalization: TextCapitalization.sentences,
+                        minLines: 1,
+                        maxLines: 5,
+                        onSubmitted: canSend && !_deleting ? (_) => _sendMessage() : null,
+                        onTap: () => _scrollToBottom(animated: true),
                       ),
-                      enabled: canSend && !_deleting,
-                      keyboardType: TextInputType.multiline,
-                      textCapitalization: TextCapitalization.sentences,
-                      minLines: 1,
-                      maxLines: 5,
-                      onSubmitted: canSend && !_deleting ? (_) => _sendMessage() : null,
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  IconButton.filled(
-                    onPressed: _logButtonPress(
-                      'send chat message',
-                      canSend && !_deleting ? _sendMessage : null,
+                    const SizedBox(width: 12),
+                    IconButton.filled(
+                      onPressed: _logButtonPress(
+                        'send chat message',
+                        canSend && !_deleting ? _sendMessage : null,
+                      ),
+                      icon: const Icon(Icons.send),
+                      tooltip: 'Отправить',
                     ),
-                    icon: const Icon(Icons.send),
-                    tooltip: 'Отправить',
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
+
             if (!canSend)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),

@@ -1,4 +1,3 @@
-
 part of '../main.dart';
 
 class DashboardView extends StatefulWidget {
@@ -45,15 +44,16 @@ class _DashboardViewState extends State<DashboardView> {
       final summary = await widget.apiClient.fetchDashboardSummary(
         operatorId: operatorOverride ?? _selectedOperatorId,
       );
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
         _summary = summary;
         _error = null;
+
         if (_selectedQuestionSection != 'all') {
           final validKeys = summary.questionsBySection
-              .map((section) => section.section ?? (section.title.isNotEmpty ? section.title : 'no-section'))
+              .map((section) =>
+                  section.section ?? (section.title.isNotEmpty ? section.title : 'no-section'))
               .toSet();
           if (!validKeys.contains(_selectedQuestionSection)) {
             _selectedQuestionSection = 'all';
@@ -61,19 +61,17 @@ class _DashboardViewState extends State<DashboardView> {
         }
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
         _error = error.toString();
         if (initial) {
           _summary = null;
         }
       });
-} finally {
-      if (!mounted) {
-        return;
-      }
+    } finally {
+      if (!mounted) return;
+
       setState(() {
         if (initial) {
           _loading = false;
@@ -91,16 +89,13 @@ class _DashboardViewState extends State<DashboardView> {
     });
     try {
       final users = await widget.apiClient.fetchUsers();
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       final filtered = users
           .where((user) => !user.isAdmin && (user.role == 'moderator' || user.role == 'viewer'))
           .where((user) {
             final normalized = ('${user.name} ${user.login}').toLowerCase();
-            if (normalized.trim().isEmpty) {
-              return true;
-            }
+            if (normalized.trim().isEmpty) return true;
             return !normalized.contains('bot') && !normalized.contains('бот');
           })
           .toList()
@@ -109,6 +104,7 @@ class _DashboardViewState extends State<DashboardView> {
           final nameB = b.name.isNotEmpty ? b.name : b.login;
           return nameA.toLowerCase().compareTo(nameB.toLowerCase());
         });
+
       setState(() {
         _operators = filtered;
         if (_selectedOperatorId != null &&
@@ -117,16 +113,12 @@ class _DashboardViewState extends State<DashboardView> {
         }
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _operatorsError = error.toString();
       });
     } finally {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _operatorsLoading = false;
       });
@@ -143,32 +135,26 @@ class _DashboardViewState extends State<DashboardView> {
   }
 
   String _formatResponseTime(double? minutes) {
-    if (minutes == null) {
-      return '—';
-    }
+    if (minutes == null) return '—';
     final totalSeconds = (minutes * 60).round();
     final minutesPart = totalSeconds ~/ 60;
     final secondsPart = totalSeconds % 60;
-    if (minutesPart > 0 && secondsPart > 0) {
-      return '$minutesPart мин $secondsPart с';
-    }
-    if (minutesPart > 0) {
-      return '$minutesPart мин';
-    }
+    if (minutesPart > 0 && secondsPart > 0) return '$minutesPart мин $secondsPart с';
+    if (minutesPart > 0) return '$minutesPart мин';
     return '$secondsPart с';
   }
 
   String _describeResponseTime(double? minutes) {
-    if (minutes == null) {
-      return 'Недостаточно данных';
-    }
-    if (minutes <= 2) {
-      return 'Отвечает быстро';
-    }
-    if (minutes <= 7) {
-      return 'Отвечает в среднем темпе';
-    }
+    if (minutes == null) return 'Недостаточно данных';
+    if (minutes <= 2) return 'Отвечает быстро';
+    if (minutes <= 7) return 'Отвечает в среднем темпе';
     return 'Отвечает медленно';
+  }
+
+  int _columnsForWidth(double w) {
+    if (w >= 900) return 4;
+    if (w >= 640) return 3;
+    return 2;
   }
 
   @override
@@ -182,6 +168,7 @@ class _DashboardViewState extends State<DashboardView> {
     final summary = _summary;
     final hasData = summary != null;
     final data = summary ?? DashboardSummary.empty();
+
     final updatedAtLabel = DateFormat('dd.MM.yyyy HH:mm').format(data.updatedAt.toLocal());
     final avgMessagesLabel = data.averageMessagesPerDialog.toStringAsFixed(1);
     final responseTimeLabel = _formatResponseTime(data.avgResponseTimeMinutes);
@@ -198,37 +185,31 @@ class _DashboardViewState extends State<DashboardView> {
     final normalizedSectionTitles = <String>{};
     for (final section in data.sectionBreakdown) {
       final normalized = section.title.trim().toLowerCase();
-      if (normalized.isNotEmpty) {
-        normalizedSectionTitles.add(normalized);
-      }
+      if (normalized.isNotEmpty) normalizedSectionTitles.add(normalized);
     }
     for (final section in data.questionsBySection) {
       final normalized = section.title.trim().toLowerCase();
-      if (normalized.isNotEmpty) {
-        normalizedSectionTitles.add(normalized);
-      }
+      if (normalized.isNotEmpty) normalizedSectionTitles.add(normalized);
     }
 
     final operatorNameSet = <String>{};
     for (final operator in _operators) {
-      if (operator.name.trim().isNotEmpty) {
-        operatorNameSet.add(operator.name.trim().toLowerCase());
-      }
-      if (operator.login.trim().isNotEmpty) {
+      if (operator.name.trim().isNotEmpty) operatorNameSet.add(operator.name.trim().toLowerCase());
+      if (operator.login.trim().isNotEmpty)
         operatorNameSet.add(operator.login.trim().toLowerCase());
-      }
     }
     final hasOperatorNames = operatorNameSet.isNotEmpty;
 
     final operatorItems = <DropdownMenuItem<int?>>[
-      const DropdownMenuItem<int?>(
-        value: null,
-        child: Text('Все сотрудники'),
-      ),
+      const DropdownMenuItem<int?>(value: null, child: Text('Все сотрудники')),
       ..._operators.map(
         (operator) => DropdownMenuItem<int?>(
           value: operator.id,
-          child: Text(operator.name.isNotEmpty ? operator.name : operator.login),
+          child: Text(
+            operator.name.isNotEmpty ? operator.name : operator.login,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     ];
@@ -237,38 +218,26 @@ class _DashboardViewState extends State<DashboardView> {
     final seenKeys = <String>{};
     for (final section in data.questionsBySection) {
       final key = section.section ?? (section.title.isNotEmpty ? section.title : 'no-section');
-      if (seenKeys.contains(key)) {
-        continue;
-      }
+      if (seenKeys.contains(key)) continue;
       seenKeys.add(key);
+
       final normalizedTitle = section.title.trim().toLowerCase();
       final seenQuestions = <String>{};
+
       final filteredQuestions = section.questions.where((question) {
         final normalizedQuestion = normalizeQuestion(question.question);
-        if (normalizedQuestion.isEmpty) {
-          return false;
-        }
-        if (normalizedSectionTitles.contains(normalizedQuestion)) {
-          return false;
-        }
-        if (normalizedTitle.isNotEmpty && normalizedQuestion == normalizedTitle) {
-          return false;
-        }
-        if (commandTagRegex.hasMatch(question.question.trim())) {
-          return false;
-        }
-        if (seenQuestions.contains(normalizedQuestion)) {
-          return false;
-        }
+        if (normalizedQuestion.isEmpty) return false;
+        if (normalizedSectionTitles.contains(normalizedQuestion)) return false;
+        if (normalizedTitle.isNotEmpty && normalizedQuestion == normalizedTitle) return false;
+        if (commandTagRegex.hasMatch(question.question.trim())) return false;
+        if (seenQuestions.contains(normalizedQuestion)) return false;
         seenQuestions.add(normalizedQuestion);
         return true;
       }).toList();
 
-      if (filteredQuestions.isEmpty) {
-        continue;
-      }
+      if (filteredQuestions.isEmpty) continue;
 
-      final totalCount = filteredQuestions.fold<int>(0, (acc, question) => acc + question.count);
+      final totalCount = filteredQuestions.fold<int>(0, (acc, q) => acc + q.count);
       sectionEntries.add(
         _QuestionSectionEntry(
           key: key,
@@ -289,7 +258,11 @@ class _DashboardViewState extends State<DashboardView> {
       ...sectionEntries.map(
         (entry) => DropdownMenuItem<String>(
           value: entry.key,
-          child: Text(entry.title),
+          child: Text(
+            entry.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     ];
@@ -298,18 +271,10 @@ class _DashboardViewState extends State<DashboardView> {
       final seen = <String>{};
       return data.topQuestions.where((question) {
         final normalized = normalizeQuestion(question.question);
-        if (normalized.isEmpty) {
-          return false;
-        }
-        if (normalizedSectionTitles.contains(normalized)) {
-          return false;
-        }
-        if (commandTagRegex.hasMatch(question.question.trim())) {
-          return false;
-        }
-        if (seen.contains(normalized)) {
-          return false;
-        }
+        if (normalized.isEmpty) return false;
+        if (normalizedSectionTitles.contains(normalized)) return false;
+        if (commandTagRegex.hasMatch(question.question.trim())) return false;
+        if (seen.contains(normalized)) return false;
         seen.add(normalized);
         return true;
       }).take(5).toList();
@@ -318,25 +283,24 @@ class _DashboardViewState extends State<DashboardView> {
     final selectedSectionTitle = _selectedQuestionSection == 'all'
         ? 'Все разделы'
         : sectionEntries
-                .firstWhere(
-                  (entry) => entry.key == _selectedQuestionSection,
-                  orElse: () => _QuestionSectionEntry(
-                    key: 'all',
-                    title: 'Все разделы',
-                    section: DashboardSectionTopQuestions(
-                      section: null,
-                      title: 'Все разделы',
-                      questions: const <DashboardTopQuestion>[],
-                    ),
-                    totalCount: 0,
-                  ),
-                )
-                .title;
+            .firstWhere(
+              (entry) => entry.key == _selectedQuestionSection,
+              orElse: () => _QuestionSectionEntry(
+                key: 'all',
+                title: 'Все разделы',
+                section: DashboardSectionTopQuestions(
+                  section: null,
+                  title: 'Все разделы',
+                  questions: const <DashboardTopQuestion>[],
+                ),
+                totalCount: 0,
+              ),
+            )
+            .title;
 
     final selectedQuestions = () {
-      if (_selectedQuestionSection == 'all') {
-        return filteredTopQuestions;
-      }
+      if (_selectedQuestionSection == 'all') return filteredTopQuestions;
+
       final match = sectionEntries.firstWhere(
         (entry) => entry.key == _selectedQuestionSection,
         orElse: () => _QuestionSectionEntry(
@@ -356,48 +320,73 @@ class _DashboardViewState extends State<DashboardView> {
     final agentStats = data.agentBreakdown
         .where((agent) {
           final normalized = agent.name.trim().toLowerCase();
-          if (normalized.isEmpty) {
-            return false;
-          }
-          if (normalized.contains('bot') || normalized.contains('бот')) {
-            return false;
-          }
-          if (normalized.contains('admin') || normalized.contains('administrator') || normalized.contains('администратор')) {
-            return false;
-          }
-          if (normalized.contains('ai assistant')) {
-            return false;
-          }
-          if (hasOperatorNames && !operatorNameSet.contains(normalized)) {
-            return false;
-          }
+          if (normalized.isEmpty) return false;
+          if (normalized.contains('bot') || normalized.contains('бот')) return false;
+          if (normalized.contains('admin') ||
+              normalized.contains('administrator') ||
+              normalized.contains('администратор')) return false;
+          if (normalized.contains('ai assistant')) return false;
+          if (hasOperatorNames && !operatorNameSet.contains(normalized)) return false;
           return true;
         })
         .toList()
       ..sort((a, b) => b.messages.compareTo(a.messages));
 
+    final statCards = <Widget>[
+      _DashboardStatCard(label: 'Всего обращений', value: numberFormatter.format(data.totalDialogs)),
+      _DashboardStatCard(label: 'Открытые диалоги', value: numberFormatter.format(data.openDialogs)),
+      _DashboardStatCard(label: 'Закрытые диалоги', value: numberFormatter.format(data.closedDialogs)),
+      _DashboardStatCard(label: 'Активных чатов', value: numberFormatter.format(data.totalChats)),
+      _DashboardStatCard(label: 'Входящих', value: numberFormatter.format(data.totalIncomingMessages)),
+      _DashboardStatCard(label: 'Исходящих', value: numberFormatter.format(data.totalOutgoingMessages)),
+      _DashboardStatCard(label: 'Среднее в диалоге', value: avgMessagesLabel),
+      _DashboardStatCard(label: 'Время ответа', value: responseTimeLabel, hint: responseTimeMood),
+    ];
+
     final headerCard = Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 4),
-              Text(
-                'Обновлено: $updatedAtLabel',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Обновлено: $updatedAtLabel',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Обновить',
+                    onPressed: _logButtonPress(
+                      'refresh dashboard',
+                      _refreshing ? null : () => _loadSummary(initial: false),
+                    ),
+                    icon: _refreshing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               DropdownButtonFormField<int?>(
                 value: _selectedOperatorId,
-                decoration: const InputDecoration(labelText: 'Сотрудник'),
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Сотрудник', isDense: true),
                 items: operatorItems,
                 onChanged: _operatorsLoading ? null : _handleOperatorChanged,
               ),
               if (_operatorsLoading) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 const LinearProgressIndicator(),
               ],
               if (_operatorsError != null) ...[
@@ -408,63 +397,41 @@ class _DashboardViewState extends State<DashboardView> {
                 ),
               ],
               if (!hasData && _error == null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 Text(
                   'Нет данных для отображения. Попробуйте выбрать другого сотрудника или обновить дэшборд.',
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
               if (_error != null && hasData) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 Text(
                   'Ошибка при обновлении: $_error',
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
                 ),
               ],
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final maxWidth = constraints.maxWidth;
-                  final columns = maxWidth >= 640
-                      ? 3
-                      : maxWidth >= 440
-                          ? 2
-                          : 1;
-                  final tileWidth = (maxWidth - (columns - 1) * 12) / columns;
-                  final statCards = <Widget>[
-                    _DashboardStatCard(label: 'Всего обращений', value: numberFormatter.format(data.totalDialogs)),
-                    _DashboardStatCard(label: 'Открытые диалоги', value: numberFormatter.format(data.openDialogs)),
-                    _DashboardStatCard(label: 'Закрытые диалоги', value: numberFormatter.format(data.closedDialogs)),
-                    _DashboardStatCard(label: 'Активных чатов', value: numberFormatter.format(data.totalChats)),
-                    _DashboardStatCard(label: 'Входящих сообщений', value: numberFormatter.format(data.totalIncomingMessages)),
-                    _DashboardStatCard(label: 'Исходящих сообщений', value: numberFormatter.format(data.totalOutgoingMessages)),
-                    _DashboardStatCard(label: 'Среднее сообщений в диалоге', value: avgMessagesLabel),
-                    _DashboardStatCard(label: 'Среднее время ответа', value: responseTimeLabel, hint: responseTimeMood),
-                  ];
+                  final columns = _columnsForWidth(constraints.maxWidth);
+                  final aspect = columns >= 3 ? 2.2 : 1.9; // ЧУТЬ ВЫШЕ => без overflow по низу
 
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    alignment: WrapAlignment.start,
-                    children: statCards
-                        .map(
-                          (card) => SizedBox(
-                            width: columns == 1 ? maxWidth : tileWidth,
-                            child: card,
-                          ),
-                        )
-                        .toList(),
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: statCards.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: aspect,
+                    ),
+                    itemBuilder: (context, i) => statCards[i],
                   );
                 },
-              ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _logButtonPress(
-                  'refresh dashboard',
-                  _refreshing ? null : () => _loadSummary(initial: false),
-                ),
-                icon: Icon(_refreshing ? Icons.sync : Icons.refresh),
-                label: Text(_refreshing ? 'Обновляем…' : 'Обновить дэшборд'),
               ),
             ],
           ),
@@ -476,7 +443,7 @@ class _DashboardViewState extends State<DashboardView> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -488,7 +455,9 @@ class _DashboardViewState extends State<DashboardView> {
               if (data.sectionBreakdown.isEmpty)
                 Text(
                   'Данных пока нет.',
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 )
               else
                 Column(
@@ -500,15 +469,14 @@ class _DashboardViewState extends State<DashboardView> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Expanded(
-                                child: Text(section.title, style: theme.textTheme.bodyMedium),
-                              ),
+                              Expanded(child: Text(section.title, style: theme.textTheme.bodyMedium)),
                               const SizedBox(width: 12),
                               Text(
                                 '${numberFormatter.format(section.dialogs)} · ${section.percentage.toStringAsFixed(1)}%',
-                                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ],
                           ),
@@ -535,38 +503,65 @@ class _DashboardViewState extends State<DashboardView> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Частые вопросы',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 200,
-                    child: DropdownButtonFormField<String>(
-                      value: _selectedQuestionSection,
-                      decoration: const InputDecoration(labelText: 'Раздел'),
-                      items: questionSectionItems,
-                      onChanged: (value) {
-                        if (value == null) {
-                          return;
-                        }
-                        setState(() {
-                          _selectedQuestionSection = value;
-                        });
-                      },
-                    ),
-                  ),
-                ],
+              // FIX: без SizedBox(width: 150/220), чтобы не схлопывалось до 90 и не было overflow
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 420;
+                  if (narrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Частые вопросы',
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<String>(
+                          value: _selectedQuestionSection,
+                          isExpanded: true,
+                          decoration: const InputDecoration(labelText: 'Раздел', isDense: true),
+                          items: questionSectionItems,
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _selectedQuestionSection = value);
+                          },
+                        ),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Частые вопросы',
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedQuestionSection,
+                          isExpanded: true,
+                          decoration: const InputDecoration(labelText: 'Раздел', isDense: true),
+                          items: questionSectionItems,
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _selectedQuestionSection = value);
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
+
               const SizedBox(height: 8),
               Text(
                 'ТОП-5 · $selectedSectionTitle',
@@ -587,18 +582,18 @@ class _DashboardViewState extends State<DashboardView> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${index + 1}.', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              question.question,
-                              style: theme.textTheme.bodyMedium,
-                            ),
+                          Text(
+                            '${index + 1}.',
+                            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
                           ),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(question.question, style: theme.textTheme.bodyMedium)),
                           const SizedBox(width: 8),
                           Text(
                             numberFormatter.format(question.count),
-                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ],
                       ),
@@ -615,7 +610,7 @@ class _DashboardViewState extends State<DashboardView> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -629,174 +624,100 @@ class _DashboardViewState extends State<DashboardView> {
                   'Пока нет активности сотрудников.',
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 )
-              else ...[
+              else
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final isCompact = constraints.maxWidth < 520;
+                    final columns = constraints.maxWidth >= 760 ? 2 : 1;
 
-                    if (isCompact) {
-                      return Column(
-                        children: agentStats.map((agent) {
-                          final lastActivityLabel = agent.lastActivity != null
-                              ? DateFormat('dd.MM.yyyy HH:mm').format(agent.lastActivity!.toLocal())
-                              : '—';
+                    return GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: agentStats.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: columns == 1 ? 2.7 : 3.2,
+                      ),
+                      itemBuilder: (context, index) {
+                        final agent = agentStats[index];
+                        final lastActivityLabel = agent.lastActivity != null
+                            ? DateFormat('dd.MM.yyyy HH:mm').format(agent.lastActivity!.toLocal())
+                            : '—';
 
-                          return Container(
-                            width: double.infinity,
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(agent.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 12,
-                                  runSpacing: 6,
-                                  children: [
-                                    _AgentStatChip(label: 'Диалогов', value: numberFormatter.format(agent.dialogs)),
-                                    _AgentStatChip(label: 'Сообщений', value: numberFormatter.format(agent.messages)),
-                                    _AgentStatChip(label: 'Среднее', value: agent.avgMessagesPerDialog.toStringAsFixed(1)),
-                                    _AgentStatChip(
-                                      label: 'Активность',
-                                      value: lastActivityLabel,
-                                      muted: true,
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      );
-                    }
-
-                    return Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
+                        return Container(
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
-                            ),
+                            color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          child: Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                flex: 2,
-                                child: Text(
-                                  'Сотрудник',
-                                  style: theme.textTheme.labelMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      agent.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    lastActivityLabel,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Expanded(
-                                child: Text(
-                                  'Диалогов',
-                                  textAlign: TextAlign.right,
-                                  style: theme.textTheme.labelMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  'Сообщений',
-                                  textAlign: TextAlign.right,
-                                  style: theme.textTheme.labelMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  'Среднее',
-                                  textAlign: TextAlign.right,
-                                  style: theme.textTheme.labelMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: Text(
-                                  'Последняя активность',
-                                  textAlign: TextAlign.right,
-                                  style: theme.textTheme.labelMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _AgentStatChip(
+                                      label: 'Диалогов',
+                                      value: numberFormatter.format(agent.dialogs),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _AgentStatChip(
+                                      label: 'Сообщений',
+                                      value: numberFormatter.format(agent.messages),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _AgentStatChip(
+                                      label: 'Среднее',
+                                      value: agent.avgMessagesPerDialog.toStringAsFixed(1),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        ...agentStats.map((agent) {
-                          final lastActivityLabel = agent.lastActivity != null
-                              ? DateFormat('dd.MM.yyyy HH:mm').format(agent.lastActivity!.toLocal())
-                              : '—';
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: Text(
-                                    agent.name,
-                                    style: theme.textTheme.bodyMedium,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    numberFormatter.format(agent.dialogs),
-                                    textAlign: TextAlign.right,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    numberFormatter.format(agent.messages),
-                                    textAlign: TextAlign.right,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    agent.avgMessagesPerDialog.toStringAsFixed(1),
-                                    textAlign: TextAlign.right,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 2,
-                                  child: Text(
-                                    lastActivityLabel,
-                                    textAlign: TextAlign.right,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ],
+                        );
+                      },
                     );
                   },
                 ),
-              ],
             ],
           ),
         ),
       ),
     );
 
-    final activityCard = Padding(
+     final activityCard = Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -810,32 +731,100 @@ class _DashboardViewState extends State<DashboardView> {
                   'Данных пока нет.',
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 )
-              else
-                Column(
-                  children: data.recentActivity.map((activity) {
-                    final dateLabel = DateFormat('dd.MM').format(activity.date.toLocal());
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [
-                          Expanded(child: Text(dateLabel)),
-                          Expanded(
-                            child: Text(
-                              numberFormatter.format(activity.dialogs),
-                              textAlign: TextAlign.right,
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              numberFormatter.format(activity.incomingMessages),
-                              textAlign: TextAlign.right,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+              else ...[
+  Builder(
+    builder: (context) {
+      final items = data.recentActivity.length <= 7
+          ? data.recentActivity
+          : data.recentActivity.sublist(data.recentActivity.length - 7);
+
+      return Column(
+        children: [
+          // Заголовок таблицы
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'Дата',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'Диалоги',
+                    textAlign: TextAlign.right,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'Входящие',
+                    textAlign: TextAlign.right,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Разделитель
+          Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
+
+          // Строки
+          ...items.map((activity) {
+            final dateLabel = DateFormat('dd.MM').format(activity.date.toLocal());
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      dateLabel,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      numberFormatter.format(activity.dialogs),
+                      textAlign: TextAlign.right,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      numberFormatter.format(activity.incomingMessages),
+                      textAlign: TextAlign.right,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      );
+    },
+  ),
+],
+
             ],
           ),
         ),
@@ -872,9 +861,9 @@ class _DashboardStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
     return Container(
-      constraints: const BoxConstraints(minHeight: 110),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
         borderRadius: BorderRadius.circular(16),
@@ -884,27 +873,36 @@ class _DashboardStatCard extends StatelessWidget {
         children: [
           Text(
             label,
-            maxLines: 2,
-            softWrap: true,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 6),
-          Text(
-            value,
-            maxLines: 2,
-            softWrap: true,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
           ),
           if (hint != null) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               hint!,
-              maxLines: 2,
-              softWrap: true,
-              overflow: TextOverflow.fade,
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ],
@@ -926,7 +924,7 @@ class _AgentStatChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withOpacity(muted ? 0.25 : 0.4),
+        color: theme.colorScheme.surface.withOpacity(muted ? 0.22 : 0.35),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
       ),
@@ -936,6 +934,8 @@ class _AgentStatChip extends StatelessWidget {
         children: [
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 4),
@@ -943,7 +943,7 @@ class _AgentStatChip extends StatelessWidget {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
           ),
         ],
       ),

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
-import { AuthSession, ChatSummary, Message, MessageNotification, Section } from '../types';
-import { formatDateTime } from '../utils/date';
+import { AuthSession, ChatSummary, DashboardActivityPoint, DashboardSummary, Message, MessageNotification, Section } from '../types';
+import { formatDate, formatDateTime } from '../utils/date';
 import SelectPill from "../components/SelectPill";
 import StarButton from "../components/StarButton";
 import Modal from "../components/Modal";
@@ -11,6 +11,11 @@ const PRESET_MESSAGES = [
   'Здравствуйте! Чем я могу вам помочь?',
   'Спасибо за обращение! Готовы помочь в любое время!',
 ];
+
+const RESPONSE_SPEED_THRESHOLDS = {
+  fast: 2,
+  medium: 5,
+};
 
 /* -------------------- Props -------------------- */
 interface DialogsPageProps {
@@ -257,6 +262,139 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   );
 };
 
+const formatMinutes = (value: number | null) => {
+  if (value === null || !Number.isFinite(value)) {
+    return 'Нет данных';
+  }
+  if (value < 1) {
+    return `${Math.round(value * 60)} сек.`;
+  }
+  return `${value.toFixed(1)} мин.`;
+};
+
+const getResponseSpeedTone = (value: number | null) => {
+  if (value === null || !Number.isFinite(value)) {
+    return 'neutral';
+  }
+  if (value <= RESPONSE_SPEED_THRESHOLDS.fast) {
+    return 'fast';
+  }
+  if (value <= RESPONSE_SPEED_THRESHOLDS.medium) {
+    return 'medium';
+  }
+  return 'slow';
+};
+
+const AnalyticsHistogram: React.FC<{ points: DashboardActivityPoint[] }> = ({ points }) => {
+  const width = 640;
+  const height = 220;
+  const padding = { top: 16, right: 20, bottom: 40, left: 40 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const maxValue = Math.max(1, ...points.flatMap((point) => [point.dialogs, point.incomingMessages]));
+  const groupWidth = chartWidth / Math.max(points.length, 1);
+  const barGap = 10;
+  const barWidth = Math.max(8, (groupWidth - barGap) / 2);
+
+  return (
+    <svg className="analytics-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Гистограмма активности">
+      <g transform={`translate(${padding.left}, ${padding.top})`}>
+        {[0.25, 0.5, 0.75, 1].map((ratio) => (
+          <line
+            key={ratio}
+            x1={0}
+            x2={chartWidth}
+            y1={chartHeight - chartHeight * ratio}
+            y2={chartHeight - chartHeight * ratio}
+            className="analytics-chart__grid"
+          />
+        ))}
+        {points.map((point, index) => {
+          const x = index * groupWidth + barGap / 2;
+          const dialogsHeight = (point.dialogs / maxValue) * chartHeight;
+          const incomingHeight = (point.incomingMessages / maxValue) * chartHeight;
+          return (
+            <g key={`${point.date}-${index}`}>
+              <rect
+                x={x}
+                y={chartHeight - dialogsHeight}
+                width={barWidth}
+                height={dialogsHeight}
+                rx={6}
+                className="analytics-chart__bar analytics-chart__bar--dialogs"
+              />
+              <rect
+                x={x + barWidth + 6}
+                y={chartHeight - incomingHeight}
+                width={barWidth}
+                height={incomingHeight}
+                rx={6}
+                className="analytics-chart__bar analytics-chart__bar--incoming"
+              />
+              <text
+                x={x + barWidth}
+                y={chartHeight + 20}
+                textAnchor="middle"
+                className="analytics-chart__label"
+              >
+                {formatDate(point.date).slice(0, 5)}
+              </text>
+            </g>
+          );
+        })}
+      </g>
+    </svg>
+  );
+};
+
+const AnalyticsLineChart: React.FC<{ points: DashboardActivityPoint[] }> = ({ points }) => {
+  const width = 640;
+  const height = 220;
+  const padding = { top: 20, right: 20, bottom: 36, left: 40 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const maxValue = Math.max(1, ...points.flatMap((point) => [point.dialogs, point.incomingMessages]));
+
+  const buildPath = (values: number[]) =>
+    values
+      .map((value, index) => {
+        const x = (index / Math.max(values.length - 1, 1)) * chartWidth;
+        const y = chartHeight - (value / maxValue) * chartHeight;
+        return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+      })
+      .join(' ');
+
+  const dialogsPath = buildPath(points.map((point) => point.dialogs));
+  const incomingPath = buildPath(points.map((point) => point.incomingMessages));
+
+  return (
+    <svg className="analytics-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Линейный график активности">
+      <g transform={`translate(${padding.left}, ${padding.top})`}>
+        {[0.25, 0.5, 0.75, 1].map((ratio) => (
+          <line
+            key={ratio}
+            x1={0}
+            x2={chartWidth}
+            y1={chartHeight - chartHeight * ratio}
+            y2={chartHeight - chartHeight * ratio}
+            className="analytics-chart__grid"
+          />
+        ))}
+        <path d={dialogsPath} className="analytics-chart__line analytics-chart__line--dialogs" />
+        <path d={incomingPath} className="analytics-chart__line analytics-chart__line--incoming" />
+        {points.map((point, index) => {
+          const x = (index / Math.max(points.length - 1, 1)) * chartWidth;
+          return (
+            <text key={`${point.date}-${index}`} x={x} y={chartHeight + 24} textAnchor="middle" className="analytics-chart__label">
+              {formatDate(point.date).slice(0, 5)}
+            </text>
+          );
+        })}
+      </g>
+    </svg>
+  );
+};
+
 /* -------------------- Page -------------------- */
 const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [sections, setSections] = useState<Section[]>([]);
@@ -280,6 +418,8 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [aiManuallyDisabled, setAiManuallyDisabled] = useState<Set<number>>(new Set());
   const [dialogStatusTarget, setDialogStatusTarget] = useState<{ chat: ChatSummary; action: 'open' | 'close' } | null>(null);
   const [dialogStatusLoading, setDialogStatusLoading] = useState(false);
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [analyticsTab, setAnalyticsTab] = useState<'histogram' | 'response' | 'line'>('histogram');
 
   const currentUser = session.user;
   const canDeleteDialog = currentUser.isAdmin;
@@ -354,7 +494,16 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     }
   }, [apiClient, currentUser.bins, currentUser.isAdmin]);
 
-  useEffect(() => { loadSectionsAndChats(true); loadBins(); }, [loadSectionsAndChats, loadBins]);
+  const loadDashboardSummary = useCallback(async () => {
+    try {
+      const data = await apiClient.fetchDashboardSummary();
+      setDashboardSummary(data);
+    } catch (err) {
+      console.warn('Не удалось загрузить аналитику', err);
+    }
+  }, [apiClient]);
+
+  useEffect(() => { loadSectionsAndChats(true); loadBins(); loadDashboardSummary(); }, [loadSectionsAndChats, loadBins, loadDashboardSummary]);
 
   useEffect(() => {
     if (!selectedBin) return;
@@ -450,6 +599,16 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     loadSectionsAndChats(true, { bin: selectedBin, favoritesOnly: showFavoritesOnly });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSection, selectedBin, showFavoritesOnly]);
+
+  const activityPoints = useMemo(() => {
+    const points = dashboardSummary?.recentActivity ?? [];
+    return points.slice(-7);
+  }, [dashboardSummary?.recentActivity]);
+
+  const responseTone = useMemo(
+    () => getResponseSpeedTone(dashboardSummary?.avgResponseTimeMinutes ?? null),
+    [dashboardSummary?.avgResponseTimeMinutes],
+  );
 
   const filteredChats = useMemo(() => {
     let list = chats;
@@ -638,6 +797,145 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
       {banner && (<div className="alert" onAnimationEnd={() => setBanner(null)}>{banner}</div>)}
+
+      <div className="analytics-banner">
+        <div className="analytics-banner__header">
+          <div>
+            <div className="analytics-banner__eyebrow">Аналитика диалогов</div>
+            <h2 className="analytics-banner__title">Сводка по активностям и скорости ответов</h2>
+          </div>
+          <div className="analytics-banner__tabs">
+            <button
+              type="button"
+              className={`analytics-banner__tab ${analyticsTab === 'histogram' ? 'is-active' : ''}`}
+              onClick={() => setAnalyticsTab('histogram')}
+            >
+              Гистограмма
+            </button>
+            <button
+              type="button"
+              className={`analytics-banner__tab ${analyticsTab === 'response' ? 'is-active' : ''}`}
+              onClick={() => setAnalyticsTab('response')}
+            >
+              Ответы
+            </button>
+            <button
+              type="button"
+              className={`analytics-banner__tab ${analyticsTab === 'line' ? 'is-active' : ''}`}
+              onClick={() => setAnalyticsTab('line')}
+            >
+              Линия
+            </button>
+          </div>
+        </div>
+
+        <div className="analytics-banner__body">
+          {analyticsTab === 'histogram' && (
+            <div className="analytics-banner__panel">
+              <div className="analytics-banner__content">
+                <h3>Новые диалоги и входящие сообщения за 7 дней</h3>
+                <p className="analytics-banner__muted">
+                  Используем данные из дэшборда, чтобы видеть динамику за последнюю неделю.
+                </p>
+                <div className="analytics-banner__legend">
+                  <span className="analytics-banner__legend-item">
+                    <span className="analytics-banner__legend-dot analytics-banner__legend-dot--dialogs" />
+                    Новые диалоги
+                  </span>
+                  <span className="analytics-banner__legend-item">
+                    <span className="analytics-banner__legend-dot analytics-banner__legend-dot--incoming" />
+                    Входящие сообщения
+                  </span>
+                </div>
+              </div>
+              <div className="analytics-banner__chart">
+                {activityPoints.length > 0 ? (
+                  <AnalyticsHistogram points={activityPoints} />
+                ) : (
+                  <div className="analytics-banner__empty">Нет данных для построения гистограммы.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {analyticsTab === 'response' && (
+            <div className="analytics-banner__panel">
+              <div className="analytics-banner__content">
+                <h3>Среднее время ответа (все сотрудники)</h3>
+                <p className="analytics-banner__muted">
+                  Оценка формируется на основе данных дэшборда и показывает скорость команды в целом.
+                </p>
+                <div className={`analytics-banner__response analytics-banner__response--${responseTone}`}>
+                  <div className="analytics-banner__response-value">
+                    {formatMinutes(dashboardSummary?.avgResponseTimeMinutes ?? null)}
+                  </div>
+                  <div className="analytics-banner__response-label">
+                    {responseTone === 'fast' && 'Быстро'}
+                    {responseTone === 'medium' && 'Средне'}
+                    {responseTone === 'slow' && 'Медленно'}
+                    {responseTone === 'neutral' && 'Нет данных'}
+                  </div>
+                </div>
+                <div className="analytics-banner__scale">
+                  <div className="analytics-banner__scale-segment analytics-banner__scale-segment--fast">
+                    До {RESPONSE_SPEED_THRESHOLDS.fast} мин
+                  </div>
+                  <div className="analytics-banner__scale-segment analytics-banner__scale-segment--medium">
+                    До {RESPONSE_SPEED_THRESHOLDS.medium} мин
+                  </div>
+                  <div className="analytics-banner__scale-segment analytics-banner__scale-segment--slow">
+                    Более {RESPONSE_SPEED_THRESHOLDS.medium} мин
+                  </div>
+                </div>
+              </div>
+              <div className="analytics-banner__chart">
+                <div className="analytics-banner__stats">
+                  {(dashboardSummary?.agentBreakdown ?? []).slice(0, 6).map((agent, index) => (
+                    <div key={`${agent.name}-${index}`} className="analytics-banner__stat-card">
+                      <div className="analytics-banner__stat-title">{agent.name || 'Без имени'}</div>
+                      <div className="analytics-banner__stat-metric">{agent.dialogs} диалогов</div>
+                      <div className="analytics-banner__stat-sub">
+                        {agent.messages} сообщений · {agent.avgMessagesPerDialog.toFixed(1)} средн.
+                      </div>
+                    </div>
+                  ))}
+                  {(dashboardSummary?.agentBreakdown ?? []).length === 0 && (
+                    <div className="analytics-banner__empty">Нет данных по сотрудникам.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {analyticsTab === 'line' && (
+            <div className="analytics-banner__panel">
+              <div className="analytics-banner__content">
+                <h3>Линейный график активности</h3>
+                <p className="analytics-banner__muted">
+                  Сравнение количества диалогов и входящих сообщений по дням.
+                </p>
+                <div className="analytics-banner__legend">
+                  <span className="analytics-banner__legend-item">
+                    <span className="analytics-banner__legend-dot analytics-banner__legend-dot--dialogs" />
+                    Диалоги
+                  </span>
+                  <span className="analytics-banner__legend-item">
+                    <span className="analytics-banner__legend-dot analytics-banner__legend-dot--incoming" />
+                    Входящие
+                  </span>
+                </div>
+              </div>
+              <div className="analytics-banner__chart">
+                {activityPoints.length > 0 ? (
+                  <AnalyticsLineChart points={activityPoints} />
+                ) : (
+                  <div className="analytics-banner__empty">Нет данных для линейного графика.</div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* фильтры */}
       <div className="card sticky-filters">

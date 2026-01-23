@@ -25,6 +25,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   bool _updatingStatus = false;
   int? _lastMessageId;
 
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -40,6 +44,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   @override
   void dispose() {
+    _dismissKeyboard();
     UiLogger.page('Chat detail', state: 'closed', details: {
       'chat': _chat.title,
       'dialogId': _chat.dialogId,
@@ -424,325 +429,334 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
     return Theme(
       data: theme,
-      child: Scaffold(
-        // ВАЖНО: оставляем true, чтобы Scaffold сам корректно поднимал body при клавиатуре.
-        // И одновременно НЕ добавляем viewInsets.bottom в список (иначе будет "двойной" отступ).
-        resizeToAvoidBottomInset: true,
+      child: PopScope(
+        onPopInvoked: (didPop) {
+          _dismissKeyboard();
+        },
+        child: Scaffold(
+          // ВАЖНО: оставляем true, чтобы Scaffold сам корректно поднимал body при клавиатуре.
+          // И одновременно НЕ добавляем viewInsets.bottom в список (иначе будет "двойной" отступ).
+          resizeToAvoidBottomInset: true,
 
-        appBar: AppBar(
-          title: Text(_chat.title),
-          actions: [
-            IconButton(
-              tooltip: _isFavorite ? 'Убрать из избранного' : 'Добавить в избранное',
-              icon: Icon(_isFavorite ? Icons.star : Icons.star_border),
-              color: _isFavorite ? colorScheme.tertiary : null,
-              onPressed: _logButtonPress(
-                'toggle favorite in chat details',
-                (_updatingFavorite || _deleting) ? null : _toggleFavorite,
+          appBar: AppBar(
+            title: Text(_chat.title),
+            actions: [
+              IconButton(
+                tooltip: _isFavorite ? 'Убрать из избранного' : 'Добавить в избранное',
+                icon: Icon(_isFavorite ? Icons.star : Icons.star_border),
+                color: _isFavorite ? colorScheme.tertiary : null,
+                onPressed: _logButtonPress(
+                  'toggle favorite in chat details',
+                  (_updatingFavorite || _deleting) ? null : _toggleFavorite,
+                ),
               ),
-            ),
-            PopupMenuButton<String>(
-              enabled: !_deleting,
-              onSelected: (value) {
-                switch (value) {
-                  case 'toggle_status':
-                    _toggleDialogStatus();
-                    break;
-                  case 'toggle_ai':
-                    _toggleAiAssistant();
-                    break;
-                  case 'delete':
-                    if (canDelete) {
-                      _deleteChat();
-                    }
-                    break;
-                }
-              },
-              itemBuilder: (context) {
-                return [
-                  PopupMenuItem(
-                    value: 'toggle_status',
-                    enabled: canSend && !_updatingStatus,
-                    child: Row(
-                      children: [
-                        Icon(
-                          _chat.isClosed ? Icons.lock_open : Icons.lock_outline,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(_chat.isClosed ? 'Открыть диалог' : 'Закрыть диалог'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'toggle_ai',
-                    enabled: canSend && !_togglingAi,
-                    child: Row(
-                      children: [
-                        Icon(
-                          _chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(_chat.aiEnabled ? 'Отключить AI' : 'Включить AI'),
-                      ],
-                    ),
-                  ),
-                  if (canDelete)
-                    const PopupMenuItem(
-                      value: 'delete',
+              PopupMenuButton<String>(
+                enabled: !_deleting,
+                onSelected: (value) {
+                  switch (value) {
+                    case 'toggle_status':
+                      _toggleDialogStatus();
+                      break;
+                    case 'toggle_ai':
+                      _toggleAiAssistant();
+                      break;
+                    case 'delete':
+                      if (canDelete) {
+                        _deleteChat();
+                      }
+                      break;
+                  }
+                },
+                itemBuilder: (context) {
+                  return [
+                    PopupMenuItem(
+                      value: 'toggle_status',
+                      enabled: canSend && !_updatingStatus,
                       child: Row(
                         children: [
-                          Icon(Icons.delete_outline),
-                          SizedBox(width: 8),
-                          Text('Удалить диалог'),
+                          Icon(
+                            _chat.isClosed ? Icons.lock_open : Icons.lock_outline,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(_chat.isClosed ? 'Открыть диалог' : 'Закрыть диалог'),
                         ],
                       ),
                     ),
-                ];
-              },
-            ),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(55),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: statusColors.background,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: statusColors.border, width: 1),
-                        ),
+                    PopupMenuItem(
+                      value: 'toggle_ai',
+                      enabled: canSend && !_togglingAi,
+                      child: Row(
+                        children: [
+                          Icon(
+                            _chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(_chat.aiEnabled ? 'Отключить AI' : 'Включить AI'),
+                        ],
+                      ),
+                    ),
+                    if (canDelete)
+                      const PopupMenuItem(
+                        value: 'delete',
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (_updatingStatus)
-                              SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: statusColors.foreground,
-                                ),
-                              )
-                            else
-                              Icon(
-                                isClosed ? Icons.lock : Icons.lock_open,
-                                size: 16,
-                                color: statusColors.foreground,
-                              ),
-                            const SizedBox(width: 8),
-                            Text(
-                              statusLabel,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: statusColors.foreground,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                            Icon(Icons.delete_outline),
+                            SizedBox(width: 8),
+                            Text('Удалить диалог'),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: aiColors.background,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: aiColors.border, width: 1),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_togglingAi)
-                              SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: aiColors.foreground,
-                                ),
-                              )
-                            else
-                              Icon(
-                                _chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
-                                size: 16,
-                                color: aiColors.foreground,
-                              ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _chat.aiEnabled ? 'AI' : 'AI выключен',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: aiColors.foreground,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                ],
+                  ];
+                },
               ),
-            ),
-          ),
-        ),
-
-        body: Column(
-          children: [
-            if (_deleting) const LinearProgressIndicator(),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _error != null
-                      ? Center(
-                          child: Column(
+            ],
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(55),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: statusColors.background,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: statusColors.border, width: 1),
+                          ),
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text('Ошибка: $_error'),
-                              const SizedBox(height: 12),
-                              FilledButton(
-                                onPressed: _logButtonPress('retry load messages', _fetchMessages),
-                                child: const Text('Обновить'),
+                              if (_updatingStatus)
+                                SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: statusColors.foreground,
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  isClosed ? Icons.lock : Icons.lock_open,
+                                  size: 16,
+                                  color: statusColors.foreground,
+                                ),
+                              const SizedBox(width: 8),
+                              Text(
+                                statusLabel,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: statusColors.foreground,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ],
                           ),
-                        )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          reverse: true, // сообщения снизу, пустота сверху
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                          itemCount: _messages.length,
-                          itemBuilder: (context, index) {
-                            final message = _messages[_messages.length - 1 - index];
-
-                            final isOutgoing = message.direction == 'outgoing';
-                            final bubbleColor = isOutgoing
-                                ? appColors.outgoingMessageBackground
-                                : appColors.incomingMessageBackground;
-                            final textColor = isOutgoing
-                                ? appColors.outgoingMessageText
-                                : appColors.incomingMessageText;
-                            final alignment =
-                                isOutgoing ? Alignment.centerRight : Alignment.centerLeft;
-
-                            return Align(
-                              alignment: alignment,
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(vertical: 4),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                constraints: const BoxConstraints(maxWidth: 340),
-                                decoration: BoxDecoration(
-                                  color: bubbleColor,
-                                  borderRadius: BorderRadius.only(
-                                    topLeft: const Radius.circular(16),
-                                    topRight: const Radius.circular(16),
-                                    bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
-                                    bottomRight: Radius.circular(isOutgoing ? 4 : 16),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: aiColors.background,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: aiColors.border, width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_togglingAi)
+                                SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: aiColors.foreground,
                                   ),
+                                )
+                              else
+                                Icon(
+                                  _chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
+                                  size: 16,
+                                  color: aiColors.foreground,
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: isOutgoing
-                                      ? CrossAxisAlignment.end
-                                      : CrossAxisAlignment.start,
-                                  children: [
-                                    if (message.author != null)
-                                      Text(
-                                        message.author!,
-                                        style: theme.textTheme.labelSmall?.copyWith(
-                                          color: textColor.withOpacity(0.8),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    Text(
-                                      message.text,
-                                      style: theme.textTheme.bodyMedium?.copyWith(color: textColor),
-                                    ),
-                                    if (message.sectionTitle != null) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        message.sectionTitle!,
-                                        style: theme.textTheme.labelSmall?.copyWith(
-                                          color: textColor.withOpacity(0.7),
-                                        ),
-                                      ),
-                                    ],
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      message.createdAtLabel,
-                                      style: theme.textTheme.labelSmall?.copyWith(
-                                        color: textColor.withOpacity(0.7),
-                                      ),
-                                    ),
-                                  ],
+                                const SizedBox(width: 8),
+                              Text(
+                                _chat.aiEnabled ? 'AI' : 'AI выключен',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: aiColors.foreground,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
-                            );
-                          },
+                            ],
+                          ),
                         ),
-            ),
-
-            const Divider(height: 1),
-
-            // ФИКС iOS + корректная работа с клавиатурой:
-            // 1) SafeArea(bottom: true) чтобы инпут не залезал под home-indicator.
-            // 2) Никаких ручных padding’ов viewInsets.bottom здесь не нужно —
-            //    Scaffold(resizeToAvoidBottomInset: true) сам поднимет всё.
-            SafeArea(
-              top: false,
-              bottom: true,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        decoration: InputDecoration(
-                          hintText: canSend
-                              ? 'Напишите сообщение...'
-                              : 'Только просмотр. Свяжитесь с администратором для прав ответа.',
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        ),
-                        enabled: canSend && !_deleting,
-                        keyboardType: TextInputType.multiline,
-                        textCapitalization: TextCapitalization.sentences,
-                        minLines: 1,
-                        maxLines: 5,
-                        onSubmitted: canSend && !_deleting ? (_) => _sendMessage() : null,
-                        onTap: () => _scrollToBottom(animated: true),
-                      ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    IconButton.filled(
-                      onPressed: _logButtonPress(
-                        'send chat message',
-                        canSend && !_deleting ? _sendMessage : null,
-                      ),
-                      icon: const Icon(Icons.send),
-                      tooltip: 'Отправить',
-                    ),
+                    const SizedBox(height: 8),
                   ],
                 ),
               ),
             ),
+          ),
 
-            if (!canSend)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  'У вашей роли нет прав на отправку ответов. Обратитесь к администратору.',
-                  style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.error),
+          body: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _dismissKeyboard,
+            child: Column(
+              children: [
+                if (_deleting) const LinearProgressIndicator(),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('Ошибка: $_error'),
+                                  const SizedBox(height: 12),
+                                  FilledButton(
+                                    onPressed: _logButtonPress('retry load messages', _fetchMessages),
+                                    child: const Text('Обновить'),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: _scrollController,
+                              reverse: true, // сообщения снизу, пустота сверху
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                              itemCount: _messages.length,
+                              itemBuilder: (context, index) {
+                                final message = _messages[_messages.length - 1 - index];
+
+                                final isOutgoing = message.direction == 'outgoing';
+                                final bubbleColor = isOutgoing
+                                    ? appColors.outgoingMessageBackground
+                                    : appColors.incomingMessageBackground;
+                                final textColor = isOutgoing
+                                    ? appColors.outgoingMessageText
+                                    : appColors.incomingMessageText;
+                                final alignment =
+                                    isOutgoing ? Alignment.centerRight : Alignment.centerLeft;
+
+                                return Align(
+                                  alignment: alignment,
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(vertical: 4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    constraints: const BoxConstraints(maxWidth: 340),
+                                    decoration: BoxDecoration(
+                                      color: bubbleColor,
+                                      borderRadius: BorderRadius.only(
+                                        topLeft: const Radius.circular(16),
+                                        topRight: const Radius.circular(16),
+                                        bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
+                                        bottomRight: Radius.circular(isOutgoing ? 4 : 16),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: isOutgoing
+                                          ? CrossAxisAlignment.end
+                                          : CrossAxisAlignment.start,
+                                      children: [
+                                        if (message.author != null)
+                                          Text(
+                                            message.author!,
+                                            style: theme.textTheme.labelSmall?.copyWith(
+                                              color: textColor.withOpacity(0.8),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        Text(
+                                          message.text,
+                                          style: theme.textTheme.bodyMedium?.copyWith(color: textColor),
+                                        ),
+                                        if (message.sectionTitle != null) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            message.sectionTitle!,
+                                            style: theme.textTheme.labelSmall?.copyWith(
+                                              color: textColor.withOpacity(0.7),
+                                            ),
+                                          ),
+                                        ],
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          message.createdAtLabel,
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: textColor.withOpacity(0.7),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                 ),
-              ),
-          ],
+              
+                const Divider(height: 1),
+
+                // ФИКС iOS + корректная работа с клавиатурой:
+                // 1) SafeArea(bottom: true) чтобы инпут не залезал под home-indicator.
+                // 2) Никаких ручных padding’ов viewInsets.bottom здесь не нужно —
+                //    Scaffold(resizeToAvoidBottomInset: true) сам поднимет всё.
+                SafeArea(
+                  top: false,
+                  bottom: true,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _messageController,
+                            decoration: InputDecoration(
+                              hintText: canSend
+                                  ? 'Напишите сообщение...'
+                                  : 'Только просмотр. Свяжитесь с администратором для прав ответа.',
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            ),
+                            enabled: canSend && !_deleting,
+                            keyboardType: TextInputType.multiline,
+                            textCapitalization: TextCapitalization.sentences,
+                            minLines: 1,
+                            maxLines: 5,
+                            onSubmitted: canSend && !_deleting ? (_) => _sendMessage() : null,
+                            onTap: () => _scrollToBottom(animated: true),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        IconButton.filled(
+                          onPressed: _logButtonPress(
+                            'send chat message',
+                            canSend && !_deleting ? _sendMessage : null,
+                          ),
+                          icon: const Icon(Icons.send),
+                          tooltip: 'Отправить',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                if (!canSend)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'У вашей роли нет прав на отправку ответов. Обратитесь к администратору.',
+                      style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.error),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

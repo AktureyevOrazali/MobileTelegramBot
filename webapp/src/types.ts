@@ -193,6 +193,7 @@ export interface DashboardAgentStatRaw {
   dialogs: number;
   messages: number;
   avg_messages_per_dialog: number;
+  avg_response_time_minutes?: number | null;
   last_activity: string | null;
 }
 
@@ -245,6 +246,7 @@ export interface DashboardAgentStat {
   dialogs: number;
   messages: number;
   avgMessagesPerDialog: number;
+  avgResponseTimeMinutes: number | null;
   lastActivity: Date | null;
 }
 

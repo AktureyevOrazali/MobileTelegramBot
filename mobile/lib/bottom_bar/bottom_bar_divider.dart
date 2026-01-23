@@ -176,6 +176,9 @@ class _BottomBarDividerState extends State<BottomBarDivider> {
                   ?.merge(widget.titleStyle)
                   .copyWith(color: itemColor),
               textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
             ),
           ],
         ],

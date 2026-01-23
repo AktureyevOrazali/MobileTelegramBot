@@ -5,7 +5,7 @@ import hashlib
 import json
 import threading
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from uuid import uuid4
@@ -1807,14 +1807,31 @@ def find_faq_entry_by_keywords(text: str, section: str | None = None) -> Optiona
 
 
 def get_dashboard_summary(
-    *, days: int = 7, questions_limit: int = 5, operator_id: int | None = None
+    *,
+    days: int = 7,
+    questions_limit: int = 5,
+    operator_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> dict:
     now = datetime.utcnow()
-    span = max(days, 1)
-    start_date = now.date() - timedelta(days=span - 1)
+    if start_date is None and end_date is None:
+        span = max(days, 1)
+        end_date = now.date()
+        start_date = end_date - timedelta(days=span - 1)
+    else:
+        if end_date is None:
+            end_date = now.date()
+        if start_date is None:
+            start_date = end_date
+        if start_date > end_date:
+            start_date, end_date = end_date, start_date
+        span = (end_date - start_date).days + 1
     start_iso = start_date.isoformat()
+    end_exclusive_iso = (end_date + timedelta(days=1)).isoformat()
 
     response_deltas: List[float] = []
+    response_by_author: Dict[str, List[float]] = {}
 
     assigned_bins: List[str] | None = None
     if operator_id is not None:
@@ -1857,21 +1874,23 @@ def get_dashboard_summary(
     with _lock:
         total_dialogs = execute(
             "SELECT COUNT(*) AS total FROM chat_dialogs"
-            + (
-                f" WHERE bin IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            ),
-            tuple(assigned_bins or []),
-        ).fetchone()["total"] or 0
-        open_dialogs = execute(
-            "SELECT COUNT(*) AS total FROM chat_dialogs WHERE ended_at IS NULL"
+            " WHERE started_at IS NOT NULL AND started_at >= %s AND started_at < %s"
             + (
                 f" AND bin IN ({placeholders})"
                 if assigned_bins is not None
                 else ""
             ),
-            tuple(assigned_bins or []),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
+        ).fetchone()["total"] or 0
+        open_dialogs = execute(
+            "SELECT COUNT(*) AS total FROM chat_dialogs"
+            " WHERE ended_at IS NULL AND started_at IS NOT NULL AND started_at >= %s AND started_at < %s"
+            + (
+                f" AND bin IN ({placeholders})"
+                if assigned_bins is not None
+                else ""
+            ),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchone()["total"] or 0
         total_incoming = execute(
             """
@@ -1880,13 +1899,15 @@ def get_dashboard_summary(
             LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
             LEFT JOIN chats c ON c.chat_id = m.chat_id
             WHERE m.direction = 'incoming'
+              AND m.created_at >= %s
+              AND m.created_at < %s
         """
             + (
                 f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
                 if assigned_bins is not None
                 else ""
             ),
-            tuple(assigned_bins or []),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchone()["total"] or 0
         total_outgoing = execute(
             """
@@ -1895,32 +1916,36 @@ def get_dashboard_summary(
             LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
             LEFT JOIN chats c ON c.chat_id = m.chat_id
             WHERE m.direction = 'outgoing'
+              AND m.created_at >= %s
+              AND m.created_at < %s
         """
             + (
                 f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
                 if assigned_bins is not None
                 else ""
             ),
-            tuple(assigned_bins or []),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchone()["total"] or 0
         total_messages = total_incoming + total_outgoing
         total_chats = execute(
             "SELECT COUNT(DISTINCT chat_id) AS total FROM chat_dialogs"
+            " WHERE started_at IS NOT NULL AND started_at >= %s AND started_at < %s"
             + (
-                f" WHERE bin IN ({placeholders})"
+                f" AND bin IN ({placeholders})"
                 if assigned_bins is not None
                 else ""
             ),
-            tuple(assigned_bins or []),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchone()["total"] or 0
         section_rows = execute(
             """
             SELECT COALESCE(c.section, '') AS section_id, COUNT(*) AS dialog_count
             FROM chat_dialogs cd
             LEFT JOIN chats c ON c.chat_id = cd.chat_id
+            WHERE cd.started_at IS NOT NULL AND cd.started_at >= %s AND cd.started_at < %s
         """
             + (
-                f" WHERE cd.bin IN ({placeholders})"
+                f" AND cd.bin IN ({placeholders})"
                 if assigned_bins is not None
                 else ""
             )
@@ -1928,23 +1953,24 @@ def get_dashboard_summary(
             GROUP BY COALESCE(c.section, '')
             ORDER BY dialog_count DESC
             """,
-            tuple(assigned_bins or []),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchall()
         duration_rows = execute(
             "SELECT started_at, ended_at FROM chat_dialogs"
             " WHERE started_at IS NOT NULL AND ended_at IS NOT NULL"
+            " AND started_at >= %s AND started_at < %s"
             + (
                 f" AND bin IN ({placeholders})"
                 if assigned_bins is not None
                 else ""
             ),
-            tuple(assigned_bins or []),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchall()
         dialogs_by_day_rows = execute(
             """
             SELECT substr(started_at, 1, 10) AS day, COUNT(*) AS cnt
             FROM chat_dialogs
-            WHERE started_at IS NOT NULL AND started_at >= %s
+            WHERE started_at IS NOT NULL AND started_at >= %s AND started_at < %s
         """
             + (
                 f" AND bin IN ({placeholders})"
@@ -1955,7 +1981,7 @@ def get_dashboard_summary(
             GROUP BY substr(started_at, 1, 10)
             ORDER BY day ASC
             """,
-            (start_iso, * (assigned_bins or [])),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchall()
         incoming_by_day_rows = execute(
             """
@@ -1963,7 +1989,7 @@ def get_dashboard_summary(
             FROM messages m
             LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
             LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.created_at >= %s AND m.direction = 'incoming'
+            WHERE m.created_at >= %s AND m.created_at < %s AND m.direction = 'incoming'
         """
             + (
                 f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
@@ -1974,7 +2000,7 @@ def get_dashboard_summary(
             GROUP BY substr(m.created_at, 1, 10)
             ORDER BY day ASC
             """,
-            (start_iso, * (assigned_bins or [])),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchall()
         question_rows = execute(
             """
@@ -1982,14 +2008,18 @@ def get_dashboard_summary(
             FROM messages m
             LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
             LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.direction = 'incoming' AND m.text IS NOT NULL AND TRIM(m.text) != ''
+            WHERE m.direction = 'incoming'
+              AND m.text IS NOT NULL
+              AND TRIM(m.text) != ''
+              AND m.created_at >= %s
+              AND m.created_at < %s
         """
             + (
                 f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
                 if assigned_bins is not None
                 else ""
             ),
-            tuple(assigned_bins or []),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchall()
         agent_rows = execute(
             """
@@ -2001,7 +2031,11 @@ def get_dashboard_summary(
             FROM messages m
             LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
             LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.direction = 'outgoing' AND m.author IS NOT NULL AND TRIM(m.author) != ''
+            WHERE m.direction = 'outgoing'
+              AND m.author IS NOT NULL
+              AND TRIM(m.author) != ''
+              AND m.created_at >= %s
+              AND m.created_at < %s
         """
             + (
                 f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
@@ -2013,7 +2047,7 @@ def get_dashboard_summary(
             ORDER BY message_count DESC
             """
         ,
-            tuple(assigned_bins or []),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchall()
 
         operator_request_rows = execute(
@@ -2024,6 +2058,8 @@ def get_dashboard_summary(
             LEFT JOIN chats c ON c.chat_id = m.chat_id
             WHERE m.direction = 'incoming'
               AND m.text IN ('[ЗАПРОС ОПЕРАТОРА]', '[FAQ] Связаться с оператором')
+              AND m.created_at >= %s
+              AND m.created_at < %s
         """
             + (
                 f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
@@ -2034,7 +2070,7 @@ def get_dashboard_summary(
             ORDER BY m.created_at ASC
             """
         ,
-            tuple(assigned_bins or []),
+            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchall()
 
         if operator_request_rows:
@@ -2083,7 +2119,11 @@ def get_dashboard_summary(
                 reply_at = _parse_datetime(candidate["created_at"])
                 if reply_at is None or reply_at <= request_at:
                     continue
-                response_deltas.append((reply_at - request_at).total_seconds())
+                delta_seconds = (reply_at - request_at).total_seconds()
+                response_deltas.append(delta_seconds)
+                response_author = (candidate["author"] or "").strip()
+                if response_author:
+                    response_by_author.setdefault(response_author, []).append(delta_seconds)
 
     closed_dialogs = max(total_dialogs - open_dialogs, 0)
     average_messages_per_dialog = (
@@ -2205,8 +2245,12 @@ def get_dashboard_summary(
         messages_sent = int(row["message_count"] or 0)
         dialogs_handled = int(row["dialog_count"] or 0)
         last_activity = _parse_datetime(row["last_activity"])
-        avg_messages = (
-            messages_sent / dialogs_handled if dialogs_handled else 0.0
+        avg_messages = messages_sent / dialogs_handled if dialogs_handled else 0.0
+        response_times = response_by_author.get(name, [])
+        avg_response_time_minutes = (
+            (sum(response_times) / len(response_times)) / 60.0
+            if response_times
+            else None
         )
         agent_breakdown.append(
             {
@@ -2214,6 +2258,7 @@ def get_dashboard_summary(
                 "messages": messages_sent,
                 "dialogs": dialogs_handled,
                 "avg_messages_per_dialog": avg_messages,
+                "avg_response_time_minutes": avg_response_time_minutes,
                 "last_activity": last_activity.isoformat() if last_activity else None,
             }
         )

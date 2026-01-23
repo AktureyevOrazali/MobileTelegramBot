@@ -336,10 +336,18 @@ export class ApiClient {
     return response.map(mapMessage);
   }
 
-  async fetchDashboardSummary(operatorId?: number): Promise<DashboardSummary> {
+  async fetchDashboardSummary(options?: {
+    operatorId?: number | null;
+    startDate?: string | null;
+    endDate?: string | null;
+  }): Promise<DashboardSummary> {
     const response = await this.request<DashboardSummaryRaw>('analytics/dashboard', {
       method: 'GET',
-      query: operatorId ? { operator_id: operatorId } : undefined,
+      query: {
+        operator_id: options?.operatorId ?? undefined,
+        start_date: options?.startDate ?? undefined,
+        end_date: options?.endDate ?? undefined,
+      },
     });
     return mapDashboardSummary(response);
   }

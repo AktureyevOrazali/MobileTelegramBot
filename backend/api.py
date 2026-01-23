@@ -7,7 +7,7 @@ import hmac
 import json
 import os
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, FastAPI, Header, HTTPException, Query
@@ -275,6 +275,7 @@ class DashboardAgentStat(BaseModel):
     dialogs: int
     messages: int
     avg_messages_per_dialog: float
+    avg_response_time_minutes: float | None = None
     last_activity: Optional[str] = None
 
 
@@ -596,9 +597,15 @@ def list_faq(_: Dict[str, object] = Depends(get_current_user)):
 @router.get("/analytics/dashboard", response_model=DashboardSummaryResponse)
 def dashboard_summary(
     operator_id: int | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
     _: Dict[str, object] = Depends(require_admin),
 ):
-    summary = database.get_dashboard_summary(operator_id=operator_id)
+    summary = database.get_dashboard_summary(
+        operator_id=operator_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return DashboardSummaryResponse(**summary)
 
 

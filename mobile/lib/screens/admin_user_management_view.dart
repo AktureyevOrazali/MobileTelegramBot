@@ -810,10 +810,15 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                 children: [
                   Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
                   const SizedBox(width: 6),
-                  Text(
-                    label,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
                     ),
                   ),
                 ],
@@ -1448,6 +1453,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
             activeControlsWidgetColor: brandPrimaryGreen,
             initAspectRatio: CropAspectRatioPreset.square,
             lockAspectRatio: true,
+            statusBarColor: brandPrimaryGreen,
           ),
           IOSUiSettings(
             title: 'Обрезать фото',
@@ -1561,6 +1567,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     String? hint,
     TextInputType keyboardType = TextInputType.text,
     bool readOnly = false,
+    int? minLines,
     int maxLines = 1,
     TextCapitalization textCapitalization = TextCapitalization.none,
     String? Function(String?)? validator,
@@ -1577,6 +1584,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
         child: TextFormField(
           controller: controller,
           readOnly: readOnly,
+          minLines: minLines,
           maxLines: maxLines,
           keyboardType: keyboardType,
           textCapitalization: textCapitalization,
@@ -1692,7 +1700,10 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                       controller: _bioController,
                       label: 'О себе и компетенции',
                       icon: Icons.description_outlined,
-                      maxLines: 3,
+                      minLines: 1,
+                      maxLines: 5,
+                      keyboardType: TextInputType.multiline,
+                      textCapitalization: TextCapitalization.sentences,
                     ),
                     if (profile != null) ...[
                       const SizedBox(height: 4),
@@ -1817,33 +1828,37 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                         ),
                       ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: _logButtonPress(
-                            'save profile changes',
-                            _saving ? null : _save,
+                    Center(
+                      child: Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        alignment: WrapAlignment.center,
+                        runAlignment: WrapAlignment.center,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _logButtonPress(
+                              'save profile changes',
+                              _saving ? null : _save,
+                            ),
+                            icon: const Icon(Icons.save),
+                            label: _saving
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Text('Сохранить'),
                           ),
-                          icon: const Icon(Icons.save),
-                          label: _saving
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Text('Сохранить'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _logButtonPress(
-                            'change own password',
-                            _saving ? null : _changeOwnPassword,
+                          OutlinedButton.icon(
+                            onPressed: _logButtonPress(
+                              'change own password',
+                              _saving ? null : _changeOwnPassword,
+                            ),
+                            icon: const Icon(Icons.lock_outline),
+                            label: const Text('Сменить пароль'),
                           ),
-                          icon: const Icon(Icons.lock_outline),
-                          label: const Text('Сменить пароль'),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),

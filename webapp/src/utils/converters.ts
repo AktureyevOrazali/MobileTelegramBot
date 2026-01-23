@@ -255,12 +255,17 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
           const avgMessagesPerDialog = dialogs > 0
             ? (avgFromApi ?? (messages / dialogs))
             : 0;
+          const avgResponseTimeMinutes =
+            typeof agent.avg_response_time_minutes === 'number' && Number.isFinite(agent.avg_response_time_minutes)
+              ? agent.avg_response_time_minutes
+              : null;
 
           return {
             name: agent.name ?? '',
             dialogs,
             messages,
             avgMessagesPerDialog,
+            avgResponseTimeMinutes,
             lastActivity: agent.last_activity ? new Date(agent.last_activity) : null,
           };
         })

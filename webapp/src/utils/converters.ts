@@ -20,9 +20,9 @@ import {
 } from '../types';
 
 export function mapUserProfile(raw: UserProfileRaw): UserProfile {
-  const role = raw.role || 'viewer';
-  const isAdmin = role === 'admin';
-  const canReply = role === 'admin' || role === 'moderator';
+  const role = raw.role || 'operator';
+  const isAdmin = role === 'admin' || role === 'moderator';
+  const canReply = role === 'admin' || role === 'moderator' || role === 'operator';
   const mapAssignments = (
     entries: (string | UserBinAssignmentRaw)[] | undefined,
   ): UserBinAssignment[] => {
@@ -81,6 +81,7 @@ export function mapUserProfile(raw: UserProfileRaw): UserProfile {
     phone: raw.phone,
     bio: raw.bio,
     role,
+    isApproved: raw.is_approved ?? true,
     sections: raw.sections ?? [],
     bins: mapAssignments(raw.bins),
     favoriteDialogIds: raw.favorite_dialog_ids ?? [],

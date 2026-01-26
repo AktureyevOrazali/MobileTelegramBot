@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
-import { UnassignedBin, RoleInfo, Section, UserBinAssignment, UserProfile } from '../types';
+import { PendingRegistration, RoleInfo, Section, UnassignedBin, UserBinAssignment, UserProfile } from '../types';
 import { formatDateTime } from '../utils/date';
 import SelectPill from '../components/SelectPill';
 import Modal from '../components/Modal';
@@ -27,7 +27,7 @@ interface UserCardProps {
 const roleLabels: Record<string, string> = {
   admin: 'Администратор',
   moderator: 'Модератор',
-  viewer: 'Оператор',
+  operator: 'Оператор',
 };
 
 const formatDateTimeLocalInput = (date: Date): string => {
@@ -604,6 +604,8 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [sections, setSections] = useState<Section[]>([]);
   const [bins, setBins] = useState<string[]>([]);
   const [unassignedBins, setUnassignedBins] = useState<UnassignedBin[]>([]);
+  const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
+  const [pendingAction, setPendingAction] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -616,18 +618,21 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       setLoading(true);
       setError(null);
       try {
-        const [loadedRoles, loadedUsers, loadedSections, loadedBins, loadedUnassignedBins] = await Promise.all([
-          apiClient.fetchRoles(),
-          apiClient.fetchUsers(query),
-          apiClient.fetchSections(),
-          apiClient.fetchBins(),
-          apiClient.fetchUnassignedBins(),
-        ]);
+        const [loadedRoles, loadedUsers, loadedSections, loadedBins, loadedUnassignedBins, loadedPending] =
+          await Promise.all([
+            apiClient.fetchRoles(),
+            apiClient.fetchUsers(query),
+            apiClient.fetchSections(),
+            apiClient.fetchBins(),
+            apiClient.fetchUnassignedBins(),
+            apiClient.fetchPendingRegistrations(),
+          ]);
         setRoles(loadedRoles);
         setUsers(loadedUsers);
         setSections(loadedSections);
         setBins(loadedBins);
         setUnassignedBins(loadedUnassignedBins);
+        setPendingRegistrations(loadedPending);
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
         else if (err instanceof Error) setError(err.message);
@@ -686,12 +691,45 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   );
 
   const filteredUsers = useMemo(() => {
-    if (!search.trim()) return users;
+    const approvedUsers = users.filter((user) => user.isApproved);
+    if (!search.trim()) return approvedUsers;
     const normalized = search.trim().toLowerCase();
-    return users.filter((user) =>
+    return approvedUsers.filter((user) =>
       [user.name, user.email, user.login].some((value) => value.toLowerCase().includes(normalized)),
     );
   }, [users, search]);
+
+  const handlePendingApprove = useCallback(
+    async (userId: number) => {
+      setPendingAction(userId);
+      try {
+        const updated = await apiClient.approveRegistration(userId);
+        setUsers((prev) => prev.map((user) => (user.id === updated.id ? updated : user)));
+        setPendingRegistrations((prev) => prev.filter((item) => item.id !== userId));
+      } catch (err) {
+        console.error('Не удалось подтвердить регистрацию', err);
+      } finally {
+        setPendingAction(null);
+      }
+    },
+    [apiClient],
+  );
+
+  const handlePendingReject = useCallback(
+    async (userId: number) => {
+      setPendingAction(userId);
+      try {
+        await apiClient.rejectRegistration(userId);
+        setUsers((prev) => prev.filter((user) => user.id !== userId));
+        setPendingRegistrations((prev) => prev.filter((item) => item.id !== userId));
+      } catch (err) {
+        console.error('Не удалось отклонить регистрацию', err);
+      } finally {
+        setPendingAction(null);
+      }
+    },
+    [apiClient],
+  );
 
   const handleConfirmDelete = useCallback(async () => {
     if (!userToDelete) return;
@@ -726,6 +764,43 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                     : 'нет активных диалогов'}
                 </span>
               </span>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <h3 style={{ margin: 0 }}>Регистрации на подтверждение</h3>
+        {pendingRegistrations.length === 0 ? (
+          <span className="text-muted">Нет заявок на регистрацию.</span>
+        ) : (
+          <div className="flex-gap pending-bins-list" style={{ flexWrap: 'wrap' }}>
+            {pendingRegistrations.map((item) => (
+              <div key={item.id} className="chip bin-chip pending-bin-chip pending-registration-chip">
+                <div className="pending-registration-chip__content">
+                  <span className="bin-chip__title">{item.name}</span>
+                  <span className="bin-chip__meta">{item.email}</span>
+                  <span className="bin-chip__meta">{formatDateTime(item.createdAt)}</span>
+                </div>
+                <div className="pending-registration-chip__actions">
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={pendingAction === item.id}
+                    onClick={() => handlePendingApprove(item.id)}
+                  >
+                    Подтвердить
+                  </button>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    disabled={pendingAction === item.id}
+                    onClick={() => handlePendingReject(item.id)}
+                  >
+                    Отклонить
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         )}

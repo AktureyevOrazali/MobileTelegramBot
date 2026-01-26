@@ -11,7 +11,10 @@ import {
   MessageNotification,
   MessageNotificationRaw,
   MessageRaw,
+  PendingRegistration,
+  PendingRegistrationRaw,
   RoleInfo,
+  RegisterStatus,
   Section,
   UserProfile,
   UserProfileRaw,
@@ -224,6 +227,8 @@ export class ApiClient {
         return 'Пользователь с таким e-mail уже зарегистрирован.';
       case 'Administrator role required':
         return 'Недостаточно прав: требуется роль администратора.';
+      case 'Аккаунт ожидает подтверждения модератора':
+        return 'Аккаунт ожидает подтверждения модератора.';
       case 'Session token required':
       case 'Invalid session token':
         return 'Сессия истекла. Выполните вход заново.';
@@ -243,15 +248,13 @@ export class ApiClient {
     return session;
   }
 
-  async register(name: string, email: string, password: string): Promise<AuthSession> {
+  async register(name: string, email: string, password: string): Promise<RegisterStatus> {
     const payload = { name, email, password };
-    const response = await this.request<AuthSessionRaw>('auth/register', {
+    const response = await this.request<RegisterStatus>('auth/register', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    const session = mapSession(response);
-    this.setSession(session);
-    return session;
+    return response;
   }
 
   async fetchProfile(): Promise<UserProfile> {
@@ -426,6 +429,29 @@ export class ApiClient {
       query: query ? { query } : undefined,
     });
     return response.map(mapUserProfile);
+  }
+
+  async fetchPendingRegistrations(): Promise<PendingRegistration[]> {
+    const response = await this.request<PendingRegistrationRaw[]>('users/pending', { method: 'GET' });
+    return response.map((item) => ({
+      id: item.id,
+      email: item.email,
+      name: item.name,
+      createdAt: new Date(item.created_at),
+    }));
+  }
+
+  async approveRegistration(userId: number): Promise<UserProfile> {
+    const response = await this.request<UserProfileRaw>(`users/${userId}/approve`, { method: 'POST' });
+    const profile = mapUserProfile(response);
+    if (this.currentUserProfile?.id === profile.id) {
+      this.updateCurrentUser(profile);
+    }
+    return profile;
+  }
+
+  async rejectRegistration(userId: number): Promise<void> {
+    await this.request<{ status: string }>(`users/${userId}/reject`, { method: 'POST' });
   }
 
   async deleteUser(userId: number): Promise<void> {

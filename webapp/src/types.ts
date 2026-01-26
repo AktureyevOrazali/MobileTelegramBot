@@ -32,6 +32,7 @@ export interface UserProfileRaw {
   phone: string;
   bio: string;
   role: string;
+  is_approved?: boolean;
   sections: string[];
   bins: (string | UserBinAssignmentRaw)[];
   favorite_dialog_ids: number[];
@@ -40,6 +41,11 @@ export interface UserProfileRaw {
 export interface AuthSessionRaw {
   token: string;
   user: UserProfileRaw;
+}
+
+export interface RegisterStatus {
+  status: string;
+  message: string;
 }
 
 export interface Section {
@@ -110,6 +116,7 @@ export interface UserProfile {
   phone: string;
   bio: string;
   role: string;
+  isApproved: boolean;
   sections: string[];
   bins: UserBinAssignment[];
   favoriteDialogIds: number[];
@@ -120,6 +127,20 @@ export interface UserProfile {
 export interface AuthSession {
   token: string;
   user: UserProfile;
+}
+
+export interface PendingRegistration {
+  id: number;
+  email: string;
+  name: string;
+  createdAt: Date;
+}
+
+export interface PendingRegistrationRaw {
+  id: number;
+  email: string;
+  name: string;
+  created_at: string;
 }
 
 export interface ChatSummary {

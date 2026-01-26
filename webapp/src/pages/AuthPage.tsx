@@ -36,10 +36,10 @@ const AuthPage: React.FC<AuthPageProps> = ({ apiClient, onAuthenticated }) => {
         return;
       }
 
-      await apiClient.register(name.trim(), identifier.trim(), password);
+      const result = await apiClient.register(name.trim(), identifier.trim(), password);
       setMode('login');
       setPassword('');
-      setInfo('Аккаунт создан. Войдите, используя свои учетные данные.');
+      setInfo(result.message || 'Заявка на регистрацию отправлена. Ожидайте подтверждения модератора.');
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

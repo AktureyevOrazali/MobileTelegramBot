@@ -69,6 +69,7 @@ USER_COLUMN_NAMES = (
     "bio",
     "login",
     "role",
+    "is_approved",
 )
 
 
@@ -228,14 +229,17 @@ def _init_db() -> None:
     _ensure_column("users", "bio", "TEXT")
     _ensure_column("users", "login", "TEXT")
     _ensure_column("users", "role", "TEXT")
+    _ensure_column("users", "is_approved", "INTEGER DEFAULT 1")
     _ensure_column("user_bins", "expires_at", "TEXT")
     _ensure_column("user_bins", "assigned_by", "BIGINT")
 
     with _lock:
         execute("UPDATE users SET login = email WHERE login IS NULL OR TRIM(login) = ''")
         execute(
-            "UPDATE users SET role = 'moderator' WHERE role IS NULL OR TRIM(role) = ''"
+            "UPDATE users SET role = 'operator' WHERE role IS NULL OR TRIM(role) = ''"
         )
+        execute("UPDATE users SET role = 'operator' WHERE role = 'viewer'")
+        execute("UPDATE users SET is_approved = 1 WHERE is_approved IS NULL")
         execute(
             "UPDATE chat_dialogs SET operator_mode = 0 WHERE operator_mode IS NULL"
         )
@@ -290,8 +294,12 @@ def _ensure_column(table: str, column: str, definition: str) -> None:
 
 ROLE_ADMIN = "admin"
 ROLE_MODERATOR = "moderator"
-ROLE_VIEWER = "viewer"
-ALL_ROLES: Iterable[str] = (ROLE_ADMIN, ROLE_MODERATOR, ROLE_VIEWER)
+ROLE_OPERATOR = "operator"
+ALL_ROLES: Iterable[str] = (ROLE_ADMIN, ROLE_MODERATOR, ROLE_OPERATOR)
+
+
+def is_admin_like(role: str) -> bool:
+    return role in (ROLE_ADMIN, ROLE_MODERATOR)
 
 
 def _ensure_admin_account() -> None:
@@ -309,7 +317,8 @@ def _ensure_admin_account() -> None:
                     name = %s,
                     email = COALESCE(email, %s),
                     login = 'admin',
-                    job_title = COALESCE(job_title, '')
+                    job_title = COALESCE(job_title, ''),
+                    is_approved = 1
                 WHERE id = %s
                 """,
                 (ROLE_ADMIN, password_hash, "Администратор", "admin@example.com", row["id"]),
@@ -318,8 +327,8 @@ def _ensure_admin_account() -> None:
     now = datetime.utcnow().isoformat()
     execute(
         """
-        INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role)
-        VALUES (%s, %s, %s, %s, %s, '', '', %s, %s)
+        INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role, is_approved)
+        VALUES (%s, %s, %s, %s, %s, '', '', %s, %s, 1)
         """,
         (
             "admin@example.com",
@@ -789,7 +798,7 @@ def list_chats_for_user(
     ]
     params: List[object] = [user_id, user_id]
     filters: List[str] = []
-    if role != ROLE_ADMIN:
+    if not is_admin_like(role):
         allowed_sections = get_user_sections(user_id)
         assigned_bins = get_user_bins(user_id)
         if not assigned_bins:
@@ -1501,6 +1510,7 @@ def _row_to_user(row: sqlite3.Row | None) -> dict | None:
         "bio": row["bio"] or "",
         "login": row["login"],
         "role": row["role"],
+        "is_approved": bool(row.get("is_approved", 1)),
     }
 
 
@@ -1516,7 +1526,8 @@ def _sanitize_user_payload(user: dict | None, *, include_sections: bool = True) 
         "phone": user.get("phone", ""),
         "bio": user.get("bio", ""),
         "login": user.get("login", ""),
-        "role": user.get("role", ROLE_VIEWER),
+        "role": user.get("role", ROLE_OPERATOR),
+        "is_approved": bool(user.get("is_approved", True)),
     }
     if include_sections:
         sanitized["sections"] = get_user_sections(user["id"])
@@ -1535,7 +1546,8 @@ def create_user(
     phone: str | None = None,
     bio: str | None = None,
     login: str | None = None,
-    role: str = ROLE_VIEWER,
+    role: str = ROLE_OPERATOR,
+    is_approved: bool = True,
 ) -> dict:
     if role not in ALL_ROLES:
         raise ValueError("Invalid role")
@@ -1547,8 +1559,8 @@ def create_user(
     with _lock:
         cursor = execute(
             """
-            INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role, is_approved)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -1561,6 +1573,7 @@ def create_user(
                 bio or "",
                 login_value,
                 role,
+                1 if is_approved else 0,
             ),
         )
         user_row = cursor.fetchone()
@@ -1578,6 +1591,7 @@ def create_user(
             "bio": bio or "",
             "login": login_value,
             "role": role,
+            "is_approved": is_approved,
         },
         include_sections=False,
     )
@@ -1694,6 +1708,23 @@ def list_users(query: str | None = None) -> List[dict]:
         _sanitize_user_payload(_row_to_user(row))  # type: ignore[arg-type]
         for row in rows
     ]
+
+
+def list_pending_users() -> List[dict]:
+    with _lock:
+        rows = execute(
+            f"SELECT {_user_columns('u')} FROM users u WHERE COALESCE(u.is_approved, 0) = 0 ORDER BY u.created_at DESC"
+        ).fetchall()
+    return [_row_to_user(row) for row in rows]
+
+
+def set_user_approved(user_id: int, is_approved: bool) -> dict:
+    with _lock:
+        execute(
+            "UPDATE users SET is_approved = %s WHERE id = %s",
+            (1 if is_approved else 0, user_id),
+        )
+    return _sanitize_user_payload(get_user_by_id(user_id))
 
 
 def update_user_role(user_id: int, role: str) -> dict:
@@ -2290,7 +2321,7 @@ def user_can_access_chat(
     chat_id: int,
     dialog_id: int | None = None,
 ) -> bool:
-    if role == ROLE_ADMIN:
+    if is_admin_like(role):
         return True
     dialog_bin = None
     if dialog_id is not None:
@@ -2337,12 +2368,12 @@ def list_updates_since(
 ) -> List[dict]:
     allowed_sections: Optional[List[str]] = None
     assigned_bins: Optional[List[str]] = None
-    if role != ROLE_ADMIN:
+    if not is_admin_like(role):
         allowed_sections = get_user_sections(user_id)
         assigned_bins = get_user_bins(user_id)
     updates: List[dict] = []
     params: List[object] = []
-    if role == ROLE_ADMIN or assigned_bins:
+    if is_admin_like(role) or assigned_bins:
         query_parts = [
             "SELECT m.id, m.chat_id, m.text, m.created_at, m.section, m.dialog_id, c.title,",
             "       COALESCE(cd.bin, c.bin) AS dialog_bin",
@@ -2354,7 +2385,7 @@ def list_updates_since(
         if since is not None:
             query_parts.append("AND m.created_at > %s")
             params.append(since.isoformat())
-        if role != ROLE_ADMIN and assigned_bins:
+        if not is_admin_like(role) and assigned_bins:
             if allowed_sections:
                 section_placeholders = ",".join("%s" for _ in allowed_sections)
                 query_parts.append(

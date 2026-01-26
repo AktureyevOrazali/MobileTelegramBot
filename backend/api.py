@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 ROLE_LABELS: Dict[str, str] = {
     database.ROLE_ADMIN: "Администратор",
     database.ROLE_MODERATOR: "Модератор",
-    database.ROLE_VIEWER: "Пользователь",
+    database.ROLE_OPERATOR: "Оператор",
 }
 
 
@@ -157,6 +157,7 @@ class UserResponse(BaseModel):
     phone: str = ""
     bio: str = ""
     role: str
+    is_approved: bool = True
     sections: List[str] = Field(default_factory=list)
     bins: List[BinAssignmentResponse] = Field(default_factory=list)
     favorite_dialog_ids: List[int] = []
@@ -165,6 +166,18 @@ class UserResponse(BaseModel):
 class AuthResponse(BaseModel):
     token: str
     user: UserResponse
+
+
+class RegisterResponse(BaseModel):
+    status: str = "pending"
+    message: str = "Регистрация отправлена. Ожидайте подтверждения модератора."
+
+
+class PendingUserResponse(BaseModel):
+    id: int
+    email: EmailStr
+    name: str
+    created_at: str
 
 
 class BinAssignmentRequest(BaseModel):
@@ -331,10 +344,18 @@ def get_current_user(
     return _sanitize_user(user)
 
 
-def require_admin(current_user: Dict[str, object] = Depends(get_current_user)) -> Dict[str, object]:
-    if current_user["role"] != database.ROLE_ADMIN:
+def require_admin_or_moderator(
+    current_user: Dict[str, object] = Depends(get_current_user),
+) -> Dict[str, object]:
+    if not database.is_admin_like(current_user["role"]):
         raise HTTPException(status_code=403, detail="Administrator role required")
     return current_user
+
+
+def _ensure_moderator_can_manage(current_user: Dict[str, object], target_user: Dict[str, object]) -> None:
+    if current_user["role"] == database.ROLE_MODERATOR:
+        if target_user["role"] != database.ROLE_OPERATOR:
+            raise HTTPException(status_code=403, detail="Недостаточно прав для управления этим пользователем")
 
 
 def _sanitize_user(user: Dict[str, object]) -> Dict[str, object]:
@@ -355,14 +376,15 @@ def _sanitize_user(user: Dict[str, object]) -> Dict[str, object]:
         "job_title": user.get("job_title", ""),
         "phone": user.get("phone", ""),
         "bio": user.get("bio", ""),
-        "role": user.get("role", database.ROLE_VIEWER),
+        "role": user.get("role", database.ROLE_OPERATOR),
+        "is_approved": bool(user.get("is_approved", True)),
         "sections": sections,
         "bins": bins,
         "favorite_dialog_ids": favorites,
     }
 
 
-@router.post("/auth/register", response_model=AuthResponse)
+@router.post("/auth/register", response_model=RegisterResponse)
 def register_user(request: RegisterRequest, _: None = Depends(require_api_token)):
     existing = database.find_user_by_email(request.email)
     if existing:
@@ -374,15 +396,14 @@ def register_user(request: RegisterRequest, _: None = Depends(require_api_token)
             request.name,
             password_hash,
             login=request.email,
-            role=database.ROLE_VIEWER,
+            role=database.ROLE_OPERATOR,
+            is_approved=False,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if created_user is None or created_user.get("id") is None:
         raise HTTPException(status_code=500, detail="Failed to create user")
-    token = database.create_session(created_user["id"])
-    sanitized = _sanitize_user(created_user)
-    return AuthResponse(token=token, user=UserResponse(**sanitized))
+    return RegisterResponse()
 
 
 @router.post("/auth/login", response_model=AuthResponse)
@@ -391,6 +412,8 @@ def login_user(request: LoginRequest, _: None = Depends(require_api_token)):
     password_hash = hashlib.sha256(request.password.encode("utf-8")).hexdigest()
     if not user or user["password_hash"] != password_hash:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user.get("is_approved", True):
+        raise HTTPException(status_code=403, detail="Аккаунт ожидает подтверждения модератора")
     token = database.create_session(user["id"])
     sanitized = _sanitize_user(user)
     return AuthResponse(token=token, user=UserResponse(**sanitized))
@@ -463,22 +486,74 @@ def change_password(
 @router.get("/users", response_model=List[UserResponse])
 def list_users_admin(
     query: str | None = None,
-    _: Dict[str, object] = Depends(require_admin),
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     users = database.list_users(query=query)
     return [UserResponse(**_sanitize_user(user)) for user in users]
+
+
+@router.get("/users/pending", response_model=List[PendingUserResponse])
+def list_pending_users(
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    pending = database.list_pending_users()
+    return [
+        PendingUserResponse(
+            id=user["id"],
+            email=user["email"],
+            name=user["name"],
+            created_at=user["created_at"],
+        )
+        for user in pending
+    ]
+
+
+@router.post("/users/{user_id}/approve", response_model=UserResponse)
+def approve_user_registration(
+    user_id: int,
+    current_admin: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    user = database.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_moderator_can_manage(current_admin, user)
+    if user.get("is_approved", True):
+        raise HTTPException(status_code=400, detail="Аккаунт уже подтверждён")
+    updated = database.set_user_approved(user_id, True)
+    return UserResponse(**_sanitize_user(updated))
+
+
+@router.post("/users/{user_id}/reject")
+def reject_user_registration(
+    user_id: int,
+    current_admin: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    user = database.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_moderator_can_manage(current_admin, user)
+    if user.get("is_approved", True):
+        raise HTTPException(status_code=400, detail="Аккаунт уже подтверждён")
+    database.delete_user(user_id)
+    return {"status": "ok"}
 
 
 @router.put("/users/{user_id}/role", response_model=UserResponse)
 def set_user_role(
     user_id: int,
     request: RoleUpdateRequest,
-    current_admin: Dict[str, object] = Depends(require_admin),
+    current_admin: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     desired_role = request.role.strip()
     if desired_role not in database.ALL_ROLES:
         raise HTTPException(status_code=400, detail="Unknown role")
-    if user_id == current_admin["id"] and desired_role != database.ROLE_ADMIN:
+    target_user = database.get_user_by_id(user_id)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_moderator_can_manage(current_admin, target_user)
+    if current_admin["role"] == database.ROLE_MODERATOR and desired_role != database.ROLE_OPERATOR:
+        raise HTTPException(status_code=403, detail="Недостаточно прав для назначения этой роли")
+    if user_id == current_admin["id"] and current_admin["role"] == database.ROLE_ADMIN and desired_role != database.ROLE_ADMIN:
         raise HTTPException(status_code=400, detail="Администратор не может снять собственные права")
     try:
         updated = database.update_user_role(user_id, desired_role)
@@ -491,8 +566,12 @@ def set_user_role(
 def admin_set_user_password(
     user_id: int,
     request: PasswordResetRequest,
-    _: Dict[str, object] = Depends(require_admin),
+    current_admin: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
+    target_user = database.get_user_by_id(user_id)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_moderator_can_manage(current_admin, target_user)
     new_hash = hashlib.sha256(request.new_password.encode("utf-8")).hexdigest()
     try:
         database.update_user_password(user_id, new_hash)
@@ -508,12 +587,13 @@ def admin_set_user_password(
 def set_user_sections_endpoint(
     user_id: int,
     request: SectionsUpdateRequest,
-    current_admin: Dict[str, object] = Depends(require_admin),
+    current_admin: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     # Ensure target user exists
     user = database.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    _ensure_moderator_can_manage(current_admin, user)
     if user_id == current_admin["id"]:
         pass
     valid_ids = {section["id"] for section in database.SECTIONS}
@@ -529,11 +609,12 @@ def set_user_sections_endpoint(
 def set_user_bins_endpoint(
     user_id: int,
     request: BinsUpdateRequest,
-    current_admin: Dict[str, object] = Depends(require_admin),
+    current_admin: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     user = database.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    _ensure_moderator_can_manage(current_admin, user)
     updated_bins = database.set_user_bins(user_id, request.bins, assigned_by=current_admin["id"])
     sanitized = _sanitize_user({**user, "bins": updated_bins})
     return UserResponse(**sanitized)
@@ -542,10 +623,14 @@ def set_user_bins_endpoint(
 @router.delete("/users/{user_id}")
 def delete_user_endpoint(
     user_id: int,
-    _: Dict[str, object] = Depends(require_admin),
+    current_admin: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
-    if user_id == _["id"]:
+    if user_id == current_admin["id"]:
         raise HTTPException(status_code=400, detail="Нельзя удалить собственный аккаунт")
+    target_user = database.get_user_by_id(user_id)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_moderator_can_manage(current_admin, target_user)
     try:
         database.delete_user(user_id)
     except ValueError as exc:
@@ -554,7 +639,7 @@ def delete_user_endpoint(
 
 
 @router.get("/roles")
-def list_roles(_: Dict[str, object] = Depends(require_admin)):
+def list_roles(_: Dict[str, object] = Depends(require_admin_or_moderator)):
     return [
         {"id": role, "title": ROLE_LABELS.get(role, role)}
         for role in database.ALL_ROLES
@@ -576,14 +661,14 @@ def list_bins_endpoint(
 
 @router.get("/bins/unassigned", response_model=List[UnassignedBinResponse])
 def list_unassigned_bins_endpoint(
-    _: Dict[str, object] = Depends(require_admin),
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     return [UnassignedBinResponse(**item) for item in database.list_unassigned_bins()]
 
 
 @router.get("/bins/pending", response_model=List[UnassignedBinResponse])
 def list_pending_bins_endpoint(
-    _: Dict[str, object] = Depends(require_admin),
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     """Legacy alias for clients expecting the previous endpoint path."""
     return list_unassigned_bins_endpoint()
@@ -599,7 +684,7 @@ def dashboard_summary(
     operator_id: int | None = Query(default=None),
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
-    _: Dict[str, object] = Depends(require_admin),
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     summary = database.get_dashboard_summary(
         operator_id=operator_id,
@@ -674,7 +759,7 @@ def get_chat_messages(
     ):
         raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
     allowed_sections = None
-    if current_user["role"] != database.ROLE_ADMIN:
+    if not database.is_admin_like(current_user["role"]):
         allowed_sections = current_user.get("sections") or []
     messages = database.get_messages(
         chat_id,
@@ -756,7 +841,7 @@ def _parse_int_from_string(value: str) -> int:
 
 @router.post("/messages/send")
 def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depends(get_current_user)):
-    if current_user["role"] not in (database.ROLE_ADMIN, database.ROLE_MODERATOR):
+    if current_user["role"] not in (database.ROLE_ADMIN, database.ROLE_MODERATOR, database.ROLE_OPERATOR):
         raise HTTPException(status_code=403, detail="Недостаточно прав для отправки сообщений")
     if request.dialog_id is not None:
         dialog = database.get_chat_dialog(request.dialog_id)
@@ -1550,7 +1635,7 @@ def unmark_dialog_favorite(
 @router.delete("/chats/{chat_id}")
 def delete_chat_endpoint(
     chat_id: int,
-    _: Dict[str, object] = Depends(require_admin),
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     chat = database.get_chat(chat_id)
     if chat is None:
@@ -1565,7 +1650,7 @@ def delete_chat_endpoint(
 @router.delete("/dialogs/{dialog_id}")
 def delete_dialog_endpoint(
     dialog_id: int,
-    _: Dict[str, object] = Depends(require_admin),
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     try:
         database.delete_chat_dialog(dialog_id)

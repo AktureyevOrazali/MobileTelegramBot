@@ -22,8 +22,10 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   List<Section> _availableSections = [];
   List<String> _availableBins = [];
   List<UnassignedBin> _unassignedBins = [];
+  List<PendingRegistration> _pendingRegistrations = [];
   final Set<int> _updatingUserIds = <int>{};
   final Set<int> _deletingUserIds = <int>{};
+  final Set<int> _pendingActionIds = <int>{};
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
   String _searchQuery = '';
@@ -59,12 +61,14 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       final sectionsFuture = widget.apiClient.fetchSections();
       final binsFuture = widget.apiClient.fetchBins();
       final unassignedFuture = widget.apiClient.fetchUnassignedBins();
+      final pendingFuture = widget.apiClient.fetchPendingRegistrations();
 
       final roles = await rolesFuture;
       final users = await usersFuture;
       final sections = await sectionsFuture;
       final bins = await binsFuture;
       final unassigned = await unassignedFuture;
+      final pendingRegistrations = await pendingFuture;
       if (!mounted) {
         return;
       }
@@ -74,9 +78,11 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _availableSections = sections;
         _availableBins = bins;
         _unassignedBins = unassigned;
+        _pendingRegistrations = pendingRegistrations;
         _loading = false;
         _updatingUserIds.clear();
         _deletingUserIds.clear();
+        _pendingActionIds.clear();
       });
     } catch (error) {
       if (!mounted) {
@@ -395,6 +401,70 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         'Не удалось обновить роль: $error',
         isError: true,
       );
+    }
+  }
+
+  Future<void> _approveRegistration(PendingRegistration registration) async {
+    setState(() {
+      _pendingActionIds.add(registration.id);
+    });
+    try {
+      final updated = await widget.apiClient.approveRegistration(registration.id);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _pendingRegistrations.removeWhere((item) => item.id == registration.id);
+        _users = _users
+            .map((user) => user.id == updated.id ? updated : user)
+            .toList();
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showTopMessage(
+        context,
+        'Не удалось подтвердить регистрацию: $error',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pendingActionIds.remove(registration.id);
+        });
+      }
+    }
+  }
+
+  Future<void> _rejectRegistration(PendingRegistration registration) async {
+    setState(() {
+      _pendingActionIds.add(registration.id);
+    });
+    try {
+      await widget.apiClient.rejectRegistration(registration.id);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _pendingRegistrations.removeWhere((item) => item.id == registration.id);
+        _users.removeWhere((user) => user.id == registration.id);
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showTopMessage(
+        context,
+        'Не удалось отклонить регистрацию: $error',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pendingActionIds.remove(registration.id);
+        });
+      }
     }
   }
 
@@ -767,6 +837,101 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         ),
       ),
       const SizedBox(height: 12),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Регистрации на подтверждение',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 12),
+                if (_pendingRegistrations.isEmpty)
+                  Text(
+                    'Нет заявок на регистрацию.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                else
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isNarrow = constraints.maxWidth < 420;
+                      final targetWidth = isNarrow
+                          ? constraints.maxWidth
+                          : math.min(280.0, constraints.maxWidth);
+                      return Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: _pendingRegistrations.map((entry) {
+                          final isPending = _pendingActionIds.contains(entry.id);
+                          return ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: targetWidth,
+                              maxWidth: targetWidth,
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    entry.name,
+                                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    entry.email,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    DateFormat('dd.MM.yyyy HH:mm').format(entry.createdAt.toLocal()),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    children: [
+                                      ElevatedButton(
+                                        onPressed: isPending ? null : () => _approveRegistration(entry),
+                                        child: const Text('Подтвердить'),
+                                      ),
+                                      OutlinedButton(
+                                        onPressed: isPending ? null : () => _rejectRegistration(entry),
+                                        child: const Text('Отклонить'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
     ];
 
     if (_users.isEmpty) {
@@ -862,10 +1027,32 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Chip(
-                              label: Text(user.roleLabel),
-                              backgroundColor: badgeColor,
-                              labelStyle: TextStyle(color: badgeTextColor, fontWeight: FontWeight.w600),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: badgeColor,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: user.role,
+                                  items: roleItems,
+                                  icon: Icon(Icons.expand_more, color: badgeTextColor),
+                                  dropdownColor: theme.colorScheme.surface,
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: badgeTextColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  onChanged: (!isSelf && !isUpdating && !isDeleting)
+                                      ? (value) {
+                                          if (value == null || value == user.role) {
+                                            return;
+                                          }
+                                          _changeRole(user, value);
+                                        }
+                                      : null,
+                                ),
+                              ),
                             ),
                             if (canDelete)
                               IconButton(
@@ -897,20 +1084,6 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         ],
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: user.role,
-                      decoration: const InputDecoration(labelText: 'Роль пользователя'),
-                      items: roleItems,
-                      onChanged: (!isSelf && !isUpdating && !isDeleting)
-                          ? (value) {
-                              if (value == null || value == user.role) {
-                                return;
-                              }
-                              _changeRole(user, value);
-                            }
-                          : null,
-                    ),
                     if (isUpdating && !isDeleting) ...[
                       const SizedBox(height: 12),
                       const LinearProgressIndicator(),

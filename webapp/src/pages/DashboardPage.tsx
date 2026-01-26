@@ -184,7 +184,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
         if (cancelled) return;
 
         const filtered = users
-          .filter((user) => ['moderator', 'viewer'].includes(user.role) && !user.isAdmin)
+          .filter((user) => ['moderator', 'operator'].includes(user.role) && !user.isAdmin)
           .filter((user) => {
             const normalized = `${user.name ?? ''} ${user.login ?? ''}`.toLowerCase();
             return normalized ? !normalized.includes('bot') && !normalized.includes('бот') : true;

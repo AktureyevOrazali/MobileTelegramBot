@@ -28,6 +28,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLogin = true;
   bool _loading = false;
   String? _error;
+  String? _info;
 
   @override
   void initState() {
@@ -51,20 +52,28 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _info = null;
     });
     try {
-      AuthSession session;
       if (_isLogin) {
-        session = await widget.apiClient.login(_emailController.text.trim(), _passwordController.text);
+        final session = await widget.apiClient.login(_emailController.text.trim(), _passwordController.text);
+        UiLogger.action('AUTH', 'success', details: {'mode': _isLogin ? 'login' : 'register'});
+        widget.onAuthenticated(session);
+        return;
       } else {
-        session = await widget.apiClient.register(
+        final message = await widget.apiClient.register(
           _nameController.text.trim(),
           _emailController.text.trim(),
           _passwordController.text,
         );
+        UiLogger.action('AUTH', 'success', details: {'mode': _isLogin ? 'login' : 'register'});
+        setState(() {
+          _info = message;
+          _isLogin = true;
+          _passwordController.clear();
+        });
+        return;
       }
-      UiLogger.action('AUTH', 'success', details: {'mode': _isLogin ? 'login' : 'register'});
-      widget.onAuthenticated(session);
     } catch (error) {
       UiLogger.action('AUTH', 'failed', details: {'reason': error.toString()});
       setState(() {
@@ -218,6 +227,27 @@ class _AuthScreenState extends State<AuthScreen> {
                               const SizedBox(height: 16),
                               AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 250),
+                                child: _info == null
+                                    ? const SizedBox.shrink()
+                                    : Container(
+                                        key: ValueKey<String?>(_info),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.primary.withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          _info!,
+                                          style: TextStyle(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                              if (_info != null) const SizedBox(height: 16),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 250),
                                 child: _error == null
                                     ? const SizedBox.shrink()
                                     : Container(
@@ -274,6 +304,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                           setState(() {
                                             _isLogin = !_isLogin;
                                             _error = null;
+                                            _info = null;
                                           });
                                         },
                                 ),

@@ -622,7 +622,8 @@ class Section {
 const Map<String, String> _roleTitles = {
   'admin': 'Администратор',
   'moderator': 'Модератор',
-  'viewer': 'Пользователь',
+  'operator': 'Оператор',
+  'viewer': 'Оператор',
 };
 
 class UserProfile {
@@ -658,8 +659,8 @@ class UserProfile {
 
   List<String> get bins => binAssignments.map((assignment) => assignment.bin).toList(growable: false);
 
-  bool get canReply => role == 'admin' || role == 'moderator';
-  bool get isAdmin => role == 'admin';
+  bool get canReply => role == 'admin' || role == 'moderator' || role == 'operator';
+  bool get isAdmin => role == 'admin' || role == 'moderator';
   bool get canViewOnly => role == 'viewer';
   String get roleLabel => _roleTitles[role] ?? role;
   bool canSeeSection(String? sectionId) {
@@ -750,6 +751,8 @@ class UserProfile {
         .map((item) => item is int ? item : int.tryParse(item.toString()) ?? 0)
         .where((value) => value > 0)
         .toSet();
+    final rawRole = json['role'] as String? ?? 'operator';
+    final role = rawRole == 'viewer' ? 'operator' : rawRole;
     return UserProfile(
       id: json['id'] as int,
       name: json['name'] as String,
@@ -759,7 +762,7 @@ class UserProfile {
       jobTitle: json['job_title'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       bio: json['bio'] as String? ?? '',
-      role: json['role'] as String? ?? 'viewer',
+      role: role,
       sections: sectionList,
       binAssignments: assignments,
       favoriteDialogIds: favorites,
@@ -777,6 +780,29 @@ class RoleInfo {
     return RoleInfo(
       id: json['id'] as String,
       title: json['title'] as String? ?? json['id'] as String,
+    );
+  }
+}
+
+class PendingRegistration {
+  PendingRegistration({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String name;
+  final String email;
+  final DateTime createdAt;
+
+  factory PendingRegistration.fromJson(Map<String, dynamic> json) {
+    return PendingRegistration(
+      id: json['id'] as int,
+      name: json['name'] as String,
+      email: json['email'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
 }

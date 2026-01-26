@@ -85,7 +85,7 @@ class ApiClient {
     return utf8.decode(response.bodyBytes);
   }
 
-  Future<AuthSession> register(String name, String email, String password) async {
+  Future<String> register(String name, String email, String password) async {
     final uri = _buildUri('auth/register');
     final response = await _sendRequest(
       () => http.post(
@@ -96,9 +96,8 @@ class ApiClient {
       'Соединение с сервером не удалось.',
     );
     final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
-    final session = AuthSession.fromJson(decoded);
-    setSession(session);
-    return session;
+    return decoded['message'] as String? ??
+        'Регистрация отправлена. Ожидайте подтверждения модератора.';
   }
 
   Future<AuthSession> login(String identifier, String password) async {
@@ -378,6 +377,36 @@ class ApiClient {
         .toList();
   }
 
+  Future<List<PendingRegistration>> fetchPendingRegistrations() async {
+    final uri = _buildUri('users/pending');
+    final response = await _sendRequest(
+      () => http.get(uri, headers: _headers),
+      'Не удалось загрузить регистрации на подтверждение.',
+    );
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
+    return decoded
+        .map((item) => PendingRegistration.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<UserProfile> approveRegistration(int userId) async {
+    final uri = _buildUri('users/$userId/approve');
+    final response = await _sendRequest(
+      () => http.post(uri, headers: _headers),
+      'Не удалось подтвердить регистрацию.',
+    );
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
+    return UserProfile.fromJson(decoded);
+  }
+
+  Future<void> rejectRegistration(int userId) async {
+    final uri = _buildUri('users/$userId/reject');
+    await _sendRequest(
+      () => http.post(uri, headers: _headers),
+      'Не удалось отклонить регистрацию.',
+    );
+  }
+
   Future<List<RoleInfo>> fetchRoles() async {
     final uri = _buildUri('roles');
     final response = await _sendRequest(
@@ -580,6 +609,8 @@ class ApiClient {
           return 'Пользователь с таким e-mail уже зарегистрирован.';
         case 'Administrator role required':
           return 'Недостаточно прав: требуется роль администратора.';
+        case 'Аккаунт ожидает подтверждения модератора':
+          return 'Аккаунт ожидает подтверждения модератора.';
         case 'Session token required':
           return 'Не удалось определить сессию. Выполните вход заново.';
         case 'Invalid session token':

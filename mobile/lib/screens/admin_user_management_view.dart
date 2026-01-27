@@ -14,18 +14,94 @@ class AdminUserManagementView extends StatefulWidget {
   State<AdminUserManagementView> createState() => _AdminUserManagementViewState();
 }
 
+class _RoleDropdownPill extends StatelessWidget {
+  const _RoleDropdownPill({
+    required this.user,
+    required this.roles,
+    required this.disabled,
+    required this.onChange,
+  });
+
+  final UserProfile user;
+  final List<RoleInfo> roles;
+  final bool disabled;
+  final ValueChanged<String> onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final Color badgeBg = disabled
+        ? theme.colorScheme.surfaceVariant.withOpacity(0.55)
+        : (user.isAdmin
+            ? theme.colorScheme.error
+            : (user.canReply ? theme.colorScheme.primaryContainer : theme.colorScheme.surfaceVariant.withOpacity(0.6)));
+
+    final Color badgeFg = disabled
+        ? theme.colorScheme.onSurfaceVariant.withOpacity(0.75)
+        : (user.isAdmin
+            ? theme.colorScheme.onError
+            : (user.canReply ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant));
+
+    return SizedBox(
+      width: 150, // можешь сделать 140, если нужно ещё компактнее
+      height: 36,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: badgeBg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.55)),
+        ),
+        alignment: Alignment.center,
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: user.role,
+            isDense: true,
+            isExpanded: true,
+            dropdownColor: theme.colorScheme.surface,
+            icon: Icon(Icons.expand_more, color: badgeFg),
+            style: theme.textTheme.labelLarge?.copyWith(color: badgeFg, fontWeight: FontWeight.w700),
+            items: roles.map((role) {
+              return DropdownMenuItem<String>(
+                value: role.id,
+                child: Text(role.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              );
+            }).toList(),
+            onChanged: disabled
+                ? null
+                : (value) {
+                    if (value == null || value == user.role) return;
+                    onChange(value);
+                  },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
 class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   bool _loading = true;
   String? _error;
+
   List<UserProfile> _users = [];
   List<RoleInfo> _roles = [];
   List<Section> _availableSections = [];
   List<String> _availableBins = [];
   List<UnassignedBin> _unassignedBins = [];
   List<PendingRegistration> _pendingRegistrations = [];
+
   final Set<int> _updatingUserIds = <int>{};
   final Set<int> _deletingUserIds = <int>{};
   final Set<int> _pendingActionIds = <int>{};
+
+  int? _selectedPendingRegistrationId;
+  String? _selectedUnassignedBin;
+  int? _selectedUnassignedOperatorId;
+
+
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
   String _searchQuery = '';
@@ -43,6 +119,175 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
     super.dispose();
   }
 
+  VoidCallback? _logButtonPress(String eventName, VoidCallback? callback) {
+    if (callback == null) return null;
+    return () {
+      debugPrint('[Button] $eventName');
+      callback();
+    };
+  }
+
+  Future<void> _openUserBinsSheet({
+  required ThemeData theme,
+  required UserProfile user,
+  required List<String> allAvailableBins,
+  required bool isUpdating,
+  required bool isDeleting,
+}) async {
+  if (!_canManageBinsFor(user)) return;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      final bottom = MediaQuery.of(sheetContext).viewInsets.bottom;
+
+      final availableToAdd = allAvailableBins
+          .where((bin) => user.binAssignments.every((a) => a.bin != bin))
+          .toList()
+        ..sort();
+
+      return SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('БИНы сотрудника', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 6),
+              Text(
+                user.name,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // ADD BIN (selector)
+              _BinSelectorField(
+                key: ValueKey('bins-sheet-add-${user.id}-${user.binAssignments.length}-${availableToAdd.length}'),
+                availableBins: availableToAdd,
+                enabled: !(isUpdating || isDeleting) && availableToAdd.isNotEmpty,
+                onBinSelected: (value) async {
+                  if (value.isEmpty) return;
+
+                  final assignment = await _showBinAssignmentSheet(user: user, bin: value);
+                  if (assignment == null) return;
+
+                  final next = List<UserBinAssignment>.from(user.binAssignments)..add(assignment);
+                  await _updateUserBins(user, next);
+
+                  if (!mounted) return;
+                  Navigator.of(sheetContext).pop(); // закрываем, чтобы карточка обновилась
+                },
+              ),
+
+              const SizedBox(height: 12),
+
+              // LIST
+              if (user.binAssignments.isEmpty)
+                Text(
+                  'БИНы не назначены.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 420),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: user.binAssignments.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final assignment = user.binAssignments[index];
+                      final expiresLabel = assignment.expiresAt != null
+                          ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
+                          : 'без срока';
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant.withOpacity(0.55),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    assignment.bin,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    expiresLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            IconButton(
+                              tooltip: 'Изменить срок',
+                              onPressed: (isUpdating || isDeleting)
+                                  ? null
+                                  : () async {
+                                      final updatedAssignment = await _showBinAssignmentSheet(
+                                        user: user,
+                                        bin: assignment.bin,
+                                        current: assignment,
+                                      );
+                                      if (updatedAssignment == null) return;
+
+                                      final updatedAssignments = user.binAssignments
+                                          .map((item) => item.bin == assignment.bin ? updatedAssignment : item)
+                                          .toList();
+                                      await _updateUserBins(user, updatedAssignments);
+
+                                      if (!mounted) return;
+                                      Navigator.of(sheetContext).pop();
+                                    },
+                              icon: const Icon(Icons.edit_calendar_outlined),
+                            ),
+                            IconButton(
+                              tooltip: 'Удалить БИН',
+                              onPressed: (isUpdating || isDeleting)
+                                  ? null
+                                  : () async {
+                                      await _confirmRemoveBin(user, assignment);
+                                      if (!mounted) return;
+                                      Navigator.of(sheetContext).pop();
+                                    },
+                              color: theme.colorScheme.error,
+                              icon: const Icon(Icons.delete_outline),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
   Future<void> refreshAdminData({bool showLoading = true}) async {
     if (showLoading) {
       setState(() {
@@ -54,8 +299,10 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _error = null;
       });
     }
+
     try {
       final query = _searchQuery.trim().isEmpty ? null : _searchQuery.trim();
+
       final rolesFuture = widget.apiClient.fetchRoles();
       final usersFuture = widget.apiClient.fetchUsers(query: query);
       final sectionsFuture = widget.apiClient.fetchSections();
@@ -69,29 +316,51 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       final bins = await binsFuture;
       final unassigned = await unassignedFuture;
       final pendingRegistrations = await pendingFuture;
-      if (!mounted) {
-        return;
-      }
+
+      final pendingIds = pendingRegistrations.map((entry) => entry.id).toSet();
+      final filteredUsers = users.where((user) => !pendingIds.contains(user.id)).toList();
+
+      final operatorIds = filteredUsers
+          .where((u) => u.canReply && !u.isAdmin)
+          .map((u) => u.id)
+          .toSet();
+
+      final selectedOperatorId =
+          _selectedUnassignedOperatorId != null && operatorIds.contains(_selectedUnassignedOperatorId)
+              ? _selectedUnassignedOperatorId
+              : null;
+
+
+      final selectedPendingRegistrationId =
+          _selectedPendingRegistrationId != null && pendingIds.contains(_selectedPendingRegistrationId)
+              ? _selectedPendingRegistrationId
+              : null;
+
+      if (!mounted) return;
+
       setState(() {
         _roles = roles;
-        _users = users;
+        _users = filteredUsers;
         _availableSections = sections;
         _availableBins = bins;
         _unassignedBins = unassigned;
         _pendingRegistrations = pendingRegistrations;
+        _selectedPendingRegistrationId = selectedPendingRegistrationId;
+        _selectedUnassignedOperatorId = selectedOperatorId;
+
         _loading = false;
         _updatingUserIds.clear();
         _deletingUserIds.clear();
         _pendingActionIds.clear();
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
         _error = error.toString();
         _loading = false;
       });
+
       final message = error is ApiException ? error.message : error.toString();
       showTopMessage(
         context,
@@ -104,12 +373,8 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _searchQuery = value;
-      });
+      if (!mounted) return;
+      setState(() => _searchQuery = value);
       refreshAdminData(showLoading: false);
     });
   }
@@ -117,14 +382,37 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   String _pluralizeDialogs(int count) {
     final mod10 = count % 10;
     final mod100 = count % 100;
-    if (mod10 == 1 && mod100 != 11) {
-      return 'диалог';
-    }
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
-      return 'диалога';
-    }
+    if (mod10 == 1 && mod100 != 11) return 'диалог';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'диалога';
     return 'диалогов';
   }
+
+  String _roleTitleById(UserProfile user) {
+    for (final r in _roles) {
+      if (r.id == user.role) return r.title;
+    }
+    return user.roleLabel; // fallback
+  }
+
+  bool _isModerator(UserProfile user) {
+    final t = _roleTitleById(user).toLowerCase();
+    return t.contains('модератор');
+  }
+
+  bool _isAdministrator(UserProfile user) {
+    if (user.isAdmin) return true;
+    final t = _roleTitleById(user).toLowerCase();
+    return t.contains('администратор');
+  }
+
+
+
+  bool _canManageBinsFor(UserProfile user) {
+    if (user.isAdmin) return false;
+    if (_isModerator(user)) return false;
+    return true; // например оператор
+  }
+
 
   Future<UserBinAssignment?> _showBinAssignmentSheet({
     required UserProfile user,
@@ -138,9 +426,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       final now = DateTime.now();
       final truncatedHour = DateTime(now.year, now.month, now.day, now.hour);
       final candidate = truncatedHour.add(const Duration(hours: 1));
-      if (candidate.isAfter(now)) {
-        return candidate;
-      }
+      if (candidate.isAfter(now)) return candidate;
       return now.add(const Duration(hours: 2));
     }
 
@@ -178,33 +464,25 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
 
             Future<void> handlePick() async {
               final now = DateTime.now();
-              final fallback =
-                  selected != null && selected!.isAfter(now) ? selected! : _defaultExpirySeed();
+              final fallback = (selected != null && selected!.isAfter(now)) ? selected! : _defaultExpirySeed();
               final firstDate = DateTime(now.year, now.month, now.day);
+
               final date = await showDatePicker(
                 context: sheetContext,
                 initialDate: fallback.isBefore(firstDate) ? firstDate : fallback,
                 firstDate: firstDate,
                 lastDate: now.add(const Duration(days: 365)),
               );
-              if (date == null) {
-                return;
-              }
+              if (date == null) return;
+
               final timeOfDay = await showTimePicker(
                 context: sheetContext,
                 initialTime: TimeOfDay.fromDateTime(fallback),
               );
-              if (timeOfDay == null) {
-                return;
-              }
+              if (timeOfDay == null) return;
+
               setModalState(() {
-                selected = DateTime(
-                  date.year,
-                  date.month,
-                  date.day,
-                  timeOfDay.hour,
-                  timeOfDay.minute,
-                );
+                selected = DateTime(date.year, date.month, date.day, timeOfDay.hour, timeOfDay.minute);
                 indefinite = false;
                 _ensureSelectionValidity();
               });
@@ -357,9 +635,8 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         );
       },
     );
-    if (confirmed != true) {
-      return;
-    }
+    if (confirmed != true) return;
+
     final updated = List<UserBinAssignment>.from(user.binAssignments)
       ..removeWhere((item) => item.bin == assignment.bin);
     await _updateUserBins(user, updated);
@@ -372,26 +649,21 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
     });
     try {
       final updated = await widget.apiClient.updateUserRole(user.id, role);
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
-        _users = _users
-            .map((existing) => existing.id == updated.id ? updated : existing)
-            .toList();
+        _users = _users.map((existing) => existing.id == updated.id ? updated : existing).toList();
         _updatingUserIds.remove(user.id);
       });
-      if (!mounted) {
-        return;
-      }
+
+      if (!mounted) return;
+
       showTopMessage(
         context,
         'Роль пользователя "${updated.name}" обновлена на ${updated.roleLabel}',
       );
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _updatingUserIds.remove(user.id);
         _error = error.toString();
@@ -405,24 +677,20 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   }
 
   Future<void> _approveRegistration(PendingRegistration registration) async {
-    setState(() {
-      _pendingActionIds.add(registration.id);
-    });
+    setState(() => _pendingActionIds.add(registration.id));
     try {
       final updated = await widget.apiClient.approveRegistration(registration.id);
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
         _pendingRegistrations.removeWhere((item) => item.id == registration.id);
-        _users = _users
-            .map((user) => user.id == updated.id ? updated : user)
-            .toList();
+        _users = _users.map((user) => user.id == updated.id ? updated : user).toList();
+        if (_selectedPendingRegistrationId == registration.id) {
+          _selectedPendingRegistrationId = null;
+        }
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       showTopMessage(
         context,
         'Не удалось подтвердить регистрацию: $error',
@@ -430,30 +698,26 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       );
     } finally {
       if (mounted) {
-        setState(() {
-          _pendingActionIds.remove(registration.id);
-        });
+        setState(() => _pendingActionIds.remove(registration.id));
       }
     }
   }
 
   Future<void> _rejectRegistration(PendingRegistration registration) async {
-    setState(() {
-      _pendingActionIds.add(registration.id);
-    });
+    setState(() => _pendingActionIds.add(registration.id));
     try {
       await widget.apiClient.rejectRegistration(registration.id);
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
         _pendingRegistrations.removeWhere((item) => item.id == registration.id);
         _users.removeWhere((user) => user.id == registration.id);
+        if (_selectedPendingRegistrationId == registration.id) {
+          _selectedPendingRegistrationId = null;
+        }
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       showTopMessage(
         context,
         'Не удалось отклонить регистрацию: $error',
@@ -461,12 +725,240 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       );
     } finally {
       if (mounted) {
-        setState(() {
-          _pendingActionIds.remove(registration.id);
-        });
+        setState(() => _pendingActionIds.remove(registration.id));
       }
     }
   }
+
+  Future<void> _approveAllRegistrations() async {
+    if (_pendingRegistrations.isEmpty) return;
+
+    final confirmed = await showThemedDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Подтвердить все регистрации?'),
+          content: Text('Будет подтверждено заявок: ${_pendingRegistrations.length}.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Подтвердить все'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) return;
+
+    final entries = List<PendingRegistration>.from(_pendingRegistrations);
+    for (final entry in entries) {
+      if (!mounted) return;
+      await _approveRegistration(entry);
+    }
+
+    if (mounted) {
+      showTopMessage(context, 'Все заявки подтверждены.');
+    }
+  }
+
+  Future<void> _rejectAllRegistrations() async {
+    if (_pendingRegistrations.isEmpty) return;
+
+    final confirmed = await showThemedDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: const Text('Отклонить все регистрации?'),
+          content: Text('Будет отклонено заявок: ${_pendingRegistrations.length}.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
+              child: const Text('Отклонить все'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) return;
+
+    final entries = List<PendingRegistration>.from(_pendingRegistrations);
+    for (final entry in entries) {
+      if (!mounted) return;
+      await _rejectRegistration(entry);
+    }
+
+    if (mounted) {
+      showTopMessage(context, 'Все заявки отклонены.');
+    }
+  }
+
+  Future<void> _openPendingRegistrationsMenu(ThemeData theme) async {
+  if (_pendingRegistrations.isEmpty) {
+    showTopMessage(context, 'Нет заявок на регистрацию.');
+    return;
+  }
+
+  final action = await showModalBottomSheet<_PendingAction>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      final bottom = MediaQuery.of(sheetContext).viewInsets.bottom;
+      return SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Регистрации на подтверждение', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 12),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(sheetContext).pop(_PendingAction.approveAll),
+                        icon: const Icon(Icons.done_all),
+                        label: const Text('Принять все'),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(sheetContext).pop(_PendingAction.rejectAll),
+                        icon: const Icon(Icons.clear_all),
+                        label: const Text('Отклонить все'),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: theme.colorScheme.error, width: 1.5),
+                          foregroundColor: theme.colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 420),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _pendingRegistrations.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final entry = _pendingRegistrations[index];
+                    final isPending = _pendingActionIds.contains(entry.id);
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant.withOpacity(0.55),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  entry.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  entry.email,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  DateFormat('dd.MM.yyyy HH:mm').format(entry.createdAt.toLocal()),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          IconButton(
+                            tooltip: 'Подтвердить',
+                            onPressed: isPending
+                                ? null
+                                : () => Navigator.of(sheetContext).pop(_PendingAction.approveOne(entry)),
+                            icon: const Icon(Icons.check_circle_outline),
+                          ),
+                          IconButton(
+                            tooltip: 'Отклонить',
+                            onPressed: isPending
+                                ? null
+                                : () => Navigator.of(sheetContext).pop(_PendingAction.rejectOne(entry)),
+                            color: theme.colorScheme.error,
+                            icon: const Icon(Icons.cancel_outlined),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+
+  if (!mounted || action == null) return;
+
+  if (action.kind == _PendingActionKind.approveAll) {
+    await _approveAllRegistrations();
+    return;
+  }
+  if (action.kind == _PendingActionKind.rejectAll) {
+    await _rejectAllRegistrations();
+    return;
+  }
+  if (action.kind == _PendingActionKind.approveOne && action.registration != null) {
+    await _approveRegistration(action.registration!);
+    return;
+  }
+  if (action.kind == _PendingActionKind.rejectOne && action.registration != null) {
+    await _rejectRegistration(action.registration!);
+    return;
+  }
+}
 
   Future<void> _updateUserSections(UserProfile user, Set<String> sections) async {
     setState(() {
@@ -475,35 +967,23 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
     });
     try {
       final updated = await widget.apiClient.updateUserSections(user.id, sections.toList());
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
-        _users = _users
-            .map((existing) => existing.id == updated.id ? updated : existing)
-            .toList();
+        _users = _users.map((existing) => existing.id == updated.id ? updated : existing).toList();
         _updatingUserIds.remove(user.id);
       });
-      if (!mounted) {
-        return;
-      }
-      showTopMessage(
-        context,
-        'Разделы пользователя "${updated.name}" обновлены.',
-      );
+
+      if (!mounted) return;
+
+      showTopMessage(context, 'Разделы пользователя "${updated.name}" обновлены.');
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _updatingUserIds.remove(user.id);
         _error = error.toString();
       });
-      showTopMessage(
-        context,
-        'Не удалось обновить разделы: $error',
-        isError: true,
-      );
+      showTopMessage(context, 'Не удалось обновить разделы: $error', isError: true);
     }
   }
 
@@ -512,41 +992,32 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       _updatingUserIds.add(user.id);
       _error = null;
     });
+
     try {
       final sortedAssignments = List<UserBinAssignment>.from(assignments)
         ..sort((a, b) => a.bin.compareTo(b.bin));
+
       final updated = await widget.apiClient.updateUserBins(user.id, sortedAssignments);
       final unassigned = await widget.apiClient.fetchUnassignedBins();
-      if (!mounted) {
-        return;
-      }
+
+      if (!mounted) return;
+
       setState(() {
-        _users = _users
-            .map((existing) => existing.id == updated.id ? updated : existing)
-            .toList();
+        _users = _users.map((existing) => existing.id == updated.id ? updated : existing).toList();
         _updatingUserIds.remove(user.id);
         _unassignedBins = unassigned;
       });
-      if (!mounted) {
-        return;
-      }
-      showTopMessage(
-        context,
-        'БИНы пользователя "${updated.name}" обновлены.',
-      );
+
+      if (!mounted) return;
+
+      showTopMessage(context, 'БИНы пользователя "${updated.name}" обновлены.');
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _updatingUserIds.remove(user.id);
         _error = error.toString();
       });
-      showTopMessage(
-        context,
-        'Не удалось обновить БИНы: $error',
-        isError: true,
-      );
+      showTopMessage(context, 'Не удалось обновить БИНы: $error', isError: true);
     }
   }
 
@@ -559,17 +1030,11 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
           content: const Text('Пользователь потеряет доступ к системе. Действие нельзя отменить.'),
           actions: [
             TextButton(
-              onPressed: _logButtonPress(
-                'cancel delete user',
-                () => Navigator.of(dialogContext).pop(false),
-              ),
+              onPressed: _logButtonPress('cancel delete user', () => Navigator.of(dialogContext).pop(false)),
               child: const Text('Отмена'),
             ),
             FilledButton(
-              onPressed: _logButtonPress(
-                'confirm delete user',
-                () => Navigator.of(dialogContext).pop(true),
-              ),
+              onPressed: _logButtonPress('confirm delete user', () => Navigator.of(dialogContext).pop(true)),
               style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
               child: const Text('Удалить'),
             ),
@@ -577,42 +1042,33 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         );
       },
     );
-    if (confirmed != true) {
-      return;
-    }
+    if (confirmed != true) return;
+
     setState(() {
       _deletingUserIds.add(user.id);
       _updatingUserIds.add(user.id);
       _error = null;
     });
+
     try {
       await widget.apiClient.deleteUser(user.id);
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
         _users = _users.where((existing) => existing.id != user.id).toList();
         _deletingUserIds.remove(user.id);
         _updatingUserIds.remove(user.id);
       });
-      showTopMessage(
-        context,
-        'Аккаунт "${user.name}" удалён.',
-      );
+
+      showTopMessage(context, 'Аккаунт "${user.name}" удалён.');
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _deletingUserIds.remove(user.id);
         _updatingUserIds.remove(user.id);
         _error = error.toString();
       });
-      showTopMessage(
-        context,
-        'Не удалось удалить пользователя: $error',
-        isError: true,
-      );
+      showTopMessage(context, 'Не удалось удалить пользователя: $error', isError: true);
     }
   }
 
@@ -620,6 +1076,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
     final formKey = GlobalKey<FormState>();
     final passwordController = TextEditingController();
     final confirmController = TextEditingController();
+
     final newPassword = await showThemedDialog<String>(
       context: context,
       builder: (dialogContext) {
@@ -635,9 +1092,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                   decoration: const InputDecoration(labelText: 'Новый пароль'),
                   obscureText: true,
                   validator: (value) {
-                    if (value == null || value.trim().length < 5) {
-                      return 'Минимум 5 символов';
-                    }
+                    if (value == null || value.trim().length < 5) return 'Минимум 5 символов';
                     return null;
                   },
                 ),
@@ -647,9 +1102,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                   decoration: const InputDecoration(labelText: 'Повторите пароль'),
                   obscureText: true,
                   validator: (value) {
-                    if (value != passwordController.text) {
-                      return 'Пароли не совпадают';
-                    }
+                    if (value != passwordController.text) return 'Пароли не совпадают';
                     return null;
                   },
                 ),
@@ -658,64 +1111,49 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
           ),
           actions: [
             TextButton(
-              onPressed: _logButtonPress(
-                'cancel change user password',
-                () => Navigator.of(dialogContext).pop(),
-              ),
+              onPressed: _logButtonPress('cancel change user password', () => Navigator.of(dialogContext).pop()),
               child: const Text('Отмена'),
             ),
             FilledButton(
-              onPressed: _logButtonPress(
-                'save changed user password',
-                () {
-                  if (formKey.currentState!.validate()) {
-                    Navigator.of(dialogContext).pop(passwordController.text.trim());
-                  }
-                },
-              ),
+              onPressed: _logButtonPress('save changed user password', () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.of(dialogContext).pop(passwordController.text.trim());
+                }
+              }),
               child: const Text('Сохранить'),
             ),
           ],
         );
       },
     );
+
     passwordController.dispose();
     confirmController.dispose();
-    if (newPassword == null) {
-      return;
-    }
+
+    if (newPassword == null) return;
+
     setState(() {
       _updatingUserIds.add(user.id);
       _error = null;
     });
+
     try {
       final updated = await widget.apiClient.adminSetUserPassword(user.id, newPassword);
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
-        _users = _users
-            .map((existing) => existing.id == updated.id ? updated : existing)
-            .toList();
+        _users = _users.map((existing) => existing.id == updated.id ? updated : existing).toList();
         _updatingUserIds.remove(user.id);
       });
-      showTopMessage(
-        context,
-        'Пароль для "${updated.name}" обновлён.',
-      );
+
+      showTopMessage(context, 'Пароль для "${updated.name}" обновлён.');
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _updatingUserIds.remove(user.id);
         _error = error.toString();
       });
-      showTopMessage(
-        context,
-        'Не удалось изменить пароль: $error',
-        isError: true,
-      );
+      showTopMessage(context, 'Не удалось изменить пароль: $error', isError: true);
     }
   }
 
@@ -725,16 +1163,21 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final roleItems = _roles
-        .map(
-          (role) => DropdownMenuItem<String>(
-            value: role.id,
-            child: Text(role.title),
-          ),
-        )
-        .toList();
-
     final theme = Theme.of(context);
+
+    final allAvailableBins = <String>[];
+    final seenBins = <String>{};
+    void addBin(String bin) {
+      if (seenBins.add(bin)) allAvailableBins.add(bin);
+    }
+
+    for (final bin in _availableBins) {
+      addBin(bin);
+    }
+    for (final entry in _unassignedBins) {
+      addBin(entry.bin);
+    }
+
     final searchField = Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: TextField(
@@ -745,13 +1188,10 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
           suffixIcon: _searchQuery.isEmpty
               ? null
               : IconButton(
-                  onPressed: _logButtonPress(
-                    'clear user search',
-                    () {
-                      _searchController.clear();
-                      _onSearchChanged('');
-                    },
-                  ),
+                  onPressed: _logButtonPress('clear user search', () {
+                    _searchController.clear();
+                    _onSearchChanged('');
+                  }),
                   icon: const Icon(Icons.close),
                 ),
         ),
@@ -783,54 +1223,135 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   )
-                else
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isNarrow = constraints.maxWidth < 420;
-                      final targetWidth = isNarrow
-                          ? constraints.maxWidth
-                          : math.min(260.0, constraints.maxWidth);
-                      return Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: _unassignedBins.map((entry) {
-                          final description = entry.openDialogs > 0
-                              ? '${entry.openDialogs} ${_pluralizeDialogs(entry.openDialogs)} без закрепленного сотрудника'
-                              : 'Нет активных диалогов';
-                          return ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minWidth: targetWidth,
-                              maxWidth: targetWidth,
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                                borderRadius: BorderRadius.circular(12),
+                else ...[
+                  DropdownButtonFormField<String?>(
+                    value: _selectedUnassignedBin,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Выберите БИН',
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                    items: [
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(
+                          'Не выбран',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                      ..._unassignedBins.map((entry) {
+                        final desc = entry.openDialogs > 0
+                            ? '${entry.openDialogs} ${_pluralizeDialogs(entry.openDialogs)}'
+                            : 'Нет активных диалогов';
+
+                        return DropdownMenuItem<String?>(
+                          value: entry.bin,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  entry.bin,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium, // без жирного
+                                ),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    entry.bin,
-                                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Text(
+                                  desc,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w400,
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    description,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                          );
-                        }).toList(),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                    onChanged: (value) => setState(() => _selectedUnassignedBin = value),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // ВАЖНО: карточку-описание выбранного БИНа удалили полностью.
+
+                  // Операторы
+                  Builder(
+                    builder: (_) {
+                      final operators = _users
+                          .where((u) => u.canReply && !u.isAdmin)
+                          .toList()
+                        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+                      return DropdownButtonFormField<int?>(
+                        value: _selectedUnassignedOperatorId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Выберите сотрудника (оператор)',
+                          prefixIcon: Icon(Icons.person_search_outlined),
+                        ),
+                        items: [
+                          DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Не выбран', style: theme.textTheme.bodyMedium),
+                          ),
+                          ...operators.map((op) {
+                            return DropdownMenuItem<int?>(
+                              value: op.id,
+                              child: Text(
+                                op.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }),
+                        ],
+                        onChanged: (value) => setState(() => _selectedUnassignedOperatorId = value),
                       );
                     },
                   ),
+
+                  const SizedBox(height: 12),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.assignment_turned_in_outlined),
+                      label: const Text('Назначить выбранный БИН'),
+                      onPressed: (_selectedUnassignedBin == null || _selectedUnassignedOperatorId == null)
+                          ? null
+                          : _logButtonPress(
+                              'assign unassigned bin to operator',
+                              () async {
+                                final bin = _selectedUnassignedBin!;
+                                final operator = _users.firstWhere((u) => u.id == _selectedUnassignedOperatorId);
+
+                                final assignment = await _showBinAssignmentSheet(user: operator, bin: bin);
+                                if (assignment == null) return;
+
+                                final next = List<UserBinAssignment>.from(operator.binAssignments)..add(assignment);
+                                await _updateUserBins(operator, next);
+
+                                if (!mounted) return;
+                                setState(() {
+                                  _selectedUnassignedBin = null;
+                                  _selectedUnassignedOperatorId = null;
+                                });
+
+                                await refreshAdminData(showLoading: false);
+                              },
+                            ),
+                    ),
+                  ),
+                ],
+
               ],
             ),
           ),
@@ -859,72 +1380,19 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                     ),
                   )
                 else
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isNarrow = constraints.maxWidth < 420;
-                      final targetWidth = isNarrow
-                          ? constraints.maxWidth
-                          : math.min(280.0, constraints.maxWidth);
-                      return Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: _pendingRegistrations.map((entry) {
-                          final isPending = _pendingActionIds.contains(entry.id);
-                          return ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minWidth: targetWidth,
-                              maxWidth: targetWidth,
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    entry.name,
-                                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    entry.email,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    DateFormat('dd.MM.yyyy HH:mm').format(entry.createdAt.toLocal()),
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 6,
-                                    children: [
-                                      ElevatedButton(
-                                        onPressed: isPending ? null : () => _approveRegistration(entry),
-                                        child: const Text('Подтвердить'),
-                                      ),
-                                      OutlinedButton(
-                                        onPressed: isPending ? null : () => _rejectRegistration(entry),
-                                        child: const Text('Отклонить'),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      );
-                    },
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _logButtonPress(
+                        'open pending registrations menu',
+                        () => _openPendingRegistrationsMenu(theme),
+                      ),
+                      icon: const Icon(Icons.arrow_drop_down_circle_outlined),
+                      label: Text(
+                        'Открыть список (${_pendingRegistrations.length})',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -938,10 +1406,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       listChildren.add(
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
-          child: Text(
-            'Пока нет зарегистрированных операторов.',
-            style: theme.textTheme.bodyMedium,
-          ),
+          child: Text('Пока нет зарегистрированных операторов.', style: theme.textTheme.bodyMedium),
         ),
       );
     } else {
@@ -951,42 +1416,38 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
           final isUpdating = _updatingUserIds.contains(user.id);
           final isDeleting = _deletingUserIds.contains(user.id);
           final canDelete = !isSelf && !user.isAdmin;
-          final badgeColor = user.isAdmin
-              ? theme.colorScheme.errorContainer
-              : (user.canReply
-                  ? theme.colorScheme.primaryContainer
-                  : theme.colorScheme.surfaceVariant.withOpacity(0.6));
-          final badgeTextColor = user.isAdmin
-              ? theme.colorScheme.onErrorContainer
-              : (user.canReply
-                  ? theme.colorScheme.onPrimaryContainer
-                  : theme.colorScheme.onSurfaceVariant);
           final createdAtLabel = DateFormat('dd.MM.yyyy HH:mm').format(user.createdAt.toLocal());
 
           Widget buildInfoChip(IconData icon, String label) {
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      label,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                    ),
+            return SizedBox(
+              height: 34,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 180, maxWidth: 180),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.45)),
                   ),
-                ],
+                  child: Row(
+                    children: [
+                      Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             );
           }
@@ -999,77 +1460,63 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // === HEADER: name + delete icon ===
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                user.name,
-                                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 6,
-                                children: [
-                                  buildInfoChip(Icons.email_outlined, user.email),
-                                  buildInfoChip(Icons.person_outline, user.login),
-                                  buildInfoChip(Icons.calendar_month_outlined, createdAtLabel),
-                                ],
-                              ),
-                            ],
+                          child: Text(
+                            user.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: badgeColor,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: DropdownButtonHideUnderline(
-                                child: DropdownButton<String>(
-                                  value: user.role,
-                                  items: roleItems,
-                                  icon: Icon(Icons.expand_more, color: badgeTextColor),
-                                  dropdownColor: theme.colorScheme.surface,
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: badgeTextColor,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  onChanged: (!isSelf && !isUpdating && !isDeleting)
-                                      ? (value) {
-                                          if (value == null || value == user.role) {
-                                            return;
-                                          }
-                                          _changeRole(user, value);
-                                        }
-                                      : null,
-                                ),
-                              ),
+                        if (canDelete)
+                          IconButton(
+                            tooltip: 'Удалить аккаунт',
+                            icon: const Icon(Icons.delete_outline),
+                            color: theme.colorScheme.error,
+                            onPressed: _logButtonPress(
+                              'delete user from header',
+                              (isUpdating || isDeleting) ? null : () => _deleteUser(user),
                             ),
-                            if (canDelete)
-                              IconButton(
-                                tooltip: 'Удалить аккаунт',
-                                icon: const Icon(Icons.delete_outline),
-                                color: theme.colorScheme.error,
-                                onPressed: _logButtonPress(
-                                  'delete user from list',
-                                  (isUpdating || isDeleting)
-                                      ? null
-                                      : () => _deleteUser(user),
-                                ),
-                              ),
-                          ],
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Divider(height: 1, thickness: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
+                    const SizedBox(height: 12),
+
+                    // === ROW: email (left) + role (right) ===
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: buildInfoChip(Icons.email_outlined, user.email),
+                        ),
+                        const SizedBox(width: 12),
+                        _RoleDropdownPill(
+                          user: user,
+                          roles: _roles,
+                          disabled: (() {
+                            final isSelf = user.id == widget.currentUser.id;
+                            if (isSelf) return true;
+
+                            if (isUpdating || isDeleting) return true;
+
+                            // Ключевая логика: если текущий пользователь НЕ админ,
+                            // то роль администратора менять нельзя (и pill должен стать серым)
+                            final currentIsAdmin = widget.currentUser.isAdmin;
+                            if (!currentIsAdmin && _isAdministrator(user)) return true;
+
+                            return false;
+                          })(),
+
+                          onChange: (value) => _changeRole(user, value),
                         ),
                       ],
                     ),
+
                     if (isDeleting) ...[
                       const SizedBox(height: 12),
                       Row(
@@ -1089,179 +1536,46 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                       const LinearProgressIndicator(),
                     ],
                     const SizedBox(height: 16),
-                    Text('Разделы', style: theme.textTheme.labelLarge),
-                    const SizedBox(height: 8),
-                    if (user.sections.isEmpty)
-                      Text(
-                        'Нет назначенных разделов',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      )
-                    else
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: user.sections.map((sectionId) {
-                          final match = _availableSections.firstWhere(
-                            (section) => section.id == sectionId,
-                            orElse: () => Section(id: sectionId, title: sectionId),
-                          );
-                          return Chip(
-                            label: Text(match.title),
-                            onDeleted: (!isUpdating && !isDeleting)
-                                ? () {
-                                    final updatedSections =
-                                        Set<String>.from(user.sections)..remove(sectionId);
-                                    _updateUserSections(user, updatedSections);
-                                  }
-                                : null,
-                          );
-                        }).toList(),
-                      ),
-                    const SizedBox(height: 8),
-                    _SectionSelectorField(
-                      key: ValueKey('section-selector-${user.id}-${user.sections.length}'),
-                      availableSections: _availableSections
-                          .where((section) => !user.sections.contains(section.id))
-                          .toList(),
-                      enabled: !isUpdating && !isDeleting && _availableSections.isNotEmpty,
-                      onSectionSelected: (value) {
-                        if (value.isEmpty || user.sections.contains(value)) {
-                          return;
-                        }
-                        final updatedSections = Set<String>.from(user.sections)..add(value);
-                        _updateUserSections(user, updatedSections);
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    Text('БИНы', style: theme.textTheme.labelLarge),
-                    const SizedBox(height: 8),
-                    if (user.binAssignments.isEmpty)
-                      Text(
-                        'Нет назначенных БИНов',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      )
-                    else
-                      Column(
-                        children: user.binAssignments.map((assignment) {
-                          final expiresLabel = assignment.expiresAt != null
-                              ? 'Действует до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
-                              : 'Бессрочное назначение';
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: theme.colorScheme.outlineVariant.withOpacity(0.6),
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        assignment.bin,
-                                        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        expiresLabel,
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: theme.colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ],
+                    if (_canManageBinsFor(user)) ...[
+                      const SizedBox(height: 14),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.apartment_outlined),
+                          label: Text('БИНы: ${user.binAssignments.length}'),
+                          onPressed: (isUpdating || isDeleting)
+                              ? null
+                              : _logButtonPress(
+                                  'open user bins sheet',
+                                  () => _openUserBinsSheet(
+                                    theme: theme,
+                                    user: user,
+                                    allAvailableBins: allAvailableBins,
+                                    isUpdating: isUpdating,
+                                    isDeleting: isDeleting,
                                   ),
                                 ),
-                                if (!isUpdating && !isDeleting)
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        tooltip: 'Изменить срок',
-                                        icon: const Icon(Icons.edit_calendar_outlined),
-                                        onPressed: _logButtonPress(
-                                          'edit bin assignment',
-                                          () async {
-                                            final updatedAssignment = await _showBinAssignmentSheet(
-                                              user: user,
-                                              bin: assignment.bin,
-                                              current: assignment,
-                                            );
-                                            if (updatedAssignment == null) {
-                                              return;
-                                            }
-                                            final updatedAssignments = user.binAssignments
-                                                .map((item) => item.bin == assignment.bin ? updatedAssignment : item)
-                                                .toList();
-                                            await _updateUserBins(user, updatedAssignments);
-                                          },
-                                        ),
-                                      ),
-                                      IconButton(
-                                        tooltip: 'Убрать БИН',
-                                        icon: const Icon(Icons.delete_outline),
-                                        onPressed: _logButtonPress(
-                                          'remove bin assignment',
-                                          () => _confirmRemoveBin(user, assignment),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    const SizedBox(height: 8),
-                    _BinSelectorField(
-                      key: ValueKey('bin-selector-${user.id}-${user.binAssignments.length}'),
-                      availableBins: _availableBins
-                          .where((bin) => user.binAssignments.every((assignment) => assignment.bin != bin))
-                          .toList(),
-                      enabled: !isUpdating && !isDeleting && _availableBins.isNotEmpty,
-                      onBinSelected: (value) async {
-                        if (value.isEmpty ||
-                            user.binAssignments.any((assignment) => assignment.bin == value)) {
-                          return;
-                        }
-                        final assignment = await _showBinAssignmentSheet(user: user, bin: value);
-                        if (assignment == null) {
-                          return;
-                        }
-                        final updatedAssignments = List<UserBinAssignment>.from(user.binAssignments)
-                          ..add(assignment);
-                        await _updateUserBins(user, updatedAssignments);
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.lock_reset),
-                          label: const Text('Сменить пароль'),
-                          onPressed: _logButtonPress(
-                            'reset user password',
-                            (isUpdating || isDeleting) ? null : () => _promptResetPassword(user),
-                          ),
                         ),
-                      ],
+                      ),
+                    ],
+
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        icon: const Icon(Icons.lock_reset),
+                        label: const Text('Сменить пароль'),
+                        onPressed: _logButtonPress(
+                          'reset user password',
+                          (isUpdating || isDeleting) ? null : () => _promptResetPassword(user),
+                        ),
+                      ),
                     ),
+
                     const SizedBox(height: 8),
                     Text(
-                      (isUpdating || isDeleting)
-                          ? 'Сохраняем изменения…'
-                          : 'Изменения сохраняются автоматически',
+                      (isUpdating || isDeleting) ? 'Сохраняем изменения…' : 'Изменения сохраняются автоматически',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -1298,10 +1612,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  _error!,
-                  style: const TextStyle(color: Colors.red),
-                ),
+                Text(_error!, style: const TextStyle(color: Colors.red)),
                 TextButton(
                   onPressed: _logButtonPress('retry load admin data', () => refreshAdminData()),
                   child: const Text('Повторить загрузку'),
@@ -1348,22 +1659,17 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   }
 
   void _handleProfileHeaderChange() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadSavedProfileImage() async {
     final prefs = await SharedPreferences.getInstance();
     final storedPath = prefs.getString('profile_image_path');
-    if (storedPath == null) {
-      return;
-    }
+    if (storedPath == null) return;
+
     final file = File(storedPath);
     if (await file.exists()) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _profileImagePath = storedPath;
         _profileImageFile = file;
@@ -1386,17 +1692,16 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     setState(() {
       _error = null;
       _successMessage = null;
-      if (showLoading) {
-        _loading = true;
-      }
+      if (showLoading) _loading = true;
     });
+
     try {
       final profile = await widget.apiClient.fetchProfile();
       final sections = await widget.apiClient.fetchSections();
       widget.onProfileUpdated(profile);
-      if (!mounted) {
-        return;
-      }
+
+      if (!mounted) return;
+
       _profile = profile;
       _nameController.text = profile.name;
       _emailController.text = profile.email;
@@ -1404,15 +1709,15 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
       _jobTitleController.text = profile.jobTitle;
       _phoneController.text = profile.phone;
       _bioController.text = profile.bio;
+
       _handleProfileHeaderChange();
+
       setState(() {
         _sections = sections;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _error = error.toString();
         _loading = false;
@@ -1421,14 +1726,14 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
+
     setState(() {
       _saving = true;
       _error = null;
       _successMessage = null;
     });
+
     try {
       final updated = await widget.apiClient.updateProfile(
         name: _nameController.text.trim(),
@@ -1437,18 +1742,16 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
         bio: _bioController.text.trim(),
       );
       widget.onProfileUpdated(updated);
-      if (!mounted) {
-        return;
-      }
+
+      if (!mounted) return;
+
       setState(() {
         _profile = updated;
         _saving = false;
         _successMessage = 'Профиль обновлён';
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _saving = false;
         _error = error.toString();
@@ -1477,9 +1780,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                   decoration: const InputDecoration(labelText: 'Текущий пароль'),
                   obscureText: true,
                   validator: (value) {
-                    if (value == null || value.trim().length < 5) {
-                      return 'Минимум 5 символов';
-                    }
+                    if (value == null || value.trim().length < 5) return 'Минимум 5 символов';
                     return null;
                   },
                 ),
@@ -1489,9 +1790,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                   decoration: const InputDecoration(labelText: 'Новый пароль'),
                   obscureText: true,
                   validator: (value) {
-                    if (value == null || value.trim().length < 5) {
-                      return 'Минимум 5 символов';
-                    }
+                    if (value == null || value.trim().length < 5) return 'Минимум 5 символов';
                     if (value.trim() == currentController.text.trim()) {
                       return 'Новый пароль должен отличаться от текущего';
                     }
@@ -1504,9 +1803,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                   decoration: const InputDecoration(labelText: 'Повторите новый пароль'),
                   obscureText: true,
                   validator: (value) {
-                    if (value != newController.text) {
-                      return 'Пароли не совпадают';
-                    }
+                    if (value != newController.text) return 'Пароли не совпадают';
                     return null;
                   },
                 ),
@@ -1515,24 +1812,18 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
           ),
           actions: [
             TextButton(
-              onPressed: _logButtonPress(
-                'cancel change own password',
-                () => Navigator.of(dialogContext).pop(),
-              ),
+              onPressed: _logButtonPress('cancel change own password', () => Navigator.of(dialogContext).pop()),
               child: const Text('Отмена'),
             ),
             FilledButton(
-              onPressed: _logButtonPress(
-                'save changed own password',
-                () {
-                  if (formKey.currentState!.validate()) {
-                    Navigator.of(dialogContext).pop({
-                      'current': currentController.text.trim(),
-                      'new': newController.text.trim(),
-                    });
-                  }
-                },
-              ),
+              onPressed: _logButtonPress('save changed own password', () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.of(dialogContext).pop({
+                    'current': currentController.text.trim(),
+                    'new': newController.text.trim(),
+                  });
+                }
+              }),
               child: const Text('Сохранить'),
             ),
           ],
@@ -1544,9 +1835,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     newController.dispose();
     confirmController.dispose();
 
-    if (result == null) {
-      return;
-    }
+    if (result == null) return;
 
     setState(() {
       _saving = true;
@@ -1560,28 +1849,25 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
         newPassword: result['new']!,
       );
       widget.onProfileUpdated(session.user);
-      if (!mounted) {
-        return;
-      }
+
+      if (!mounted) return;
+
       setState(() {
         _profile = session.user;
         _saving = false;
         _successMessage = 'Пароль обновлён';
       });
+
       showTopMessage(context, 'Пароль обновлён.');
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
+
       setState(() {
         _saving = false;
         _error = error.toString();
       });
-      showTopMessage(
-        context,
-        'Не удалось обновить пароль: $error',
-        isError: true,
-      );
+
+      showTopMessage(context, 'Не удалось обновить пароль: $error', isError: true);
     }
   }
 
@@ -1600,9 +1886,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
 
   ImageProvider<Object>? _buildProfileImageProvider() {
     final file = _profileImageFile;
-    if (file != null && file.existsSync()) {
-      return FileImage(file);
-    }
+    if (file != null && file.existsSync()) return FileImage(file);
     return null;
   }
 
@@ -1610,9 +1894,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     try {
       final picker = ImagePicker();
       final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
-      if (picked == null) {
-        return;
-      }
+      if (picked == null) return;
 
       final cropped = await ImageCropper().cropImage(
         sourcePath: picked.path,
@@ -1637,19 +1919,18 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
 
       final resultingPath = cropped?.path ?? picked.path;
       final file = File(resultingPath);
-      if (!mounted) {
-        return;
-      }
+
+      if (!mounted) return;
+
       setState(() {
         _profileImagePath = resultingPath;
         _profileImageFile = file;
         _successMessage = 'Фото профиля обновлено';
       });
+
       await _saveProfileImagePath(resultingPath);
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _error = 'Не удалось обновить фото: $error';
       });
@@ -1658,9 +1939,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
 
   String get _displayName {
     final edited = _nameController.text.trim();
-    if (edited.isNotEmpty) {
-      return edited;
-    }
+    if (edited.isNotEmpty) return edited;
     return _profile?.name ?? '';
   }
 
@@ -1670,7 +1949,6 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     final headerColor = theme.brightness == Brightness.dark
         ? theme.colorScheme.background
         : theme.extension<AppColors>()!.appBarColor;
-
 
     return Container(
       width: double.infinity,
@@ -1692,9 +1970,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                 radius: 55,
                 backgroundColor: Colors.white,
                 backgroundImage: avatar,
-                child: avatar == null
-                    ? const Icon(Icons.person, size: 52, color: brandPrimaryGreen)
-                    : null,
+                child: avatar == null ? const Icon(Icons.person, size: 52, color: brandPrimaryGreen) : null,
               ),
               Material(
                 color: Colors.white,
@@ -1747,6 +2023,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   }) {
     final theme = Theme.of(context);
     final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
+
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
@@ -1768,9 +2045,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
             prefixIcon: Icon(icon, color: onSurfaceVariant),
             suffixIcon: IconTheme(
               data: IconThemeData(color: onSurfaceVariant),
-              child: readOnly
-                  ? const Icon(Icons.lock_outline, size: 18)
-                  : const Icon(Icons.edit_outlined),
+              child: readOnly ? const Icon(Icons.lock_outline, size: 18) : const Icon(Icons.edit_outlined),
             ),
             border: InputBorder.none,
           ),
@@ -1803,10 +2078,11 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
+
     final profile = _profile;
     final isAdmin = profile?.isAdmin ?? false;
-
     final theme = Theme.of(context);
+
     return RefreshIndicator(
       onRefresh: () => refreshProfile(showLoading: false),
       child: SingleChildScrollView(
@@ -1839,9 +2115,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                       icon: Icons.badge,
                       validator: (value) {
                         final trimmed = value?.trim() ?? '';
-                        if (trimmed.runes.length < 2) {
-                          return 'Введите имя длиной не менее 2 символов';
-                        }
+                        if (trimmed.runes.length < 2) return 'Введите имя длиной не менее 2 символов';
                         return null;
                       },
                     ),
@@ -1908,10 +2182,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                               children: [
                                 Row(
                                   children: [
-                                    Icon(
-                                      Icons.dashboard_customize_outlined,
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
+                                    Icon(Icons.dashboard_customize_outlined, color: theme.colorScheme.onSurfaceVariant),
                                     const SizedBox(width: 8),
                                     Text(
                                       'Назначенные разделы',
@@ -1928,7 +2199,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                                     runSpacing: 4,
                                     children: profile.sections.map((sectionId) {
                                       final match = _sections.firstWhere(
-                                        (section) => section.id == sectionId,
+                                        (s) => s.id == sectionId,
                                         orElse: () => Section(id: sectionId, title: sectionId),
                                       );
                                       return Chip(label: Text(match.title));
@@ -1937,10 +2208,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                                 const SizedBox(height: 12),
                                 Row(
                                   children: [
-                                    Icon(
-                                      Icons.business_center_outlined,
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
+                                    Icon(Icons.business_center_outlined, color: theme.colorScheme.onSurfaceVariant),
                                     const SizedBox(width: 8),
                                     Text(
                                       'Назначенные БИНы',
@@ -1987,18 +2255,12 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                     if (_error != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.red),
-                        ),
+                        child: Text(_error!, style: const TextStyle(color: Colors.red)),
                       ),
                     if (_successMessage != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          _successMessage!,
-                          style: const TextStyle(color: Colors.green),
-                        ),
+                        child: Text(_successMessage!, style: const TextStyle(color: Colors.green)),
                       ),
                     const SizedBox(height: 12),
                     Center(
@@ -2009,10 +2271,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                         runAlignment: WrapAlignment.center,
                         children: [
                           ElevatedButton.icon(
-                            onPressed: _logButtonPress(
-                              'save profile changes',
-                              _saving ? null : _save,
-                            ),
+                            onPressed: _logButtonPress('save profile changes', _saving ? null : _save),
                             icon: const Icon(Icons.save),
                             label: _saving
                                 ? const SizedBox(
@@ -2023,10 +2282,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                                 : const Text('Сохранить'),
                           ),
                           OutlinedButton.icon(
-                            onPressed: _logButtonPress(
-                              'change own password',
-                              _saving ? null : _changeOwnPassword,
-                            ),
+                            onPressed: _logButtonPress('change own password', _saving ? null : _changeOwnPassword),
                             icon: const Icon(Icons.lock_outline),
                             label: const Text('Сменить пароль'),
                           ),
@@ -2065,13 +2321,11 @@ class _SectionSelectorFieldState extends State<_SectionSelectorField> {
   FocusNode? _focusNode;
 
   Iterable<Section> _buildOptions(TextEditingValue value) {
-    if (!widget.enabled) {
-      return const Iterable<Section>.empty();
-    }
+    if (!widget.enabled) return const Iterable<Section>.empty();
+
     final query = value.text.trim();
-    if (query.isEmpty) {
-      return widget.availableSections;
-    }
+    if (query.isEmpty) return widget.availableSections;
+
     final lowerQuery = query.toLowerCase();
     return widget.availableSections.where(
       (section) =>
@@ -2095,9 +2349,7 @@ class _SectionSelectorFieldState extends State<_SectionSelectorField> {
       displayStringForOption: (option) => option.title,
       onSelected: (value) {
         _fieldController?.clear();
-        if (!widget.enabled) {
-          return;
-        }
+        if (!widget.enabled) return;
         widget.onSectionSelected(value.id);
         _focusNode?.unfocus();
       },
@@ -2114,15 +2366,13 @@ class _SectionSelectorFieldState extends State<_SectionSelectorField> {
             prefixIcon: Icon(Icons.search),
           ),
           onSubmitted: (value) {
-            if (!widget.enabled) {
-              return;
-            }
+            if (!widget.enabled) return;
             final trimmed = value.trim();
-            if (trimmed.isEmpty) {
-              return;
-            }
+            if (trimmed.isEmpty) return;
+
             final normalized = trimmed.toLowerCase();
             Section? match;
+
             for (final section in widget.availableSections) {
               final titleMatch = section.title.toLowerCase() == normalized;
               final idMatch = section.id.toLowerCase() == normalized;
@@ -2131,6 +2381,7 @@ class _SectionSelectorFieldState extends State<_SectionSelectorField> {
                 break;
               }
             }
+
             if (match != null) {
               widget.onSectionSelected(match.id);
               _fieldController?.clear();
@@ -2189,17 +2440,13 @@ class _BinSelectorFieldState extends State<_BinSelectorField> {
   FocusNode? _focusNode;
 
   Iterable<String> _buildOptions(TextEditingValue value) {
-    if (!widget.enabled) {
-      return const Iterable<String>.empty();
-    }
+    if (!widget.enabled) return const Iterable<String>.empty();
+
     final query = value.text.trim();
-    if (query.isEmpty) {
-      return widget.availableBins;
-    }
+    if (query.isEmpty) return widget.availableBins;
+
     final lowerQuery = query.toLowerCase();
-    return widget.availableBins.where(
-      (bin) => bin.toLowerCase().contains(lowerQuery),
-    );
+    return widget.availableBins.where((bin) => bin.toLowerCase().contains(lowerQuery));
   }
 
   @override
@@ -2217,9 +2464,7 @@ class _BinSelectorFieldState extends State<_BinSelectorField> {
       displayStringForOption: (option) => option,
       onSelected: (value) {
         _fieldController?.clear();
-        if (!widget.enabled) {
-          return;
-        }
+        if (!widget.enabled) return;
         unawaited(widget.onBinSelected(value));
         _focusNode?.unfocus();
       },
@@ -2236,13 +2481,10 @@ class _BinSelectorFieldState extends State<_BinSelectorField> {
             prefixIcon: Icon(Icons.search),
           ),
           onSubmitted: (value) {
-            if (!widget.enabled) {
-              return;
-            }
+            if (!widget.enabled) return;
             final trimmed = value.trim();
-            if (trimmed.isEmpty) {
-              return;
-            }
+            if (trimmed.isEmpty) return;
+
             if (widget.availableBins.contains(trimmed)) {
               unawaited(widget.onBinSelected(trimmed));
               _fieldController?.clear();
@@ -2279,54 +2521,50 @@ class _BinSelectorFieldState extends State<_BinSelectorField> {
   }
 }
 
+enum _PendingActionKind { approveAll, rejectAll, approveOne, rejectOne }
+
+class _PendingAction {
+  final _PendingActionKind kind;
+  final PendingRegistration? registration;
+
+  const _PendingAction._(this.kind, this.registration);
+
+  static const approveAll = _PendingAction._(_PendingActionKind.approveAll, null);
+  static const rejectAll = _PendingAction._(_PendingActionKind.rejectAll, null);
+
+  factory _PendingAction.approveOne(PendingRegistration reg) =>
+      _PendingAction._(_PendingActionKind.approveOne, reg);
+
+  factory _PendingAction.rejectOne(PendingRegistration reg) =>
+      _PendingAction._(_PendingActionKind.rejectOne, reg);
+}
+
 int? _parseIntValue(dynamic value) {
-  if (value == null) {
-    return null;
-  }
-  if (value is int) {
-    return value;
-  }
-  if (value is num) {
-    return value.toInt();
-  }
-  if (value is String) {
-    return int.tryParse(value);
-  }
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
   return int.tryParse(value.toString());
 }
 
 double? _parseDoubleValue(dynamic value) {
-  if (value == null) {
-    return null;
-  }
-  if (value is double) {
-    return value;
-  }
-  if (value is int) {
-    return value.toDouble();
-  }
-  if (value is num) {
-    return value.toDouble();
-  }
+  if (value == null) return null;
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  if (value is num) return value.toDouble();
   if (value is String) {
     final normalized = value.replaceAll(',', '.').trim();
-    if (normalized.isEmpty) {
-      return null;
-    }
+    if (normalized.isEmpty) return null;
     return double.tryParse(normalized);
   }
   return double.tryParse(value.toString());
 }
 
 DateTime? _parseDateTime(dynamic value) {
-  if (value == null) {
-    return null;
-  }
-  if (value is DateTime) {
-    return value.toLocal();
-  }
-  if (value is String) {
-    return DateTime.tryParse(value)?.toLocal();
-  }
+  if (value == null) return null;
+  if (value is DateTime) return value.toLocal();
+  if (value is String) return DateTime.tryParse(value)?.toLocal();
   return null;
 }
+
+

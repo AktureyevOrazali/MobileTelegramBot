@@ -1506,7 +1506,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
 
                             // Ключевая логика: если текущий пользователь НЕ админ,
                             // то роль администратора менять нельзя (и pill должен стать серым)
-                            final currentIsAdmin = widget.currentUser.isAdmin;
+                            final currentIsAdmin = widget.currentUser.role == 'admin';
                             if (!currentIsAdmin && _isAdministrator(user)) return true;
 
                             return false;

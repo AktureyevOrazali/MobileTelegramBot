@@ -683,7 +683,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     Widget buildChatAppBar() {
       return AppBar(
         automaticallyImplyLeading: false,
-        title: const Text('Диалоги MobileBot'),
+        title: const Text('Диалоги'),
         actions: [themeButton, logoutButton],
       );
     }
@@ -691,7 +691,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     Widget buildProfileAppBar() {
       return AppBar(
         automaticallyImplyLeading: false,
-        title: const Text('Профиль оператора'),
+        title: const Text('Профиль'),
         actions: [themeButton, logoutButton],
       );
     }

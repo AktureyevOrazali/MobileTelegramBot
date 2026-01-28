@@ -11,6 +11,7 @@ export default function SelectPill({
   searchable,
   style,
   showLabelInside = true,
+  disabled = false,
 }: {
   label: string;
   placeholder?: string;
@@ -20,6 +21,7 @@ export default function SelectPill({
   searchable?: boolean;
   style?: React.CSSProperties;
   showLabelInside?: boolean; // NEW
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -106,16 +108,20 @@ export default function SelectPill({
     <div ref={containerRef} style={{ position: "relative", ...style }}>
       <div
         ref={triggerRef}
-        className="pill"
-        onClick={() => setOpen((v) => !v)}
+        className={`pill${disabled ? " pill--disabled" : ""}`}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((v) => !v);
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-disabled={disabled}
       >
         {showLabelInside && <span className="label">{label}</span>}
         <span className="value">{currentLabel}</span>
         <span className="caret">▾</span>
       </div>
-      {open && (
+      {open && !disabled && (
         <div className="menu" role="listbox" style={menuStyle}>
           {searchable && (
             <input

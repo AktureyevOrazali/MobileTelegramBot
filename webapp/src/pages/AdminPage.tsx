@@ -13,6 +13,7 @@ interface AdminPageProps {
 
 interface UserCardProps {
   user: UserProfile;
+  currentUserRole: string;
   roles: RoleInfo[];
   sections: Section[];
   availableBins: string[];
@@ -71,6 +72,7 @@ const useDebouncedEffect = (fn: () => void, deps: React.DependencyList, delay = 
 
 const AdminUserCard: React.FC<UserCardProps> = ({
   user,
+  currentUserRole,
   roles,
   sections,
   availableBins,
@@ -94,6 +96,8 @@ const AdminUserCard: React.FC<UserCardProps> = ({
   const [pendingExpiresAt, setPendingExpiresAt] = useState<string>('');
   const [binModalError, setBinModalError] = useState<string | null>(null);
   const [editingBin, setEditingBin] = useState<UserBinAssignment | null>(null);
+  const [operatorBinsOpen, setOperatorBinsOpen] = useState(false);
+  const [operatorSectionsOpen, setOperatorSectionsOpen] = useState(false);
 
   const [savingRole, setSavingRole] = useState(false);
   const [savingSections, setSavingSections] = useState(false);
@@ -120,6 +124,8 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     setPendingExpiresAt('');
     setBinModalError(null);
     setEditingBin(null);
+    setOperatorBinsOpen(false);
+    setOperatorSectionsOpen(false);
   }, [user]);
 
   const roleOptions = useMemo(
@@ -169,7 +175,6 @@ const AdminUserCard: React.FC<UserCardProps> = ({
         setSavingRole(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRole]);
 
   const sectionKey = useMemo(() => Array.from(sectionIds).sort().join(','), [sectionIds]);
@@ -333,86 +338,95 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     return () => clearTimeout(t);
   }, [successMessage]);
 
+  const isOperator = user.role === 'operator';
+  const isRoleReadonly = currentUserRole === 'moderator' && user.role !== 'operator';
+  const canManageThisUser = !isRoleReadonly;
+
   return (
     <div className="card admin-user-card">
-      <div className="admin-user-card__grid">
-        <div className="admin-user-card__cell">
-          <div>
-            <h3>{user.name}</h3>
-            <p className="text-muted" style={{ margin: '4px 0' }}>
-              {user.email} · {user.login}
-            </p>
-            <p className="text-muted" style={{ margin: '4px 0', fontSize: '0.85rem' }}>
-              Аккаунт создан: {formatDateTime(user.createdAt)}
-            </p>
-          </div>
-          <div className="flex-gap" style={{ marginTop: 8 }}>
-            <span className="chip">Роль: {roleLabels[user.role] ?? user.role}</span>
-            <span className="chip">Разделов: {sectionIds.size}</span>
-            <span className="chip">БИНов: {assignedBins.length}</span>
-          </div>
-        </div>
+      {/* HEADER: Name and Badge only */}
+      <div className="admin-user-card__header-minimal">
+        <h3 className="admin-user-card__name">{user.name}</h3>
+        <span className="badge">{roleLabels[user.role] ?? user.role}</span>
+      </div>
+      
+      {/* Visual Separator */}
+      <div className="admin-user-card__separator" />
 
-        <div className="admin-user-card__cell">
-          <div>
-            <h4>Роль</h4>
-            <SelectPill
+      {/* INFO ROW: Email and Role Select */}
+      <div className="admin-user-card__info-row">
+        <div className="admin-user-card__email">{user.email}</div>
+        <div className="admin-user-card__role-select">
+           <SelectPill
               label=""
               showLabelInside={false}
               options={roleOptions}
               value={selectedRole}
               onChange={(v) => setSelectedRole(v)}
-              style={{ minWidth: 0 }}
+              style={{ minWidth: 0, width: '100%' }}
+              disabled={isRoleReadonly}
             />
-          </div>
-          {savingRole && <div className="text-muted" style={{ fontSize: 12 }}>Сохраняем…</div>}
         </div>
+      </div>
 
-        <div className="admin-user-card__cell">
-          <div>
-            <h4>Назначенные БИНы</h4>
-            <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
-              {assignedBins.length === 0 && <span className="text-muted">Нет назначенных БИНов</span>}
-              {assignedBins.map((assignment) => (
-                <span
-                  key={assignment.bin}
-                  className="chip bin-chip bin-chip--detailed"
-                  title={
-                    assignment.expiresAt
-                      ? `Действует до ${formatDateTime(assignment.expiresAt)}`
-                      : 'Без ограничения по времени'
-                  }
-                >
-                  <span className="bin-chip__text">
-                    <span className="bin-chip__title">{assignment.bin}</span>
-                    <span className="bin-chip__meta">
-                      {assignment.expiresAt ? `до ${formatDateTime(assignment.expiresAt)}` : 'без срока'}
-                    </span>
-                  </span>
-                  <div className="bin-chip__actions">
-                    <button
-                      className="chip-action"
-                      type="button"
-                      aria-label={`Изменить срок для БИНа ${assignment.bin}`}
-                      onClick={() => openBinModal(assignment.bin, assignment)}
-                    >
-                      ✎
-                    </button>
-                    <button
-                      className="chip-x"
-                      type="button"
-                      aria-label={`Удалить БИН ${assignment.bin}`}
-                      onClick={() => removeBin(assignment.bin)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                </span>
-              ))}
-            </div>
+      {/* Stats/Action Buttons: Full Width Grid */}
+      {isOperator && (
+        <div className="admin-user-card__actions-grid">
+           <button
+              className="button secondary admin-user-card__full-btn"
+              type="button"
+              onClick={() => setOperatorBinsOpen(true)}
+            >
+              БИНы · {assignedBins.length}
+            </button>
+            <button
+              className="button secondary admin-user-card__full-btn"
+              type="button"
+              onClick={() => setOperatorSectionsOpen(true)}
+            >
+              Разделы · {assignedSections.length}
+            </button>
+        </div>
+      )}
+
+      {(error || successMessage) && (
+        <div className="admin-user-card__status">
+          {error && <div className="alert">{error}</div>}
+          {successMessage && <div className="badge">{successMessage}</div>}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className="admin-user-card__footer">
+      {canManageThisUser && (
+        <button
+          className="button secondary small"
+          type="button"
+          onClick={() => { setPwd1(''); setPwd2(''); setPwdErr(null); setPwdOpen(true); }}
+        >
+          Сбросить пароль
+        </button>
+      )}
+
+      <div className="admin-user-card__footer-actions">
+        {canManageThisUser && canDeleteUser && (
+          <button className="button danger small" type="button" onClick={() => onDeleteRequest(user)}>
+            Удалить
+          </button>
+        )}
+      </div>
+    </div>
+
+
+      {/* Operator Bins Modal */}
+      <Modal open={operatorBinsOpen} onClose={() => setOperatorBinsOpen(false)} className="admin-modal__container">
+        <div className="admin-modal">
+          <div className="admin-modal__header">
+            <h3>БИНы оператора</h3>
+            <span className="badge">{user.name}</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div className="label" style={{ fontWeight: 700 }}>Добавить БИН</div>
+          <div className="admin-modal__form">
+            <div className="label">Добавить БИН</div>
             <SelectPill
               label=""
               showLabelInside={false}
@@ -424,19 +438,76 @@ const AdminUserCard: React.FC<UserCardProps> = ({
                   return;
                 }
                 setBinToAdd('');
-                openBinModal(v);
+                openBinModal(v); // Opens date selection but keeps this modal open
               }}
               searchable
-              style={{ minWidth: 0 }}
+              style={{ minWidth: 0, width: '100%' }}
             />
           </div>
-          {savingBins && <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>}
+           <div className="flex-gap admin-modal__list" style={{ marginTop: 12 }}>
+            {assignedBins.length === 0 && <span className="text-muted">Нет назначенных БИНов</span>}
+            {assignedBins.map((assignment) => (
+              <span
+                key={assignment.bin}
+                className="chip bin-chip bin-chip--detailed"
+                title={assignment.expiresAt ? `До ${formatDateTime(assignment.expiresAt)}` : 'Бессрочно'}
+              >
+                <span className="bin-chip__text">
+                  <span className="bin-chip__title">{assignment.bin}</span>
+                  <span className="bin-chip__meta">
+                    {assignment.expiresAt ? `до ${formatDateTime(assignment.expiresAt)}` : 'бессрочно'}
+                  </span>
+                </span>
+              <div className="bin-chip__actions">
+                  <button
+                    className="chip-action"
+                    type="button"
+                    onClick={() => openBinModal(assignment.bin, assignment)}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="chip-x"
+                    type="button"
+                    onClick={() => removeBin(assignment.bin)}
+                  >
+                    ×
+                  </button>
+                </div>
+              </span>
+            ))}
+          </div>
         </div>
+      </Modal>
 
-        <div className="admin-user-card__cell">
-          <div>
-            <h4>Назначенные разделы</h4>
-            <div className="flex-gap" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+      {/* Operator Sections Modal - Improved Design */}
+      <Modal open={operatorSectionsOpen} onClose={() => setOperatorSectionsOpen(false)} className="admin-modal__container">
+        <div className="admin-modal">
+          <div className="admin-modal__header">
+            <h3>Разделы оператора</h3>
+            <span className="badge">{user.name}</span>
+          </div>
+          
+          <div className="admin-modal__form">
+            <div className="label">Добавить раздел</div>
+            <SelectPill
+              label=""
+              showLabelInside={false}
+              options={sectionOptions}
+              value={sectionToAdd}
+              onChange={(v) => {
+                setSectionToAdd(v);
+                if (v) addSection(v);
+                // Intentionally keeps modal open
+              }}
+              searchable
+              style={{ minWidth: 0, width: '100%' }}
+            />
+          </div>
+
+          <div className="admin-modal__list-container">
+             <div className="label" style={{ marginBottom: 8 }}>Назначенные разделы</div>
+             <div className="flex-gap admin-modal__list">
               {assignedSections.length === 0 && (
                 <span className="text-muted">Нет назначенных разделов</span>
               )}
@@ -458,63 +529,18 @@ const AdminUserCard: React.FC<UserCardProps> = ({
               })}
             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div className="label" style={{ fontWeight: 700 }}>Добавить раздел</div>
-            <SelectPill
-              label=""
-              showLabelInside={false}
-              options={sectionOptions}
-              value={sectionToAdd}
-              onChange={(v) => {
-                setSectionToAdd(v);
-                if (v) addSection(v);
-              }}
-              searchable
-              style={{ minWidth: 0 }}
-            />
-          </div>
-          {savingSections && <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>Сохраняем…</div>}
         </div>
-      </div>
-
-       {(error || successMessage) && (
-        <div className="admin-user-card__status">
-          {error && <div className="alert">{error}</div>}
-          {successMessage && <div className="badge">{successMessage}</div>}
-        </div>
-      )}
-
-      <div className="admin-user-card__footer">
-        <button
-          className="button secondary"
-          type="button"
-          onClick={() => { setPwd1(''); setPwd2(''); setPwdErr(null); setPwdOpen(true); }}
-        >
-          Сбросить пароль
-        </button>
-        <div className="admin-user-card__footer-actions">
-          {canDeleteUser && (
-            <button className="button danger" type="button" onClick={() => onDeleteRequest(user)}>
-              Удалить аккаунт
-            </button>
-          )}
-        </div>
-      </div>
+      </Modal>
       
+      {/* Date Selection Modal for Bin */}
       <Modal open={binModalOpen} onClose={closeBinModal} className="bin-modal__container">
         <div className="bin-modal">
           <div className="bin-modal__header">
             <h3>Назначение БИНа</h3>
             {pendingBinValue && <span className="bin-modal__badge">{pendingBinValue}</span>}
           </div>
-          <div className="bin-modal__context">
-            <span className="bin-modal__context-label">Сотрудник</span>
-            <span className="bin-modal__context-value">{user.name}</span>
-          </div>
-          <p className="bin-modal__hint">
-            Выберите, на какой срок закрепить БИН за сотрудником. По окончании срока он вернётся в список
-            неразделенных БИНов.
-          </p>
+          {/* User Context removed as per "remove extra text" philosophy, kept simple */}
+          
           <div className="bin-modal__options">
             <label className={`bin-modal__option ${pendingIndefinite ? 'bin-modal__option--active' : ''}`}>
               <input
@@ -525,10 +551,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
                 onChange={() => handleIndefiniteChange(true)}
               />
               <div className="bin-modal__option-body">
-                <span className="bin-modal__option-title">Без ограничения по времени</span>
-                <span className="bin-modal__option-text">
-                  БИН останется за сотрудником, пока вы не снимете назначение вручную.
-                </span>
+                <span className="bin-modal__option-title">Бессрочно</span>
               </div>
             </label>
             <label className={`bin-modal__option ${!pendingIndefinite ? 'bin-modal__option--active' : ''}`}>
@@ -540,16 +563,13 @@ const AdminUserCard: React.FC<UserCardProps> = ({
                 onChange={() => handleIndefiniteChange(false)}
               />
               <div className="bin-modal__option-body">
-                <span className="bin-modal__option-title">До указанной даты и времени</span>
-                <span className="bin-modal__option-text">
-                  После истечения срока БИН автоматически появится среди неразделенных.
-                </span>
+                <span className="bin-modal__option-title">Временно</span>
               </div>
             </label>
           </div>
           {!pendingIndefinite && (
             <div className="bin-modal__field">
-              <label htmlFor="bin-modal-expires">Дата и время окончания</label>
+              <label htmlFor="bin-modal-expires">Дата окончания</label>
               <input
                 id="bin-modal-expires"
                 className="input"
@@ -575,7 +595,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
         </div>
       </Modal>
 
-      {/* Модалка пароля */}
+      {/* Password Reset Modal */}
       <Modal open={pwdOpen} onClose={() => setPwdOpen(false)}>
         <h3>Сброс пароля</h3>
         <div className="row">
@@ -587,10 +607,10 @@ const AdminUserCard: React.FC<UserCardProps> = ({
           <input className="input" type="password" value={pwd2} onChange={(e) => setPwd2(e.target.value)} />
         </div>
         {pwdErr && <div className="alert error" style={{ marginTop: 6 }}>{pwdErr}</div>}
-        <div className="actions" style={{ justifyContent: 'space-between' }}>
+        <div className="actions" style={{ justifyContent: 'space-between', display: 'flex', marginTop: 12 }}>
           <button className="button secondary" onClick={() => setPwdOpen(false)}>Отмена</button>
           <button className="button" onClick={handlePasswordReset} disabled={savingPassword}>
-            {savingPassword ? 'Сохраняем…' : 'Сбросить пароль'}
+            {savingPassword ? '...' : 'Сбросить'}
           </button>
         </div>
       </Modal>
@@ -606,12 +626,23 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [unassignedBins, setUnassignedBins] = useState<UnassignedBin[]>([]);
   const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
   const [pendingAction, setPendingAction] = useState<number | null>(null);
+  const [pendingModalOpen, setPendingModalOpen] = useState(false);
+  const [pendingBulkAction, setPendingBulkAction] = useState<'approve' | 'reject' | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [assignBinValue, setAssignBinValue] = useState('');
+  const [assignUserId, setAssignUserId] = useState('');
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assignIndefinite, setAssignIndefinite] = useState(true);
+  const [assignExpiresAt, setAssignExpiresAt] = useState('');
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [unassignedBinsModalOpen, setUnassignedBinsModalOpen] = useState(false);
+
 
   const loadAdminData = useCallback(
     async (query?: string) => {
@@ -699,6 +730,40 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
     );
   }, [users, search]);
 
+  const assignableUsers = useMemo(
+    () => users.filter((user) => user.isApproved && user.role === 'operator'),
+    [users],
+  );
+
+  const assignUserOptions = useMemo(
+    () =>
+      [{ value: '', label: 'Выберите сотрудника' }].concat(
+        assignableUsers.map((user) => ({
+          value: String(user.id),
+          label: user.name,
+          meta: user.email,
+        })),
+      ),
+    [assignableUsers],
+  );
+
+  const assignBinOptions = useMemo(
+    () =>
+      [{ value: '', label: 'Выберите БИН' }].concat(
+        unassignedBins.map((bin) => ({
+          value: bin.bin,
+          label: bin.bin,
+          meta: bin.openDialogs > 0 ? `${bin.openDialogs} ${pluralizeDialogs(bin.openDialogs)}` : 'без диалогов',
+        })),
+      ),
+    [unassignedBins],
+  );
+
+  const selectedAssignUser = useMemo(
+    () => assignableUsers.find((user) => String(user.id) === assignUserId) ?? null,
+    [assignableUsers, assignUserId],
+  );
+
   const handlePendingApprove = useCallback(
     async (userId: number) => {
       setPendingAction(userId);
@@ -731,6 +796,96 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
     [apiClient],
   );
 
+  const handlePendingBulkAction = useCallback(
+    async (action: 'approve' | 'reject') => {
+      if (pendingRegistrations.length === 0) return;
+      setPendingBulkAction(action);
+      try {
+        if (action === 'approve') {
+          const approved = await Promise.all(
+            pendingRegistrations.map((item) => apiClient.approveRegistration(item.id)),
+          );
+          setUsers((prev) => {
+            const map = new Map(prev.map((user) => [user.id, user]));
+            approved.forEach((user) => map.set(user.id, user));
+            return Array.from(map.values());
+          });
+        } else {
+          await Promise.all(pendingRegistrations.map((item) => apiClient.rejectRegistration(item.id)));
+          const ids = new Set(pendingRegistrations.map((item) => item.id));
+          setUsers((prev) => prev.filter((user) => !ids.has(user.id)));
+        }
+        setPendingRegistrations([]);
+      } catch (err) {
+        console.error('Не удалось выполнить массовое действие', err);
+      } finally {
+        setPendingBulkAction(null);
+      }
+    },
+    [apiClient, pendingRegistrations],
+  );
+
+  const openAssignModal = () => {
+    setAssignIndefinite(true);
+    setAssignExpiresAt('');
+    setAssignError(null);
+    setAssignModalOpen(true);
+  };
+
+  const closeAssignModal = () => {
+    if (assignLoading) return;
+    setAssignModalOpen(false);
+    setAssignIndefinite(true);
+    setAssignExpiresAt('');
+    setAssignError(null);
+  };
+
+  const handleAssignIndefiniteChange = (checked: boolean) => {
+    setAssignIndefinite(checked);
+    if (checked) {
+      setAssignExpiresAt('');
+      setAssignError(null);
+    } else {
+      setAssignExpiresAt(formatDateTimeLocalInput(new Date(Date.now() + 60 * 60 * 1000)));
+      setAssignError(null);
+    }
+  };
+
+  const handleAssignBin = async () => {
+    if (!assignBinValue || !selectedAssignUser) return;
+    let expiresAt: Date | null = null;
+    if (!assignIndefinite) {
+      const parsed = parseDateTimeLocalInput(assignExpiresAt);
+      if (!parsed) {
+        setAssignError('Укажите корректные дату и время окончания.');
+        return;
+      }
+      expiresAt = parsed;
+    }
+    setAssignLoading(true);
+    setAssignError(null);
+    try {
+      const current = selectedAssignUser.bins.map(cloneAssignment);
+      const next = [
+        ...current.filter((assignment) => assignment.bin !== assignBinValue),
+        {
+          bin: assignBinValue,
+          assignedAt: new Date(),
+          expiresAt,
+          assignedBy: currentUser.id,
+        },
+      ].sort((a, b) => a.bin.localeCompare(b.bin));
+      await handleBinsSave(selectedAssignUser.id, next);
+      setAssignBinValue('');
+      setAssignUserId('');
+      closeAssignModal();
+    } catch (err) {
+      setAssignError(err instanceof ApiError ? err.message : (err as Error)?.message ?? 'Не удалось назначить БИН');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
   const handleConfirmDelete = useCallback(async () => {
     if (!userToDelete) return;
     setDeleteLoading(true);
@@ -748,76 +903,55 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   }, [apiClient, userToDelete]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <h3 style={{ margin: 0 }}>Неразделенные БИНы</h3>
-        {unassignedBins.length === 0 ? (
+    <div className="admin-page">
+      {/* Unassigned Bins - Compact like Pending Registrations */}
+      <div className="card admin-section">
+        <div className="admin-section__header">
+          <div>
+            <h3>Неразделенные БИНы</h3>
+          </div>
+
+          <button
+            className="admin-section__count admin-section__count--button"
+            type="button"
+            onClick={() => setUnassignedBinsModalOpen(true)}
+            disabled={unassignedBins.length === 0}
+          >
+            {unassignedBins.length}
+          </button>
+        </div>
+
+        {unassignedBins.length === 0 && (
           <span className="text-muted">Все активные БИНы закреплены за сотрудниками.</span>
-        ) : (
-          <div className="flex-gap pending-bins-list" style={{ flexWrap: 'wrap' }}>
-            {unassignedBins.map((item) => (
-              <span key={item.bin} className="chip bin-chip pending-bin-chip">
-                <span className="bin-chip__title">{item.bin}</span>
-                <span className="bin-chip__meta">
-                  {item.openDialogs > 0
-                    ? `${item.openDialogs} ${pluralizeDialogs(item.openDialogs)} без закрепленного сотрудника`
-                    : 'нет активных диалогов'}
-                </span>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <h3 style={{ margin: 0 }}>Регистрации на подтверждение</h3>
-        {pendingRegistrations.length === 0 ? (
-          <span className="text-muted">Нет заявок на регистрацию.</span>
-        ) : (
-          <div className="flex-gap pending-bins-list" style={{ flexWrap: 'wrap' }}>
-            {pendingRegistrations.map((item) => (
-              <div key={item.id} className="chip bin-chip pending-bin-chip pending-registration-chip">
-                <div className="pending-registration-chip__content">
-                  <span className="bin-chip__title">{item.name}</span>
-                  <span className="bin-chip__meta">{item.email}</span>
-                  <span className="bin-chip__meta">{formatDateTime(item.createdAt)}</span>
-                </div>
-                <div className="pending-registration-chip__actions">
-                  <button
-                    className="button"
-                    type="button"
-                    disabled={pendingAction === item.id}
-                    onClick={() => handlePendingApprove(item.id)}
-                  >
-                    Подтвердить
-                  </button>
-                  <button
-                    className="button secondary"
-                    type="button"
-                    disabled={pendingAction === item.id}
-                    onClick={() => handlePendingReject(item.id)}
-                  >
-                    Отклонить
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
         )}
       </div>
 
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+      
+      {/* Pending Registrations - Compact */}
+      <div className="card admin-section">
+        <div className="admin-section__header">
+          <div>
+            <h3>Регистрации</h3>
+          </div>
+          <button
+            className="admin-section__count admin-section__count--button"
+            type="button"
+            onClick={() => setPendingModalOpen(true)}
+            disabled={pendingRegistrations.length === 0}
+          >
+            {pendingRegistrations.length}
+          </button>
+        </div>
+      </div>
+
+      <div className="card admin-search">
+        <div className="admin-search__row">
           <input
             className="input"
             placeholder="Поиск по имени, логину или e-mail"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            style={{ flex: '1 1 420px' }}
           />
-        </div>
-        <div className="text-muted" style={{ fontSize: '0.9rem' }}>
-          Вы вошли как {currentUser.name} ({roleLabels[currentUser.role] ?? currentUser.role}). Всего пользователей: {filteredUsers.length} · Доступные БИНы: {bins.length}
         </div>
       </div>
 
@@ -835,36 +969,38 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       ) : filteredUsers.length === 0 ? (
         <div className="card" style={{ textAlign: 'center' }}>
           <h3>Пользователи не найдены</h3>
-          <p className="text-muted">Измените параметры поиска или создайте нового пользователя в мобильном приложении.</p>
         </div>
       ) : (
-        filteredUsers.map((user) => (
-          <AdminUserCard
-            key={user.id}
-            user={user}
-            roles={roles}
-            sections={sections}
-            availableBins={bins}
-            onRoleSave={handleRoleSave}
-            onSectionsSave={handleSectionsSave}
-            onBinsSave={handleBinsSave}
-            onPasswordReset={handlePasswordReset}
-            canDeleteUser={currentUser.id !== user.id}
-            onDeleteRequest={(selectedUser) => {
-              setDeleteError(null);
-              setUserToDelete(selectedUser);
-            }}
-          />
-        ))
+        <div className="admin-user-grid">
+          {filteredUsers.map((user) => (
+            <AdminUserCard
+              key={user.id}
+              user={user}
+              currentUserRole={currentUser.role}
+              roles={roles}
+              sections={sections}
+              availableBins={bins}
+              onRoleSave={handleRoleSave}
+              onSectionsSave={handleSectionsSave}
+              onBinsSave={handleBinsSave}
+              onPasswordReset={handlePasswordReset}
+              canDeleteUser={currentUser.id !== user.id}
+              onDeleteRequest={(selectedUser) => {
+                setDeleteError(null);
+                setUserToDelete(selectedUser);
+              }}
+            />
+          ))}
+        </div>
       )}
 
       <ConfirmModal
         open={Boolean(userToDelete)}
-        title="Удалить аккаунт сотрудника?"
+        title="Удалить аккаунт?"
         description={
           userToDelete && (
             <>
-              Аккаунт <strong>{userToDelete.name}</strong> ({userToDelete.email}) будет удалён навсегда.
+              Аккаунт <strong>{userToDelete.name}</strong> будет удалён навсегда.
               {deleteError && <p className="alert error" style={{ marginTop: 12 }}>{deleteError}</p>}
             </>
           )
@@ -880,6 +1016,201 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
         }}
         onConfirm={handleConfirmDelete}
       />
+
+      {/* Pending Registrations Modal - Improved Header Actions */}
+      <Modal open={pendingModalOpen} onClose={() => setPendingModalOpen(false)} className="admin-modal__container">
+        <div className="admin-modal">
+          <div className="admin-modal__header">
+            <h3>Заявки ({pendingRegistrations.length})</h3>
+             <div className="admin-modal__header-actions">
+                <button
+                  className="button secondary small"
+                  type="button"
+                  disabled={pendingRegistrations.length === 0 || pendingBulkAction !== null}
+                  onClick={() => handlePendingBulkAction('reject')}
+                >
+                  Отклонить все
+                </button>
+                 <button
+                  className="button small"
+                  type="button"
+                  disabled={pendingRegistrations.length === 0 || pendingBulkAction !== null}
+                  onClick={() => handlePendingBulkAction('approve')}
+                >
+                  Принять все
+                </button>
+            </div>
+          </div>
+          
+          <div className="admin-modal__list admin-modal__list--stack">
+            {pendingRegistrations.length === 0 ? (
+              <span className="text-muted">Нет новых заявок.</span>
+            ) : (
+              pendingRegistrations.map((item) => (
+                <div key={item.id} className="pending-registration-card">
+                  <div>
+                    <div className="pending-registration-card__name">{item.name}</div>
+                    <div className="pending-registration-card__meta">{item.email}</div>
+                  </div>
+                  <div className="pending-registration-card__actions">
+                    <button
+                      className="button small"
+                      type="button"
+                      disabled={pendingAction === item.id || pendingBulkAction !== null}
+                      onClick={() => handlePendingApprove(item.id)}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      className="button secondary small"
+                      type="button"
+                      disabled={pendingAction === item.id || pendingBulkAction !== null}
+                      onClick={() => handlePendingReject(item.id)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Unassigned Bins Modal */}
+      <Modal
+        open={unassignedBinsModalOpen}
+        onClose={() => setUnassignedBinsModalOpen(false)}
+        className="admin-modal__container"
+      >
+        <div className="admin-modal">
+          <div className="admin-modal__header">
+            <h3>Неразделенные БИНы ({unassignedBins.length})</h3>
+          </div>
+
+          {unassignedBins.length === 0 ? (
+            <span className="text-muted">Нет доступных БИНов.</span>
+          ) : (
+            <>
+              <div className="admin-assign-grid">
+                <div className="admin-assign-grid__item">
+                  <SelectPill
+                    label=""
+                    showLabelInside={false}
+                    options={assignBinOptions}
+                    value={assignBinValue}
+                    onChange={(value) => setAssignBinValue(value)}
+                    searchable
+                    style={{ minWidth: 0, width: '100%' }}
+                  />
+                </div>
+
+                <div className="admin-assign-grid__item">
+                  <SelectPill
+                    label=""
+                    showLabelInside={false}
+                    options={assignUserOptions}
+                    value={assignUserId}
+                    onChange={(value) => setAssignUserId(value)}
+                    searchable
+                    style={{ minWidth: 0, width: '100%' }}
+                  />
+                </div>
+
+                <button
+                  className="button admin-assign-grid__btn"
+                  type="button"
+                  disabled={!assignBinValue || !assignUserId}
+                  onClick={() => {
+                    setUnassignedBinsModalOpen(false); // чтобы не было "модалка на модалке"
+                    openAssignModal();
+                  }}
+                >
+                  Назначить
+                </button>
+              </div>
+
+              <div className="admin-section__list">
+                {unassignedBins.map((item) => (
+                  <span key={item.bin} className="chip bin-chip pending-bin-chip">
+                    <span className="bin-chip__title">{item.bin}</span>
+                    <span className="bin-chip__meta">
+                      {item.openDialogs > 0
+                        ? `${item.openDialogs} ${pluralizeDialogs(item.openDialogs)}`
+                        : 'нет диалогов'}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+
+      <Modal open={assignModalOpen} onClose={closeAssignModal} className="bin-modal__container">
+        <div className="bin-modal">
+          <div className="bin-modal__header">
+            <h3>Назначение БИНа</h3>
+          </div>
+          <div className="bin-modal__options">
+            <label className={`bin-modal__option ${assignIndefinite ? 'bin-modal__option--active' : ''}`}>
+              <input
+                className="bin-modal__radio"
+                type="radio"
+                name="assign-bin-duration"
+                checked={assignIndefinite}
+                onChange={() => handleAssignIndefiniteChange(true)}
+              />
+              <div className="bin-modal__option-body">
+                <span className="bin-modal__option-title">Бессрочно</span>
+              </div>
+            </label>
+            <label className={`bin-modal__option ${!assignIndefinite ? 'bin-modal__option--active' : ''}`}>
+              <input
+                className="bin-modal__radio"
+                type="radio"
+                name="assign-bin-duration"
+                checked={!assignIndefinite}
+                onChange={() => handleAssignIndefiniteChange(false)}
+              />
+              <div className="bin-modal__option-body">
+                <span className="bin-modal__option-title">Временно</span>
+              </div>
+            </label>
+          </div>
+          {!assignIndefinite && (
+            <div className="bin-modal__field">
+              <label htmlFor="assign-bin-expires">Дата окончания</label>
+              <input
+                id="assign-bin-expires"
+                className="input"
+                type="datetime-local"
+                value={assignExpiresAt}
+                min={formatDateTimeLocalInput(new Date())}
+                onChange={(event) => {
+                  setAssignExpiresAt(event.target.value);
+                  if (assignError) setAssignError(null);
+                }}
+              />
+            </div>
+          )}
+          {assignError && <div className="alert error" style={{ marginTop: 6 }}>{assignError}</div>}
+          <div className="bin-modal__actions">
+            <button className="button secondary" type="button" onClick={closeAssignModal} disabled={assignLoading}>
+              Отмена
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={handleAssignBin}
+              disabled={!assignBinValue || !assignUserId || assignLoading}
+            >
+              {assignLoading ? '...' : 'Назначить'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -127,166 +127,354 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
     };
   }
 
-  Future<void> _openUserBinsSheet({
-  required ThemeData theme,
-  required UserProfile user,
-  required List<String> allAvailableBins,
-  required bool isUpdating,
-  required bool isDeleting,
-}) async {
-  if (!_canManageBinsFor(user)) return;
+  bool _canManageSectionsFor(UserProfile user) {
+    // Логика такая же как для БИНов (по твоему правилу):
+    // нельзя управлять админом и модератором
+    if (user.isAdmin) return false;
+    if (_isModerator(user)) return false;
+    return true;
+  }
 
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (sheetContext) {
-      final bottom = MediaQuery.of(sheetContext).viewInsets.bottom;
+  Future<void> _confirmRemoveSection(UserProfile user, String sectionId) async {
+    final theme = Theme.of(context);
 
-      final availableToAdd = allAvailableBins
-          .where((bin) => user.binAssignments.every((a) => a.bin != bin))
-          .toList()
-        ..sort();
+    final match = _availableSections.firstWhere(
+      (s) => s.id == sectionId,
+      orElse: () => Section(id: sectionId, title: sectionId),
+    );
 
-      return SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, bottom + 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('БИНы сотрудника', style: theme.textTheme.titleLarge),
-              const SizedBox(height: 6),
-              Text(
-                user.name,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+    final confirmed = await showThemedDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Удалить раздел у сотрудника?'),
+          content: Text('Раздел "${match.title}" будет снят с сотрудника.'),
+          actions: [
+            TextButton(
+              onPressed: _logButtonPress(
+                'cancel remove section',
+                () => Navigator.of(dialogContext).pop(false),
               ),
-              const SizedBox(height: 12),
-
-              // ADD BIN (selector)
-              _BinSelectorField(
-                key: ValueKey('bins-sheet-add-${user.id}-${user.binAssignments.length}-${availableToAdd.length}'),
-                availableBins: availableToAdd,
-                enabled: !(isUpdating || isDeleting) && availableToAdd.isNotEmpty,
-                onBinSelected: (value) async {
-                  if (value.isEmpty) return;
-
-                  final assignment = await _showBinAssignmentSheet(user: user, bin: value);
-                  if (assignment == null) return;
-
-                  final next = List<UserBinAssignment>.from(user.binAssignments)..add(assignment);
-                  await _updateUserBins(user, next);
-
-                  if (!mounted) return;
-                  Navigator.of(sheetContext).pop(); // закрываем, чтобы карточка обновилась
-                },
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: _logButtonPress(
+                'confirm remove section',
+                () => Navigator.of(dialogContext).pop(true),
               ),
+              style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
+              child: const Text('Удалить'),
+            ),
+          ],
+        );
+      },
+    );
 
-              const SizedBox(height: 12),
+    if (confirmed != true) return;
 
-              // LIST
-              if (user.binAssignments.isEmpty)
+    final next = Set<String>.from(user.sections)..remove(sectionId);
+    await _updateUserSections(user, next);
+  }
+
+  Future<void> _openUserSectionsSheet({
+    required ThemeData theme,
+    required UserProfile user,
+    required List<Section> allAvailableSections,
+    required bool isUpdating,
+    required bool isDeleting,
+  }) async {
+    if (!_canManageSectionsFor(user)) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final bottom = MediaQuery.of(sheetContext).viewInsets.bottom;
+
+        final availableToAdd = allAvailableSections
+            .where((s) => !user.sections.contains(s.id))
+            .toList()
+          ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 14, 16, bottom + 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Разделы сотрудника', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 6),
                 Text(
-                  'БИНы не назначены.',
-                  style: theme.textTheme.bodySmall?.copyWith(
+                  user.name,
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
-                )
-              else
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 420),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: user.binAssignments.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final assignment = user.binAssignments[index];
-                      final expiresLabel = assignment.expiresAt != null
-                          ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
-                          : 'без срока';
+                ),
+                const SizedBox(height: 12),
 
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: theme.colorScheme.outlineVariant.withOpacity(0.55),
+                // ADD SECTION (selector)
+                _SectionSelectorField(
+                  key: ValueKey(
+                    'sections-sheet-add-${user.id}-${user.sections.length}-${availableToAdd.length}',
+                  ),
+                  availableSections: availableToAdd,
+                  enabled: !(isUpdating || isDeleting) && availableToAdd.isNotEmpty,
+                  onSectionSelected: (sectionId) async {
+                    if (sectionId.isEmpty) return;
+
+                    final next = Set<String>.from(user.sections)..add(sectionId);
+                    await _updateUserSections(user, next);
+
+                    if (!mounted) return;
+                    Navigator.of(sheetContext).pop(); // закрываем, чтобы карточка обновилась
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                // LIST
+                if (user.sections.isEmpty)
+                  Text(
+                    'Разделы не назначены.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 420),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: user.sections.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final sectionId = user.sections[index];
+                        final section = allAvailableSections.firstWhere(
+                          (s) => s.id == sectionId,
+                          orElse: () => Section(id: sectionId, title: sectionId),
+                        );
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant.withOpacity(0.55),
+                            ),
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    assignment.bin,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    expiresLabel,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      section.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      section.id,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            IconButton(
-                              tooltip: 'Изменить срок',
-                              onPressed: (isUpdating || isDeleting)
-                                  ? null
-                                  : () async {
-                                      final updatedAssignment = await _showBinAssignmentSheet(
-                                        user: user,
-                                        bin: assignment.bin,
-                                        current: assignment,
-                                      );
-                                      if (updatedAssignment == null) return;
+                              const SizedBox(width: 10),
+                              IconButton(
+                                tooltip: 'Удалить раздел',
+                                onPressed: (isUpdating || isDeleting)
+                                    ? null
+                                    : () async {
+                                        await _confirmRemoveSection(user, sectionId);
+                                        if (!mounted) return;
+                                        Navigator.of(sheetContext).pop();
+                                      },
+                                color: theme.colorScheme.error,
+                                icon: const Icon(Icons.delete_outline),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
-                                      final updatedAssignments = user.binAssignments
-                                          .map((item) => item.bin == assignment.bin ? updatedAssignment : item)
-                                          .toList();
-                                      await _updateUserBins(user, updatedAssignments);
+  Future<void> _openUserBinsSheet({
+    required ThemeData theme,
+    required UserProfile user,
+    required List<String> allAvailableBins,
+    required bool isUpdating,
+    required bool isDeleting,
+  }) async {
+    if (!_canManageBinsFor(user)) return;
 
-                                      if (!mounted) return;
-                                      Navigator.of(sheetContext).pop();
-                                    },
-                              icon: const Icon(Icons.edit_calendar_outlined),
-                            ),
-                            IconButton(
-                              tooltip: 'Удалить БИН',
-                              onPressed: (isUpdating || isDeleting)
-                                  ? null
-                                  : () async {
-                                      await _confirmRemoveBin(user, assignment);
-                                      if (!mounted) return;
-                                      Navigator.of(sheetContext).pop();
-                                    },
-                              color: theme.colorScheme.error,
-                              icon: const Icon(Icons.delete_outline),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final bottom = MediaQuery.of(sheetContext).viewInsets.bottom;
+
+        final availableToAdd = allAvailableBins
+            .where((bin) => user.binAssignments.every((a) => a.bin != bin))
+            .toList()
+          ..sort();
+
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 14, 16, bottom + 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('БИНы сотрудника', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 6),
+                Text(
+                  user.name,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-            ],
+                const SizedBox(height: 12),
+
+                // ADD BIN (selector)
+                _BinSelectorField(
+                  key: ValueKey('bins-sheet-add-${user.id}-${user.binAssignments.length}-${availableToAdd.length}'),
+                  availableBins: availableToAdd,
+                  enabled: !(isUpdating || isDeleting) && availableToAdd.isNotEmpty,
+                  onBinSelected: (value) async {
+                    if (value.isEmpty) return;
+
+                    final assignment = await _showBinAssignmentSheet(user: user, bin: value);
+                    if (assignment == null) return;
+
+                    final next = List<UserBinAssignment>.from(user.binAssignments)..add(assignment);
+                    await _updateUserBins(user, next);
+
+                    if (!mounted) return;
+                    Navigator.of(sheetContext).pop(); // закрываем, чтобы карточка обновилась
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                // LIST
+                if (user.binAssignments.isEmpty)
+                  Text(
+                    'БИНы не назначены.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 420),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: user.binAssignments.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final assignment = user.binAssignments[index];
+                        final expiresLabel = assignment.expiresAt != null
+                            ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
+                            : 'без срока';
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant.withOpacity(0.55),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      assignment.bin,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      expiresLabel,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              IconButton(
+                                tooltip: 'Изменить срок',
+                                onPressed: (isUpdating || isDeleting)
+                                    ? null
+                                    : () async {
+                                        final updatedAssignment = await _showBinAssignmentSheet(
+                                          user: user,
+                                          bin: assignment.bin,
+                                          current: assignment,
+                                        );
+                                        if (updatedAssignment == null) return;
+
+                                        final updatedAssignments = user.binAssignments
+                                            .map((item) => item.bin == assignment.bin ? updatedAssignment : item)
+                                            .toList();
+                                        await _updateUserBins(user, updatedAssignments);
+
+                                        if (!mounted) return;
+                                        Navigator.of(sheetContext).pop();
+                                      },
+                                icon: const Icon(Icons.edit_calendar_outlined),
+                              ),
+                              IconButton(
+                                tooltip: 'Удалить БИН',
+                                onPressed: (isUpdating || isDeleting)
+                                    ? null
+                                    : () async {
+                                        await _confirmRemoveBin(user, assignment);
+                                        if (!mounted) return;
+                                        Navigator.of(sheetContext).pop();
+                                      },
+                                color: theme.colorScheme.error,
+                                icon: const Icon(Icons.delete_outline),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
   Future<void> refreshAdminData({bool showLoading = true}) async {
     if (showLoading) {
@@ -1539,27 +1727,54 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                     if (_canManageBinsFor(user)) ...[
                       const SizedBox(height: 14),
 
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          icon: const Icon(Icons.apartment_outlined),
-                          label: Text('БИНы: ${user.binAssignments.length}'),
-                          onPressed: (isUpdating || isDeleting)
-                              ? null
-                              : _logButtonPress(
-                                  'open user bins sheet',
-                                  () => _openUserBinsSheet(
-                                    theme: theme,
-                                    user: user,
-                                    allAvailableBins: allAvailableBins,
-                                    isUpdating: isUpdating,
-                                    isDeleting: isDeleting,
-                                  ),
-                                ),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 46,
+                              child: FilledButton.icon(
+                                icon: const Icon(Icons.dashboard_customize_outlined),
+                                label: Text('Разделы: ${user.sections.length}'),
+                                onPressed: (isUpdating || isDeleting)
+                                    ? null
+                                    : _logButtonPress(
+                                        'open user sections sheet',
+                                        () => _openUserSectionsSheet(
+                                          theme: theme,
+                                          user: user,
+                                          allAvailableSections: _availableSections,
+                                          isUpdating: isUpdating,
+                                          isDeleting: isDeleting,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: SizedBox(
+                              height: 46,
+                              child: FilledButton.icon(
+                                icon: const Icon(Icons.apartment_outlined),
+                                label: Text('БИНы: ${user.binAssignments.length}'),
+                                onPressed: (isUpdating || isDeleting)
+                                    ? null
+                                    : _logButtonPress(
+                                        'open user bins sheet',
+                                        () => _openUserBinsSheet(
+                                          theme: theme,
+                                          user: user,
+                                          allAvailableBins: allAvailableBins,
+                                          isUpdating: isUpdating,
+                                          isDeleting: isDeleting,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
-
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
@@ -1575,7 +1790,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
 
                     const SizedBox(height: 8),
                     Text(
-                      (isUpdating || isDeleting) ? 'Сохраняем изменения…' : 'Изменения сохраняются автоматически',
+                      (isUpdating) ? 'Сохраняем изменения…' : '',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -1584,7 +1799,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          'Нельзя изменять собственную роль администратора.',
+                          'Нельзя изменять собственную роль',
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
                         ),
                       ),
@@ -1640,6 +1855,7 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
 
+  bool _jobTitleEditedManually = false;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -1653,7 +1869,12 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   void initState() {
     super.initState();
     _nameController.addListener(_handleProfileHeaderChange);
-    _jobTitleController.addListener(_handleProfileHeaderChange);
+
+    _jobTitleController.addListener(() {
+      _jobTitleEditedManually = true; // если человек начал править — больше не автозаполняем
+      _handleProfileHeaderChange();
+    });
+
     _loadSavedProfileImage();
     refreshProfile();
   }
@@ -1706,7 +1927,15 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
       _nameController.text = profile.name;
       _emailController.text = profile.email;
       _loginController.text = profile.login;
-      _jobTitleController.text = profile.jobTitle;
+      final serverJobTitle = profile.jobTitle.trim();
+      final autoRoleTitle = profile.roleLabel.trim();
+
+      // автозаполняем только если на сервере пусто И пользователь ещё не трогал поле
+      final shouldAutoFill = serverJobTitle.isEmpty && !_jobTitleEditedManually;
+
+      _jobTitleController.text = shouldAutoFill ? autoRoleTitle : profile.jobTitle;
+      _jobTitleEditedManually = false;
+
       _phoneController.text = profile.phone;
       _bioController.text = profile.bio;
 
@@ -1735,9 +1964,12 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     });
 
     try {
+      final jobTitleText = _jobTitleController.text.trim();
+      final effectiveJobTitle = jobTitleText.isNotEmpty ? jobTitleText : (_profile?.roleLabel.trim() ?? '');
+
       final updated = await widget.apiClient.updateProfile(
         name: _nameController.text.trim(),
-        jobTitle: _jobTitleController.text.trim(),
+        jobTitle: effectiveJobTitle,
         phone: _phoneController.text.trim(),
         bio: _bioController.text.trim(),
       );
@@ -2263,32 +2495,35 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
                         child: Text(_successMessage!, style: const TextStyle(color: Colors.green)),
                       ),
                     const SizedBox(height: 12),
-                    Center(
-                      child: Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        alignment: WrapAlignment.center,
-                        runAlignment: WrapAlignment.center,
+                      Column(
                         children: [
-                          ElevatedButton.icon(
-                            onPressed: _logButtonPress('save profile changes', _saving ? null : _save),
-                            icon: const Icon(Icons.save),
-                            label: _saving
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Text('Сохранить'),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 46,
+                            child: ElevatedButton.icon(
+                              onPressed: _logButtonPress('save profile changes', _saving ? null : _save),
+                              icon: _saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.save),
+                              label: Text(_saving ? 'Сохраняем…' : 'Сохранить'),
+                            ),
                           ),
-                          OutlinedButton.icon(
-                            onPressed: _logButtonPress('change own password', _saving ? null : _changeOwnPassword),
-                            icon: const Icon(Icons.lock_outline),
-                            label: const Text('Сменить пароль'),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 46,
+                            child: OutlinedButton.icon(
+                              onPressed: _logButtonPress('change own password', _saving ? null : _changeOwnPassword),
+                              icon: const Icon(Icons.lock_outline),
+                              label: const Text('Сменить пароль'),
+                            ),
                           ),
                         ],
                       ),
-                    ),
                   ],
                 ),
               ),

@@ -92,7 +92,7 @@ class _DashboardViewState extends State<DashboardView> {
       if (!mounted) return;
 
       final filtered = users
-          .where((user) => !user.isAdmin && (user.role == 'moderator' || user.role == 'operator'))
+          .where((user) => !user.isAdmin && (user.role == 'moderator' || user.role == 'viewer'))
           .where((user) {
             final normalized = ('${user.name} ${user.login}').toLowerCase();
             if (normalized.trim().isEmpty) return true;

@@ -262,6 +262,12 @@ input, textarea, select { font-family: inherit; }
   font-weight:500;
 }
 .pill .caret{margin-left:2px;opacity:.7}
+.pill--disabled{
+  opacity:.6;
+  cursor:not-allowed;
+  box-shadow:none;
+}
+.pill--disabled:hover{box-shadow:none}
 
 /* menu */
 .menu{
@@ -905,67 +911,175 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 }
 .dialog-meta { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.admin-user-card {
+.admin-page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
+  margin-bottom: 48px;
 }
 
-.admin-user-card__grid {
+.admin-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-section__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.admin-section__header h3 {
+  margin: 0;
+}
+
+.admin-section__header p {
+  margin: 4px 0 0;
+}
+
+.admin-section__count {
+  min-width: 44px;
+  height: 36px;
+  border-radius: 999px;
   display: grid;
-  gap: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  border: 1px solid var(--border-strong);
-  border-radius: 20px;
-  overflow: hidden;
+  place-items: center;
   background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  font-weight: 600;
+  color: var(--text-heading);
 }
 
-.admin-user-card__cell {
-  background: var(--surface-color);
-  border: none;
-  border-radius: 0;
-  padding: 18px;
+.admin-section__count--button {
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.admin-section__count--button:hover:not(:disabled) {
+  box-shadow: 0 0 0 4px var(--input-ring);
+  border-color: var(--brand-color);
+}
+
+.admin-section__count--button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.admin-section__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-assign {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.admin-assign__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-search {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 0;
-  height: 100%;
 }
 
-.admin-user-card__cell:nth-child(-n + 2) {
-  border-bottom: 1px solid var(--border-color);
+.admin-search__row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
-.admin-user-card__cell:nth-child(odd) {
-  border-right: 1px solid var(--border-color);
+.admin-search__row .input {
+  flex: 1 1 420px;
 }
 
-.admin-user-card__cell > *:last-child {
-  margin-bottom: 0;
+.admin-search__meta {
+  font-size: 0.9rem;
 }
 
-@media (max-width: 960px) {
-  .admin-user-card__grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: none;
-    border-radius: 18px;
-  }
-
-  .admin-user-card__cell {
-    border-right: none;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .admin-user-card__cell:last-child {
-    border-bottom: none;
-  }
+.admin-user-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
 }
 
-.admin-user-card__cell h3,
-.admin-user-card__cell h4 {
+.admin-user-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+  .admin-user-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.admin-user-card__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin-user-card__title-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.admin-user-card__title-row h3 {
   margin: 0;
+}
+
+.admin-user-card__meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.admin-user-card__meta--small {
+  font-size: 0.8rem;
+}
+
+.admin-user-card__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.admin-user-card__control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.admin-user-card__control--stats {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-user-card__control--info {
+  max-width: 240px;
+  text-align: right;
+}
+
+.admin-user-card__stat-button {
+  white-space: nowrap;
 }
 
 .admin-user-card__footer {
@@ -989,6 +1103,106 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.admin-modal__container {
+  width: min(92vw, 560px);
+  padding: 0;
+}
+
+.admin-modal {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.admin-modal__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-modal__list--stack {
+  flex-direction: column;
+}
+
+.admin-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pending-registration-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft-color);
+}
+
+.pending-registration-card__name {
+  font-weight: 600;
+}
+
+.pending-registration-card__meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.pending-registration-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 960px) {
+  .admin-user-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-user-card__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-user-card__controls {
+    align-items: flex-start;
+  }
+
+  .admin-user-card__control--info {
+    text-align: left;
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-assign {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-section__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pending-registration-card {
+    flex-direction: column;
+  }
 }
 
 .profile-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
@@ -1581,4 +1795,360 @@ html, body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
 .dashboard-table th,
 .dashboard-table td{
   white-space: nowrap;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  color-scheme: light;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background-color: #f6f7fb;
+  color: #1b1d29;
+  --background-color: #f6f7fb;
+  --surface-color: #ffffff;
+  --surface-soft-color: rgba(62, 90, 168, 0.06);
+  --text-color: #1b1d29;
+  --text-muted: #636b8a;
+  --text-heading: #253263;
+  --border-color: rgba(37, 50, 99, 0.08);
+  --brand-color: #3e5aa8;
+  --brand-hover: #324a8a;
+  --text-on-brand: #ffffff;
+  --badge-bg: rgba(62, 90, 168, 0.2);
+  --badge-text: #253263;
+  --input-bg: rgba(255, 255, 255, 0.9);
+  --input-border: rgba(62, 90, 168, 0.35);
+  --input-ring: rgba(62, 90, 168, 0.18);
+  --card-shadow: 0 16px 32px rgba(20, 33, 61, 0.08);
+  --modal-overlay: rgba(15, 23, 42, 0.45);
+  --modal-surface: #ffffff;
+  --danger-bg: #d14343;
+  --danger-hover: #b93636;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --background-color: #0f172a;
+  --surface-color: #1f2937;
+  --surface-soft-color: rgba(99, 102, 241, 0.16);
+  --text-color: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-heading: #f8fafc;
+  --border-color: rgba(148, 163, 184, 0.24);
+  --brand-color: #6366f1;
+  --brand-hover: #4f46e5;
+  --text-on-brand: #f8fafc;
+  --badge-bg: rgba(129, 140, 248, 0.28);
+  --badge-text: #e0e7ff;
+  --input-bg: rgba(30, 41, 59, 0.9);
+  --input-border: rgba(129, 140, 248, 0.55);
+  --input-ring: rgba(99, 102, 241, 0.35);
+  --modal-overlay: rgba(2, 6, 23, 0.78);
+  --modal-surface: #111827;
+  --card-shadow: 0 24px 50px rgba(2, 6, 23, 0.65);
+  --danger-bg: #f87171;
+  --danger-hover: #ef4444;
+}
+
+* { box-sizing: border-box; }
+body, html, #root { margin: 0; padding: 0; min-height: 100vh; }
+body { background-color: var(--background-color); color: var(--text-color); transition: background 0.3s ease; }
+
+.container { width: min(1100px, 100%); margin: 0 auto; padding: 0 16px; }
+
+.card {
+  background-color: var(--surface-color);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  padding: 24px;
+}
+
+/* --- Кнопки и Инпуты --- */
+.input, .select {
+  width: 100%; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--input-border);
+  background-color: var(--input-bg);
+  color: inherit;
+}
+.input:focus { outline: none; border-color: var(--brand-color); box-shadow: 0 0 0 3px var(--input-ring); }
+
+.button {
+  border: none; border-radius: 12px; padding: 12px 18px;
+  background-color: var(--brand-color); color: var(--text-on-brand); font-weight: 600;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.2s ease;
+}
+.button.small { padding: 8px 14px; font-size: 0.85rem; }
+.button:hover:not(:disabled) { background-color: var(--brand-hover); transform: translateY(-1px); }
+.button.secondary { background-color: transparent; color: var(--brand-color); border: 1px solid var(--brand-color); }
+.button.danger { background-color: var(--danger-bg); color: #fff; }
+
+.badge { display: inline-block; padding: 4px 8px; border-radius: 6px; background-color: var(--badge-bg); color: var(--badge-text); font-size: 0.75rem; font-weight: 600; }
+.text-muted { color: var(--text-muted); }
+
+/* --- 1. Карточка неразделенных БИН --- */
+.admin-assign-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto; /* Две равные части и кнопка */
+  gap: 8px; /* Минимальный зазор между элементами */
+  align-items: stretch;
+  margin-bottom: 20px;
+}
+.admin-assign-grid > * {
+  width: 100%;
+}
+.admin-assign-grid__btn {
+  min-width: 140px;
+  height: 44px; /* Одинаковый размер с SelectPill */
+}
+
+/* --- 2. Карточка сотрудника --- */
+.admin-user-card { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 12px; 
+  padding: 20px; 
+}
+
+/* Верх: только имя и роль */
+.admin-user-card__header-minimal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.admin-user-card__name { margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-heading); }
+
+/* Разделительная линия */
+.admin-user-card__separator {
+  height: 1px;
+  background-color: var(--border-color);
+  width: 100%;
+  margin: 4px 0;
+}
+
+/* Почта и роль на одном уровне */
+.admin-user-card__info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+}
+.admin-user-card__email { font-weight: 500; color: var(--text-heading); font-size: 0.95rem; }
+.admin-user-card__role-select { width: 160px; }
+
+/* Кнопки БИНы/Разделы во всю ширину */
+.admin-user-card__actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 8px 0;
+}
+.admin-user-card__full-btn {
+  width: 100%;
+  justify-content: center;
+  border-color: var(--border-color);
+  color: var(--text-heading);
+  background: var(--surface-soft-color);
+}
+
+.admin-user-card__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* --- 3. Модальные окна и Регистрации --- */
+.modal-overlay {
+  position: fixed; inset: 0; background: var(--modal-overlay);
+  display: flex; align-items: center; justify-content: center; z-index: 1200;
+}
+
+.admin-modal__container { width: min(94vw, 500px); }
+.admin-modal { 
+  padding: 24px; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 20px; 
+  background: var(--modal-surface); 
+  border-radius: 20px; 
+}
+
+/* Шапка модалки заявок: кнопки вверху, минимум места */
+.admin-modal__header { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  margin-bottom: 0;
+}
+.admin-modal__header h3 { margin: 0; font-size: 1.2rem; }
+.admin-modal__header-actions { display: flex; gap: 8px; }
+
+.admin-modal__list-container { 
+  background: var(--surface-soft-color);
+  padding: 16px;
+  border-radius: 12px;
+}
+
+/* Стили чипов/разделов */
+.chip { 
+  display: inline-flex; 
+  align-items: center; 
+  padding: 8px 14px; 
+  border-radius: 10px; 
+  background-color: var(--surface-color); 
+  border: 1px solid var(--border-color);
+  gap: 8px; 
+  font-size: 0.9rem; 
+}
+
+.chip-x {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: none; background: rgba(0,0,0,0.05);
+  display: grid; place-items: center;
+  color: var(--text-muted); cursor: pointer; padding: 0;
+}
+.chip-x:hover { background: var(--danger-bg); color: #fff; }
+
+/* Карточка заявки */
+.pending-registration-card {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px; background: var(--surface-color); border: 1px solid var(--border-color); border-radius: 14px;
+  margin-bottom: 8px;
+}
+
+/* --- Сетка сотрудников --- */
+.admin-user-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+@media (max-width: 960px) { .admin-user-grid { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { 
+  .admin-assign-grid { grid-template-columns: 1fr; } 
+  .admin-user-card__info-row { flex-direction: column; align-items: flex-start; }
+  .admin-user-card__role-select { width: 100%; }
+}
+
+/* =========================
+   Responsive overflow fixes
+   ========================= */
+
+/* 1) Вообще запрещаем горизонтальный скролл страницы */
+html, body, #root {
+  overflow-x: hidden;
+}
+
+/* 2) Базово: любые тексты не должны вылезать из контейнеров */
+.card,
+.modal,
+.admin-modal,
+.pending-registration-card,
+.chip,
+.badge,
+.alert,
+.admin-user-card__email,
+.pending-registration-card__meta,
+.bin-chip__title,
+.bin-chip__meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* 3) Модалки: никогда не создаём горизонтальный скролл */
+.modal,
+.admin-modal {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* overlay уже имеет overflow-y:auto — добавим защиту по X */
+.modal-overlay {
+  overflow-x: hidden;
+}
+
+/* 4) Header модалки: разрешаем перенос, чтобы заголовок/бейдж не ломали ширину */
+.admin-modal__header {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.admin-modal__header h3 {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* 5) Главная причина горизонтального скролла в "Неразделенные БИНы":
+      grid с auto-кнопкой. Делаем безопасные minmax(0,1fr) */
+.admin-assign-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(120px, auto);
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden; /* защита от внутренних min-width */
+}
+
+/* Кнопка не должна быть шире контейнера */
+.admin-assign-grid__btn {
+  min-width: 120px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+/* На узких экранах — всё в столбик, без вариантов */
+@media (max-width: 640px) {
+  .admin-assign-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-assign-grid__btn {
+    width: 100%;
+  }
+}
+
+/* 6) Список "чипов" внутри модалок/карточек: разрешаем перенос и ограничиваем ширину */
+.admin-section__list,
+.admin-modal__list,
+.flex-gap {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.chip.bin-chip,
+.pending-bin-chip {
+  max-width: 100%;
+}
+
+/* 7) Карточка сотрудника: email не должен “выталкивать” select */
+.admin-user-card__info-row {
+  min-width: 0;
+}
+
+.admin-user-card__email {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* На узких — у тебя уже есть flex-direction:column, но усилим перенос */
+@media (max-width: 600px) {
+  .admin-user-card__email {
+    width: 100%;
+  }
+}
+
+/* 8) Карточки заявок: действия не должны ломать ширину */
+.pending-registration-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pending-registration-card__actions {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+/* 9) Внутренние элементы SelectPill/пилюль:
+      важное правило — min-width:0, иначе flex/grid ловит overflow */
+.pill,
+.pill .value,
+.pill .label {
+  min-width: 0;
+  max-width: 100%;
 }

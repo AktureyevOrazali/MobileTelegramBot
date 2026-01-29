@@ -1865,8 +1865,9 @@ def get_dashboard_summary(
     response_by_author: Dict[str, List[float]] = {}
     response_time_dialogs: List[dict] = []
 
-    # ВАЖНО: дэшборд больше не фильтруется по BIN. Метрики считаются по факту сообщений оператора.
     assigned_bins: List[str] | None = None
+    if operator_id is not None:
+        assigned_bins = get_user_bins(operator_id)
 
     # Получаем список всех операторов для фильтрации сообщений
     operator_names: set[str] = set()
@@ -1884,22 +1885,6 @@ def get_dashboard_summary(
                     operator_names.add(name.lower())
                 if login:
                     operator_names.add(login.lower())
-
-    # Если выбран конкретный сотрудник — фильтруем по нему (name/login), а не по текущим BIN.
-    if operator_id is not None:
-        target = get_user_by_id(operator_id)
-        if not target:
-            return _empty_summary()
-        selected: set[str] = set()
-        name = (target.get("name") or "").strip().lower()
-        login = (target.get("login") or "").strip().lower()
-        if name:
-            selected.add(name)
-        if login:
-            selected.add(login)
-        if not selected:
-            return _empty_summary()
-        operator_names = selected
 
     def _empty_summary() -> dict:
         recent_activity = [
@@ -1930,6 +1915,9 @@ def get_dashboard_summary(
             "recent_activity": recent_activity,
             "updated_at": now.isoformat(),
         }
+
+    if assigned_bins is not None and not assigned_bins:
+        return _empty_summary()
 
     placeholders = ", ".join("%s" for _ in assigned_bins) if assigned_bins is not None else ""
 
@@ -1986,57 +1974,6 @@ def get_dashboard_summary(
             operator_placeholders = ", ".join("%s" for _ in operator_names)
             operator_filter_clause = f"AND TRIM(LOWER(m.author)) IN ({operator_placeholders})"
             operator_filter_params = [name.lower() for name in operator_names]
-
-        # Если выбран конкретный оператор — считаем диалоги/чаты по факту его сообщений,
-        # а не по chat_dialogs.started_at и не по BIN.
-        if operator_id is not None:
-            total_dialogs = execute(
-                """
-                SELECT COUNT(DISTINCT m.dialog_id) AS total
-                FROM messages m
-                WHERE m.direction = 'outgoing'
-                  AND m.dialog_id IS NOT NULL
-                  AND m.author IS NOT NULL
-                  AND TRIM(m.author) != ''
-                  AND m.created_at >= %s
-                  AND m.created_at < %s
-                """
-                + operator_filter_clause
-                + automation_clause,
-                (
-                    start_iso,
-                    end_exclusive_iso,
-                    *operator_filter_params,
-                    *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-                ),
-            ).fetchone()["total"] or 0
-            open_dialogs = execute(
-                """
-                SELECT COUNT(*) AS total
-                FROM chat_dialogs cd
-                WHERE cd.ended_at IS NULL
-                  AND cd.id IN (
-                    SELECT DISTINCT m.dialog_id
-                    FROM messages m
-                    WHERE m.direction = 'outgoing'
-                      AND m.dialog_id IS NOT NULL
-                      AND m.author IS NOT NULL
-                      AND TRIM(m.author) != ''
-                      AND m.created_at >= %s
-                      AND m.created_at < %s
-                """
-                + operator_filter_clause
-                + automation_clause
-                + """
-                  )
-                """,
-                (
-                    start_iso,
-                    end_exclusive_iso,
-                    *operator_filter_params,
-                    *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-                ),
-            ).fetchone()["total"] or 0
         
         total_outgoing = execute(
             """
@@ -2065,8 +2002,7 @@ def get_dashboard_summary(
                 * (assigned_bins or []),
             ),
         ).fetchone()["total"] or 0
-        # По требованиям: "сообщения" в отчёте — только сообщения операторов.
-        total_messages = total_outgoing
+        total_messages = total_incoming + total_outgoing
         total_chats = execute(
             "SELECT COUNT(DISTINCT chat_id) AS total FROM chat_dialogs"
             " WHERE started_at IS NOT NULL AND started_at >= %s AND started_at < %s"
@@ -2077,27 +2013,6 @@ def get_dashboard_summary(
             ),
             (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchone()["total"] or 0
-
-        if operator_id is not None:
-            total_chats = execute(
-                """
-                SELECT COUNT(DISTINCT m.chat_id) AS total
-                FROM messages m
-                WHERE m.direction = 'outgoing'
-                  AND m.author IS NOT NULL
-                  AND TRIM(m.author) != ''
-                  AND m.created_at >= %s
-                  AND m.created_at < %s
-                """
-                + operator_filter_clause
-                + automation_clause,
-                (
-                    start_iso,
-                    end_exclusive_iso,
-                    *operator_filter_params,
-                    *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-                ),
-            ).fetchone()["total"] or 0
         section_rows = execute(
             """
             SELECT COALESCE(c.section, '') AS section_id, COUNT(*) AS dialog_count
@@ -2278,103 +2193,72 @@ def get_dashboard_summary(
         ).fetchall()
 
         if operator_request_rows:
-            # Новая логика времени ответа:
-            # старт от запроса оператора, затем для каждой "пачки" входящих считаем до первого ответа оператора.
-            # Дедуп: берём самый ранний запрос в диалоге.
-            earliest_by_dialog: Dict[int, dict] = {}
-            for row in operator_request_rows:
-                did = row.get("dialog_id")
-                if did is None:
-                    continue
-                created_at = row.get("created_at")
-                if not created_at:
-                    continue
-                did_int = int(did)
-                prev = earliest_by_dialog.get(did_int)
-                if prev is None or created_at < prev["created_at"]:
-                    earliest_by_dialog[did_int] = {"created_at": created_at}
+            # Используем уже созданные переменные automation_clause и operator_filter_clause
+            response_query_automation_clause = (
+                f"AND TRIM(LOWER(m.author)) NOT IN ({automation_author_placeholders})"
+                if automation_author_placeholders
+                else ""
+            )
+            response_query_operator_clause = (
+                f"AND TRIM(LOWER(m.author)) IN ({', '.join('%s' for _ in operator_names)})"
+                if operator_names
+                else ""
+            )
 
-            def _norm(value: str | None) -> str:
-                return (value or "").strip().lower()
-
-            automation_set = {_norm(name) for name in AUTOMATION_AUTHOR_NAMES if _norm(name)}
-
-            def _is_counted_operator(author: str | None) -> bool:
-                key = _norm(author)
-                if not key:
-                    return False
-                if key in automation_set:
-                    return False
-                return key in operator_names
-
-            for dialog_id, payload in earliest_by_dialog.items():
-                request_created_raw = payload["created_at"]
+            for request_row in operator_request_rows:
+                request_created_raw = request_row["created_at"]
                 request_at = _parse_datetime(request_created_raw)
                 if request_at is None:
                     continue
 
-                dialog_row = execute(
-                    "SELECT ended_at FROM chat_dialogs WHERE id = %s",
-                    (dialog_id,),
-                ).fetchone()
-                ended_at_raw = (dialog_row or {}).get("ended_at") if dialog_row else None
-                ended_at = _parse_datetime(ended_at_raw) if ended_at_raw else None
-                cutoff_dt = ended_at if ended_at and ended_at > request_at else None
-                cutoff_iso = (cutoff_dt.isoformat() if cutoff_dt else end_exclusive_iso)
-
-                msg_rows = execute(
-                    """
-                    SELECT direction, author, created_at
-                    FROM messages
-                    WHERE dialog_id = %s
-                      AND created_at >= %s
-                      AND created_at < %s
-                    ORDER BY created_at ASC
-                    """,
-                    (dialog_id, request_created_raw, cutoff_iso),
-                ).fetchall()
-
-                pending_start: Optional[datetime] = None
-                per_author: Dict[str, List[float]] = {}
-
-                for msg in msg_rows:
-                    created = _parse_datetime(msg.get("created_at"))
-                    if created is None:
-                        continue
-                    direction = (msg.get("direction") or "").strip()
-                    if direction == "incoming":
-                        if pending_start is None:
-                            pending_start = created
-                        continue
-                    if direction != "outgoing":
-                        continue
-
-                    author_raw = (msg.get("author") or "").strip()
-                    if not author_raw:
-                        continue
-                    if not _is_counted_operator(author_raw):
-                        continue
-                    if pending_start is None or created <= pending_start:
-                        continue
-
-                    delta_seconds = (created - pending_start).total_seconds()
-                    pending_start = None
-                    response_deltas.append(delta_seconds)
-                    response_by_author.setdefault(author_raw, []).append(delta_seconds)
-                    per_author.setdefault(author_raw, []).append(delta_seconds)
-
-                # среднее по диалогу для каждого оператора, который отвечал
-                for author_raw, deltas in per_author.items():
-                    if not deltas:
-                        continue
-                    avg_minutes = (sum(deltas) / len(deltas)) / 60.0
-                    response_time_dialogs.append(
-                        {
-                            "dialog_id": dialog_id,
-                            "author": author_raw,
-                            "response_time_minutes": avg_minutes,
-                        }
+                query_parts = [
+                    "SELECT m.created_at, m.author, m.dialog_id",
+                    "FROM messages m",
+                    "LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id",
+                    "LEFT JOIN chats c ON c.chat_id = m.chat_id",
+                    "WHERE m.direction = 'outgoing'",
+                    "  AND m.chat_id = %s",
+                    "  AND m.created_at > %s",
+                    "  AND m.author IS NOT NULL",
+                    "  AND TRIM(m.author) != ''",
+                ]
+                params: List[object] = [request_row["chat_id"], request_created_raw]
+                dialog_id = request_row["dialog_id"]
+                if dialog_id is not None:
+                    query_parts.append("  AND m.dialog_id = %s")
+                    params.append(dialog_id)
+                if response_query_automation_clause:
+                    query_parts.append(response_query_automation_clause)
+                    params.extend([name.lower() for name in AUTOMATION_AUTHOR_NAMES])
+                if response_query_operator_clause and operator_names:
+                    operator_response_placeholders = ", ".join("%s" for _ in operator_names)
+                    query_parts.append(f"AND TRIM(LOWER(m.author)) IN ({operator_response_placeholders})")
+                    params.extend([name.lower() for name in operator_names])
+                if assigned_bins is not None:
+                    query_parts.append(
+                        f"  AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
                     )
+                    params.extend(assigned_bins)
+                query_parts.append("ORDER BY created_at ASC LIMIT 1")
+                sql = "\n".join(query_parts)
+                candidate = execute(sql, params).fetchone()
+                if candidate is None:
+                    continue
+                reply_at = _parse_datetime(candidate["created_at"])
+                if reply_at is None or reply_at <= request_at:
+                    continue
+                delta_seconds = (reply_at - request_at).total_seconds()
+                delta_minutes = delta_seconds / 60.0
+                response_deltas.append(delta_seconds)
+                response_author = (candidate["author"] or "").strip()
+                if response_author:
+                    response_by_author.setdefault(response_author, []).append(delta_seconds)
+                    # Добавляем в список диалогов с временем ответа
+                    response_time_dialogs.append({
+                        "dialog_id": candidate.get("dialog_id"),
+                        "author": response_author,
+                        "response_time_minutes": delta_minutes,
+                    })
 
     closed_dialogs = max(total_dialogs - open_dialogs, 0)
     average_messages_per_dialog = (

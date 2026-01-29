@@ -578,32 +578,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     return Math.round(data.totalOutgoingMessages / timeRangeDays);
   }, [data.totalOutgoingMessages, timeRangeDays]);
 
-  const statCards = useMemo(() => {
-    const avgMessagesValue = data.averageMessagesPerDialog ? data.averageMessagesPerDialog.toFixed(1) : '0.0';
-    return [
-      { label: 'Диалоги', value: numberFormatter.format(data.totalDialogs) },
-      { label: 'Активные', value: numberFormatter.format(data.openDialogs) },
-      { label: 'Закрытые', value: numberFormatter.format(data.closedDialogs) },
-      { label: 'Ответ', value: avgResponseTimeLabel },
-      {
-        label: 'Сообщений/день',
-        value: numberFormatter.format(messagesPerDay),
-      },
-      {
-        label: 'Сообщений/диалог',
-        value: avgMessagesValue,
-      },
-    ];
-  }, [
-    avgResponseTimeLabel,
-    data.averageMessagesPerDialog,
-    data.closedDialogs,
-    data.openDialogs,
-    data.totalDialogs,
-    messagesPerDay,
-    numberFormatter,
-  ]);
-
   const periodOptions = useMemo(
     () => [
       { value: 'today', label: 'Сегодня' },
@@ -760,14 +734,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
         {dashboardTab === 'overview' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div className="dashboard-stat-grid">
-              {statCards.map((stat) => (
-                <div key={stat.label} className={`stat-card ${isLoading ? 'dashboard-card--loading' : ''}`} style={{ minHeight: 96 }}>
-                  <span className="stat-card__label">{stat.label}</span>
-                  <span className="stat-card__value">{stat.value}</span>
-                </div>
-              ))}
-            </div>
 
             {/* ====== NEW: один чарт + рядом данные о диалогах ====== */}
             <div className="dashboard-overview-row">

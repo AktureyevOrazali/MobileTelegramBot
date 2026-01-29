@@ -53,6 +53,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
   const [selectedQuestionSection, setSelectedQuestionSection] = useState<string>('all');
   const [selectedOperatorId, setSelectedOperatorId] = useState<number | null>(null);
+  const activeOperatorId = dashboardTab === 'operators' ? null : selectedOperatorId;
 
   const [timePreset, setTimePreset] = useState<TimePreset>('last7');
   const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
@@ -125,11 +126,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
   const activeFilters = useMemo(
     () => ({
-      operatorId: selectedOperatorId,
+      operatorId: activeOperatorId,
       startDate: timeRange.startDate,
       endDate: timeRange.endDate,
     }),
-    [selectedOperatorId, timeRange.endDate, timeRange.startDate],
+    [activeOperatorId, timeRange.endDate, timeRange.startDate],
   );
 
   const loadData = useCallback(
@@ -238,13 +239,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     [operators],
   );
 
-  const operatorSelectValue = selectedOperatorId === null ? 'all' : String(selectedOperatorId);
+  const operatorSelectValue = activeOperatorId === null ? 'all' : String(activeOperatorId);
 
   const selectedOperatorLabel = useMemo(() => {
-    if (selectedOperatorId === null) return 'Все сотрудники';
-    const found = operators.find((operator) => operator.id === selectedOperatorId);
-    return found?.name || found?.login || `ID ${selectedOperatorId}`;
-  }, [operators, selectedOperatorId]);
+    if (activeOperatorId === null) return 'Все сотрудники';
+    const found = operators.find((operator) => operator.id === activeOperatorId);
+    return found?.name || found?.login || `ID ${activeOperatorId}`;
+  }, [activeOperatorId, operators]);
 
   const normalizeName = useCallback((value?: string | null) => value?.trim().toLowerCase() ?? '', []);
 
@@ -262,8 +263,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   }, [normalizeName, operators]);
 
   const selectedOperatorNames = useMemo(() => {
-    if (selectedOperatorId === null) return null;
-    const selected = operators.find((operator) => operator.id === selectedOperatorId);
+    if (activeOperatorId === null) return null;
+    const selected = operators.find((operator) => operator.id === activeOperatorId);
     if (!selected) return null;
     const names = new Set<string>();
     const push = (value?: string | null) => {
@@ -273,7 +274,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     push(selected.name);
     push(selected.login);
     return names;
-  }, [normalizeName, operators, selectedOperatorId]);
+  }, [activeOperatorId, normalizeName, operators]);
 
   const agentStats = useMemo(() => {
     const systemKeywords = ['admin', 'administrator', 'администратор', 'ai assistant'];
@@ -328,14 +329,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
   const responseDialogs = useMemo(() => {
     const dialogs = data.responseTimeDialogs ?? [];
-    if (selectedOperatorId === null) return dialogs;
+    if (activeOperatorId === null) return dialogs;
     if (!selectedOperatorNames || selectedOperatorNames.size === 0) return [];
     return dialogs.filter((dialog) => selectedOperatorNames.has(normalizeName(dialog.author)));
-  }, [data.responseTimeDialogs, normalizeName, selectedOperatorId, selectedOperatorNames]);
+  }, [activeOperatorId, data.responseTimeDialogs, normalizeName, selectedOperatorNames]);
 
   // Среднее время ответа для выбранного оператора или общее среднее
   const avgResponseTimeMinutes = useMemo(() => {
-    if (selectedOperatorId === null) {
+    if (activeOperatorId === null) {
       // Для всех операторов: общее среднее по всем диалогам
       const allDialogs = data.responseTimeDialogs ?? [];
       if (!allDialogs.length) return null;
@@ -347,7 +348,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       const total = responseDialogs.reduce((sum, dialog) => sum + dialog.responseTimeMinutes, 0);
       return total / responseDialogs.length;
     }
-  }, [data.responseTimeDialogs, responseDialogs, selectedOperatorId]);
+  }, [activeOperatorId, data.responseTimeDialogs, responseDialogs]);
 
   const responseSegments = useMemo(() => {
     const buckets = {
@@ -356,7 +357,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       slow: { count: 0, totalMinutes: 0 },
     };
 
-    if (selectedOperatorId === null) {
+    if (activeOperatorId === null) {
       // Для всех операторов: группируем по операторам, вычисляем среднее для каждого, затем классифицируем
       const operatorAverages = new Map<string, number[]>();
       const allDialogs = data.responseTimeDialogs ?? [];
@@ -395,7 +396,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       const percentage = totalCount ? (count / totalCount) * 100 : 0;
       return { key, count, avgMinutes, percentage };
     });
-  }, [classifyResponseSpeed, data.responseTimeDialogs, responseDialogs, selectedOperatorId, normalizeName]);
+  }, [activeOperatorId, classifyResponseSpeed, data.responseTimeDialogs, responseDialogs, normalizeName]);
 
   const operatorMetaByName = useMemo(() => {
     const map = new Map<string, { roleLabel: string }>();
@@ -669,6 +670,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                 searchable
                 showLabelInside={false}
                 style={{ minWidth: 220 }}
+                disabled={dashboardTab === 'operators'}
               />
 
               <button
@@ -741,7 +743,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                 <div className="dashboard-speed-card__title">
                   <div className="heading" style={{ fontSize: '1.05rem', margin: 0 }}>Скорость ответа</div>
                   <div className="text-muted" style={{ fontSize: '0.85rem' }}>
-                    {selectedOperatorId === null
+                    {activeOperatorId === null
                       ? `${numberFormatter.format(totalOperators)} оператор${totalOperators === 1 ? '' : totalOperators < 5 ? 'а' : 'ов'}`
                       : selectedOperatorLabel}
                   </div>
@@ -770,7 +772,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                         {numberFormatter.format(responseSegments.reduce((sum, seg) => sum + seg.count, 0))}
                       </text>
                       <text x="60" y="75" textAnchor="middle" className="dashboard-donut__center-sub">
-                        {selectedOperatorId === null ? 'операторов' : 'диалогов'}
+                        {activeOperatorId === null ? 'операторов' : 'диалогов'}
                       </text>
                     </svg>
                   </div>

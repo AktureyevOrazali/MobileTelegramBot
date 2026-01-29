@@ -282,6 +282,17 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
         }))
     : [];
 
+  const responseTimeDialogs = Array.isArray(raw.response_time_dialogs)
+    ? raw.response_time_dialogs
+        .filter((item) => Boolean(item) && typeof item.author === 'string')
+        .map((item) => ({
+          chatId: typeof item.chat_id === 'number' ? item.chat_id : null,
+          dialogId: typeof item.dialog_id === 'number' ? item.dialog_id : null,
+          author: item.author,
+          responseTimeMinutes: safeNumber(item.response_time_minutes),
+        }))
+    : [];
+
   return {
     totalDialogs: safeNumber(raw.total_dialogs),
     openDialogs: safeNumber(raw.open_dialogs),
@@ -296,6 +307,7 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
         ? raw.avg_dialog_duration_minutes
         : null,
     avgResponseTimeMinutes: parseResponseTimeMinutes(),
+    responseTimeDialogs,
     sectionBreakdown,
     topQuestions,
     questionsBySection,

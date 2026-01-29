@@ -224,6 +224,13 @@ export interface DashboardActivityPointRaw {
   incoming_messages: number;
 }
 
+export interface DashboardResponseTimeDialogRaw {
+  chat_id?: number | null;
+  dialog_id?: number | null;
+  author: string;
+  response_time_minutes: number;
+}
+
 export interface DashboardSummaryRaw {
   total_dialogs: number;
   open_dialogs: number;
@@ -236,6 +243,7 @@ export interface DashboardSummaryRaw {
   avg_dialog_duration_minutes?: number | null;
   avg_response_time_minutes?: number | null;
   avg_response_time_seconds?: number | null;
+  response_time_dialogs?: DashboardResponseTimeDialogRaw[];
   section_breakdown?: DashboardSectionStatRaw[];
   top_questions?: DashboardTopQuestionRaw[];
   questions_by_section?: DashboardSectionTopQuestionsRaw[];
@@ -277,6 +285,13 @@ export interface DashboardActivityPoint {
   incomingMessages: number;
 }
 
+export interface DashboardResponseTimeDialog {
+  chatId: number | null;
+  dialogId: number | null;
+  author: string;
+  responseTimeMinutes: number;
+}
+
 export interface DashboardSummary {
   totalDialogs: number;
   openDialogs: number;
@@ -288,6 +303,7 @@ export interface DashboardSummary {
   averageMessagesPerDialog: number;
   avgDialogDurationMinutes: number | null;
   avgResponseTimeMinutes: number | null;
+  responseTimeDialogs: DashboardResponseTimeDialog[];
   sectionBreakdown: DashboardSectionStat[];
   topQuestions: DashboardTopQuestion[];
   questionsBySection: DashboardSectionTopQuestions[];

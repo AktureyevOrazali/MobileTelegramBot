@@ -298,6 +298,13 @@ class DashboardActivityPoint(BaseModel):
     incoming_messages: int
 
 
+class DashboardResponseTimeDialog(BaseModel):
+    chat_id: int | None = None
+    dialog_id: int | None = None
+    author: str
+    response_time_minutes: float
+
+
 class DashboardSummaryResponse(BaseModel):
     total_dialogs: int
     open_dialogs: int
@@ -310,6 +317,7 @@ class DashboardSummaryResponse(BaseModel):
     avg_dialog_duration_minutes: float | None = None
     avg_response_time_minutes: float | None = None
     avg_response_time_seconds: float | None = None
+    response_time_dialogs: List[DashboardResponseTimeDialog] = Field(default_factory=list)
     section_breakdown: List[DashboardSectionStat] = Field(default_factory=list)
     top_questions: List[DashboardTopQuestion] = Field(default_factory=list)
     questions_by_section: List[DashboardSectionQuestions] = Field(default_factory=list)

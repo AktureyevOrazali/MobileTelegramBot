@@ -34,6 +34,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
   averageMessagesPerDialog: 0,
   avgDialogDurationMinutes: null,
   avgResponseTimeMinutes: null,
+  responseTimeDialogs: [],
   sectionBreakdown: [],
   topQuestions: [],
   questionsBySection: [],
@@ -245,18 +246,34 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     return found?.name || found?.login || `ID ${selectedOperatorId}`;
   }, [operators, selectedOperatorId]);
 
+  const normalizeName = useCallback((value?: string | null) => value?.trim().toLowerCase() ?? '', []);
+
   const operatorNameSet = useMemo(() => {
     const names = new Set<string>();
     operators.forEach((operator) => {
       const push = (value?: string | null) => {
-        const normalized = value?.trim().toLowerCase();
+        const normalized = normalizeName(value);
         if (normalized) names.add(normalized);
       };
       push(operator.name);
       push(operator.login);
     });
     return names;
-  }, [operators]);
+  }, [normalizeName, operators]);
+
+  const selectedOperatorNames = useMemo(() => {
+    if (selectedOperatorId === null) return null;
+    const selected = operators.find((operator) => operator.id === selectedOperatorId);
+    if (!selected) return null;
+    const names = new Set<string>();
+    const push = (value?: string | null) => {
+      const normalized = normalizeName(value);
+      if (normalized) names.add(normalized);
+    };
+    push(selected.name);
+    push(selected.login);
+    return names;
+  }, [normalizeName, operators, selectedOperatorId]);
 
   const agentStats = useMemo(() => {
     const systemKeywords = ['admin', 'administrator', 'администратор', 'ai assistant'];
@@ -309,6 +326,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     return 'slow';
   }, []);
 
+  const responseDialogs = useMemo(() => {
+    const dialogs = data.responseTimeDialogs ?? [];
+    if (selectedOperatorId === null) return dialogs;
+    if (!selectedOperatorNames || selectedOperatorNames.size === 0) return [];
+    return dialogs.filter((dialog) => selectedOperatorNames.has(normalizeName(dialog.author)));
+  }, [data.responseTimeDialogs, normalizeName, selectedOperatorId, selectedOperatorNames]);
+
+  const avgResponseTimeMinutes = useMemo(() => {
+    if (!responseDialogs.length) return null;
+    const total = responseDialogs.reduce((sum, dialog) => sum + dialog.responseTimeMinutes, 0);
+    return total / responseDialogs.length;
+  }, [responseDialogs]);
+
   const responseSegments = useMemo(() => {
     const buckets = {
       fast: { count: 0, totalMinutes: 0 },
@@ -316,23 +346,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       slow: { count: 0, totalMinutes: 0 },
     };
 
-    agentStats.forEach((agent) => {
-      const effectiveMinutes = agent.avgResponseTimeMinutes ?? data.avgResponseTimeMinutes;
-      const bucket = classifyResponseSpeed(effectiveMinutes);
+    responseDialogs.forEach((dialog) => {
+      const bucket = classifyResponseSpeed(dialog.responseTimeMinutes);
       if (!bucket) return;
       buckets[bucket].count += 1;
-      buckets[bucket].totalMinutes += effectiveMinutes ?? 0;
+      buckets[bucket].totalMinutes += dialog.responseTimeMinutes;
     });
 
-    const totalOperators = agentStats.length;
+    const totalDialogs = responseDialogs.length;
 
     return (['fast', 'medium', 'slow'] as const).map((key) => {
       const count = buckets[key].count;
       const avgMinutes = count ? buckets[key].totalMinutes / count : null;
-      const percentage = totalOperators ? (count / totalOperators) * 100 : 0;
+      const percentage = totalDialogs ? (count / totalDialogs) * 100 : 0;
       return { key, count, avgMinutes, percentage };
     });
-  }, [agentStats, classifyResponseSpeed, data.avgResponseTimeMinutes]);
+  }, [classifyResponseSpeed, responseDialogs]);
 
   const operatorMetaByName = useMemo(() => {
     const map = new Map<string, { roleLabel: string }>();
@@ -503,14 +532,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       .join('');
   }, []);
 
-  const avgResponseTimeLabel = useMemo(() => {
-    if (data.avgResponseTimeMinutes === null) return '—';
-    const totalSeconds = Math.round(data.avgResponseTimeMinutes * 60);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    if (minutes > 0) return `${minutes}м${seconds > 0 ? ` ${seconds}с` : ''}`;
-    return `${seconds}с`;
-  }, [data.avgResponseTimeMinutes]);
+  const avgResponseTimeLabel = useMemo(() => formatMinutes(avgResponseTimeMinutes), [avgResponseTimeMinutes, formatMinutes]);
 
   const lastUpdated = hasData ? formatDateTime(data.updatedAt) : '';
   const isLoading = loading || refreshing;

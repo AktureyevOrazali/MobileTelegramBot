@@ -333,11 +333,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     return dialogs.filter((dialog) => selectedOperatorNames.has(normalizeName(dialog.author)));
   }, [data.responseTimeDialogs, normalizeName, selectedOperatorId, selectedOperatorNames]);
 
+  // Среднее время ответа для выбранного оператора или общее среднее
   const avgResponseTimeMinutes = useMemo(() => {
-    if (!responseDialogs.length) return null;
-    const total = responseDialogs.reduce((sum, dialog) => sum + dialog.responseTimeMinutes, 0);
-    return total / responseDialogs.length;
-  }, [responseDialogs]);
+    if (selectedOperatorId === null) {
+      // Для всех операторов: общее среднее по всем диалогам
+      const allDialogs = data.responseTimeDialogs ?? [];
+      if (!allDialogs.length) return null;
+      const total = allDialogs.reduce((sum, dialog) => sum + dialog.responseTimeMinutes, 0);
+      return total / allDialogs.length;
+    } else {
+      // Для конкретного оператора: среднее по его диалогам
+      if (!responseDialogs.length) return null;
+      const total = responseDialogs.reduce((sum, dialog) => sum + dialog.responseTimeMinutes, 0);
+      return total / responseDialogs.length;
+    }
+  }, [data.responseTimeDialogs, responseDialogs, selectedOperatorId]);
 
   const responseSegments = useMemo(() => {
     const buckets = {
@@ -346,22 +356,46 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       slow: { count: 0, totalMinutes: 0 },
     };
 
-    responseDialogs.forEach((dialog) => {
-      const bucket = classifyResponseSpeed(dialog.responseTimeMinutes);
-      if (!bucket) return;
-      buckets[bucket].count += 1;
-      buckets[bucket].totalMinutes += dialog.responseTimeMinutes;
-    });
+    if (selectedOperatorId === null) {
+      // Для всех операторов: группируем по операторам, вычисляем среднее для каждого, затем классифицируем
+      const operatorAverages = new Map<string, number[]>();
+      const allDialogs = data.responseTimeDialogs ?? [];
+      
+      allDialogs.forEach((dialog) => {
+        const operatorName = normalizeName(dialog.author);
+        if (!operatorAverages.has(operatorName)) {
+          operatorAverages.set(operatorName, []);
+        }
+        operatorAverages.get(operatorName)!.push(dialog.responseTimeMinutes);
+      });
 
-    const totalDialogs = responseDialogs.length;
+      // Вычисляем среднее время ответа для каждого оператора и классифицируем
+      operatorAverages.forEach((times) => {
+        const avgTime = times.reduce((sum, t) => sum + t, 0) / times.length;
+        const bucket = classifyResponseSpeed(avgTime);
+        if (!bucket) return;
+        buckets[bucket].count += 1;
+        buckets[bucket].totalMinutes += avgTime;
+      });
+    } else {
+      // Для конкретного оператора: классифицируем каждый диалог
+      responseDialogs.forEach((dialog) => {
+        const bucket = classifyResponseSpeed(dialog.responseTimeMinutes);
+        if (!bucket) return;
+        buckets[bucket].count += 1;
+        buckets[bucket].totalMinutes += dialog.responseTimeMinutes;
+      });
+    }
+
+    const totalCount = buckets.fast.count + buckets.medium.count + buckets.slow.count;
 
     return (['fast', 'medium', 'slow'] as const).map((key) => {
       const count = buckets[key].count;
       const avgMinutes = count ? buckets[key].totalMinutes / count : null;
-      const percentage = totalDialogs ? (count / totalDialogs) * 100 : 0;
+      const percentage = totalCount ? (count / totalCount) * 100 : 0;
       return { key, count, avgMinutes, percentage };
     });
-  }, [classifyResponseSpeed, responseDialogs]);
+  }, [classifyResponseSpeed, data.responseTimeDialogs, responseDialogs, selectedOperatorId, normalizeName]);
 
   const operatorMetaByName = useMemo(() => {
     const map = new Map<string, { roleLabel: string }>();
@@ -537,6 +571,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   const lastUpdated = hasData ? formatDateTime(data.updatedAt) : '';
   const isLoading = loading || refreshing;
 
+  // Сообщений/день: считаем только сообщения операторов (totalOutgoingMessages)
+  const messagesPerDay = useMemo(() => {
+    if (!timeRangeDays) return 0;
+    // Используем totalOutgoingMessages, так как это сообщения операторов
+    return Math.round(data.totalOutgoingMessages / timeRangeDays);
+  }, [data.totalOutgoingMessages, timeRangeDays]);
+
   const statCards = useMemo(() => {
     const avgMessagesValue = data.averageMessagesPerDialog ? data.averageMessagesPerDialog.toFixed(1) : '0.0';
     return [
@@ -546,7 +587,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       { label: 'Ответ', value: avgResponseTimeLabel },
       {
         label: 'Сообщений/день',
-        value: numberFormatter.format(timeRangeDays ? Math.round(data.totalMessages / timeRangeDays) : 0),
+        value: numberFormatter.format(messagesPerDay),
       },
       {
         label: 'Сообщений/диалог',
@@ -559,9 +600,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     data.closedDialogs,
     data.openDialogs,
     data.totalDialogs,
-    data.totalMessages,
+    messagesPerDay,
     numberFormatter,
-    timeRangeDays,
   ]);
 
   const periodOptions = useMemo(
@@ -735,7 +775,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                 <div className="dashboard-speed-card__title">
                   <div className="heading" style={{ fontSize: '1.05rem', margin: 0 }}>Скорость ответа</div>
                   <div className="text-muted" style={{ fontSize: '0.85rem' }}>
-                    {numberFormatter.format(totalOperators)} оператор{totalOperators === 1 ? '' : totalOperators < 5 ? 'а' : 'ов'}
+                    {selectedOperatorId === null
+                      ? `${numberFormatter.format(totalOperators)} оператор${totalOperators === 1 ? '' : totalOperators < 5 ? 'а' : 'ов'}`
+                      : selectedOperatorLabel}
                   </div>
                 </div>
 
@@ -759,10 +801,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                         </circle>
                       ))}
                       <text x="60" y="58" textAnchor="middle" className="dashboard-donut__center-value">
-                        {numberFormatter.format(totalOperators)}
+                        {numberFormatter.format(responseSegments.reduce((sum, seg) => sum + seg.count, 0))}
                       </text>
                       <text x="60" y="75" textAnchor="middle" className="dashboard-donut__center-sub">
-                        операторов
+                        {selectedOperatorId === null ? 'операторов' : 'диалогов'}
                       </text>
                     </svg>
                   </div>
@@ -825,7 +867,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                   <div className="dashboard-kv__row">
                     <span className="dashboard-kv__key">Сообщений/день</span>
                     <span className="dashboard-kv__val">
-                      {numberFormatter.format(timeRangeDays ? Math.round(data.totalMessages / timeRangeDays) : 0)}
+                      {numberFormatter.format(messagesPerDay)}
                     </span>
                   </div>
                 </div>

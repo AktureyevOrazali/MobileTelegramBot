@@ -2084,10 +2084,10 @@ def get_dashboard_summary(
                 SELECT COUNT(DISTINCT m.chat_id) AS total
                 FROM messages m
                 WHERE m.direction = 'outgoing'
-                  AND m.author IS NOT NULL
-                  AND TRIM(m.author) != ''
-                  AND m.created_at >= %s
-                  AND m.created_at < %s
+                AND m.author IS NOT NULL
+                AND TRIM(m.author) != ''
+                AND m.created_at >= %s
+                AND m.created_at < %s
                 """
                 + operator_filter_clause
                 + automation_clause,
@@ -2098,6 +2098,32 @@ def get_dashboard_summary(
                     *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
                 ),
             ).fetchone()["total"] or 0
+
+        # NEW: фильтр диалогов, в которых оператор отвечал (outgoing) в периоде
+        eligible_dialogs_sql = ""
+        eligible_dialogs_params = ()
+
+        if operator_id is not None:
+            eligible_dialogs_sql = """
+            AND cd.id IN (
+                SELECT DISTINCT m2.dialog_id
+                FROM messages m2
+                WHERE m2.direction = 'outgoing'
+                AND m2.dialog_id IS NOT NULL
+                AND m2.author IS NOT NULL
+                AND TRIM(m2.author) != ''
+                AND m2.created_at >= %s
+                AND m2.created_at < %s
+            """ + operator_filter_clause.replace("m.", "m2.") + automation_clause.replace("m.", "m2.") + """
+            )
+            """
+            eligible_dialogs_params = (
+                start_iso,
+                end_exclusive_iso,
+                *operator_filter_params,
+                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
+            )
+
         section_rows = execute(
             """
             SELECT COALESCE(c.section, '') AS section_id, COUNT(*) AS dialog_count
@@ -2105,16 +2131,18 @@ def get_dashboard_summary(
             LEFT JOIN chats c ON c.chat_id = cd.chat_id
             WHERE cd.started_at IS NOT NULL AND cd.started_at >= %s AND cd.started_at < %s
         """
-            + (
-                f" AND cd.bin IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            )
+            + eligible_dialogs_sql
+            + (f" AND cd.bin IN ({placeholders})" if assigned_bins is not None else "")
             + """
             GROUP BY COALESCE(c.section, '')
             ORDER BY dialog_count DESC
             """,
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
+            (
+                start_iso,
+                end_exclusive_iso,
+                *eligible_dialogs_params,
+                *(assigned_bins or []),
+            ),
         ).fetchall()
         duration_rows = execute(
             "SELECT started_at, ended_at FROM chat_dialogs"

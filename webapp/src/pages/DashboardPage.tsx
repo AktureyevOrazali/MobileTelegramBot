@@ -51,12 +51,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
   const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
 
+  const isActivityTab = dashboardTab === 'activity';
+
   const [selectedQuestionSection, setSelectedQuestionSection] = useState<string>('all');
   const [selectedOperatorId, setSelectedOperatorId] = useState<number | null>(null);
   const activeOperatorId = dashboardTab === 'operators' ? null : selectedOperatorId;
 
   const [timePreset, setTimePreset] = useState<TimePreset>('last7');
   const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+
+  const effectiveTimePreset: TimePreset = isActivityTab ? 'last7' : timePreset;
 
   const [topMetric, setTopMetric] = useState<OperatorMetricKey>('avgResponse');
 
@@ -87,22 +91,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     let start = end;
 
-    if (timePreset === 'today') {
+    if (effectiveTimePreset === 'today') {
       start = end;
-    } else if (timePreset === 'yesterday') {
+    } else if (effectiveTimePreset === 'yesterday') {
       start = shiftDate(end, -1);
       return {
         startDate: toInputDate(start),
         endDate: toInputDate(start),
         label: 'Вчера',
       };
-    } else if (timePreset === 'last7') {
+    } else if (effectiveTimePreset === 'last7') {
       start = shiftDate(end, -6);
-    } else if (timePreset === 'last30') {
+    } else if (effectiveTimePreset === 'last30') {
       start = shiftDate(end, -29);
-    } else if (timePreset === 'last90') {
+    } else if (effectiveTimePreset === 'last90') {
       start = shiftDate(end, -89);
-    } else if (timePreset === 'custom') {
+    } else if (effectiveTimePreset === 'custom') {
       return {
         startDate: customRange.start || null,
         endDate: customRange.end || null,
@@ -114,23 +118,23 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       startDate: toInputDate(start),
       endDate: toInputDate(end),
       label:
-        timePreset === 'today'
+        effectiveTimePreset === 'today'
           ? 'Сегодня'
-          : timePreset === 'last7'
+          : effectiveTimePreset === 'last7'
           ? '7 дней'
-          : timePreset === 'last30'
+          : effectiveTimePreset === 'last30'
           ? '30 дней'
           : '3 месяца',
     };
-  }, [customRange.end, customRange.start, shiftDate, timePreset, toInputDate]);
+  }, [customRange.end, customRange.start, shiftDate, effectiveTimePreset, toInputDate]);
 
   const activeFilters = useMemo(
     () => ({
       operatorId: activeOperatorId,
-      startDate: timeRange.startDate,
-      endDate: timeRange.endDate,
+      startDate: isActivityTab ? undefined : timeRange.startDate,
+      endDate: isActivityTab ? undefined : timeRange.endDate,
     }),
-    [activeOperatorId, timeRange.endDate, timeRange.startDate],
+    [activeOperatorId, isActivityTab, timeRange.endDate, timeRange.startDate],
   );
 
   const loadData = useCallback(
@@ -642,8 +646,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
               <SelectPill
                 label=""
                 options={periodOptions}
-                value={timePreset}
+                value={effectiveTimePreset}
+                disabled={isActivityTab}
                 onChange={(value) => {
+                  if (isActivityTab) return;
                   const next = (value as TimePreset) || 'last7';
                   if (next === 'custom') {
                     setCustomRange((prev) => ({
@@ -656,7 +662,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                   setTimePreset(next);
                 }}
                 showLabelInside={false}
-                style={{ minWidth: 160 }}
               />
 
               <SelectPill
@@ -669,7 +674,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                 }}
                 searchable
                 showLabelInside={false}
-                style={{ minWidth: 220 }}
                 disabled={dashboardTab === 'operators'}
               />
 
@@ -692,29 +696,38 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
           </div>
         </div>
 
-        {timePreset === 'custom' && (
-          <div className="dashboard-date-inputs" style={{ justifyContent: 'flex-end' }}>
-            <input
-              type="date"
-              value={customRange.start}
-              onChange={(event) => {
-                const value = event.target.value;
-                setCustomRange((prev) => ({ ...prev, start: value }));
-                setTimePreset('custom');
-              }}
-            />
-            <span className="text-muted">—</span>
-            <input
-              type="date"
-              value={customRange.end}
-              onChange={(event) => {
-                const value = event.target.value;
-                setCustomRange((prev) => ({ ...prev, end: value }));
-                setTimePreset('custom');
-              }}
-            />
-          </div>
-        )}
+        
+        <div
+          className="dashboard-date-inputs"
+          style={{
+            justifyContent: 'flex-end',
+            minHeight: 40,
+            visibility: !isActivityTab && timePreset === 'custom' ? 'visible' : 'hidden',
+            pointerEvents: !isActivityTab && timePreset === 'custom' ? 'auto' : 'none',
+          }}
+        >
+          <input
+            type="date"
+            value={customRange.start}
+            disabled={isActivityTab || timePreset !== 'custom'}
+            onChange={(event) => {
+              const value = event.target.value;
+              setCustomRange((prev) => ({ ...prev, start: value }));
+              setTimePreset('custom');
+            }}
+          />
+          <span className="text-muted">—</span>
+          <input
+            type="date"
+            value={customRange.end}
+            disabled={isActivityTab || timePreset !== 'custom'}
+            onChange={(event) => {
+              const value = event.target.value;
+              setCustomRange((prev) => ({ ...prev, end: value }));
+              setTimePreset('custom');
+            }}
+          />
+        </div>
 
         <div className="dashboard-pill-group" style={{ gap: 8 }}>
           {[

@@ -1940,6 +1940,16 @@ body { background-color: var(--background-color); color: var(--text-color); tran
 }
 .admin-user-card__email { font-weight: 500; color: var(--text-heading); font-size: 0.95rem; }
 .admin-user-card__role-select { width: 160px; }
+.admin-user-card__role-select .pill .value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-user-card__role-select .menu .opt > span:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* Кнопки БИНы/Разделы во всю ширину */
 .admin-user-card__actions-grid {

@@ -1422,10 +1422,11 @@ def delete_chat(chat_id: int) -> None:
             raise ValueError("Chat not found")
         execute("DELETE FROM messages WHERE chat_id = %s", (chat_id,))
         dialog_rows = execute(
-            "SELECT id FROM chat_dialogs WHERE chat_id = %s",
+            "SELECT id, bin FROM chat_dialogs WHERE chat_id = %s",
             (chat_id,),
         ).fetchall()
         dialog_ids = [row["id"] for row in dialog_rows]
+        bins_to_check = {row["bin"] for row in dialog_rows if row["bin"]}
         if dialog_ids:
             placeholders = ",".join("%s" for _ in dialog_ids)
             execute(
@@ -1433,18 +1434,20 @@ def delete_chat(chat_id: int) -> None:
                 dialog_ids,
             )
         execute("DELETE FROM chat_dialogs WHERE chat_id = %s", (chat_id,))
+        _cleanup_orphaned_bins(bins_to_check)
         execute("DELETE FROM chats WHERE chat_id = %s", (chat_id,))
 
 
 def delete_chat_dialog(dialog_id: int) -> None:
     with _lock:
         dialog_row = execute(
-            "SELECT id, chat_id FROM chat_dialogs WHERE id = %s",
+            "SELECT id, chat_id, bin FROM chat_dialogs WHERE id = %s",
             (dialog_id,),
         ).fetchone()
         if dialog_row is None:
             raise ValueError("Диалог не найден")
         chat_id = dialog_row["chat_id"]
+        dialog_bin = dialog_row["bin"]
         message_rows = execute(
             "SELECT id, message_id FROM messages WHERE dialog_id = %s",
             (dialog_id,),
@@ -1462,6 +1465,7 @@ def delete_chat_dialog(dialog_id: int) -> None:
             (dialog_id,),
         )
         execute("DELETE FROM chat_dialogs WHERE id = %s", (dialog_id,))
+        _cleanup_orphaned_bins({dialog_bin} if dialog_bin else set())
         latest = execute(
             """
             SELECT id, bin, started_at, last_message_at
@@ -1494,6 +1498,26 @@ def delete_chat_dialog(dialog_id: int) -> None:
                 "UPDATE chats SET bin = NULL, section = NULL WHERE chat_id = %s",
                 (chat_id,),
             )
+
+
+def _cleanup_orphaned_bins(bins: Iterable[str]) -> None:
+    cleaned = {str(bin_value).strip() for bin_value in bins if bin_value and str(bin_value).strip()}
+    if not cleaned:
+        return
+    placeholders = ",".join("%s" for _ in cleaned)
+    existing_rows = execute(
+        f"SELECT DISTINCT bin FROM chat_dialogs WHERE bin IN ({placeholders})",
+        tuple(cleaned),
+    ).fetchall()
+    existing_bins = {row["bin"] for row in existing_rows}
+    orphaned = cleaned - existing_bins
+    if not orphaned:
+        return
+    orphan_placeholders = ",".join("%s" for _ in orphaned)
+    execute(
+        f"DELETE FROM user_bins WHERE bin IN ({orphan_placeholders})",
+        tuple(orphaned),
+    )
 
 
 def _row_to_user(row: sqlite3.Row | None) -> dict | None:

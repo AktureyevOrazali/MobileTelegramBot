@@ -122,7 +122,13 @@ export default function SelectPill({
         <span className="caret">▾</span>
       </div>
       {open && !disabled && (
-        <div className="menu" role="listbox" style={menuStyle}>
+        <div
+          className="menu"
+          role="listbox"
+          style={menuStyle}
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
           {searchable && (
             <input
               type="text"

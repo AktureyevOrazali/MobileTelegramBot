@@ -208,6 +208,31 @@ def _init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_outbox_onec_message
         ON outbox_onec(message_id)
         """,
+        """
+        CREATE TABLE IF NOT EXISTS dialog_stats (
+            id BIGSERIAL PRIMARY KEY,
+            dialog_id BIGINT NOT NULL,
+            chat_id BIGINT NOT NULL,
+            user_id BIGINT,
+            bin TEXT,
+            section TEXT,
+            started_at TEXT,
+            ended_at TEXT,
+            msg_incoming INTEGER DEFAULT 0,
+            msg_outgoing INTEGER DEFAULT 0,
+            avg_response_time REAL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS stat_questions (
+            id BIGSERIAL PRIMARY KEY,
+            dialog_id BIGINT,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            section TEXT
+        )
+        """,
     ]
 
     with _lock:
@@ -261,7 +286,7 @@ def _sync_sequence(table: str, column: str = "id") -> None:
 
 
 def _sync_sequences() -> None:
-    for table in ("users", "chat_dialogs", "messages", "notifications", "outbox_onec"):
+    for table in ("users", "chat_dialogs", "messages", "notifications", "outbox_onec", "dialog_stats", "stat_questions"):
         _sync_sequence(table)
 
 

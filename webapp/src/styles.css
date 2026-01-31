@@ -2167,6 +2167,7 @@ html, body, #root {
   flex-wrap: wrap;
 }
 
+
 /* 9) Внутренние элементы SelectPill/пилюль:
       важное правило — min-width:0, иначе flex/grid ловит overflow */
 .pill,
@@ -2175,3 +2176,120 @@ html, body, #root {
   min-width: 0;
   max-width: 100%;
 }
+
+/* =========================================
+   NEW DASHBOARD STYLES (Modernized)
+   ========================================= */
+
+.dashboard-overview-row {
+  display: grid;
+  grid-template-columns: minmax(300px, 1.2fr) minmax(260px, 0.8fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .dashboard-overview-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dashboard-speed-card {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-height: 280px;
+  justify-content: center;
+}
+
+.dashboard-speed-card__title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dashboard-speed-card__body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.dashboard-speed-card__chart {
+  flex: 0 0 auto;
+}
+
+.dashboard-speed-card__legend {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-width: 200px;
+  max-width: 320px;
+}
+
+.dashboard-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dashboard-dot--fast { background: #22c55e; }
+.dashboard-dot--medium { background: #facc15; }
+.dashboard-dot--slow { background: #ef4444; }
+
+.dashboard-dialogs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  justify-content: center;
+}
+
+.dashboard-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dashboard-kv__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.dashboard-kv__key {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+.dashboard-kv__val {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text-heading);
+}
+.dashboard-kv__divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 8px 0;
+}
+
+/* More spacing for pills in header */
+.dashboard-header .dashboard-operator-controls {
+  gap: 12px;
+}
+
+/* Cleaner look for date inputs */
+.dashboard-date-inputs input {
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  box-shadow: none;
+  transition: .2s;
+}
+.dashboard-date-inputs input:focus {
+  background: var(--surface-color);
+  border-color: var(--brand-color);
+}
+

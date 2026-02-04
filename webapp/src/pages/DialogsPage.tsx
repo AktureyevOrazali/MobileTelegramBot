@@ -1,21 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { geoMercator, geoPath, scaleLinear } from 'd3';
+import type { FeatureCollection, Geometry } from 'geojson';
 import { ApiClient, ApiError } from '../api/ApiClient';
-import { AuthSession, ChatSummary, DashboardActivityPoint, DashboardSummary, Message, MessageNotification, Section } from '../types';
-import { formatDate, formatDateTime } from '../utils/date';
+import { AuthSession, BinDetailed, ChatSummary, Message, MessageNotification, Section } from '../types';
+import { formatDateTime } from '../utils/date';
 import SelectPill from "../components/SelectPill";
 import StarButton from "../components/StarButton";
 import Modal from "../components/Modal";
 import ConfirmModal from "../components/ConfirmModal";
+import kzMap from '../../kz.json';
 
 const PRESET_MESSAGES = [
   'Здравствуйте! Чем я могу вам помочь?',
   'Спасибо за обращение! Готовы помочь в любое время!',
 ];
 
-const RESPONSE_SPEED_THRESHOLDS = {
-  fast: 2,
-  medium: 5,
-};
 
 /* -------------------- Props -------------------- */
 interface DialogsPageProps {
@@ -262,136 +261,116 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   );
 };
 
-const formatMinutes = (value: number | null) => {
-  if (value === null || !Number.isFinite(value)) {
-    return 'Нет данных';
-  }
-  if (value < 1) {
-    return `${Math.round(value * 60)} сек.`;
-  }
-  return `${value.toFixed(1)} мин.`;
+const GEOJSON_FEATURES = kzMap as FeatureCollection<Geometry, { name: string }>;
+
+const REGION_LABELS: Record<string, string> = {
+  Abai: 'Абайская область',
+  Akmola: 'Акмолинская область',
+  Aktobe: 'Актюбинская область',
+  Almaty: 'Алматинская область',
+  'Almaty (city)': 'г. Алматы',
+  Astana: 'г. Астана',
+  Atyrau: 'Атырауская область',
+  'East Kazakhstan': 'Восточно-Казахстанская область',
+  Jambyl: 'Жамбылская область',
+  Jetisu: 'Жетысуская область',
+  Karaganda: 'Карагандинская область',
+  Kostanay: 'Костанайская область',
+  Kyzylorda: 'Кызылординская область',
+  Mangystau: 'Мангистауская область',
+  'North Kazakhstan': 'Северо-Казахстанская область',
+  Pavlodar: 'Павлодарская область',
+  'Shymkent (city)': 'г. Шымкент',
+  Turkestan: 'Туркестанская область',
+  Ulytau: 'Улытауская область',
+  'West Kazakhstan': 'Западно-Казахстанская область',
 };
 
-const getResponseSpeedTone = (value: number | null) => {
-  if (value === null || !Number.isFinite(value)) {
-    return 'neutral';
-  }
-  if (value <= RESPONSE_SPEED_THRESHOLDS.fast) {
-    return 'fast';
-  }
-  if (value <= RESPONSE_SPEED_THRESHOLDS.medium) {
-    return 'medium';
-  }
-  return 'slow';
-};
+const REGION_MATCHERS: { key: string; patterns: string[] }[] = [
+  { key: 'Almaty (city)', patterns: ['г. алматы', 'город алматы', 'алматы қ', 'almaty city'] },
+  { key: 'Astana', patterns: ['г. астана', 'астана', 'нур-султан', 'нурсултан', 'nur-sultan'] },
+  { key: 'Shymkent (city)', patterns: ['г. шымкент', 'шымкент', 'shymkent'] },
+  { key: 'Almaty', patterns: ['алматин', 'almaty oblast'] },
+  { key: 'Akmola', patterns: ['акмол', 'akmola'] },
+  { key: 'Aktobe', patterns: ['актоб', 'aktobe'] },
+  { key: 'Atyrau', patterns: ['атырау', 'atyrau'] },
+  { key: 'East Kazakhstan', patterns: ['восточно-казахстан', 'east kazakhstan'] },
+  { key: 'West Kazakhstan', patterns: ['западно-казахстан', 'west kazakhstan'] },
+  { key: 'North Kazakhstan', patterns: ['северо-казахстан', 'north kazakhstan'] },
+  { key: 'Jambyl', patterns: ['жамбыл', 'jambyl', 'zhambyl'] },
+  { key: 'Jetisu', patterns: ['жетысу', 'jetisu', 'zhetisu', 'жетісу'] },
+  { key: 'Karaganda', patterns: ['караган', 'karaganda'] },
+  { key: 'Kostanay', patterns: ['костанай', 'kostanay'] },
+  { key: 'Kyzylorda', patterns: ['кызылорд', 'kyzylorda'] },
+  { key: 'Mangystau', patterns: ['мангист', 'mangystau'] },
+  { key: 'Pavlodar', patterns: ['павлодар', 'pavlodar'] },
+  { key: 'Turkestan', patterns: ['туркестан', 'turkestan'] },
+  { key: 'Ulytau', patterns: ['улытау', 'ulytau'] },
+  { key: 'Abai', patterns: ['абай', 'abai'] },
+];
 
-const AnalyticsHistogram: React.FC<{ points: DashboardActivityPoint[] }> = ({ points }) => {
-  const width = 640;
-  const height = 220;
-  const padding = { top: 16, right: 20, bottom: 40, left: 40 };
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
-  const maxValue = Math.max(1, ...points.flatMap((point) => [point.dialogs, point.incomingMessages]));
-  const groupWidth = chartWidth / Math.max(points.length, 1);
-  const barGap = 10;
-  const barWidth = Math.max(8, (groupWidth - barGap) / 2);
-
-  return (
-    <svg className="analytics-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Гистограмма активности">
-      <g transform={`translate(${padding.left}, ${padding.top})`}>
-        {[0.25, 0.5, 0.75, 1].map((ratio) => (
-          <line
-            key={ratio}
-            x1={0}
-            x2={chartWidth}
-            y1={chartHeight - chartHeight * ratio}
-            y2={chartHeight - chartHeight * ratio}
-            className="analytics-chart__grid"
-          />
-        ))}
-        {points.map((point, index) => {
-          const x = index * groupWidth + barGap / 2;
-          const dialogsHeight = (point.dialogs / maxValue) * chartHeight;
-          const incomingHeight = (point.incomingMessages / maxValue) * chartHeight;
-          return (
-            <g key={`${point.date}-${index}`}>
-              <rect
-                x={x}
-                y={chartHeight - dialogsHeight}
-                width={barWidth}
-                height={dialogsHeight}
-                rx={6}
-                className="analytics-chart__bar analytics-chart__bar--dialogs"
-              />
-              <rect
-                x={x + barWidth + 6}
-                y={chartHeight - incomingHeight}
-                width={barWidth}
-                height={incomingHeight}
-                rx={6}
-                className="analytics-chart__bar analytics-chart__bar--incoming"
-              />
-              <text
-                x={x + barWidth}
-                y={chartHeight + 20}
-                textAnchor="middle"
-                className="analytics-chart__label"
-              >
-                {formatDate(point.date).slice(0, 5)}
-              </text>
-            </g>
-          );
-        })}
-      </g>
-    </svg>
+const detectRegionFromAddress = (address: string | null | undefined) => {
+  if (!address) return null;
+  const normalized = address.toLowerCase().replace(/ё/g, 'е');
+  const match = REGION_MATCHERS.find((entry) =>
+    entry.patterns.some((pattern) => normalized.includes(pattern)),
   );
+  return match?.key ?? null;
 };
 
-const AnalyticsLineChart: React.FC<{ points: DashboardActivityPoint[] }> = ({ points }) => {
-  const width = 640;
-  const height = 220;
-  const padding = { top: 20, right: 20, bottom: 36, left: 40 };
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
-  const maxValue = Math.max(1, ...points.flatMap((point) => [point.dialogs, point.incomingMessages]));
+const RegionActivityMap: React.FC<{
+  features: FeatureCollection<Geometry, { name: string }>;
+  counts: Record<string, number>;
+}> = ({ features, counts }) => {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [hovered, setHovered] = useState<{ key: string; x: number; y: number } | null>(null);
 
-  const buildPath = (values: number[]) =>
-    values
-      .map((value, index) => {
-        const x = (index / Math.max(values.length - 1, 1)) * chartWidth;
-        const y = chartHeight - (value / maxValue) * chartHeight;
-        return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
-      })
-      .join(' ');
+  const width = 760;
+  const height = 420;
+  const projection = useMemo(() => geoMercator().fitSize([width, height], features), [features]);
+  const path = useMemo(() => geoPath(projection), [projection]);
+  const maxValue = Math.max(1, ...Object.values(counts));
+  const colorScale = useMemo(
+    () => scaleLinear<string>().domain([0, maxValue]).range(['#93c5fd', '#1e3a8a']),
+    [maxValue],
+  );
 
-  const dialogsPath = buildPath(points.map((point) => point.dialogs));
-  const incomingPath = buildPath(points.map((point) => point.incomingMessages));
+  const handleMove = (event: React.MouseEvent<SVGPathElement>, key: string) => {
+    if (!wrapperRef.current) return;
+    const rect = wrapperRef.current.getBoundingClientRect();
+    setHovered({ key, x: event.clientX - rect.left, y: event.clientY - rect.top });
+  };
 
   return (
-    <svg className="analytics-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Линейный график активности">
-      <g transform={`translate(${padding.left}, ${padding.top})`}>
-        {[0.25, 0.5, 0.75, 1].map((ratio) => (
-          <line
-            key={ratio}
-            x1={0}
-            x2={chartWidth}
-            y1={chartHeight - chartHeight * ratio}
-            y2={chartHeight - chartHeight * ratio}
-            className="analytics-chart__grid"
-          />
-        ))}
-        <path d={dialogsPath} className="analytics-chart__line analytics-chart__line--dialogs" />
-        <path d={incomingPath} className="analytics-chart__line analytics-chart__line--incoming" />
-        {points.map((point, index) => {
-          const x = (index / Math.max(points.length - 1, 1)) * chartWidth;
+    <div className="kz-map" ref={wrapperRef}>
+      <svg className="kz-map__svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Карта Казахстана по регионам">
+        {features.features.map((feature) => {
+          const key = feature.properties?.name;
+          const value = counts[key] ?? 0;
+          const isActive = hovered?.key === key;
           return (
-            <text key={`${point.date}-${index}`} x={x} y={chartHeight + 24} textAnchor="middle" className="analytics-chart__label">
-              {formatDate(point.date).slice(0, 5)}
-            </text>
+            <path
+              key={key}
+              d={path(feature) ?? undefined}
+              fill={colorScale(value)}
+              className={`kz-map__region ${isActive ? 'is-active' : ''}`}
+              onMouseEnter={(event) => handleMove(event, key)}
+              onMouseMove={(event) => handleMove(event, key)}
+              onMouseLeave={() => setHovered(null)}
+            />
           );
         })}
-      </g>
-    </svg>
+      </svg>
+      {hovered && (
+        <div
+          className="kz-map__tooltip"
+          style={{ left: hovered.x + 12, top: hovered.y + 12 }}
+        >
+          <div className="kz-map__tooltip-title">{REGION_LABELS[hovered.key] ?? hovered.key}</div>
+          <div className="kz-map__tooltip-value">{counts[hovered.key] ?? 0} БИН</div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -418,8 +397,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [aiManuallyDisabled, setAiManuallyDisabled] = useState<Set<number>>(new Set());
   const [dialogStatusTarget, setDialogStatusTarget] = useState<{ chat: ChatSummary; action: 'open' | 'close' } | null>(null);
   const [dialogStatusLoading, setDialogStatusLoading] = useState(false);
-  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
-  const [analyticsTab, setAnalyticsTab] = useState<'histogram' | 'response' | 'line'>('histogram');
+  const [binDetails, setBinDetails] = useState<BinDetailed[]>([]);
 
   const currentUser = session.user;
   const canDeleteDialog = currentUser.isAdmin;
@@ -494,16 +472,18 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     }
   }, [apiClient, currentUser.bins, currentUser.isAdmin]);
 
-  const loadDashboardSummary = useCallback(async () => {
+  const loadBinDetails = useCallback(async () => {
+    if (!currentUser.isAdmin && bins.length === 0) return;
     try {
-      const data = await apiClient.fetchDashboardSummary();
-      setDashboardSummary(data);
+      const data = await apiClient.getBinsDetailed();
+      const filtered = currentUser.isAdmin ? data : data.filter((item) => bins.includes(item.bin));
+      setBinDetails(filtered);
     } catch (err) {
-      console.warn('Не удалось загрузить аналитику', err);
+      console.warn('Не удалось загрузить детали БИНов', err);
     }
-  }, [apiClient]);
+  }, [apiClient, bins, currentUser.isAdmin]);
 
-  useEffect(() => { loadSectionsAndChats(true); loadBins(); loadDashboardSummary(); }, [loadSectionsAndChats, loadBins, loadDashboardSummary]);
+  useEffect(() => { loadSectionsAndChats(true); loadBins(); }, [loadSectionsAndChats, loadBins]);
 
   useEffect(() => {
     if (!selectedBin) return;
@@ -511,6 +491,10 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       setSelectedBin(null);
     }
   }, [bins, selectedBin]);
+
+  useEffect(() => {
+    loadBinDetails();
+  }, [loadBinDetails]);
 
   useEffect(() => {
     if (!banner) return;
@@ -600,14 +584,25 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSection, selectedBin, showFavoritesOnly]);
 
-  const activityPoints = useMemo(() => {
-    const points = dashboardSummary?.recentActivity ?? [];
-    return points.slice(-7);
-  }, [dashboardSummary?.recentActivity]);
+  const regionCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    GEOJSON_FEATURES.features.forEach((feature) => {
+      if (feature.properties?.name) {
+        counts[feature.properties.name] = 0;
+      }
+    });
+    binDetails.forEach((detail) => {
+      const regionKey = detectRegionFromAddress(detail.customerLegalAddress);
+      if (regionKey && regionKey in counts) {
+        counts[regionKey] += 1;
+      }
+    });
+    return counts;
+  }, [binDetails]);
 
-  const responseTone = useMemo(
-    () => getResponseSpeedTone(dashboardSummary?.avgResponseTimeMinutes ?? null),
-    [dashboardSummary?.avgResponseTimeMinutes],
+  const maxRegionCount = useMemo(
+    () => Math.max(1, ...Object.values(regionCounts)),
+    [regionCounts],
   );
 
   const filteredChats = useMemo(() => {
@@ -801,139 +796,18 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       <div className="analytics-banner">
         <div className="analytics-banner__header">
           <div>
-            <div className="analytics-banner__eyebrow">Аналитика диалогов</div>
-            <h2 className="analytics-banner__title">Сводка по активностям и скорости ответов</h2>
+            <div className="analytics-banner__eyebrow">Карта БИН</div>
+            <h2 className="analytics-banner__title">Активность по регионам Казахстана</h2>
           </div>
-          <div className="analytics-banner__tabs">
-            <button
-              type="button"
-              className={`analytics-banner__tab ${analyticsTab === 'histogram' ? 'is-active' : ''}`}
-              onClick={() => setAnalyticsTab('histogram')}
-            >
-              Гистограмма
-            </button>
-            <button
-              type="button"
-              className={`analytics-banner__tab ${analyticsTab === 'response' ? 'is-active' : ''}`}
-              onClick={() => setAnalyticsTab('response')}
-            >
-              Ответы
-            </button>
-            <button
-              type="button"
-              className={`analytics-banner__tab ${analyticsTab === 'line' ? 'is-active' : ''}`}
-              onClick={() => setAnalyticsTab('line')}
-            >
-              Линия
-            </button>
+          <div className="kz-map__legend">
+            <span>Светлее</span>
+            <span className="kz-map__legend-gradient" aria-hidden="true" />
+            <span>Темнее</span>
+            <span className="kz-map__legend-value">макс: {maxRegionCount}</span>
           </div>
         </div>
-
         <div className="analytics-banner__body">
-          {analyticsTab === 'histogram' && (
-            <div className="analytics-banner__panel">
-              <div className="analytics-banner__content">
-                <h3>Новые диалоги и входящие сообщения за 7 дней</h3>
-                <p className="analytics-banner__muted">
-                  Используем данные из дэшборда, чтобы видеть динамику за последнюю неделю.
-                </p>
-                <div className="analytics-banner__legend">
-                  <span className="analytics-banner__legend-item">
-                    <span className="analytics-banner__legend-dot analytics-banner__legend-dot--dialogs" />
-                    Новые диалоги
-                  </span>
-                  <span className="analytics-banner__legend-item">
-                    <span className="analytics-banner__legend-dot analytics-banner__legend-dot--incoming" />
-                    Входящие сообщения
-                  </span>
-                </div>
-              </div>
-              <div className="analytics-banner__chart">
-                {activityPoints.length > 0 ? (
-                  <AnalyticsHistogram points={activityPoints} />
-                ) : (
-                  <div className="analytics-banner__empty">Нет данных для построения гистограммы.</div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {analyticsTab === 'response' && (
-            <div className="analytics-banner__panel">
-              <div className="analytics-banner__content">
-                <h3>Среднее время ответа (все сотрудники)</h3>
-                <p className="analytics-banner__muted">
-                  Оценка формируется на основе данных дэшборда и показывает скорость команды в целом.
-                </p>
-                <div className={`analytics-banner__response analytics-banner__response--${responseTone}`}>
-                  <div className="analytics-banner__response-value">
-                    {formatMinutes(dashboardSummary?.avgResponseTimeMinutes ?? null)}
-                  </div>
-                  <div className="analytics-banner__response-label">
-                    {responseTone === 'fast' && 'Быстро'}
-                    {responseTone === 'medium' && 'Средне'}
-                    {responseTone === 'slow' && 'Медленно'}
-                    {responseTone === 'neutral' && 'Нет данных'}
-                  </div>
-                </div>
-                <div className="analytics-banner__scale">
-                  <div className="analytics-banner__scale-segment analytics-banner__scale-segment--fast">
-                    До {RESPONSE_SPEED_THRESHOLDS.fast} мин
-                  </div>
-                  <div className="analytics-banner__scale-segment analytics-banner__scale-segment--medium">
-                    До {RESPONSE_SPEED_THRESHOLDS.medium} мин
-                  </div>
-                  <div className="analytics-banner__scale-segment analytics-banner__scale-segment--slow">
-                    Более {RESPONSE_SPEED_THRESHOLDS.medium} мин
-                  </div>
-                </div>
-              </div>
-              <div className="analytics-banner__chart">
-                <div className="analytics-banner__stats">
-                  {(dashboardSummary?.agentBreakdown ?? []).slice(0, 6).map((agent, index) => (
-                    <div key={`${agent.name}-${index}`} className="analytics-banner__stat-card">
-                      <div className="analytics-banner__stat-title">{agent.name || 'Без имени'}</div>
-                      <div className="analytics-banner__stat-metric">{agent.dialogs} диалогов</div>
-                      <div className="analytics-banner__stat-sub">
-                        {agent.messages} сообщений · {agent.avgMessagesPerDialog.toFixed(1)} средн.
-                      </div>
-                    </div>
-                  ))}
-                  {(dashboardSummary?.agentBreakdown ?? []).length === 0 && (
-                    <div className="analytics-banner__empty">Нет данных по сотрудникам.</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {analyticsTab === 'line' && (
-            <div className="analytics-banner__panel">
-              <div className="analytics-banner__content">
-                <h3>Линейный график активности</h3>
-                <p className="analytics-banner__muted">
-                  Сравнение количества диалогов и входящих сообщений по дням.
-                </p>
-                <div className="analytics-banner__legend">
-                  <span className="analytics-banner__legend-item">
-                    <span className="analytics-banner__legend-dot analytics-banner__legend-dot--dialogs" />
-                    Диалоги
-                  </span>
-                  <span className="analytics-banner__legend-item">
-                    <span className="analytics-banner__legend-dot analytics-banner__legend-dot--incoming" />
-                    Входящие
-                  </span>
-                </div>
-              </div>
-              <div className="analytics-banner__chart">
-                {activityPoints.length > 0 ? (
-                  <AnalyticsLineChart points={activityPoints} />
-                ) : (
-                  <div className="analytics-banner__empty">Нет данных для линейного графика.</div>
-                )}
-              </div>
-            </div>
-          )}
+          <RegionActivityMap features={GEOJSON_FEATURES} counts={regionCounts} />
         </div>
       </div>
 

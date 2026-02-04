@@ -2372,6 +2372,73 @@ body {
   padding: 20px;
 }
 
+.kz-map {
+  position: relative;
+  width: 100%;
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kz-map__svg {
+  width: 100%;
+  height: auto;
+}
+
+.kz-map__region {
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 0.7;
+  cursor: pointer;
+  transition: stroke 0.2s ease, filter 0.2s ease;
+}
+
+.kz-map__region.is-active {
+  stroke: #f8fafc;
+  stroke-width: 1.2;
+  filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.35));
+}
+
+.kz-map__tooltip {
+  position: absolute;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  font-size: 0.85rem;
+  pointer-events: none;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.35);
+  min-width: 140px;
+}
+
+.kz-map__tooltip-title {
+  font-weight: 600;
+}
+
+.kz-map__tooltip-value {
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+.kz-map__legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.kz-map__legend-gradient {
+  width: 120px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #93c5fd 0%, #1e3a8a 100%);
+}
+
+.kz-map__legend-value {
+  opacity: 0.8;
+}
+
 .analytics-banner__panel {
   display: grid;
   gap: 24px;

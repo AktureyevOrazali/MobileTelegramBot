@@ -22,6 +22,34 @@ export interface UnassignedBin {
   openDialogs: number;
 }
 
+export interface OrganizationWithoutContractRaw {
+  customer_bin: string;
+  customer_legal_address: string | null;
+  customer_bank_name_ru: string | null;
+  created_at: string;
+}
+
+export interface OrganizationWithoutContract {
+  customerBin: string;
+  customerLegalAddress: string | null;
+  customerBankNameRu: string | null;
+  createdAt: Date;
+}
+
+export interface BinDetailedRaw {
+  bin: string;
+  has_contract: boolean;
+  customer_legal_address: string | null;
+  customer_bank_name_ru: string | null;
+}
+
+export interface BinDetailed {
+  bin: string;
+  hasContract: boolean;
+  customerLegalAddress: string | null;
+  customerBankNameRu: string | null;
+}
+
 export interface UserProfileRaw {
   id: number;
   email: string;
@@ -189,7 +217,7 @@ export interface MessageNotification {
   sectionTitle?: string | null;
   bin?: string | null;
   dialogId?: number | null;
-  }
+}
 
 export interface DashboardSectionStatRaw {
   section: string | null;

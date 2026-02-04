@@ -11,6 +11,7 @@ from telebot import types
 
 from . import database
 from .ai_manager import ai_manager
+from . import contract_checker
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -370,14 +371,40 @@ def handle_updates(message: telebot.types.Message) -> None:
         return
 
     if is_bin_message:
+        # Check if customer has a valid contract for 2026
+        contract_result = contract_checker.check_customer_contracts(normalized_text)
+        has_contract = contract_result.get("has_contract", False)
+        
+        # Save organization without contract info (for admin tracking)
+        if not has_contract:
+            database.add_organization_without_contract(
+                customer_bin=normalized_text,
+                customer_legal_address=contract_result.get("customer_legal_address"),
+                customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
+            )
+            logger.info(f"Organization {normalized_text} saved as organization without contract")
+        
+        # Create dialog for ALL BINs (with or without contract)
         was_empty_bin = not chat_record or not chat_record.get("bin")
         dialog_id = database.set_chat_bin(chat.id, normalized_text)
+        # Save BIN to client's persistent list (survives dialog deletion)
+        database.add_client_bin(chat.id, normalized_text)
         ai_session['ai_enabled'] = True
         ai_session['operator_requested'] = False
+        
         if was_empty_bin:
             bot.send_message(chat.id, f"Спасибо! БИН {normalized_text} сохранён.")
         else:
             bot.send_message(chat.id, f"БИН обновлён. Открыт новый диалог для {normalized_text}.")
+        
+        # Notify about contract status
+        if not has_contract:
+            bot.send_message(
+                chat.id,
+                "⚠️ Обратите внимание: у вашей организации нет действующего договора с нами на 2026 год.\n"
+                "Для заключения договора обратитесь в наш офис.",
+            )
+        
         bot.send_message(
             chat.id,
             "Теперь выберите подходящий раздел.\n\n"
@@ -422,8 +449,12 @@ def handle_updates(message: telebot.types.Message) -> None:
         _select_section(chat.id, selected_section)
         return
 
-    chat_record = database.get_chat(chat.id)
-    current_section = chat_record.get("section") if chat_record else None
+    # Получаем раздел из активного диалога (привязан к БИНу), а не из чата
+    current_section = database.get_dialog_section(chat.id)
+    # Если section пустой в диалоге - берём из чата для обратной совместимости
+    if not current_section:
+        chat_record = database.get_chat(chat.id)
+        current_section = chat_record.get("section") if chat_record else None
     
     if not current_section:
         bot.send_message(
@@ -534,23 +565,27 @@ def _send_faq_menu(chat_id: int, section_id: str) -> None:
 
 
 def _send_bin_selection_menu(chat_id: int) -> None:
-    dialogs = database.list_chat_dialogs(chat_id)
-    if not dialogs:
+    # Use client_bins for persistent BIN list (not deleted with dialogs)
+    client_bins = database.list_client_bins(chat_id)
+    if not client_bins:
         bot.send_message(
             chat_id,
-            "Сохранённых диалогов пока нет. Добавьте новый БИН через кнопку"
+            "Сохранённых БИНов пока нет. Добавьте новый БИН через кнопку"
             " или просто отправьте БИН числом из 12 цифр.",
         )
         return
     keyboard = types.InlineKeyboardMarkup()
-    for dialog in dialogs:
-        label = dialog["bin"] or "Не указан"
-        if dialog["ended_at"] is None:
+    # Check which BIN has active dialog
+    active_dialog = database.get_active_chat_dialog(chat_id)
+    active_bin = active_dialog["bin"] if active_dialog else None
+    for bin_value in client_bins:
+        label = bin_value
+        if bin_value == active_bin:
             label = f"{label} • текущий"
         keyboard.add(
             types.InlineKeyboardButton(
                 label,
-                callback_data=f"{SWITCH_BIN_CALLBACK}:{dialog['id']}",
+                callback_data=f"{SWITCH_BIN_CALLBACK}:{bin_value}",
             )
         )
     bot.send_message(
@@ -663,15 +698,19 @@ def handle_operator_callback(call: telebot.types.CallbackQuery) -> None:
 @bot.callback_query_handler(func=lambda call: call.data.startswith(f"{SWITCH_BIN_CALLBACK}:"))
 def handle_switch_bin_callback(call: telebot.types.CallbackQuery) -> None:
     try:
-        _, dialog_id_str = call.data.split(":", 1)
-        dialog_id = int(dialog_id_str)
+        _, bin_value = call.data.split(":", 1)
+        bin_value = bin_value.strip()
     except (ValueError, IndexError):
-        bot.answer_callback_query(call.id, "Не удалось распознать диалог")
+        bot.answer_callback_query(call.id, "Не удалось распознать БИН")
+        return
+    if not bin_value:
+        bot.answer_callback_query(call.id, "БИН не указан")
         return
     chat = call.message.chat
-    dialog = database.activate_chat_dialog(dialog_id, chat_id=chat.id)
-    if dialog is None:
-        bot.answer_callback_query(call.id, "Диалог не найден")
+    # Create or activate dialog for this BIN
+    dialog_id = database.set_chat_bin(chat.id, bin_value)
+    if dialog_id is None:
+        bot.answer_callback_query(call.id, "Ошибка активации диалога")
         return
     ai_session = get_ai_session(chat.id)
     ai_session['ai_enabled'] = True
@@ -679,7 +718,7 @@ def handle_switch_bin_callback(call: telebot.types.CallbackQuery) -> None:
     bot.answer_callback_query(call.id, "Диалог активирован")
     bot.send_message(
         chat.id,
-        f"Возобновлён диалог по БИН {dialog['bin']}. AI помощник включен.",
+        f"Возобновлён диалог по БИН {bin_value}. AI помощник включен.",
         reply_markup=_section_keyboard(),
     )
 

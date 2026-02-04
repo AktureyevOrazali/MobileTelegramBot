@@ -17,6 +17,7 @@ from pydantic import AliasChoices, BaseModel, EmailStr, Field, validator
 from . import database
 from .ai_manager import ai_manager
 from .telegram_bot import bot, enable_ai_session
+from . import contract_checker
 
 API_TOKEN = os.getenv("MOBILE_API_TOKEN")
 ONEC_INTEGRATION_TOKEN = os.getenv("ONEC_INTEGRATION_TOKEN")
@@ -213,6 +214,20 @@ class BinsUpdateRequest(BaseModel):
 class UnassignedBinResponse(BaseModel):
     bin: str
     open_dialogs: int
+
+
+class OrganizationWithoutContractResponse(BaseModel):
+    customer_bin: str
+    customer_legal_address: str | None = None
+    customer_bank_name_ru: str | None = None
+    created_at: str
+
+
+class BinDetailedResponse(BaseModel):
+    bin: str
+    has_contract: bool
+    customer_legal_address: str | None = None
+    customer_bank_name_ru: str | None = None
 
 
 class MessageResponse(BaseModel):
@@ -667,6 +682,65 @@ def list_bins_endpoint(
     return database.list_bins(query)
 
 
+@router.delete("/bins/{bin_value}")
+def delete_bin_endpoint(
+    bin_value: str,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    """Удаляет БИН из базы."""
+    removed = database.remove_bin(bin_value)
+    if not removed:
+        raise HTTPException(status_code=404, detail="БИН не найден")
+    return {"status": "ok"}
+
+
+@router.get("/bins/detailed", response_model=List[BinDetailedResponse])
+def list_bins_detailed_endpoint(
+    query: str | None = None,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    """Возвращает список БИНов с информацией о наличии договора."""
+    bins = database.list_bins(query)
+    # Get organizations without contracts for quick lookup
+    orgs_without_contracts = {
+        org["customer_bin"]: org
+        for org in database.list_organizations_without_contracts()
+    }
+    result = []
+    for bin_value in bins:
+        org_data = orgs_without_contracts.get(bin_value)
+        if org_data:
+            # No contract - use stored data
+            result.append(BinDetailedResponse(
+                bin=bin_value,
+                has_contract=False,
+                customer_legal_address=org_data.get("customer_legal_address"),
+                customer_bank_name_ru=org_data.get("customer_bank_name_ru"),
+            ))
+        else:
+            # Has contract or no data
+            result.append(BinDetailedResponse(
+                bin=bin_value,
+                has_contract=True,
+            ))
+    return result
+
+
+@router.get("/bins/{bin_value}/info", response_model=BinDetailedResponse)
+def get_bin_info_endpoint(
+    bin_value: str,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    """Возвращает информацию о БИНе с проверкой договора через GraphQL."""
+    contract_data = contract_checker.check_customer_contracts(bin_value)
+    return BinDetailedResponse(
+        bin=bin_value,
+        has_contract=contract_data.get("has_contract", False),
+        customer_legal_address=contract_data.get("customer_legal_address"),
+        customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
+    )
+
+
 @router.get("/bins/unassigned", response_model=List[UnassignedBinResponse])
 def list_unassigned_bins_endpoint(
     _: Dict[str, object] = Depends(require_admin_or_moderator),
@@ -680,6 +754,14 @@ def list_pending_bins_endpoint(
 ):
     """Legacy alias for clients expecting the previous endpoint path."""
     return list_unassigned_bins_endpoint()
+
+
+@router.get("/organizations/without-contracts", response_model=List[OrganizationWithoutContractResponse])
+def list_organizations_without_contracts_endpoint(
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    """Возвращает список организаций без действующих договоров."""
+    return [OrganizationWithoutContractResponse(**item) for item in database.list_organizations_without_contracts()]
 
 
 @router.get("/faq")
@@ -1264,6 +1346,22 @@ def create_onec_message(
     title_candidate = _normalize_optional(request.title)
     chat_title = title_candidate or f"1С клиент {external_chat_id}"  # ← Здесь меняем
 
+    # Check if customer has a valid contract for 2026
+    logger.info(f"Checking contract for 1C customer BIN: {bin_value}")
+    contract_result = contract_checker.check_customer_contracts(bin_value)
+    has_contract = contract_result.get("has_contract", False)
+    logger.info(f"Contract check result for {bin_value}: has_contract={has_contract}")
+    
+    # Save organization without contract info (for admin tracking)
+    if not has_contract:
+        database.add_organization_without_contract(
+            customer_bin=bin_value,
+            customer_legal_address=contract_result.get("customer_legal_address"),
+            customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
+        )
+        logger.info(f"1C Organization {bin_value} saved as organization without contract")
+
+    # Create dialog for ALL BINs (with or without contract)
     database.upsert_chat(
         chat_id,
         chat_title,
@@ -1272,8 +1370,8 @@ def create_onec_message(
         external_chat_id=external_chat_id,
     )
     try:
-        # БИН сохраняем для диалога, но не для названия
-        dialog_id = database.ensure_active_chat_dialog(chat_id, bin_value)
+        # БИН и раздел сохраняем для диалога
+        dialog_id = database.ensure_active_chat_dialog(chat_id, bin_value, section=section_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -1293,7 +1391,7 @@ def create_onec_message(
     )
 
     if section_id:
-        database.set_chat_section(chat_id, section_id)
+        database.set_chat_section(chat_id, section_id, dialog_id=dialog_id)
 
     chat_record = database.get_chat(chat_id)
     chat_section = section_id or (chat_record.get("section") if chat_record else None)
@@ -1351,7 +1449,7 @@ def create_onec_message(
                     response_text = "Пока нет готового ответа. Напишите 'оператор', чтобы связаться с консультантом."
 
                 if response_section and response_section != chat_section:
-                    database.set_chat_section(chat_id, response_section)
+                    database.set_chat_section(chat_id, response_section, dialog_id=dialog_id)
                     chat_section = response_section
 
                 database.set_dialog_operator_mode(dialog_id, False)
@@ -1419,6 +1517,7 @@ def create_onec_message(
 
     return {
         "status": "ok",
+        "has_contract": True,
         "chat_id": chat_id,
         "dialog_id": dialog_id,
     }

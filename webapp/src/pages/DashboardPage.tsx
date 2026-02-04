@@ -121,10 +121,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
         effectiveTimePreset === 'today'
           ? 'Сегодня'
           : effectiveTimePreset === 'last7'
-          ? '7 дней'
-          : effectiveTimePreset === 'last30'
-          ? '30 дней'
-          : '3 месяца',
+            ? '7 дней'
+            : effectiveTimePreset === 'last30'
+              ? '30 дней'
+              : '3 месяца',
     };
   }, [customRange.end, customRange.start, shiftDate, effectiveTimePreset, toInputDate]);
 
@@ -162,8 +162,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
           err instanceof ApiError
             ? err.message
             : err instanceof Error
-            ? err.message
-            : 'Не удалось получить данные отчёта.';
+              ? err.message
+              : 'Не удалось получить данные отчёта.';
         setError(message);
       } finally {
         if (mode === 'initial') setLoading(false);
@@ -208,8 +208,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
           err instanceof ApiError
             ? err.message
             : err instanceof Error
-            ? err.message
-            : 'Не удалось загрузить список сотрудников.';
+              ? err.message
+              : 'Не удалось загрузить список сотрудников.';
         setOperatorsError(message);
       } finally {
         if (!cancelled) setOperatorsLoading(false);
@@ -365,7 +365,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       // Для всех операторов: группируем по операторам, вычисляем среднее для каждого, затем классифицируем
       const operatorAverages = new Map<string, number[]>();
       const allDialogs = data.responseTimeDialogs ?? [];
-      
+
       allDialogs.forEach((dialog) => {
         const operatorName = normalizeName(dialog.author);
         if (!operatorAverages.has(operatorName)) {
@@ -599,7 +599,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
   const recentWeek = useMemo(() => {
     if (!data.recentActivity || data.recentActivity.length === 0) return [];
-    return data.recentActivity.slice(-7);
+
+    // Берем последние 7 дней и сортируем: новые сверху
+    return data.recentActivity
+      .slice(-7)
+      .sort((a, b) => b.date.localeCompare(a.date));
   }, [data.recentActivity]);
 
   // ====== NEW: единый donut с 3 сегментами + легенда ======
@@ -696,7 +700,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
           </div>
         </div>
 
-        
+
         <div
           className="dashboard-date-inputs"
           style={{

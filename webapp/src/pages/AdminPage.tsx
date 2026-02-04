@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient, ApiError } from '../api/ApiClient';
-import { PendingRegistration, RoleInfo, Section, UnassignedBin, UserBinAssignment, UserProfile } from '../types';
+import { BinDetailed, OrganizationWithoutContract, PendingRegistration, RoleInfo, Section, UnassignedBin, UserBinAssignment, UserProfile } from '../types';
 import { formatDateTime } from '../utils/date';
 import SelectPill from '../components/SelectPill';
 import Modal from '../components/Modal';
@@ -62,7 +62,7 @@ const useDebouncedEffect = (fn: () => void, deps: React.DependencyList, delay = 
   useEffect(() => {
     if (isFirst.current) {
       isFirst.current = false;
-      return () => {};
+      return () => { };
     }
     const t = setTimeout(fn, delay);
     return () => clearTimeout(t);
@@ -302,7 +302,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     setBinToAdd('');
     closeBinModal();
   };
-  
+
   const removeBin = (binValue: string) => {
     setAssignedBins((prev) => prev.filter((assignment) => assignment.bin !== binValue));
   };
@@ -349,7 +349,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
         <h3 className="admin-user-card__name">{user.name}</h3>
         <span className="badge">{roleLabels[user.role] ?? user.role}</span>
       </div>
-      
+
       {/* Visual Separator */}
       <div className="admin-user-card__separator" />
 
@@ -357,35 +357,35 @@ const AdminUserCard: React.FC<UserCardProps> = ({
       <div className="admin-user-card__info-row">
         <div className="admin-user-card__email">{user.email}</div>
         <div className="admin-user-card__role-select">
-           <SelectPill
-              label=""
-              showLabelInside={false}
-              options={roleOptions}
-              value={selectedRole}
-              onChange={(v) => setSelectedRole(v)}
-              style={{ minWidth: 0, width: '100%' }}
-              disabled={isRoleReadonly}
-            />
+          <SelectPill
+            label=""
+            showLabelInside={false}
+            options={roleOptions}
+            value={selectedRole}
+            onChange={(v) => setSelectedRole(v)}
+            style={{ minWidth: 0, width: '100%' }}
+            disabled={isRoleReadonly}
+          />
         </div>
       </div>
 
       {/* Stats/Action Buttons: Full Width Grid */}
       {isOperator && (
         <div className="admin-user-card__actions-grid">
-           <button
-              className="button secondary admin-user-card__full-btn"
-              type="button"
-              onClick={() => setOperatorBinsOpen(true)}
-            >
-              БИНы · {assignedBins.length}
-            </button>
-            <button
-              className="button secondary admin-user-card__full-btn"
-              type="button"
-              onClick={() => setOperatorSectionsOpen(true)}
-            >
-              Разделы · {assignedSections.length}
-            </button>
+          <button
+            className="button secondary admin-user-card__full-btn"
+            type="button"
+            onClick={() => setOperatorBinsOpen(true)}
+          >
+            БИНы · {assignedBins.length}
+          </button>
+          <button
+            className="button secondary admin-user-card__full-btn"
+            type="button"
+            onClick={() => setOperatorSectionsOpen(true)}
+          >
+            Разделы · {assignedSections.length}
+          </button>
         </div>
       )}
 
@@ -398,24 +398,24 @@ const AdminUserCard: React.FC<UserCardProps> = ({
 
       {/* Footer */}
       <div className="admin-user-card__footer">
-      {canManageThisUser && (
-        <button
-          className="button secondary small"
-          type="button"
-          onClick={() => { setPwd1(''); setPwd2(''); setPwdErr(null); setPwdOpen(true); }}
-        >
-          Сбросить пароль
-        </button>
-      )}
-
-      <div className="admin-user-card__footer-actions">
-        {canManageThisUser && canDeleteUser && (
-          <button className="button danger small" type="button" onClick={() => onDeleteRequest(user)}>
-            Удалить
+        {canManageThisUser && (
+          <button
+            className="button secondary small"
+            type="button"
+            onClick={() => { setPwd1(''); setPwd2(''); setPwdErr(null); setPwdOpen(true); }}
+          >
+            Сбросить пароль
           </button>
         )}
+
+        <div className="admin-user-card__footer-actions">
+          {canManageThisUser && canDeleteUser && (
+            <button className="button danger small" type="button" onClick={() => onDeleteRequest(user)}>
+              Удалить
+            </button>
+          )}
+        </div>
       </div>
-    </div>
 
 
       {/* Operator Bins Modal */}
@@ -444,7 +444,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
               style={{ minWidth: 0, width: '100%' }}
             />
           </div>
-           <div className="flex-gap admin-modal__list" style={{ marginTop: 12 }}>
+          <div className="admin-modal__list">
             {assignedBins.length === 0 && <span className="text-muted">Нет назначенных БИНов</span>}
             {assignedBins.map((assignment) => (
               <span
@@ -458,7 +458,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
                     {assignment.expiresAt ? `до ${formatDateTime(assignment.expiresAt)}` : 'бессрочно'}
                   </span>
                 </span>
-              <div className="bin-chip__actions">
+                <div className="bin-chip__actions">
                   <button
                     className="chip-action"
                     type="button"
@@ -487,7 +487,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
             <h3>Разделы оператора</h3>
             <span className="badge">{user.name}</span>
           </div>
-          
+
           <div className="admin-modal__form">
             <div className="label">Добавить раздел</div>
             <SelectPill
@@ -506,8 +506,8 @@ const AdminUserCard: React.FC<UserCardProps> = ({
           </div>
 
           <div className="admin-modal__list-container">
-             <div className="label" style={{ marginBottom: 8 }}>Назначенные разделы</div>
-             <div className="flex-gap admin-modal__list">
+            <div className="label">Назначенные разделы</div>
+            <div className="admin-modal__list">
               {assignedSections.length === 0 && (
                 <span className="text-muted">Нет назначенных разделов</span>
               )}
@@ -531,7 +531,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
           </div>
         </div>
       </Modal>
-      
+
       {/* Date Selection Modal for Bin */}
       <Modal open={binModalOpen} onClose={closeBinModal} className="bin-modal__container">
         <div className="bin-modal">
@@ -540,7 +540,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
             {pendingBinValue && <span className="bin-modal__badge">{pendingBinValue}</span>}
           </div>
           {/* User Context removed as per "remove extra text" philosophy, kept simple */}
-          
+
           <div className="bin-modal__options">
             <label className={`bin-modal__option ${pendingIndefinite ? 'bin-modal__option--active' : ''}`}>
               <input
@@ -642,6 +642,15 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
   const [unassignedBinsModalOpen, setUnassignedBinsModalOpen] = useState(false);
+  const [organizationsWithoutContracts, setOrganizationsWithoutContracts] = useState<OrganizationWithoutContract[]>([]);
+  const [organizationsModalOpen, setOrganizationsModalOpen] = useState(false);
+  const [orgBinValue, setOrgBinValue] = useState('');
+  const [orgUserId, setOrgUserId] = useState('');
+  const [allBinsModalOpen, setAllBinsModalOpen] = useState(false);
+  const [allBinsSearch, setAllBinsSearch] = useState('');
+  const [binsDetailed, setBinsDetailed] = useState<BinDetailed[]>([]);
+  const [selectedBinInfo, setSelectedBinInfo] = useState<BinDetailed | null>(null);
+
 
 
   const loadAdminData = useCallback(
@@ -649,7 +658,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       setLoading(true);
       setError(null);
       try {
-        const [loadedRoles, loadedUsers, loadedSections, loadedBins, loadedUnassignedBins, loadedPending] =
+        const [loadedRoles, loadedUsers, loadedSections, loadedBins, loadedUnassignedBins, loadedPending, loadedOrganizations, loadedBinsDetailed] =
           await Promise.all([
             apiClient.fetchRoles(),
             apiClient.fetchUsers(query),
@@ -657,6 +666,8 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
             apiClient.fetchBins(),
             apiClient.fetchUnassignedBins(),
             apiClient.fetchPendingRegistrations(),
+            apiClient.fetchOrganizationsWithoutContracts(),
+            apiClient.getBinsDetailed(),
           ]);
         setRoles(loadedRoles);
         setUsers(loadedUsers);
@@ -664,6 +675,8 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
         setBins(loadedBins);
         setUnassignedBins(loadedUnassignedBins);
         setPendingRegistrations(loadedPending);
+        setOrganizationsWithoutContracts(loadedOrganizations);
+        setBinsDetailed(loadedBinsDetailed);
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
         else if (err instanceof Error) setError(err.message);
@@ -758,6 +771,23 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       ),
     [unassignedBins],
   );
+
+  const orgBinOptions = useMemo(
+    () =>
+      [{ value: '', label: 'Выберите БИН' }].concat(
+        organizationsWithoutContracts.map((org) => ({
+          value: org.customerBin,
+          label: org.customerBin,
+        })),
+      ),
+    [organizationsWithoutContracts],
+  );
+
+  const filteredBinsDetailed = useMemo(() => {
+    const query = allBinsSearch.trim().toLowerCase();
+    if (!query) return binsDetailed;
+    return binsDetailed.filter((item) => item.bin.toLowerCase().includes(query));
+  }, [binsDetailed, allBinsSearch]);
 
   const selectedAssignUser = useMemo(
     () => assignableUsers.find((user) => String(user.id) === assignUserId) ?? null,
@@ -902,31 +932,83 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
     }
   }, [apiClient, userToDelete]);
 
+  const handleDeleteBin = useCallback(async (binValue: string) => {
+    try {
+      await apiClient.deleteBin(binValue);
+      setBins((prev) => prev.filter((b) => b !== binValue));
+      setBinsDetailed((prev) => prev.filter((b) => b.bin !== binValue));
+    } catch (err) {
+      console.error('Не удалось удалить БИН', err);
+    }
+  }, [apiClient]);
+
+  const [binInfoLoading, setBinInfoLoading] = useState(false);
+
+  const handleBinClick = useCallback(async (binValue: string) => {
+    setBinInfoLoading(true);
+    try {
+      const info = await apiClient.getBinInfo(binValue);
+      setSelectedBinInfo(info);
+    } catch (err) {
+      console.error('Не удалось загрузить информацию о БИН', err);
+      // Show basic info from list if API fails
+      const basicInfo = binsDetailed.find((b) => b.bin === binValue);
+      if (basicInfo) setSelectedBinInfo(basicInfo);
+    } finally {
+      setBinInfoLoading(false);
+    }
+  }, [apiClient, binsDetailed]);
+
   return (
     <div className="admin-page">
-      {/* Unassigned Bins - Compact like Pending Registrations */}
-      <div className="card admin-section">
-        <div className="admin-section__header">
-          <div>
-            <h3>Неразделенные БИНы</h3>
+      {/* Three cards in a row */}
+      <div className="admin-cards-row">
+        {/* All BINs */}
+        <div className="card admin-section admin-section--compact">
+          <div className="admin-section__header">
+            <h3>Все БИНы</h3>
+            <button
+              className="admin-section__count admin-section__count--button"
+              type="button"
+              onClick={() => setAllBinsModalOpen(true)}
+              disabled={bins.length === 0}
+            >
+              {bins.length}
+            </button>
           </div>
-
-          <button
-            className="admin-section__count admin-section__count--button"
-            type="button"
-            onClick={() => setUnassignedBinsModalOpen(true)}
-            disabled={unassignedBins.length === 0}
-          >
-            {unassignedBins.length}
-          </button>
         </div>
 
-        {unassignedBins.length === 0 && (
-          <span className="text-muted">Все активные БИНы закреплены за сотрудниками.</span>
-        )}
+        {/* Organizations Without Contracts */}
+        <div className="card admin-section admin-section--compact">
+          <div className="admin-section__header">
+            <h3>Без договора</h3>
+            <button
+              className="admin-section__count admin-section__count--button"
+              type="button"
+              onClick={() => setOrganizationsModalOpen(true)}
+              disabled={organizationsWithoutContracts.length === 0}
+            >
+              {organizationsWithoutContracts.length}
+            </button>
+          </div>
+        </div>
+
+        {/* Unassigned Bins */}
+        <div className="card admin-section admin-section--compact">
+          <div className="admin-section__header">
+            <h3>Неразделённые</h3>
+            <button
+              className="admin-section__count admin-section__count--button"
+              type="button"
+              onClick={() => setUnassignedBinsModalOpen(true)}
+              disabled={unassignedBins.length === 0}
+            >
+              {unassignedBins.length}
+            </button>
+          </div>
+        </div>
       </div>
 
-      
       {/* Pending Registrations - Compact */}
       <div className="card admin-section">
         <div className="admin-section__header">
@@ -1022,26 +1104,26 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
         <div className="admin-modal">
           <div className="admin-modal__header">
             <h3>Заявки ({pendingRegistrations.length})</h3>
-             <div className="admin-modal__header-actions">
-                <button
-                  className="button secondary small"
-                  type="button"
-                  disabled={pendingRegistrations.length === 0 || pendingBulkAction !== null}
-                  onClick={() => handlePendingBulkAction('reject')}
-                >
-                  Отклонить все
-                </button>
-                 <button
-                  className="button small"
-                  type="button"
-                  disabled={pendingRegistrations.length === 0 || pendingBulkAction !== null}
-                  onClick={() => handlePendingBulkAction('approve')}
-                >
-                  Принять все
-                </button>
+            <div className="admin-modal__header-actions">
+              <button
+                className="button secondary small"
+                type="button"
+                disabled={pendingRegistrations.length === 0 || pendingBulkAction !== null}
+                onClick={() => handlePendingBulkAction('reject')}
+              >
+                Отклонить все
+              </button>
+              <button
+                className="button small"
+                type="button"
+                disabled={pendingRegistrations.length === 0 || pendingBulkAction !== null}
+                onClick={() => handlePendingBulkAction('approve')}
+              >
+                Принять все
+              </button>
             </div>
           </div>
-          
+
           <div className="admin-modal__list admin-modal__list--stack">
             {pendingRegistrations.length === 0 ? (
               <span className="text-muted">Нет новых заявок.</span>
@@ -1130,15 +1212,10 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                 </button>
               </div>
 
-              <div className="admin-section__list">
+              <div className="admin-section__list admin-section__list--grid">
                 {unassignedBins.map((item) => (
-                  <span key={item.bin} className="chip bin-chip pending-bin-chip">
+                  <span key={item.bin} className="chip bin-chip bin-chip--compact">
                     <span className="bin-chip__title">{item.bin}</span>
-                    <span className="bin-chip__meta">
-                      {item.openDialogs > 0
-                        ? `${item.openDialogs} ${pluralizeDialogs(item.openDialogs)}`
-                        : 'нет диалогов'}
-                    </span>
                   </span>
                 ))}
               </div>
@@ -1209,6 +1286,137 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
               {assignLoading ? '...' : 'Назначить'}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Organizations Without Contracts Modal */}
+      <Modal open={organizationsModalOpen} onClose={() => setOrganizationsModalOpen(false)} className="admin-modal__container">
+        <div className="admin-modal">
+          <div className="admin-modal__header">
+            <h3>Организации без договора ({organizationsWithoutContracts.length})</h3>
+          </div>
+
+          {organizationsWithoutContracts.length === 0 ? (
+            <span className="text-muted">Нет организаций без договора.</span>
+          ) : (
+            <>
+              <div className="admin-assign-grid">
+                <div className="admin-assign-grid__item">
+                  <SelectPill
+                    label=""
+                    showLabelInside={false}
+                    options={orgBinOptions}
+                    value={orgBinValue}
+                    onChange={(value) => setOrgBinValue(value)}
+                    searchable
+                    style={{ minWidth: 0, width: '100%' }}
+                  />
+                </div>
+
+                <div className="admin-assign-grid__item">
+                  <SelectPill
+                    label=""
+                    showLabelInside={false}
+                    options={assignUserOptions}
+                    value={orgUserId}
+                    onChange={(value) => setOrgUserId(value)}
+                    searchable
+                    style={{ minWidth: 0, width: '100%' }}
+                  />
+                </div>
+
+                <button
+                  className="button admin-assign-grid__btn"
+                  type="button"
+                  disabled={!orgBinValue || !orgUserId}
+                  onClick={() => {
+                    setAssignBinValue(orgBinValue);
+                    setAssignUserId(orgUserId);
+                    setOrganizationsModalOpen(false);
+                    openAssignModal();
+                  }}
+                >
+                  Назначить
+                </button>
+              </div>
+
+              <div className="admin-section__list admin-section__list--grid">
+                {organizationsWithoutContracts.map((item) => (
+                  <span key={item.customerBin} className="chip bin-chip bin-chip--compact">
+                    <span className="bin-chip__title">{item.customerBin}</span>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* All BINs Modal */}
+      <Modal open={allBinsModalOpen} onClose={() => { setAllBinsModalOpen(false); setAllBinsSearch(''); setSelectedBinInfo(null); }} className="admin-modal__container">
+        <div className="admin-modal">
+          <div className="admin-modal__header">
+            <h3>Все БИНы ({bins.length})</h3>
+          </div>
+
+          <input
+            className="input"
+            placeholder="Поиск БИН..."
+            value={allBinsSearch}
+            onChange={(e) => setAllBinsSearch(e.target.value)}
+            style={{ marginBottom: 12 }}
+          />
+
+          {binInfoLoading ? (
+            <div className="bin-info-panel">
+              <span className="text-muted">Загрузка...</span>
+            </div>
+          ) : selectedBinInfo ? (
+            <div className="bin-info-panel">
+              <button type="button" className="btn btn--ghost" onClick={() => setSelectedBinInfo(null)}>← Назад</button>
+              <div className="bin-info-details">
+                <h4>{selectedBinInfo.bin}</h4>
+                <p className={selectedBinInfo.hasContract ? 'text-success' : 'text-warning'}>
+                  {selectedBinInfo.hasContract ? '✓ Есть договор' : '⚠ Без договора'}
+                </p>
+                {selectedBinInfo.customerLegalAddress && (
+                  <p><strong>Адрес:</strong> {selectedBinInfo.customerLegalAddress}</p>
+                )}
+                {selectedBinInfo.customerBankNameRu && (
+                  <p><strong>Банк:</strong> {selectedBinInfo.customerBankNameRu}</p>
+                )}
+                {!selectedBinInfo.customerLegalAddress && !selectedBinInfo.customerBankNameRu && (
+                  <p className="text-muted">Дополнительная информация недоступна</p>
+                )}
+              </div>
+            </div>
+          ) : filteredBinsDetailed.length === 0 ? (
+            <span className="text-muted">Нет БИНов.</span>
+          ) : (
+            <div className="admin-section__list admin-section__list--grid">
+              {filteredBinsDetailed.map((item) => (
+                <span
+                  key={item.bin}
+                  className="chip bin-chip bin-chip--compact bin-chip--deletable bin-chip--clickable"
+                  onClick={() => handleBinClick(item.bin)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <span className="bin-chip__title">{item.bin}</span>
+                  <span className={`bin-chip__status ${item.hasContract ? 'bin-chip__status--contract' : 'bin-chip__status--no-contract'}`}>
+                    {item.hasContract ? 'договор' : 'без договора'}
+                  </span>
+                  <button
+                    type="button"
+                    className="chip-x"
+                    title="Удалить БИН"
+                    onClick={(e) => { e.stopPropagation(); handleDeleteBin(item.bin); }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </Modal>
     </div>

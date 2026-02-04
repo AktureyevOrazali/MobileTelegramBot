@@ -165,7 +165,7 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
       <div className="modal__content">
         <button className="modal__close" type="button" aria-label="Закрыть" onClick={onClose} title="Закрыть">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.41Z" fill="currentColor"/>
+            <path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.41Z" fill="currentColor" />
           </svg>
         </button>
         {/* Header */}
@@ -665,8 +665,8 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
         err instanceof ApiError
           ? err.message
           : err instanceof Error
-          ? err.message
-          : 'Не удалось удалить диалог.';
+            ? err.message
+            : 'Не удалось удалить диалог.';
       setBanner(`Ошибка: ${message}`);
     } finally {
       setDialogDeleteLoading(false);
@@ -719,8 +719,8 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
         err instanceof ApiError
           ? err.message
           : err instanceof Error
-          ? err.message
-          : 'Не удалось обновить статус диалога.';
+            ? err.message
+            : 'Не удалось обновить статус диалога.';
       setBanner(`Ошибка: ${message}`);
     } finally {
       setDialogStatusLoading(false);
@@ -783,8 +783,8 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           err instanceof ApiError
             ? err.message
             : err instanceof Error
-            ? err.message
-            : 'Не удалось обновить режим AI.';
+              ? err.message
+              : 'Не удалось обновить режим AI.';
         setBanner(`Ошибка: ${message}`);
       } finally {
         setAiToggleDialogId(null);
@@ -1029,8 +1029,8 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                           err instanceof ApiError
                             ? err.message
                             : err instanceof Error
-                            ? err.message
-                            : 'Не удалось обновить избранное.';
+                              ? err.message
+                              : 'Не удалось обновить избранное.';
                         setBanner(`Ошибка: ${message}`);
                       }
                     }}
@@ -1039,14 +1039,13 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                 </div>
                 <div className="dialog-status-row" style={{ marginTop: 4 }}>
                   <span className="text-muted">
-                  {chat.username ? `@${chat.username}` : chat.type}
-                </span>
-                {renderStatusBadge(chat)}
-              </div>
-              <div className="flex-gap" style={{ marginTop: 8 }}>
+                    {chat.username ? `@${chat.username}` : chat.type}
+                  </span>
+                  {renderStatusBadge(chat)}
+                </div>
+                <div className="flex-gap" style={{ marginTop: 8 }}>
                   {chat.sectionTitle && <span className="chip">{chat.sectionTitle}</span>}
                   {chat.bin && <span className="chip">БИН: {chat.bin}</span>}
-                  <span className="chip">Обновлён {formatDateTime(chat.updatedAt)}</span>
                   <span className="chip">AI: {chat.aiEnabled ? 'включён' : 'отключён'}</span>
                 </div>
               </div>
@@ -1061,8 +1060,8 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                   {aiToggleDialogId === chat.dialogId
                     ? 'Сохраняем...'
                     : chat.aiEnabled
-                    ? 'Отключить AI'
-                    : 'Включить AI'}
+                      ? 'Отключить AI'
+                      : 'Включить AI'}
                 </button>
                 <button
                   className="button"

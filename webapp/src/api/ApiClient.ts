@@ -1,6 +1,8 @@
 import {
   AuthSession,
   AuthSessionRaw,
+  BinDetailed,
+  BinDetailedRaw,
   ChatSummary,
   ChatSummaryRaw,
   DashboardSummary,
@@ -11,6 +13,8 @@ import {
   MessageNotification,
   MessageNotificationRaw,
   MessageRaw,
+  OrganizationWithoutContract,
+  OrganizationWithoutContractRaw,
   PendingRegistration,
   PendingRegistrationRaw,
   RoleInfo,
@@ -320,6 +324,42 @@ export class ApiClient {
     }
   }
 
+  async deleteBin(binValue: string): Promise<void> {
+    await this.request(`bins/${encodeURIComponent(binValue)}`, { method: 'DELETE' });
+  }
+
+  async fetchOrganizationsWithoutContracts(): Promise<OrganizationWithoutContract[]> {
+    const response = await this.request<OrganizationWithoutContractRaw[]>('organizations/without-contracts', { method: 'GET' });
+    return response.map((item) => ({
+      customerBin: item.customer_bin,
+      customerLegalAddress: item.customer_legal_address,
+      customerBankNameRu: item.customer_bank_name_ru,
+      createdAt: new Date(item.created_at),
+    }));
+  }
+
+  async getBinsDetailed(query?: string): Promise<BinDetailed[]> {
+    const params = query ? `?query=${encodeURIComponent(query)}` : '';
+    const response = await this.request<BinDetailedRaw[]>(`bins/detailed${params}`, { method: 'GET' });
+    return response.map((item) => ({
+      bin: item.bin,
+      hasContract: item.has_contract,
+      customerLegalAddress: item.customer_legal_address,
+      customerBankNameRu: item.customer_bank_name_ru,
+    }));
+  }
+
+  async getBinInfo(binValue: string): Promise<BinDetailed> {
+    const response = await this.request<BinDetailedRaw>(`bins/${encodeURIComponent(binValue)}/info`, { method: 'GET' });
+    return {
+      bin: response.bin,
+      hasContract: response.has_contract,
+      customerLegalAddress: response.customer_legal_address,
+      customerBankNameRu: response.customer_bank_name_ru,
+    };
+  }
+
+
   async fetchChats(options: { favoriteOnly?: boolean; binQuery?: string | null } = {}): Promise<ChatSummary[]> {
     const response = await this.request<ChatSummaryRaw[]>('chats', {
       method: 'GET',
@@ -512,16 +552,16 @@ export class ApiClient {
       method: 'GET',
       query: since
         ? {
-            since: new Date(since.getTime() - since.getTimezoneOffset() * 60000)
-              .toISOString()
-              .replace('Z', '+00:00'),
-          }
+          since: new Date(since.getTime() - since.getTimezoneOffset() * 60000)
+            .toISOString()
+            .replace('Z', '+00:00'),
+        }
         : undefined,
     });
     return response.map(mapNotification);
   }
 
-  
 
-  
+
+
 }

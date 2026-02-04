@@ -247,6 +247,31 @@ def _init_db() -> None:
             section TEXT
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS organizations_without_contracts (
+            id BIGSERIAL PRIMARY KEY,
+            customer_bin TEXT NOT NULL UNIQUE,
+            customer_legal_address TEXT,
+            customer_bank_name_ru TEXT,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS all_bins (
+            id BIGSERIAL PRIMARY KEY,
+            bin TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS client_bins (
+            id BIGSERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            bin TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(chat_id, bin)
+        )
+        """,
     ]
 
     with _lock:
@@ -263,6 +288,7 @@ def _init_db() -> None:
     _ensure_column("chat_dialogs", "ended_at", "TEXT")
     _ensure_column("chat_dialogs", "last_message_at", "TEXT")
     _ensure_column("chat_dialogs", "operator_mode", "INTEGER DEFAULT 0")
+    _ensure_column("chat_dialogs", "section", "TEXT")
     _ensure_column("users", "job_title", "TEXT")
     _ensure_column("users", "phone", "TEXT")
     _ensure_column("users", "bio", "TEXT")
@@ -822,7 +848,7 @@ def list_chats_for_user(
         "  c.title,",
         "  c.username,",
         "  c.type,",
-        "  c.section,",
+        "  COALESCE(cd.section, c.section) AS section,",
         "  c.updated_at AS chat_updated_at,",
         "  cd.id AS dialog_id,",
         "  cd.bin AS dialog_bin,",
@@ -853,7 +879,7 @@ def list_chats_for_user(
             return []
         if allowed_sections:
             section_placeholders = ",".join("%s" for _ in allowed_sections)
-            filters.append(f"c.section IN ({section_placeholders})")
+            filters.append(f"COALESCE(cd.section, c.section) IN ({section_placeholders})")
             params.extend(allowed_sections)
         bin_placeholders = ",".join("%s" for _ in assigned_bins)
         filters.append(f"cd.bin IN ({bin_placeholders})")
@@ -954,12 +980,55 @@ def get_messages(
     return list(reversed(messages))
 
 
-def set_chat_section(chat_id: int, section: str | None) -> None:
+def set_chat_section(chat_id: int, section: str | None, dialog_id: int | None = None) -> None:
+    """Устанавливает раздел для активного диалога (по БИН), а не для чата целиком."""
     with _lock:
+        target_dialog_id = dialog_id
+        if target_dialog_id is None:
+            # Получаем активный диалог
+            active = execute(
+                """
+                SELECT id FROM chat_dialogs
+                WHERE chat_id = %s AND ended_at IS NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (chat_id,),
+            ).fetchone()
+            if active:
+                target_dialog_id = active["id"]
+        
+        if target_dialog_id:
+            execute(
+                "UPDATE chat_dialogs SET section = %s WHERE id = %s",
+                (section, target_dialog_id),
+            )
+        # Также обновляем chats.section для обратной совместимости
         execute(
             "UPDATE chats SET section = %s WHERE chat_id = %s",
             (section, chat_id),
         )
+
+
+def get_dialog_section(chat_id: int, dialog_id: int | None = None) -> str | None:
+    """Получить раздел из активного диалога (по БИН)."""
+    with _lock:
+        if dialog_id:
+            row = execute(
+                "SELECT section FROM chat_dialogs WHERE id = %s",
+                (dialog_id,),
+            ).fetchone()
+        else:
+            row = execute(
+                """
+                SELECT section FROM chat_dialogs
+                WHERE chat_id = %s AND ended_at IS NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (chat_id,),
+            ).fetchone()
+    return row["section"] if row else None
 
 
 def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
@@ -980,6 +1049,16 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
                 (now, chat_id),
             )
             return None
+
+        # Add BIN to all_bins for persistent storage
+        existing = execute(
+            "SELECT 1 FROM all_bins WHERE bin = %s", (normalized,)
+        ).fetchone()
+        if not existing:
+            execute(
+                "INSERT INTO all_bins (bin, created_at) VALUES (%s, %s)",
+                (normalized, now),
+            )
 
         execute(
             "UPDATE chat_dialogs SET ended_at = %s WHERE chat_id = %s AND ended_at IS NULL",
@@ -1005,7 +1084,7 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
     return int(dialog_id_row["id"]) if dialog_id_row else None
 
 
-def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
+def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None = None) -> int:
     """Ensure there is an active dialog for the chat with the given BIN."""
 
     normalized = (bin_value or "").strip()
@@ -1027,10 +1106,17 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
 
         if existing and existing["bin"] == normalized:
             dialog_id = int(existing["id"])
-            execute(
-                "UPDATE chat_dialogs SET last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
-                (now, dialog_id),
-            )
+            # Update section if provided
+            if section:
+                execute(
+                    "UPDATE chat_dialogs SET section = %s, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
+                    (section, now, dialog_id),
+                )
+            else:
+                execute(
+                    "UPDATE chat_dialogs SET last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
+                    (now, dialog_id),
+                )
             execute(
                 "UPDATE chats SET bin = %s, updated_at = %s WHERE chat_id = %s",
                 (normalized, now, chat_id),
@@ -1057,10 +1143,17 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
 
         if previous:
             dialog_id = int(previous["id"])
-            execute(
-                "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
-                (now, dialog_id),
-            )
+            # Reactivate with section
+            if section:
+                execute(
+                    "UPDATE chat_dialogs SET ended_at = NULL, section = %s, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
+                    (section, now, dialog_id),
+                )
+            else:
+                execute(
+                    "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
+                    (now, dialog_id),
+                )
             execute(
                 "UPDATE chats SET bin = %s, section = NULL, updated_at = %s WHERE chat_id = %s",
                 (normalized, now, chat_id),
@@ -1069,11 +1162,11 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str) -> int:
 
         execute(
             """
-            INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
-            VALUES (%s, %s, %s, %s, 0)
+            INSERT INTO chat_dialogs (chat_id, bin, section, started_at, last_message_at, operator_mode)
+            VALUES (%s, %s, %s, %s, %s, 0)
             RETURNING id
             """,
-            (chat_id, normalized, now, now),
+            (chat_id, normalized, section, now, now),
         )
         dialog_id_row = cursor.fetchone()
         execute(
@@ -1351,9 +1444,9 @@ def is_favorite_dialog(user_id: int, dialog_id: int) -> bool:
 
 
 def list_bins(query: str | None = None) -> List[str]:
-    refresh_bin_assignments()
+    """Возвращает список всех БИНов из таблицы all_bins."""
     clauses = [
-        "SELECT DISTINCT bin FROM chat_dialogs WHERE bin IS NOT NULL AND TRIM(bin) != ''"
+        "SELECT bin FROM all_bins WHERE bin IS NOT NULL AND TRIM(bin) != ''"
     ]
     params: List[object] = []
     if query:
@@ -1364,6 +1457,87 @@ def list_bins(query: str | None = None) -> List[str]:
     with _lock:
         rows = execute(sql, params).fetchall()
     return [row["bin"] for row in rows]
+
+
+def add_bin(bin_value: str) -> bool:
+    """Добавляет БИН в таблицу all_bins."""
+    normalized = (bin_value or "").strip()
+    if not normalized:
+        return False
+    now = datetime.utcnow().isoformat()
+    with _lock:
+        existing = execute(
+            "SELECT 1 FROM all_bins WHERE bin = %s", (normalized,)
+        ).fetchone()
+        if existing:
+            return False
+        execute(
+            "INSERT INTO all_bins (bin, created_at) VALUES (%s, %s)",
+            (normalized, now),
+        )
+    return True
+
+
+def remove_bin(bin_value: str) -> bool:
+    """Удаляет БИН из all_bins и связанных таблиц."""
+    normalized = (bin_value or "").strip()
+    if not normalized:
+        return False
+    with _lock:
+        # Remove from all_bins
+        cursor = execute("DELETE FROM all_bins WHERE bin = %s", (normalized,))
+        deleted = cursor.rowcount > 0
+        if deleted:
+            # Cascade: remove from client_bins
+            execute("DELETE FROM client_bins WHERE bin = %s", (normalized,))
+            # Cascade: remove from organizations_without_contracts
+            execute("DELETE FROM organizations_without_contracts WHERE customer_bin = %s", (normalized,))
+            # Cascade: remove from user_bins
+            execute("DELETE FROM user_bins WHERE bin = %s", (normalized,))
+    return deleted
+
+
+def add_client_bin(chat_id: int, bin_value: str) -> bool:
+    """Добавляет БИН для клиента (chat_id) в client_bins."""
+    normalized = (bin_value or "").strip()
+    if not normalized:
+        return False
+    now = datetime.utcnow().isoformat()
+    with _lock:
+        existing = execute(
+            "SELECT 1 FROM client_bins WHERE chat_id = %s AND bin = %s",
+            (chat_id, normalized),
+        ).fetchone()
+        if existing:
+            return False
+        execute(
+            "INSERT INTO client_bins (chat_id, bin, created_at) VALUES (%s, %s, %s)",
+            (chat_id, normalized, now),
+        )
+    return True
+
+
+def list_client_bins(chat_id: int) -> List[str]:
+    """Возвращает список БИНов клиента."""
+    with _lock:
+        rows = execute(
+            "SELECT bin FROM client_bins WHERE chat_id = %s ORDER BY created_at DESC",
+            (chat_id,),
+        ).fetchall()
+    return [row["bin"] for row in rows]
+
+
+def remove_client_bin(chat_id: int, bin_value: str) -> bool:
+    """Удаляет БИН клиента."""
+    normalized = (bin_value or "").strip()
+    if not normalized:
+        return False
+    with _lock:
+        cursor = execute(
+            "DELETE FROM client_bins WHERE chat_id = %s AND bin = %s",
+            (chat_id, normalized),
+        )
+    return cursor.rowcount > 0
 
 
 def list_unassigned_bins() -> List[Dict[str, object]]:
@@ -1394,7 +1568,9 @@ def list_unassigned_bins() -> List[Dict[str, object]]:
                 ad.open_dialogs AS open_dialogs
             FROM active_dialogs ad
             LEFT JOIN assigned_bins ab ON ab.bin = ad.bin
+            LEFT JOIN organizations_without_contracts owc ON owc.customer_bin = ad.bin
             WHERE ab.bin IS NULL
+              AND owc.customer_bin IS NULL
             ORDER BY ad.open_dialogs DESC, ad.bin ASC
             """,
             (reference,),
@@ -1570,11 +1746,8 @@ def delete_chat_dialog(dialog_id: int) -> None:
                 "UPDATE chats SET bin = %s, section = %s, updated_at = %s WHERE chat_id = %s",
                 (latest["bin"], section_value, timestamp, chat_id),
             )
-        else:
-            execute(
-                "UPDATE chats SET bin = NULL, section = NULL WHERE chat_id = %s",
-                (chat_id,),
-            )
+        # NOTE: When no dialogs remain, keep existing bin in chats table
+        # to allow client to create new dialog with same BIN
 
 
 def _cleanup_orphaned_bins(bins: Iterable[str]) -> None:
@@ -2069,26 +2242,77 @@ def get_dashboard_summary(
     placeholders = ", ".join("%s" for _ in assigned_bins) if assigned_bins is not None else ""
 
     with _lock:
+        # Подсчитываем только сообщения от операторов (исключаем ботов и системные сообщения)
+        automation_author_placeholders = ", ".join("%s" for _ in AUTOMATION_AUTHOR_NAMES) if AUTOMATION_AUTHOR_NAMES else ""
+        automation_clause = (
+            f"AND TRIM(LOWER(m.author)) NOT IN ({automation_author_placeholders})"
+            if automation_author_placeholders
+            else ""
+        )
+
+        # Фильтр по именам операторов (для конкретного оператора или для всех операторов)
+        operator_filter_clause = ""
+        operator_filter_params: List[object] = []
+        if operator_names:
+            operator_placeholders = ", ".join("%s" for _ in operator_names)
+            operator_filter_clause = f"AND TRIM(LOWER(m.author)) IN ({operator_placeholders})"
+            operator_filter_params = [name.lower() for name in operator_names]
+
+        # Диалоги - считаем по факту сообщений операторов (включая архив для удалённых диалогов)
         total_dialogs = execute(
-            "SELECT COUNT(*) AS total FROM chat_dialogs"
-            " WHERE started_at IS NOT NULL AND started_at >= %s AND started_at < %s"
-            + (
-                f" AND bin IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
+            """
+            SELECT COUNT(DISTINCT m.dialog_id) AS total
+            FROM """
+            + message_union_sql
+            + """ m
+            WHERE m.direction = 'outgoing'
+              AND m.dialog_id IS NOT NULL
+              AND m.author IS NOT NULL
+              AND TRIM(m.author) != ''
+              AND m.created_at >= %s
+              AND m.created_at < %s
+            """
+            + operator_filter_clause
+            + automation_clause,
+            (
+                start_iso,
+                end_exclusive_iso,
+                *operator_filter_params,
+                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
             ),
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchone()["total"] or 0
+
+        # Открытые диалоги - где оператор писал и диалог ещё не закрыт
         open_dialogs = execute(
-            "SELECT COUNT(*) AS total FROM chat_dialogs"
-            " WHERE ended_at IS NULL AND started_at IS NOT NULL AND started_at >= %s AND started_at < %s"
-            + (
-                f" AND bin IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
+            """
+            SELECT COUNT(*) AS total
+            FROM chat_dialogs cd
+            WHERE cd.ended_at IS NULL
+              AND cd.id IN (
+                SELECT DISTINCT m.dialog_id
+                FROM """
+            + message_union_sql
+            + """ m
+                WHERE m.direction = 'outgoing'
+                  AND m.dialog_id IS NOT NULL
+                  AND m.author IS NOT NULL
+                  AND TRIM(m.author) != ''
+                  AND m.created_at >= %s
+                  AND m.created_at < %s
+            """
+            + operator_filter_clause
+            + automation_clause
+            + """
+              )
+            """,
+            (
+                start_iso,
+                end_exclusive_iso,
+                *operator_filter_params,
+                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
             ),
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchone()["total"] or 0
+
         total_incoming = execute(
             """
             SELECT COUNT(*) AS total
@@ -2108,76 +2332,6 @@ def get_dashboard_summary(
             ),
             (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchone()["total"] or 0
-        # Подсчитываем только сообщения от операторов (исключаем ботов и системные сообщения)
-        automation_author_placeholders = ", ".join("%s" for _ in AUTOMATION_AUTHOR_NAMES) if AUTOMATION_AUTHOR_NAMES else ""
-        automation_clause = (
-            f"AND TRIM(LOWER(m.author)) NOT IN ({automation_author_placeholders})"
-            if automation_author_placeholders
-            else ""
-        )
-        
-        # Фильтр по именам операторов
-        operator_filter_clause = ""
-        operator_filter_params: List[object] = []
-        if operator_names:
-            operator_placeholders = ", ".join("%s" for _ in operator_names)
-            operator_filter_clause = f"AND TRIM(LOWER(m.author)) IN ({operator_placeholders})"
-            operator_filter_params = [name.lower() for name in operator_names]
-
-        # Если выбран конкретный оператор — считаем диалоги/чаты по факту его сообщений,
-        # а не по chat_dialogs.started_at и не по BIN.
-        if operator_id is not None:
-            total_dialogs = execute(
-                """
-                SELECT COUNT(DISTINCT m.dialog_id) AS total
-                FROM """
-                + message_union_sql
-                + """ m
-                WHERE m.direction = 'outgoing'
-                  AND m.dialog_id IS NOT NULL
-                  AND m.author IS NOT NULL
-                  AND TRIM(m.author) != ''
-                  AND m.created_at >= %s
-                  AND m.created_at < %s
-                """
-                + operator_filter_clause
-                + automation_clause,
-                (
-                    start_iso,
-                    end_exclusive_iso,
-                    *operator_filter_params,
-                    *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-                ),
-            ).fetchone()["total"] or 0
-            open_dialogs = execute(
-                """
-                SELECT COUNT(*) AS total
-                FROM chat_dialogs cd
-                WHERE cd.ended_at IS NULL
-                  AND cd.id IN (
-                    SELECT DISTINCT m.dialog_id
-                    FROM """
-                + message_union_sql
-                + """ m
-                    WHERE m.direction = 'outgoing'
-                      AND m.dialog_id IS NOT NULL
-                      AND m.author IS NOT NULL
-                      AND TRIM(m.author) != ''
-                      AND m.created_at >= %s
-                      AND m.created_at < %s
-                """
-                + operator_filter_clause
-                + automation_clause
-                + """
-                  )
-                """,
-                (
-                    start_iso,
-                    end_exclusive_iso,
-                    *operator_filter_params,
-                    *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-                ),
-            ).fetchone()["total"] or 0
         
         total_outgoing = execute(
             """
@@ -2210,46 +2364,33 @@ def get_dashboard_summary(
         ).fetchone()["total"] or 0
         # По требованиям: "сообщения" в отчёте — только сообщения операторов.
         total_messages = total_outgoing
+        
+        # Чаты - считаем по факту сообщений операторов
         total_chats = execute(
-            "SELECT COUNT(DISTINCT chat_id) AS total FROM chat_dialogs"
-            " WHERE started_at IS NOT NULL AND started_at >= %s AND started_at < %s"
-            + (
-                f" AND bin IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
+            """
+            SELECT COUNT(DISTINCT m.chat_id) AS total
+            FROM """
+            + message_union_sql
+            + """ m
+            WHERE m.direction = 'outgoing'
+            AND m.author IS NOT NULL
+            AND TRIM(m.author) != ''
+            AND m.created_at >= %s
+            AND m.created_at < %s
+            """
+            + operator_filter_clause
+            + automation_clause,
+            (
+                start_iso,
+                end_exclusive_iso,
+                *operator_filter_params,
+                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
             ),
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchone()["total"] or 0
 
-        if operator_id is not None:
-            total_chats = execute(
-                """
-                SELECT COUNT(DISTINCT m.chat_id) AS total
-                FROM """
-                + message_union_sql
-                + """ m
-                WHERE m.direction = 'outgoing'
-                AND m.author IS NOT NULL
-                AND TRIM(m.author) != ''
-                AND m.created_at >= %s
-                AND m.created_at < %s
-                """
-                + operator_filter_clause
-                + automation_clause,
-                (
-                    start_iso,
-                    end_exclusive_iso,
-                    *operator_filter_params,
-                    *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-                ),
-            ).fetchone()["total"] or 0
-
-        # NEW: фильтр диалогов, в которых оператор отвечал (outgoing) в периоде
-        eligible_dialogs_sql = ""
-        eligible_dialogs_params = ()
-
-        if operator_id is not None:
-            eligible_dialogs_sql = f"""
+        # Фильтр диалогов, в которых оператор отвечал (outgoing) в периоде
+        # Применяется для всех случаев - общий и индивидуальный дашборд
+        eligible_dialogs_sql = f"""
             AND cd.id IN (
                 SELECT DISTINCT m2.dialog_id
                 FROM {message_union_sql} m2
@@ -2262,12 +2403,12 @@ def get_dashboard_summary(
             {operator_filter_clause.replace("m.", "m2.")}{automation_clause.replace("m.", "m2.")}
             )
             """
-            eligible_dialogs_params = (
-                start_iso,
-                end_exclusive_iso,
-                *operator_filter_params,
-                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-            )
+        eligible_dialogs_params = (
+            start_iso,
+            end_exclusive_iso,
+            *operator_filter_params,
+            *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
+        )
 
         section_rows = execute(
             """
@@ -2300,24 +2441,55 @@ def get_dashboard_summary(
             ),
             (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchall()
+        
+        # Подсчет диалогов по дням — по факту сообщений операторов
+        # Один запрос для обоих случаев (общий и индивидуальный дашборд)
         dialogs_by_day_rows = execute(
+            f"""
+            SELECT substr(m.created_at, 1, 10) AS day, COUNT(DISTINCT m.dialog_id) AS cnt
+            FROM {message_union_sql} m
+            WHERE m.direction = 'outgoing'
+              AND m.dialog_id IS NOT NULL
+              AND m.author IS NOT NULL
+              AND TRIM(m.author) != ''
+              AND m.created_at >= %s
+              AND m.created_at < %s
             """
-            SELECT substr(started_at, 1, 10) AS day, COUNT(*) AS cnt
-            FROM chat_dialogs
-            WHERE started_at IS NOT NULL AND started_at >= %s AND started_at < %s
-        """
-            + (
-                f" AND bin IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            )
+            + operator_filter_clause
+            + automation_clause
             + """
-            GROUP BY substr(started_at, 1, 10)
+            GROUP BY substr(m.created_at, 1, 10)
             ORDER BY day ASC
             """,
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
+            (
+                start_iso,
+                end_exclusive_iso,
+                *operator_filter_params,
+                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
+            ),
         ).fetchall()
         # Подсчет входящих сообщений по дням
+        # Считаем входящие только в диалогах, где оператор(ы) отвечали
+        incoming_operator_dialog_filter = f"""
+            AND m.dialog_id IN (
+                SELECT DISTINCT m2.dialog_id
+                FROM {message_union_sql} m2
+                WHERE m2.direction = 'outgoing'
+                  AND m2.dialog_id IS NOT NULL
+                  AND m2.author IS NOT NULL
+                  AND TRIM(m2.author) != ''
+                  AND m2.created_at >= %s
+                  AND m2.created_at < %s
+            {operator_filter_clause.replace("m.", "m2.")}{automation_clause.replace("m.", "m2.")}
+            )
+        """
+        incoming_operator_dialog_params = [
+            start_iso,
+            end_exclusive_iso,
+            *operator_filter_params,
+            *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
+        ]
+        
         incoming_by_day_rows = execute(
             """
             SELECT substr(m.created_at, 1, 10) AS day, COUNT(*) AS cnt
@@ -2328,6 +2500,7 @@ def get_dashboard_summary(
             LEFT JOIN chats c ON c.chat_id = m.chat_id
             WHERE m.created_at >= %s AND m.created_at < %s AND m.direction = 'incoming'
         """
+            + incoming_operator_dialog_filter
             + (
                 f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
                 if assigned_bins is not None
@@ -2337,7 +2510,7 @@ def get_dashboard_summary(
             GROUP BY substr(m.created_at, 1, 10)
             ORDER BY day ASC
             """,
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
+            (start_iso, end_exclusive_iso, *incoming_operator_dialog_params, *(assigned_bins or [])),
         ).fetchall()
         
         # Подсчет исходящих сообщений от операторов по дням (для статистики сообщений/день)
@@ -2935,3 +3108,100 @@ def outbox_mark_failed_onec(failed: Sequence[Mapping[str, Any]]) -> None:
                 "UPDATE outbox_onec SET status = 'failed', error = %s, updated_at = %s WHERE id = %s",
                 (str(err_text) if err_text is not None else "", now, int(outbox_id)),
             )
+
+
+# ============================================================================
+# Organizations Without Contracts
+# ============================================================================
+
+def add_organization_without_contract(
+    customer_bin: str,
+    customer_legal_address: str | None = None,
+    customer_bank_name_ru: str | None = None,
+) -> Dict[str, Any] | None:
+    """Добавляет организацию без договора в базу."""
+    normalized_bin = (customer_bin or "").strip()
+    if not normalized_bin:
+        return None
+
+    now = datetime.utcnow().isoformat()
+    with _lock:
+        # Check if already exists
+        existing = execute(
+            "SELECT id FROM organizations_without_contracts WHERE customer_bin = %s",
+            (normalized_bin,),
+        ).fetchone()
+        if existing:
+            # Update existing record with new address/bank info if provided
+            execute(
+                """
+                UPDATE organizations_without_contracts
+                SET customer_legal_address = COALESCE(%s, customer_legal_address),
+                    customer_bank_name_ru = COALESCE(%s, customer_bank_name_ru)
+                WHERE customer_bin = %s
+                """,
+                (customer_legal_address, customer_bank_name_ru, normalized_bin),
+            )
+            return None
+
+        execute(
+            """
+            INSERT INTO organizations_without_contracts
+                (customer_bin, customer_legal_address, customer_bank_name_ru, created_at)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (normalized_bin, customer_legal_address, customer_bank_name_ru, now),
+        )
+    return {
+        "customer_bin": normalized_bin,
+        "customer_legal_address": customer_legal_address,
+        "customer_bank_name_ru": customer_bank_name_ru,
+        "created_at": now,
+    }
+
+
+def list_organizations_without_contracts() -> List[Dict[str, Any]]:
+    """Возвращает список организаций без договоров."""
+    with _lock:
+        rows = execute(
+            """
+            SELECT customer_bin, customer_legal_address, customer_bank_name_ru, created_at
+            FROM organizations_without_contracts
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+    return [
+        {
+            "customer_bin": row["customer_bin"],
+            "customer_legal_address": row["customer_legal_address"],
+            "customer_bank_name_ru": row["customer_bank_name_ru"],
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def has_organization_without_contract(customer_bin: str) -> bool:
+    """Проверяет, есть ли организация в списке без договоров."""
+    normalized_bin = (customer_bin or "").strip()
+    if not normalized_bin:
+        return False
+    with _lock:
+        row = execute(
+            "SELECT 1 FROM organizations_without_contracts WHERE customer_bin = %s",
+            (normalized_bin,),
+        ).fetchone()
+    return row is not None
+
+
+def remove_organization_without_contract(customer_bin: str) -> bool:
+    """Удаляет организацию из списка без договоров."""
+    normalized_bin = (customer_bin or "").strip()
+    if not normalized_bin:
+        return False
+    with _lock:
+        cursor = execute(
+            "DELETE FROM organizations_without_contracts WHERE customer_bin = %s",
+            (normalized_bin,),
+        )
+    return cursor.rowcount > 0

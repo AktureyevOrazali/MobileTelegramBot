@@ -292,7 +292,7 @@ const REGION_MATCHERS: { key: string; patterns: string[] }[] = [
   { key: 'Shymkent (city)', patterns: ['г. шымкент', 'шымкент', 'shymkent'] },
   { key: 'Almaty', patterns: ['алматин', 'almaty oblast'] },
   { key: 'Akmola', patterns: ['акмол', 'akmola'] },
-  { key: 'Aktobe', patterns: ['актоб', 'aktobe'] },
+  { key: 'Aktobe', patterns: ['актоб', 'aktobe', 'актюб'] },
   { key: 'Atyrau', patterns: ['атырау', 'atyrau'] },
   { key: 'East Kazakhstan', patterns: ['восточно-казахстан', 'east kazakhstan'] },
   { key: 'West Kazakhstan', patterns: ['западно-казахстан', 'west kazakhstan'] },

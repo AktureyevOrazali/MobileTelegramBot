@@ -719,9 +719,12 @@ def list_bins_detailed_endpoint(
             ))
         else:
             # Has contract or no data
+            contract_data = contract_checker.check_customer_contracts(bin_value)
             result.append(BinDetailedResponse(
                 bin=bin_value,
                 has_contract=True,
+                customer_legal_address=contract_data.get("customer_legal_address"),
+                customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
             ))
     return result
 

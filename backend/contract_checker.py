@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -11,6 +12,26 @@ logger = logging.getLogger(__name__)
 GOSZAKUP_API_URL = "https://ows.goszakup.gov.kz/v3/graphql"
 GOSZAKUP_API_TOKEN = "79a212468fca40db901c9475cde94e1b"
 SUPPLIER_BIN = "980540000496"
+
+CACHE_TTL_SECONDS = 300
+_contract_cache: Dict[str, Dict[str, Any]] = {}
+_contract_cache_expiry: Dict[str, float] = {}
+
+
+def _get_cached_contract(customer_bin: str) -> Dict[str, Any] | None:
+    now = time.monotonic()
+    expires_at = _contract_cache_expiry.get(customer_bin)
+    if expires_at is None or expires_at <= now:
+        _contract_cache.pop(customer_bin, None)
+        _contract_cache_expiry.pop(customer_bin, None)
+        return None
+    cached = _contract_cache.get(customer_bin)
+    return dict(cached) if cached else None
+
+
+def _store_cached_contract(customer_bin: str, payload: Dict[str, Any]) -> None:
+    _contract_cache[customer_bin] = dict(payload)
+    _contract_cache_expiry[customer_bin] = time.monotonic() + CACHE_TTL_SECONDS
 
 
 def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
@@ -27,6 +48,10 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
         - customer_legal_address: str | None - адрес из первого контракта
         - customer_bank_name_ru: str | None - банк из первого контракта
     """
+    cached = _get_cached_contract(customer_bin)
+    if cached is not None:
+        return cached
+
     query = """
     query Contract($supplierBiin: String!) {
         Contract(filter: { supplierBiin: $supplierBiin }) {
@@ -105,4 +130,5 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Unexpected error checking contracts for {customer_bin}: {e}")
         
+    _store_cached_contract(customer_bin, result)
     return result

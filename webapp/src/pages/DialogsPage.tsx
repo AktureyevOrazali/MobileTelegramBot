@@ -288,7 +288,7 @@ const REGION_LABELS: Record<string, string> = {
 
 const REGION_MATCHERS: { key: string; patterns: string[] }[] = [
   { key: 'Almaty (city)', patterns: ['г. алматы', 'город алматы', 'алматы қ', 'almaty city'] },
-  { key: 'Astana', patterns: ['г. астана', 'астана', 'нур-султан', 'нурсултан', 'nur-sultan'] },
+  { key: 'Astana', patterns: ['г. астана', 'астана'] },
   { key: 'Shymkent (city)', patterns: ['г. шымкент', 'шымкент', 'shymkent'] },
   { key: 'Almaty', patterns: ['алматин', 'almaty oblast'] },
   { key: 'Akmola', patterns: ['акмол', 'akmola'] },
@@ -308,6 +308,8 @@ const REGION_MATCHERS: { key: string; patterns: string[] }[] = [
   { key: 'Ulytau', patterns: ['улытау', 'ulytau'] },
   { key: 'Abai', patterns: ['абай', 'abai'] },
 ];
+
+const CITY_REGION_KEYS = new Set(['Almaty (city)', 'Astana', 'Shymkent (city)']);
 
 const detectRegionFromAddress = (address: string | null | undefined) => {
   if (!address) return null;
@@ -593,7 +595,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     });
     binDetails.forEach((detail) => {
       const regionKey = detectRegionFromAddress(detail.customerLegalAddress);
-      if (regionKey && regionKey in counts) {
+      if (regionKey && regionKey in counts && !CITY_REGION_KEYS.has(regionKey)) {
         counts[regionKey] += 1;
       }
     });

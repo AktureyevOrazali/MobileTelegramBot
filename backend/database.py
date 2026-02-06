@@ -1093,6 +1093,16 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
 
     now = datetime.utcnow().isoformat()
     with _lock:
+        existing_bin = execute(
+            "SELECT 1 FROM all_bins WHERE bin = %s",
+            (normalized,),
+        ).fetchone()
+        if not existing_bin:
+            execute(
+                "INSERT INTO all_bins (bin, created_at) VALUES (%s, %s)",
+                (normalized, now),
+            )
+
         existing = execute(
             """
             SELECT id, bin
@@ -1160,7 +1170,7 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
             )
             return dialog_id
 
-        execute(
+        cursor = execute(
             """
             INSERT INTO chat_dialogs (chat_id, bin, section, started_at, last_message_at, operator_mode)
             VALUES (%s, %s, %s, %s, %s, 0)

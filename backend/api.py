@@ -722,7 +722,7 @@ def list_bins_detailed_endpoint(
             contract_data = contract_checker.check_customer_contracts(bin_value)
             result.append(BinDetailedResponse(
                 bin=bin_value,
-                has_contract=True,
+                has_contract=contract_data.get("has_contract", False),
                 customer_legal_address=contract_data.get("customer_legal_address"),
                 customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
             ))
@@ -1354,6 +1354,7 @@ def create_onec_message(
     contract_result = contract_checker.check_customer_contracts(bin_value)
     has_contract = contract_result.get("has_contract", False)
     logger.info(f"Contract check result for {bin_value}: has_contract={has_contract}")
+    response_message = None
     
     # Save organization without contract info (for admin tracking)
     if not has_contract:
@@ -1363,6 +1364,10 @@ def create_onec_message(
             customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
         )
         logger.info(f"1C Organization {bin_value} saved as organization without contract")
+        response_message = (
+            "⚠️ Обратите внимание: у вашей организации нет действующего договора с нами на 2026 год.\n"
+            "Для заключения договора обратитесь в наш офис."
+        )
 
     # Create dialog for ALL BINs (with or without contract)
     database.upsert_chat(
@@ -1402,6 +1407,32 @@ def create_onec_message(
     dialog_external_id = (
         (chat_record.get("external_chat_id") if chat_record else None) or external_chat_id
     )
+
+    # Если нет договора — сохраняем уведомление в историю чата
+    if response_message:
+        contract_notice_id = database.save_message(
+            chat_id=chat_id,
+            direction="outgoing",
+            text=response_message,
+            message_id=None,
+            author="System",
+            chat_title=chat_title,
+            username=None,
+            chat_type="onec",
+            section=chat_section,
+            dialog_id=dialog_id,
+        )
+        if dialog_external_id:
+            _enqueue_onec_outgoing_message(
+                message_id=contract_notice_id,
+                chat_id=chat_id,
+                dialog_id=dialog_id,
+                external_chat_id=dialog_external_id,
+                bin_value=chat_bin or bin_value,
+                text=response_message,
+                author="System",
+                section=chat_section,
+            )
 
     auto_reply_sent = False
 
@@ -1520,7 +1551,8 @@ def create_onec_message(
 
     return {
         "status": "ok",
-        "has_contract": True,
+        "has_contract": has_contract,
+        "response_message": response_message,
         "chat_id": chat_id,
         "dialog_id": dialog_id,
     }

@@ -1,120 +1,210 @@
 Код формы внешней обработки
 
+///////////////////////////////////////////////////////////////////////////////
+// СОЗДАНИЕ ФОРМЫ И ЖИЗНЕННЫЙ ЦИКЛ
+
 &НаСервере
 Процедура ПриСозданииНаСервере(Отказ, СтандартнаяОбработка)
+    BIN    = "111111111112";
+    Author = "1С Бухгалтер";
     
-    // Инициализация списка разделов
+    Если ПустаяСтрока(Theme) Тогда
+        Theme = "dark";
+    КонецЕсли;
+    
     СписокРазделов = Новый СписокЗначений;
-    Для Каждого Стр Из РеквизитФормыВЗначение("Объект").ДоступныеРазделыMobileBot() Цикл
-        СписокРазделов.Добавить(Стр.Наименование, Стр.Код);
-    КонецЦикла;
+    Попытка
+        ДоступныеРазделы = РеквизитФормыВЗначение("Объект").ДоступныеРазделыMobileBot();
+        Для Каждого СтрРаздела Из ДоступныеРазделы Цикл
+            СписокРазделов.Добавить(СтрРаздела.Наименование, СтрРаздела.Код);
+        КонецЦикла;
+    Исключение
+        СписокРазделов.Добавить("Общие вопросы", "general");
+        СписокРазделов.Добавить("Финансы", "finance");
+    КонецПопытки;
 
-    // Инициализация таблицы истории сообщений
-    ИсторияСообщений = Новый ТаблицаЗначений;
-    ИсторияСообщений.Колонки.Добавить("MessageId");
-    ИсторияСообщений.Колонки.Добавить("Дата");
-    ИсторияСообщений.Колонки.Добавить("Направление");
-    ИсторияСообщений.Колонки.Добавить("Автор");
-    ИсторияСообщений.Колонки.Добавить("Текст");
-    
+    Попытка
+        ExternalChatId = ПолучитьExternalChatIDТекущегоПользователя();
+    Исключение
+    КонецПопытки;
 КонецПроцедуры
 
 &НаКлиенте
 Процедура ПриОткрытии(Отказ)
-    // Автоматическая проверка соединения при открытии
-    Если Не Отказ Тогда
-        КомандаПроверитьСоединение(Неопределено);
+    Попытка
+        Если ПустаяСтрока(ExternalChatId) Тогда
+            ExternalChatId = ПолучитьExternalChatIDТекущегоПользователя();
+        КонецЕсли;
+    Исключение
+    КонецПопытки;
+
+    КомандаПроверитьСоединение(Неопределено);
+    ПодключитьОбработчикОжидания("ОбработчикОжиданияMobileBot", 2);
+КонецПроцедуры
+
+&НаКлиенте
+Процедура ПриЗакрытии(Отказ)
+    ОтключитьОбработчикОжидания("ОбработчикОжиданияMobileBot");
+КонецПроцедуры
+
+&НаКлиенте
+Процедура ОбработчикОжиданияMobileBot()
+    // Если нет договора - не обновляем историю с сервера
+    Если НетДоговора Тогда
+        Возврат;
+    КонецЕсли;
+    
+    Если (ТекущийЭлемент <> Неопределено И ТекущийЭлемент = Элементы.MessageText) 
+        ИЛИ Не ПустаяСтрока(MessageText) Тогда
+        Возврат;
+    КонецЕсли;
+    ОбновитьИсторию(Неопределено, Истина);
+КонецПроцедуры
+
+///////////////////////////////////////////////////////////////////////////////
+// ОБРАБОТЧИК СОБЫТИЙ HTML (ГЛАВНОЕ ИСПРАВЛЕНИЕ)
+
+&НаКлиенте
+Процедура ChatHTMLПриНажатии(Элемент, ДанныеСобытия, СтандартнаяОбработка)
+    
+    // 1. Перехват Enter (через v8action)
+    Если ДанныеСобытия.Event <> Неопределено 
+        И Найти(ДанныеСобытия.Event.url, "v8action://send-message") > 0 Тогда
+        
+        СтандартнаяОбработка = Ложь;
+        ВыполнитьОтправкуИзHTML();
+        Возврат;
+    КонецЕсли;
+
+    // 2. Перехват клика по кнопке "Отправить"
+    Если ДанныеСобытия.Anchor <> Неопределено Тогда
+        Для Каждого Атрибут Из ДанныеСобытия.Anchor.attributes Цикл
+            Если Атрибут.name = "data-button-id" И Атрибут.value = "Exchange" Тогда
+                СтандартнаяОбработка = Ложь;
+                ВыполнитьОтправкуИзHTML();
+                Прервать;
+            КонецЕсли;
+        КонецЦикла;
     КонецЕсли;
 КонецПроцедуры
 
 &НаКлиенте
-Процедура НормализоватьРазделПоСписку()
-    Если ПустаяСтрока(Section) Тогда 
-        Возврат; 
-    КонецЕсли;
+Процедура ВыполнитьОтправкуИзHTML()
     
-    ЛокСекция = СокрЛП(Строка(Section));
-    Для Каждого П Из СписокРазделов Цикл
-        Если НРег(СокрЛП(П.Представление)) = НРег(ЛокСекция) Тогда 
-            Section = П.Значение; 
-            Возврат; 
+    ДокументHTML = Элементы.ChatHTML.Документ;
+    Если ДокументHTML = Неопределено Тогда
+        Возврат;
+    КонецЕсли;
+
+    // Читаем текст
+    Попытка
+        Текст = ДокументHTML.forms["dataInput"].textInput.value;
+    Исключение
+        Текст = "";
+    КонецПопытки;
+
+    Текст = СокрЛП(Строка(Текст));
+    Если ПустаяСтрока(Текст) Тогда
+        Возврат;
+    КонецЕсли;
+
+    // Синхронизируем тему
+    Попытка
+        КлассBody = ДокументHTML.body.className;
+        ЛокКласс = НРег(СокрЛП(КлассBody));
+        Если Найти(ЛокКласс, "theme-light") > 0 Тогда
+            Theme = "light";
+        ИначеЕсли Найти(ЛокКласс, "theme-dark") > 0 Тогда
+            Theme = "dark";
         КонецЕсли;
-    КонецЦикла;
-    Section = Неопределено;
+        ЗафиксироватьТемуНаСервере();
+    Исключение
+    КонецПопытки;
+
+    // Отправляем
+    MessageText = Текст;
+    КомандаОтправить(Неопределено);
+
+    // Очищаем поле ввода в HTML
+    Попытка
+        ДокументHTML.forms["dataInput"].textInput.value = "";
+    Исключение
+    КонецПопытки;
 КонецПроцедуры
+
+///////////////////////////////////////////////////////////////////////////////
+// СЛУЖЕБНЫЕ ФУНКЦИИ И ОТПРАВКА
 
 &НаКлиенте
 Процедура КомандаОтправить(Команда)
-    Если ПустаяСтрока(MessageText) Тогда
-        Сообщить("Введите текст сообщения!", СтатусСообщения.Внимание);
+    Если ПустаяСтрока(MessageText) ИЛИ ПустаяСтрока(ExternalChatId) Тогда
         Возврат;
     КонецЕсли;
-    
-    Если ПустаяСтрока(ExternalChatId) Тогда
-        Сообщить("Заполните External Chat ID!", СтатусСообщения.Внимание);
-        Возврат;
-    КонецЕсли;
-    
-    Если ПустаяСтрока(BIN) Тогда
-        Сообщить("Заполните БИН!", СтатусСообщения.Внимание);
-        Возврат;
-    КонецЕсли;
-    
     Попытка
         НормализоватьРазделПоСписку();
         Результат = ОтправитьСообщениеНаСервере(ExternalChatId, MessageText, BIN, Author, Title, Section, ChatId);
         Если Результат <> Неопределено Тогда
-            ChatId = Результат.chat_id;
+            // ПРОВЕРКА: если договора нет - показать сообщение и заблокировать обновления
+            Если Результат.Свойство("has_contract") И Результат.has_contract = Ложь Тогда
+                НетДоговора = Истина; // Блокируем таймер обновления истории
+                
+                // Показываем сообщение о договоре клиенту
+                Если Результат.Свойство("response_message") Тогда
+                    Стр = ИсторияСообщений.Добавить();
+                    Стр.Дата = ТекущаяДата();
+                    Стр.Направление = "Оператор";
+                    Стр.Автор = "Система";
+                    Стр.Текст = Результат.response_message;
+                    ОбновитьHTMLИстории();
+                КонецЕсли;
+                
+                MessageText = "";
+                Возврат;
+            КонецЕсли;
+            
+            // Есть договор - работаем как обычно
+            НетДоговора = Ложь;
+            ChatId   = Результат.chat_id;
             DialogId = Результат.dialog_id;
             MessageText = "";
-            ОбновитьИсторию();
-            Сообщить("✅ Сообщение отправлено успешно! ChatId: " + ChatId + ", DialogId: " + DialogId);
+            ОбновитьИсторию(Неопределено, Ложь); 
         КонецЕсли;
     Исключение
-        Сообщить("❌ Ошибка отправки: " + ОписаниеОшибки(), СтатусСообщения.Важное);
+        Сообщить("Ошибка: " + ОписаниеОшибки());
     КонецПопытки;
 КонецПроцедуры
 
 &НаСервере
-Функция ОтправитьСообщениеНаСервере(ExternalChatId, MessageText, BIN, Author, Title, Section, ChatId)
-    Возврат РеквизитФормыВЗначение("Объект").ОтправитьСообщениеMobileBot(ExternalChatId, MessageText, BIN, Author, Title, Section, ChatId);
+Функция ОтправитьСообщениеНаСервере(P1, P2, P3, P4, P5, P6, P7)
+    Возврат РеквизитФормыВЗначение("Объект").ОтправитьСообщениеMobileBot(P1, P2, P3, P4, P5, P6, P7);
 КонецФункции
 
 &НаКлиенте
-Процедура ОбновитьИсторию(Команда = Неопределено)
-    Если ПустаяСтрока(ExternalChatId) Тогда
-        Сообщить("Заполните External Chat ID для загрузки истории!", СтатусСообщения.Внимание);
+Процедура ОбновитьИсторию(Команда = Неопределено, Тихо = Ложь) Экспорт
+    Если ПустаяСтрока(BIN) ИЛИ ПустаяСтрока(ExternalChatId) Тогда
         Возврат;
     КонецЕсли;
     
     Попытка
-        Результат = ПолучитьИсториюНаСервере(ExternalChatId, ChatId, DialogId);
+        Результат = ПолучитьИсториюНаСервере(ExternalChatId, BIN, ChatId, DialogId);
         Если Результат.Свойство("messages") Тогда
             ЗаполнитьТаблицуИстории(Результат.messages);
-            Сообщить("✅ История обновлена. Сообщений: " + Результат.messages.Количество());
-        Иначе
-            Сообщить("ℹ Нет сообщений в истории");
+            ОбновитьHTMLИстории();
         КонецЕсли;
     Исключение
-        Сообщить("❌ Ошибка обновления истории: " + ОписаниеОшибки(), СтатусСообщения.Важное);
     КонецПопытки;
 КонецПроцедуры
 
 &НаСервере
-Функция ПолучитьИсториюНаСервере(ExternalChatId, ChatId, DialogId)
-    Возврат РеквизитФормыВЗначение("Объект").ПолучитьИсториюMobileBot(ExternalChatId, ChatId, DialogId);
+Функция ПолучитьИсториюНаСервере(P1, P2, P3, P4)
+    Возврат РеквизитФормыВЗначение("Объект").ПолучитьИсториюMobileBot(P1, P2, P3, P4);
 КонецФункции
 
 &НаКлиенте
 Процедура ЗаполнитьТаблицуИстории(Сообщения)
     ИсторияСообщений.Очистить();
-    Если Сообщения = Неопределено Тогда 
-        Возврат; 
-    КонецЕсли;
-    
     Для Каждого Сообщ Из Сообщения Цикл
         Стр = ИсторияСообщений.Добавить();
-        Стр.MessageId = Сообщ.message_id;
         Стр.Дата = ПолучитьДатуИзISOНаСервере(Сообщ.created_at);
         Стр.Направление = ?(НРег(Сообщ.direction) = "incoming", "Клиент", "Оператор");
         Стр.Автор = Сообщ.author;
@@ -127,13 +217,64 @@
     Возврат РеквизитФормыВЗначение("Объект").ДатаИзISO8601(ДатаСтрока);
 КонецФункции
 
+///////////////////////////////////////////////////////////////////////////////
+// ФОРМИРОВАНИЕ HTML
+
+&НаСервере
+Функция СформироватьHTMLЧатаНаСервере() Экспорт
+    ЛокТема = ?(ПустаяСтрока(Theme), "dark", Theme);
+    Шаблон = РеквизитФормыВЗначение("Объект").ПолучитьМакет("ChatTemplate").ПолучитьТекст();
+    
+    СообщенияHTML = "";
+    Индекс = ИсторияСообщений.Количество() - 1;
+    Пока Индекс >= 0 Цикл
+        Стр = ИсторияСообщений[Индекс];
+        Класс = ?(Стр.Направление = "Клиент", "right", "left");
+        
+        Текст = СтрЗаменить(Стр.Текст, "<", "&lt;"); // Простейший escape
+        
+        СообщенияHTML = СообщенияHTML + 
+            "<div class='msg " + Класс + "'>" +
+            "<div class='author'>" + Стр.Автор + "</div>" +
+            "<div>" + Текст + "</div>" +
+            "<div class='meta'>" + Формат(Стр.Дата, "ДФ='dd.MM HH:mm'") + "</div>" +
+            "</div>";
+        Индекс = Индекс - 1;
+    КонецЦикла;
+
+    ПолныйHTML = СтрЗаменить(Шаблон, "{{MESSAGES}}", СообщенияHTML);
+    ПолныйHTML = СтрЗаменить(ПолныйHTML, "{{THEME}}", ЛокТема);
+    Возврат ПолныйHTML;
+КонецФункции
+
+&НаКлиенте
+Процедура ОбновитьHTMLИстории() Экспорт
+    ChatHTML = СформироватьHTMLЧатаНаСервере();
+    Попытка
+        Элементы.ChatHTML.ВыполнитьКоманду("scrollChatToBottom();");
+    Исключение
+    КонецПопытки;
+КонецПроцедуры
+
+&НаСервере
+Процедура ЗафиксироватьТемуНаСервере() Экспорт
+    // Метод для синхронизации реквизита Theme
+КонецПроцедуры
+
+&НаСервере
+Функция ПолучитьExternalChatIDТекущегоПользователя()
+    Уид = ПользователиИнформационнойБазы.ТекущийПользователь().УникальныйИдентификатор;
+    Запрос = Новый Запрос("ВЫБРАТЬ ПЕРВЫЕ 1 ExternalChatID ИЗ Справочник.Пользователи ГДЕ ИдентификаторПользователяИБ = &Уид");
+    Запрос.УстановитьПараметр("Уид", Уид);
+    Выборка = Запрос.Выполнить().Выбрать();
+    Возврат ?(Выборка.Следующий(), Выборка.ExternalChatID, "");
+КонецФункции
+
 &НаКлиенте
 Процедура КомандаПроверитьСоединение(Команда)
     Попытка
-        Результат = ПроверитьСоединениеНаСервере();
-        Сообщить(Результат);
+        Сообщить(ПроверитьСоединениеНаСервере());
     Исключение
-        Сообщить("❌ Ошибка проверки соединения: " + ОписаниеОшибки());
     КонецПопытки;
 КонецПроцедуры
 
@@ -143,18 +284,18 @@
 КонецФункции
 
 &НаКлиенте
-Процедура ПриИзмененииExternalChatId()
-    // Автоматически обновляем историю при изменении ExternalChatId
-    Если Не ПустаяСтрока(ExternalChatId) Тогда
-        ОбновитьИсторию();
-    КонецЕсли;
+Процедура НормализоватьРазделПоСписку()
+    Если ПустаяСтрока(Section) Тогда Возврат; КонецЕсли;
+    Для Каждого П Из СписокРазделов Цикл
+        Если НРег(П.Представление) = НРег(Section) Тогда Section = П.Значение; Возврат; КонецЕсли;
+    КонецЦикла;
 КонецПроцедуры
 
 Код модуля объекта внешней формы
 
-////////////////////////////////////////////////////////////////////////////////
-// Интеграция с MobileTelegramBot — модуль объекта внешней обработки
-////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// МОДУЛЬ ОБЪЕКТА внешней обработки "Интеграция с MobileTelegramBot"
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #Область УтилитыJSON
 
@@ -267,7 +408,6 @@
             Возврат Новый HTTPСоединение(Парам.Хост, Парам.Порт, , , Новый ЗащищенноеСоединениеOpenSSL());
         Исключение
             Попытка
-                // Альтернативный вариант для 1С
                 Возврат Новый HTTPСоединение(Парам.Хост + ":" + Формат(Парам.Порт,"Ч=0"), , , , Новый ЗащищенноеСоединениеOpenSSL());
             Исключение
                 ВызватьИсключение "Не удалось установить SSL соединение с " + Парам.Хост + ":" + Парам.Порт + ": " + ОписаниеОшибки();
@@ -411,8 +551,13 @@
     Возврат FromJSON(ТекстОтвета);
 КонецФункции
 
-Функция ПолучитьИсториюMobileBot(ExternalChatId, ChatId=Неопределено, DialogId=Неопределено) Экспорт
+// ВАЖНО: сюда добавили параметр БИН и передаём его в query ?bin=...
+Функция ПолучитьИсториюMobileBot(ExternalChatId, БИН, ChatId=Неопределено, DialogId=Неопределено) Экспорт
     Если ПустаяСтрока(ExternalChatId) Тогда 
+        Возврат Новый Структура("messages", Новый Массив); 
+    КонецЕсли;
+
+    Если ПустаяСтрока(БИН) Тогда 
         Возврат Новый Структура("messages", Новый Массив); 
     КонецЕсли;
 
@@ -421,6 +566,7 @@
 
     Параметры = Новый Соответствие;
     Параметры.Вставить("external_chat_id", ExternalChatId);
+    Параметры.Вставить("bin", БИН);
     Если ЗначениеЗаполнено(ChatId) Тогда 
         Параметры.Вставить("chat_id", ChatId); 
     КонецЕсли;
@@ -462,6 +608,8 @@
 
 #КонецОбласти
 
+#Область СервисныеФункции
+
 Функция ДоступныеРазделыMobileBot() Экспорт
     Разделы = Новый Массив;
     
@@ -472,3 +620,419 @@
     
     Возврат Разделы;
 КонецФункции
+
+#КонецОбласти
+
+Код макета
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<style>
+/* ===============================================
+   CSS совместимый со старым IE (без flexbox, gap)
+   =============================================== */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: Segoe UI, Arial, sans-serif;
+}
+
+/* Базовые классы тем */
+body.theme-dark {
+  background: #0f172a;
+  color: #e5e7eb;
+}
+body.theme-light {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+/* Контейнер чата - используем display:table вместо flex */
+.chat-container {
+  display: table;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* Верхняя плашка */
+.top-bar {
+  display: table-row;
+  height: 40px;
+}
+.top-bar-inner {
+  display: table-cell;
+  vertical-align: middle;
+  padding: 6px 12px;
+}
+body.theme-dark .top-bar-inner {
+  background: #020617;
+  border-bottom: 1px solid #111827;
+}
+body.theme-light .top-bar-inner {
+  background: #e5e7eb;
+  border-bottom: 1px solid #d1d5db;
+}
+.top-bar-title {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.8;
+  display: inline-block;
+}
+.top-bar-right {
+  float: right;
+}
+
+/* Область сообщений */
+.chat-row {
+  display: table-row;
+  height: 100%;
+}
+.chat {
+  display: table-cell;
+  vertical-align: top;
+  padding: 12px 12px 0 12px;
+  overflow-y: auto;
+  height: 100%;
+}
+body.theme-dark .chat {
+  background: #0f172a;
+}
+body.theme-light .chat {
+  background: #f3f4f6;
+}
+
+/* Нижняя панель */
+.input-row-outer {
+  display: table-row;
+  height: 70px;
+}
+.input-container {
+  display: table-cell;
+  vertical-align: middle;
+  padding: 8px 12px 12px 12px;
+}
+body.theme-dark .input-container {
+  background: #111827;
+  border-top: 1px solid #374151;
+}
+body.theme-light .input-container {
+  background: #e5e7eb;
+  border-top: 1px solid #d1d5db;
+}
+
+/* Верхняя строка (под эмодзи / доп.кнопки) */
+.toolbar {
+  margin-bottom: 4px;
+  height: 1px;
+}
+
+/* Нижняя строка: инпут + кнопка - используем table вместо flex */
+.input-row {
+  display: table;
+  width: 100%;
+}
+.input-cell {
+  display: table-cell;
+  vertical-align: middle;
+}
+.button-cell {
+  display: table-cell;
+  vertical-align: middle;
+  width: 100px;
+  padding-left: 8px;
+}
+
+/* Поле ввода */
+.message-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+}
+body.theme-dark .message-input {
+  border: 1px solid #374151;
+  background: #020617;
+  color: #e5e7eb;
+}
+body.theme-light .message-input {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+}
+.message-input:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+/* Кнопка отправки */
+.send-button {
+  display: block;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  text-align: center;
+  min-width: 90px;
+  background: #2563eb;
+  color: #ffffff;
+}
+.send-button:hover {
+  background: #1d4ed8;
+}
+
+/* Сообщения */
+.msg {
+  max-width: 70%;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  line-height: 1.35;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+.msg:after {
+  content: "";
+  display: table;
+  clear: both;
+}
+body.theme-dark .left {
+  background: #1f2937;
+  color: #e5e7eb;
+  border-top-left-radius: 4px;
+}
+body.theme-light .left {
+  background: #e5e7eb;
+  color: #111827;
+  border-top-left-radius: 4px;
+}
+.right {
+  background: #2563eb;
+  color: #ffffff;
+  float: right;
+  clear: both;
+  border-top-right-radius: 4px;
+}
+.left {
+  float: left;
+  clear: both;
+}
+.meta {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 6px;
+}
+.author {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.container {
+  overflow: hidden;
+}
+.clearfix:after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+/* Кнопка переключения темы в верхней плашке */
+.theme-toggle-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  border: 1px solid #d1d5db;
+  cursor: pointer;
+  font-size: 16px;
+  text-align: center;
+  line-height: 28px;
+  padding: 0;
+  background: #ffffff;
+  color: #111827;
+}
+.theme-toggle-button:hover {
+  background: #e5e7eb;
+}
+body.theme-dark .theme-toggle-button {
+  background: #020617;
+  color: #e5e7eb;
+  border-color: #374151;
+}
+body.theme-dark .theme-toggle-button:hover {
+  background: #111827;
+}
+</style>
+
+<script>
+/* прокрутка вниз */
+function scrollChatToBottom() {
+  try {
+    var chat = document.getElementById('chatMessages');
+    if (chat) {
+      chat.scrollTop = chat.scrollHeight;
+    }
+  } catch (e) {}
+}
+
+/* применить тему к body + иконка переключателя */
+function applyTheme(theme) {
+  var body = document.body;
+  if (!body) return;
+
+  // Убираем старые классы
+  var oldClass = body.className;
+  oldClass = oldClass.replace(/theme-dark/g, '');
+  oldClass = oldClass.replace(/theme-light/g, '');
+  body.className = oldClass + ' theme-' + theme;
+
+  var btn = document.getElementById('themeToggle');
+  if (btn) {
+    btn.innerHTML = (theme === 'light') ? '&#9728;' : '&#9790;';
+  }
+}
+
+/* переключатель темы по клику – только фиксируем выбор в 1С */
+function toggleTheme() {
+  var body = document.body;
+  if (!body) return;
+
+  var isLight = body.className.indexOf('theme-light') >= 0;
+  var newTheme = isLight ? 'dark' : 'light';
+
+  // меняем визуально
+  applyTheme(newTheme);
+
+  // сохраняем выбор в форме 1С
+  try {
+    if (window.external && window.external.Call) {
+      window.external.Call("УстановитьТему", newTheme);
+    }
+  } catch (e) {}
+}
+
+/* отправка по Enter - совместимо со старым IE и русской клавиатурой */
+function handleKeyPress(e) {
+  var event = e || window.event;
+  var keyCode = event.keyCode || event.which || 0;
+  
+  // Enter = keyCode 13 (работает для любой раскладки)
+  if (keyCode === 13) {
+    // Предотвращаем стандартное поведение формы
+    if (event.preventDefault) {
+      event.preventDefault();
+    }
+    if (event.stopPropagation) {
+      event.stopPropagation();
+    }
+    event.returnValue = false;
+    event.cancelBubble = true;
+
+    var input = document.getElementById('messageInput');
+    if (!input) return false;
+    
+    // trim для старого IE
+    var val = input.value;
+    if (val) {
+      val = val.replace(/^\s+|\s+$/g, '');
+    }
+    if (!val || val === '') return false;
+
+    // Кликаем по ссылке "Отправить" - 1С перехватит это событие
+    var sendLink = document.getElementById('sendLink');
+    if (sendLink) {
+      // Для старого IE используем fireEvent или click()
+      if (sendLink.click) {
+        sendLink.click();
+      } else if (document.createEvent) {
+        var evt = document.createEvent('MouseEvents');
+        evt.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+        sendLink.dispatchEvent(evt);
+      } else if (sendLink.fireEvent) {
+        sendLink.fireEvent('onclick');
+      }
+    }
+    return false;
+  }
+  return true;
+}
+
+/* onload */
+window.onload = function() {
+  // На старте класс body уже theme-{{THEME}} из 1С
+  var body = document.body;
+  var currentTheme = 'dark';
+  if (body && body.className.indexOf('theme-light') >= 0) {
+    currentTheme = 'light';
+  }
+
+  applyTheme(currentTheme);
+  scrollChatToBottom();
+
+  var messageInput = document.getElementById('messageInput');
+  if (messageInput) {
+    messageInput.focus();
+  }
+};
+</script>
+</head>
+
+<body class="theme-{{THEME}}">
+<div class="chat-container">
+
+  <div class="top-bar">
+    <div class="top-bar-inner">
+      <span class="top-bar-title">Чат поддержки</span>
+      <span class="top-bar-right">
+        <button type="button"
+                id="themeToggle"
+                class="theme-toggle-button"
+                onclick="toggleTheme()">&#9790;</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="chat-row">
+    <div class="chat container" id="chatMessages">
+      {{MESSAGES}}
+    </div>
+  </div>
+  
+  <div class="input-row-outer">
+    <div class="input-container">
+      <div class="toolbar"></div>
+
+      <form name="dataInput" onsubmit="return false;">
+        <div class="input-row">
+          <div class="input-cell">
+            <input type="text" 
+                   name="textInput"
+                   id="messageInput" 
+                   class="message-input" 
+                   placeholder="Введите сообщение..."
+                   onkeypress="return handleKeyPress(event)">
+          </div>
+          <div class="button-cell">
+            <a href="#"
+               id="sendLink"
+               class="send-button"
+               data-button-id="Exchange"
+               onclick="return false;">Отправить</a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

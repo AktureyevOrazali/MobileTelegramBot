@@ -1912,13 +1912,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-radius: 10px;
   background: var(--surface-soft-color);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   text-align: center;
-  min-height: 44px;
+  min-height: 38px;
+  border: 1px solid var(--border-color);
 }
 
 .admin-assign {
@@ -2312,11 +2313,11 @@ body {
 }
 
 .analytics-banner {
-  background: linear-gradient(135deg, #0b2b6d 0%, #0f3a8a 48%, #1b4fa7 100%);
+  background: linear-gradient(135deg, #3d5a8f 0%, #5a7ab8 48%, #7a9ad0 100%);
   border-radius: 24px;
   padding: 24px;
   color: #f8fafc;
-  box-shadow: 0 24px 60px rgba(8, 25, 77, 0.35);
+  box-shadow: 0 24px 60px rgba(61, 90, 143, 0.25);
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -2367,7 +2368,7 @@ body {
 }
 
 .analytics-banner__body {
-  background: rgba(5, 18, 51, 0.4);
+  background: rgba(45, 70, 120, 0.35);
   border-radius: 20px;
   padding: 20px;
 }
@@ -2420,6 +2421,14 @@ body {
   margin-top: 4px;
 }
 
+.kz-map__label {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+}
+
 .kz-map__legend {
   display: flex;
   align-items: center;
@@ -2432,7 +2441,7 @@ body {
   width: 120px;
   height: 10px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #93c5fd 0%, #1e3a8a 100%);
+  background: linear-gradient(90deg, #a5b4d8 0%, #4a5d8a 100%);
 }
 
 .kz-map__legend-value {
@@ -3604,4 +3613,621 @@ body,
 .dashboard-date-inputs input:focus {
   background: var(--surface-color);
   border-color: var(--brand-color);
+}
+
+/* ===== BIN Cards Fix: Prevent Text Wrapping ===== */
+.bin-chip--compact .bin-chip__title {
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Улучшенные карточки БИН в модальном окне "Все БИНы" */
+.admin-section__list--grid .bin-chip--compact {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Карточки с кнопкой удаления - выравнивание flex-start */
+.admin-section__list--grid .bin-chip--deletable {
+  justify-content: flex-start;
+}
+
+.admin-section__list--grid .bin-chip--compact:hover {
+  border-color: var(--brand-color);
+  box-shadow: 0 0 0 3px var(--input-ring);
+}
+
+/* Статус договора внутри карточки БИН */
+.bin-chip__status {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.bin-chip__status--contract {
+  background: rgba(34, 197, 94, 0.15);
+  color: #15803d;
+}
+
+.bin-chip__status--no-contract {
+  background: rgba(234, 179, 8, 0.18);
+  color: #a16207;
+}
+
+[data-theme='dark'] .bin-chip__status--contract {
+  background: rgba(34, 197, 94, 0.25);
+  color: #86efac;
+}
+
+[data-theme='dark'] .bin-chip__status--no-contract {
+  background: rgba(234, 179, 8, 0.25);
+  color: #fde047;
+}
+
+/* ===== Улучшенный дизайн админ модальных окон ===== */
+.admin-modal__container {
+  width: min(95vw, 560px);
+}
+
+.admin-modal {
+  padding: 22px;
+  gap: 16px;
+}
+
+.admin-modal__header h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+/* Сетка для назначения БИН/сотрудников */
+.admin-assign-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: stretch;
+  padding: 16px;
+  background: var(--surface-soft-color);
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+}
+
+.admin-assign-grid__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-assign-grid__item .pill {
+  height: 42px;
+  font-size: 0.88rem;
+  border-radius: 10px;
+}
+
+.admin-assign-grid__btn {
+  height: 42px;
+  padding: 0 20px;
+  font-size: 0.9rem;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.admin-assign-grid__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Улучшенные выпадающие списки в модальных окнах */
+.admin-modal .pill {
+  height: 42px;
+  border-radius: 10px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-modal .pill:hover {
+  border-color: var(--brand-color);
+}
+
+.admin-modal .pill:focus-within {
+  border-color: var(--brand-color);
+  box-shadow: 0 0 0 3px var(--input-ring);
+}
+
+.admin-modal .pill__label {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.admin-modal .pill__value {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 560px) {
+  .admin-assign-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .admin-assign-grid__btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .admin-section__list--grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Улучшенный дизайн карточек пользователей ===== */
+.admin-user-card {
+  background: var(--surface-color);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.admin-user-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border-color: var(--brand-color);
+}
+
+/* Заголовок карточки */
+.admin-user-card__header {
+  margin-bottom: 4px;
+}
+
+.admin-user-card__title-row h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+/* Бейдж роли в заголовке */
+.admin-user-card__title-row .role-badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--surface-soft-color);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+/* Email пользователя */
+.admin-user-card__meta {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+/* Контролы (селект роли) */
+.admin-user-card__control .pill {
+  height: 38px;
+  font-size: 0.85rem;
+  border-radius: 10px;
+  min-width: 140px;
+}
+
+/* Статистика БИНы и Разделы */
+.admin-user-card__stat-button {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 10px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-heading);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.admin-user-card__stat-button:hover {
+  background: var(--surface-color);
+  border-color: var(--brand-color);
+  box-shadow: 0 0 0 3px var(--input-ring);
+}
+
+/* Футер карточки */
+.admin-user-card__footer {
+  margin-top: 8px;
+  padding-top: 16px;
+  gap: 10px;
+}
+
+/* Кнопки в футере */
+.admin-user-card__footer .button {
+  height: 38px;
+  padding: 0 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+/* Кнопка "Сбросить пароль" */
+.admin-user-card__footer .button.secondary {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-heading);
+}
+
+.admin-user-card__footer .button.secondary:hover {
+  background: var(--surface-soft-color);
+  border-color: var(--brand-color);
+}
+
+/* Кнопка "Удалить" */
+.admin-user-card__footer .button--danger,
+.admin-user-card__footer .button.danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: none;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+
+.admin-user-card__footer .button--danger:hover,
+.admin-user-card__footer .button.danger:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Адаптивность карточек пользователей */
+@media (max-width: 768px) {
+  .admin-user-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-user-card__footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-user-card__footer-actions {
+    margin-left: 0;
+    justify-content: stretch;
+  }
+
+  .admin-user-card__footer .button {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* ===== Компактный дизайн модалки БИНов оператора ===== */
+.admin-modal {
+  padding: 16px;
+  gap: 12px;
+}
+
+.admin-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-modal__header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.admin-modal__header .badge {
+  font-size: 0.7rem;
+  padding: 4px 8px;
+}
+
+.admin-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-modal__form .label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.admin-modal__form .pill {
+  height: 36px;
+  font-size: 0.85rem;
+}
+
+.admin-modal__list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+/* Карточки БИН в модалке оператора */
+.bin-chip--detailed {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  min-height: auto;
+}
+
+.bin-chip--detailed .bin-chip__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bin-chip--detailed .bin-chip__title {
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bin-chip--detailed .bin-chip__meta {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.bin-chip__actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.chip-action {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  transition: all 0.15s ease;
+}
+
+.chip-action:hover {
+  border-color: var(--brand-color);
+  color: var(--brand-color);
+}
+
+.bin-chip--detailed .chip-x {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.15s ease;
+}
+
+.bin-chip--detailed .chip-x:hover {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* Карточки разделов в модалке оператора */
+.section-chip--detailed {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  min-height: auto;
+  transition: border-color 0.2s ease;
+}
+
+.section-chip--detailed:hover {
+  border-color: var(--brand-color);
+}
+
+.section-chip--detailed .section-chip__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.section-chip--detailed .section-chip__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.section-chip--detailed .section-chip__meta {
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.section-chip--detailed .chip-x {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.section-chip--detailed .chip-x:hover {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* Контейнер для списка с лейблом */
+.admin-modal__list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-modal__list-container .label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Кнопки в заголовке модалки */
+.admin-modal__header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-modal__header-actions .button {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 0.75rem;
+  border-radius: 8px;
+}
+
+/* Список заявок в столбик */
+.admin-modal__list--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Поле поиска в модалках */
+.admin-modal__search {
+  margin-bottom: 4px;
+}
+
+.admin-modal__search .input {
+  width: 100%;
+  height: 36px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+}
+
+/* Карточка заявки на регистрацию */
+.pending-registration-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s ease;
+}
+
+.pending-registration-card:hover {
+  border-color: var(--brand-color);
+}
+
+.pending-registration-card__name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.pending-registration-card__meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.pending-registration-card__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pending-registration-card__actions .button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Кнопка принять (зелёная) */
+.pending-registration-card__actions .button:not(.secondary) {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 6px rgba(34, 197, 94, 0.25);
+}
+
+.pending-registration-card__actions .button:not(.secondary):hover {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  transform: translateY(-1px);
+}
+
+/* Кнопка отклонить (серая с красным hover) */
+.pending-registration-card__actions .button.secondary {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.pending-registration-card__actions .button.secondary:hover {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
 }

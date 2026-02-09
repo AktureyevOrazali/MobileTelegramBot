@@ -1551,12 +1551,22 @@ def remove_client_bin(chat_id: int, bin_value: str) -> bool:
 
 
 def list_unassigned_bins() -> List[Dict[str, object]]:
+    """
+    Возвращает список БИНов с договором, которые не назначены ни одному сотруднику.
+    """
     refresh_bin_assignments()
     reference = datetime.utcnow().isoformat()
     with _lock:
         rows = execute(
             """
-            WITH active_dialogs AS (
+            WITH assigned_bins AS (
+                SELECT DISTINCT bin
+                FROM user_bins
+                WHERE bin IS NOT NULL
+                  AND TRIM(bin) != ''
+                  AND (expires_at IS NULL OR expires_at > %s)
+            ),
+            dialogs_count AS (
                 SELECT
                     cd.bin AS bin,
                     COUNT(*) AS open_dialogs
@@ -1565,23 +1575,19 @@ def list_unassigned_bins() -> List[Dict[str, object]]:
                   AND cd.bin IS NOT NULL
                   AND TRIM(cd.bin) != ''
                 GROUP BY cd.bin
-            ),
-            assigned_bins AS (
-                SELECT DISTINCT bin
-                FROM user_bins
-                WHERE bin IS NOT NULL
-                  AND TRIM(bin) != ''
-                  AND (expires_at IS NULL OR expires_at > %s)
             )
             SELECT
-                ad.bin AS bin,
-                ad.open_dialogs AS open_dialogs
-            FROM active_dialogs ad
-            LEFT JOIN assigned_bins ab ON ab.bin = ad.bin
-            LEFT JOIN organizations_without_contracts owc ON owc.customer_bin = ad.bin
-            WHERE ab.bin IS NULL
+                ab.bin AS bin,
+                COALESCE(dc.open_dialogs, 0) AS open_dialogs
+            FROM all_bins ab
+            LEFT JOIN assigned_bins asb ON asb.bin = ab.bin
+            LEFT JOIN organizations_without_contracts owc ON owc.customer_bin = ab.bin
+            LEFT JOIN dialogs_count dc ON dc.bin = ab.bin
+            WHERE ab.bin IS NOT NULL
+              AND TRIM(ab.bin) != ''
+              AND asb.bin IS NULL
               AND owc.customer_bin IS NULL
-            ORDER BY ad.open_dialogs DESC, ad.bin ASC
+            ORDER BY COALESCE(dc.open_dialogs, 0) DESC, ab.bin ASC
             """,
             (reference,),
         ).fetchall()
@@ -3215,3 +3221,45 @@ def remove_organization_without_contract(customer_bin: str) -> bool:
             (normalized_bin,),
         )
     return cursor.rowcount > 0
+
+
+def sync_bins_with_contracts() -> Dict[str, Any]:
+    """
+    Синхронизирует все БИНы с информацией о договорах.
+    Добавляет БИНы без договора в organizations_without_contracts,
+    удаляет БИНы с договором из этой таблицы.
+    
+    Returns:
+        Статистика синхронизации: added, removed, total
+    """
+    from . import contract_checker
+    
+    all_bins = list_bins()
+    bins_with_contracts = contract_checker.get_all_customer_bins_with_contracts()
+    
+    added = 0
+    removed = 0
+    
+    for bin_value in all_bins:
+        if bin_value in bins_with_contracts:
+            # У БИНа есть договор - удаляем из без договора если есть
+            if remove_organization_without_contract(bin_value):
+                removed += 1
+        else:
+            # У БИНа нет договора - проверяем и добавляем в без договора
+            if not has_organization_without_contract(bin_value):
+                # Получаем информацию об адресе/банке из исторических данных
+                contract_data = contract_checker.check_customer_contracts(bin_value)
+                add_organization_without_contract(
+                    bin_value,
+                    customer_legal_address=contract_data.get("customer_legal_address"),
+                    customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
+                )
+                added += 1
+    
+    return {
+        "added": added,
+        "removed": removed,
+        "total_bins": len(all_bins),
+        "bins_with_contracts": len(bins_with_contracts),
+    }

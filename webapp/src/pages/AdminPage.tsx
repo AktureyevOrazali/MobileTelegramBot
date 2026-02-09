@@ -124,8 +124,7 @@ const AdminUserCard: React.FC<UserCardProps> = ({
     setPendingExpiresAt('');
     setBinModalError(null);
     setEditingBin(null);
-    setOperatorBinsOpen(false);
-    setOperatorSectionsOpen(false);
+    // Не сбрасываем operatorBinsOpen и operatorSectionsOpen, чтобы модалки не закрывались
   }, [user]);
 
   const roleOptions = useMemo(
@@ -514,8 +513,11 @@ const AdminUserCard: React.FC<UserCardProps> = ({
               {assignedSections.map((section) => {
                 const label = section.title || section.id;
                 return (
-                  <span key={section.id} className="chip bin-chip">
-                    {label}
+                  <span key={section.id} className="chip section-chip section-chip--detailed">
+                    <span className="section-chip__text">
+                      <span className="section-chip__title">{label}</span>
+                      <span className="section-chip__meta">{section.id}</span>
+                    </span>
                     <button
                       className="chip-x"
                       type="button"
@@ -625,6 +627,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [bins, setBins] = useState<string[]>([]);
   const [unassignedBins, setUnassignedBins] = useState<UnassignedBin[]>([]);
   const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
+  const [pendingSearch, setPendingSearch] = useState('');
   const [pendingAction, setPendingAction] = useState<number | null>(null);
   const [pendingModalOpen, setPendingModalOpen] = useState(false);
   const [pendingBulkAction, setPendingBulkAction] = useState<'approve' | 'reject' | null>(null);
@@ -788,6 +791,16 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
     if (!query) return binsDetailed;
     return binsDetailed.filter((item) => item.bin.toLowerCase().includes(query));
   }, [binsDetailed, allBinsSearch]);
+
+  const filteredPendingRegistrations = useMemo(() => {
+    const query = pendingSearch.trim().toLowerCase();
+    if (!query) return pendingRegistrations;
+    return pendingRegistrations.filter(
+      (item) =>
+        item.name.toLowerCase().includes(query) ||
+        item.email.toLowerCase().includes(query),
+    );
+  }, [pendingRegistrations, pendingSearch]);
 
   const selectedAssignUser = useMemo(
     () => assignableUsers.find((user) => String(user.id) === assignUserId) ?? null,
@@ -996,7 +1009,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
         {/* Unassigned Bins */}
         <div className="card admin-section admin-section--compact">
           <div className="admin-section__header">
-            <h3>Неразделённые</h3>
+            <h3>С договором</h3>
             <button
               className="admin-section__count admin-section__count--button"
               type="button"
@@ -1100,7 +1113,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       />
 
       {/* Pending Registrations Modal - Improved Header Actions */}
-      <Modal open={pendingModalOpen} onClose={() => setPendingModalOpen(false)} className="admin-modal__container">
+      <Modal open={pendingModalOpen} onClose={() => { setPendingModalOpen(false); setPendingSearch(''); }} className="admin-modal__container">
         <div className="admin-modal">
           <div className="admin-modal__header">
             <h3>Заявки ({pendingRegistrations.length})</h3>
@@ -1124,11 +1137,22 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
             </div>
           </div>
 
+          {pendingRegistrations.length > 0 && (
+            <div className="admin-modal__search">
+              <input
+                className="input"
+                placeholder="Поиск по имени или e-mail"
+                value={pendingSearch}
+                onChange={(e) => setPendingSearch(e.target.value)}
+              />
+            </div>
+          )}
+
           <div className="admin-modal__list admin-modal__list--stack">
-            {pendingRegistrations.length === 0 ? (
-              <span className="text-muted">Нет новых заявок.</span>
+            {filteredPendingRegistrations.length === 0 ? (
+              <span className="text-muted">{pendingSearch ? 'Заявки не найдены' : 'Нет новых заявок.'}</span>
             ) : (
-              pendingRegistrations.map((item) => (
+              filteredPendingRegistrations.map((item) => (
                 <div key={item.id} className="pending-registration-card">
                   <div>
                     <div className="pending-registration-card__name">{item.name}</div>
@@ -1167,7 +1191,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       >
         <div className="admin-modal">
           <div className="admin-modal__header">
-            <h3>Неразделенные БИНы ({unassignedBins.length})</h3>
+            <h3>С договором ({unassignedBins.length})</h3>
           </div>
 
           {unassignedBins.length === 0 ? (

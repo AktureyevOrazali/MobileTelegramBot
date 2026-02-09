@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { geoMercator, geoPath, scaleLinear } from 'd3';
+import { geoCentroid, geoMercator, geoPath, scaleLinear } from 'd3';
 import type { FeatureCollection, Geometry } from 'geojson';
 import { ApiClient, ApiError } from '../api/ApiClient';
 import { AuthSession, BinDetailed, ChatSummary, Message, MessageNotification, Section } from '../types';
@@ -323,43 +323,74 @@ const detectRegionFromAddress = (address: string | null | undefined) => {
 const RegionActivityMap: React.FC<{
   features: FeatureCollection<Geometry, { name: string }>;
   counts: Record<string, number>;
-}> = ({ features, counts }) => {
+}> = React.memo(({ features, counts }) => {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [hovered, setHovered] = useState<{ key: string; x: number; y: number } | null>(null);
 
   const width = 760;
   const height = 420;
   const projection = useMemo(() => geoMercator().fitSize([width, height], features), [features]);
-  const path = useMemo(() => geoPath(projection), [projection]);
-  const maxValue = Math.max(1, ...Object.values(counts));
+  const pathGenerator = useMemo(() => geoPath(projection), [projection]);
+  const maxValue = useMemo(() => Math.max(1, ...Object.values(counts)), [counts]);
   const colorScale = useMemo(
-    () => scaleLinear<string>().domain([0, maxValue]).range(['#93c5fd', '#1e3a8a']),
+    () => scaleLinear<string>().domain([0, maxValue]).range(['#a5b4d8', '#4a5d8a']),
     [maxValue],
   );
 
-  const handleMove = (event: React.MouseEvent<SVGPathElement>, key: string) => {
+  // Pre-compute all paths and centroids once
+  const regionData = useMemo(() =>
+    features.features.map((feature) => {
+      const key = feature.properties?.name ?? '';
+      const d = pathGenerator(feature) ?? '';
+      const centroid = geoCentroid(feature);
+      const [cx, cy] = projection(centroid) ?? [0, 0];
+      return { key, d, cx, cy };
+    }),
+    [features, pathGenerator, projection]
+  );
+
+  const handleMove = useCallback((event: React.MouseEvent<SVGPathElement>, key: string) => {
     if (!wrapperRef.current) return;
     const rect = wrapperRef.current.getBoundingClientRect();
     setHovered({ key, x: event.clientX - rect.left, y: event.clientY - rect.top });
-  };
+  }, []);
+
+  const handleLeave = useCallback(() => setHovered(null), []);
 
   return (
     <div className="kz-map" ref={wrapperRef}>
       <svg className="kz-map__svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Карта Казахстана по регионам">
-        {features.features.map((feature) => {
-          const key = feature.properties?.name;
+        {regionData.map(({ key, d }) => {
           const value = counts[key] ?? 0;
           const isActive = hovered?.key === key;
           return (
             <path
               key={key}
-              d={path(feature) ?? undefined}
+              d={d}
               fill={colorScale(value)}
               className={`kz-map__region ${isActive ? 'is-active' : ''}`}
               onMouseEnter={(event) => handleMove(event, key)}
               onMouseMove={(event) => handleMove(event, key)}
-              onMouseLeave={() => setHovered(null)}
+              onMouseLeave={handleLeave}
             />
+          );
+        })}
+        {/* Region count labels */}
+        {regionData.map(({ key, cx, cy }) => {
+          const value = counts[key] ?? 0;
+          if (value === 0) return null;
+          return (
+            <text
+              key={`label-${key}`}
+              x={cx}
+              y={cy}
+              className="kz-map__label"
+              textAnchor="middle"
+              dominantBaseline="central"
+              pointerEvents="none"
+            >
+              {value}
+            </text>
           );
         })}
       </svg>
@@ -374,7 +405,7 @@ const RegionActivityMap: React.FC<{
       )}
     </div>
   );
-};
+});
 
 /* -------------------- Page -------------------- */
 const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
@@ -802,10 +833,9 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
             <h2 className="analytics-banner__title">Активность по регионам Казахстана</h2>
           </div>
           <div className="kz-map__legend">
-            <span>Светлее</span>
+            <span>0 БИН</span>
             <span className="kz-map__legend-gradient" aria-hidden="true" />
-            <span>Темнее</span>
-            <span className="kz-map__legend-value">макс: {maxRegionCount}</span>
+            <span>{maxRegionCount} БИН</span>
           </div>
         </div>
         <div className="analytics-banner__body">

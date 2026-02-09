@@ -701,16 +701,34 @@ def list_bins_detailed_endpoint(
 ):
     """Возвращает список БИНов с информацией о наличии договора."""
     bins = database.list_bins(query)
+    
+    # Загружаем все контракты одним запросом (кэш 30 минут)
+    bins_with_contracts = contract_checker.get_all_customer_bins_with_contracts()
+    
     # Get organizations without contracts for quick lookup
     orgs_without_contracts = {
         org["customer_bin"]: org
         for org in database.list_organizations_without_contracts()
     }
+    
     result = []
     for bin_value in bins:
         org_data = orgs_without_contracts.get(bin_value)
-        if org_data:
-            # No contract - use stored data
+        
+        if bin_value in bins_with_contracts:
+            # Has contract - use preloaded data
+            # Если БИН был в без договора, но теперь есть договор — удаляем
+            if org_data:
+                database.remove_organization_without_contract(bin_value)
+            contract_info = bins_with_contracts[bin_value]
+            result.append(BinDetailedResponse(
+                bin=bin_value,
+                has_contract=True,
+                customer_legal_address=contract_info.get("customer_legal_address"),
+                customer_bank_name_ru=contract_info.get("customer_bank_name_ru"),
+            ))
+        elif org_data:
+            # No contract - already in organizations_without_contracts
             result.append(BinDetailedResponse(
                 bin=bin_value,
                 has_contract=False,
@@ -718,11 +736,22 @@ def list_bins_detailed_endpoint(
                 customer_bank_name_ru=org_data.get("customer_bank_name_ru"),
             ))
         else:
-            # Has contract or no data
+            # No contract and not in without-contracts table
+            # Get info from any historical contract for this BIN and ADD to table
             contract_data = contract_checker.check_customer_contracts(bin_value)
+            has_contract = contract_data.get("has_contract", False)
+            
+            if not has_contract:
+                # Автоматически добавляем в таблицу organizations_without_contracts
+                database.add_organization_without_contract(
+                    bin_value,
+                    customer_legal_address=contract_data.get("customer_legal_address"),
+                    customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
+                )
+            
             result.append(BinDetailedResponse(
                 bin=bin_value,
-                has_contract=contract_data.get("has_contract", False),
+                has_contract=has_contract,
                 customer_legal_address=contract_data.get("customer_legal_address"),
                 customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
             ))
@@ -749,6 +778,18 @@ def list_unassigned_bins_endpoint(
     _: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     return [UnassignedBinResponse(**item) for item in database.list_unassigned_bins()]
+
+
+@router.post("/bins/sync")
+def sync_bins_with_contracts_endpoint(
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    """Синхронизирует все БИНы с информацией о договорах."""
+    result = database.sync_bins_with_contracts()
+    return {
+        "status": "ok",
+        **result,
+    }
 
 
 @router.get("/bins/pending", response_model=List[UnassignedBinResponse])
@@ -1385,7 +1426,7 @@ def create_onec_message(
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    database.save_message(
+    message_id = database.save_message(
         chat_id=chat_id,
         direction="incoming",
         text=stored_text,
@@ -1396,6 +1437,10 @@ def create_onec_message(
         chat_type="onec",
         section=section_id,
         dialog_id=dialog_id,
+    )
+    logger.info(
+        f"1C incoming message saved: ext_id={external_chat_id}, chat_id={chat_id}, "
+        f"dialog_id={dialog_id}, message_id={message_id}, author={author}"
     )
 
     if section_id:
@@ -1408,31 +1453,38 @@ def create_onec_message(
         (chat_record.get("external_chat_id") if chat_record else None) or external_chat_id
     )
 
-    # Если нет договора — сохраняем уведомление в историю чата
+    # Если нет договора — сохраняем уведомление в историю чата ТОЛЬКО при первом сообщении
     if response_message:
-        contract_notice_id = database.save_message(
-            chat_id=chat_id,
-            direction="outgoing",
-            text=response_message,
-            message_id=None,
-            author="System",
-            chat_title=chat_title,
-            username=None,
-            chat_type="onec",
-            section=chat_section,
-            dialog_id=dialog_id,
-        )
-        if dialog_external_id:
-            _enqueue_onec_outgoing_message(
-                message_id=contract_notice_id,
+        # Проверяем количество сообщений в диалоге - если это первое сообщение
+        existing_messages = database.get_messages(chat_id, limit=5, dialog_id=dialog_id)
+        # Если только 1 сообщение (только что отправленное) - показываем уведомление о договоре
+        is_first_message = len(existing_messages) <= 1
+        
+        if is_first_message:
+            contract_notice_id = database.save_message(
                 chat_id=chat_id,
-                dialog_id=dialog_id,
-                external_chat_id=dialog_external_id,
-                bin_value=chat_bin or bin_value,
+                direction="outgoing",
                 text=response_message,
+                message_id=None,
                 author="System",
+                chat_title=chat_title,
+                username=None,
+                chat_type="onec",
                 section=chat_section,
+                dialog_id=dialog_id,
             )
+            if dialog_external_id:
+                _enqueue_onec_outgoing_message(
+                    message_id=contract_notice_id,
+                    chat_id=chat_id,
+                    dialog_id=dialog_id,
+                    external_chat_id=dialog_external_id,
+                    bin_value=chat_bin or bin_value,
+                    text=response_message,
+                    author="System",
+                    section=chat_section,
+                )
+
 
     auto_reply_sent = False
 
@@ -1603,6 +1655,11 @@ def _onec_history_core(
         resolved_chat_id,
         limit=limit,
         dialog_id=resolved_dialog_id,
+    )
+
+    logger.info(
+        f"1C history request: ext_id={normalized_external}, chat_id={resolved_chat_id}, "
+        f"dialog_id={resolved_dialog_id}, messages_count={len(raw_messages)}"
     )
 
     messages: List[OneCMessageEntry] = []

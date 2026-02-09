@@ -13,9 +13,15 @@ GOSZAKUP_API_URL = "https://ows.goszakup.gov.kz/v3/graphql"
 GOSZAKUP_API_TOKEN = "79a212468fca40db901c9475cde94e1b"
 SUPPLIER_BIN = "980540000496"
 
-CACHE_TTL_SECONDS = 300
+CACHE_TTL_SECONDS = 300  # 5 минут для индивидуальных проверок
+BATCH_CACHE_TTL_SECONDS = 1800  # 30 минут для полного списка контрактов
+
 _contract_cache: Dict[str, Dict[str, Any]] = {}
 _contract_cache_expiry: Dict[str, float] = {}
+
+# Кэш для всех контрактов поставщика
+_all_contracts_cache: List[Dict[str, Any]] | None = None
+_all_contracts_cache_expiry: float | None = None
 
 
 def _get_cached_contract(customer_bin: str) -> Dict[str, Any] | None:
@@ -34,24 +40,14 @@ def _store_cached_contract(customer_bin: str, payload: Dict[str, Any]) -> None:
     _contract_cache_expiry[customer_bin] = time.monotonic() + CACHE_TTL_SECONDS
 
 
-def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
-    """
-    Проверяет наличие контрактов для указанного customerBin за 2026 год.
+def _get_all_contracts() -> List[Dict[str, Any]]:
+    """Возвращает все контракты поставщика из кэша или загружает их."""
+    global _all_contracts_cache, _all_contracts_cache_expiry
     
-    Args:
-        customer_bin: БИН клиента (заказчика)
-        
-    Returns:
-        Dictionary with:
-        - has_contract: bool - есть ли контракт
-        - contracts: list - список контрактов
-        - customer_legal_address: str | None - адрес из первого контракта
-        - customer_bank_name_ru: str | None - банк из первого контракта
-    """
-    cached = _get_cached_contract(customer_bin)
-    if cached is not None:
-        return cached
-
+    now = time.monotonic()
+    if _all_contracts_cache is not None and _all_contracts_cache_expiry and _all_contracts_cache_expiry > now:
+        return _all_contracts_cache
+    
     query = """
     query Contract($supplierBiin: String!) {
         Contract(filter: { supplierBiin: $supplierBiin }) {
@@ -74,6 +70,69 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
         "variables": {"supplierBiin": SUPPLIER_BIN},
     }
     
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(GOSZAKUP_API_URL, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+        contracts_data = data.get("data", {}).get("Contract", []) or []
+        _all_contracts_cache = contracts_data
+        _all_contracts_cache_expiry = now + BATCH_CACHE_TTL_SECONDS
+        logger.info(f"Loaded {len(contracts_data)} contracts for supplier {SUPPLIER_BIN}")
+        return contracts_data
+        
+    except Exception as e:
+        logger.error(f"Error loading all contracts: {e}")
+        # Возвращаем старый кэш если есть, иначе пустой список
+        return _all_contracts_cache if _all_contracts_cache else []
+
+
+def get_all_customer_bins_with_contracts() -> Dict[str, Dict[str, Any]]:
+    """
+    Возвращает словарь БИНов клиентов с договорами на 2026 год.
+    Ключ — БИН клиента, значение — информация о первом контракте.
+    """
+    all_contracts = _get_all_contracts()
+    result: Dict[str, Dict[str, Any]] = {}
+    
+    for contract in all_contracts:
+        customer_bin = contract.get("customerBin", "")
+        sign_date = contract.get("signDate", "")
+        
+        if not customer_bin:
+            continue
+        
+        # Проверяем контракты на 2026 год
+        if sign_date and sign_date.startswith("2026"):
+            if customer_bin not in result:
+                result[customer_bin] = {
+                    "has_contract": True,
+                    "customer_legal_address": contract.get("customerLegalAddress"),
+                    "customer_bank_name_ru": contract.get("customerBankNameRu"),
+                }
+    
+    return result
+
+
+def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
+    """
+    Проверяет наличие контрактов для указанного customerBin за 2026 год.
+    
+    Args:
+        customer_bin: БИН клиента (заказчика)
+        
+    Returns:
+        Dictionary with:
+        - has_contract: bool - есть ли контракт
+        - contracts: list - список контрактов
+        - customer_legal_address: str | None - адрес из первого контракта
+        - customer_bank_name_ru: str | None - банк из первого контракта
+    """
+    cached = _get_cached_contract(customer_bin)
+    if cached is not None:
+        return cached
+
     result: Dict[str, Any] = {
         "has_contract": False,
         "contracts": [],
@@ -82,14 +141,11 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
     }
     
     try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.post(GOSZAKUP_API_URL, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            
-        contracts_data = data.get("data", {}).get("Contract", [])
+        # Используем предзагруженные контракты вместо отдельного API-запроса
+        contracts_data = _get_all_contracts()
         if not contracts_data:
             logger.info(f"No contracts found for supplier {SUPPLIER_BIN}")
+            _store_cached_contract(customer_bin, result)
             return result
             
         # Filter contracts for specified customer BIN and 2026 year
@@ -123,10 +179,6 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
                     break
             logger.info(f"No 2026 contracts found for customer {customer_bin}")
             
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error checking contracts for {customer_bin}: {e}")
-    except httpx.RequestError as e:
-        logger.error(f"Request error checking contracts for {customer_bin}: {e}")
     except Exception as e:
         logger.error(f"Unexpected error checking contracts for {customer_bin}: {e}")
         

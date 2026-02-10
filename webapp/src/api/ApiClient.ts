@@ -115,7 +115,7 @@ export class ApiClient {
 
   private async request<T>(
     path: string,
-    options: RequestInit & { query?: Record<string, any>; expectJson?: boolean } = {},
+    options: RequestInit & { query?: Record<string, string | number | boolean | null | undefined>; expectJson?: boolean } = {},
   ): Promise<T> {
     const { query, expectJson = true, headers, ...rest } = options;
     const url = this.buildUrl(path, query);
@@ -194,7 +194,10 @@ export class ApiClient {
       try {
         const parsed = JSON.parse(trimmed);
         if (parsed && typeof parsed === 'object') {
-          const detail = (parsed as any).detail ?? (parsed as any).message ?? (parsed as any).error;
+          const detail = 'detail' in parsed ? parsed.detail
+            : 'message' in parsed ? parsed.message
+              : 'error' in parsed ? parsed.error
+                : undefined;
           if (typeof detail === 'string') {
             return this.normalizeErrorMessage(detail) ?? null;
           }

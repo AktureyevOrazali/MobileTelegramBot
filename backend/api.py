@@ -7,7 +7,7 @@ import hmac
 import json
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, FastAPI, Header, HTTPException, Query
@@ -28,12 +28,14 @@ ONEC_CHAT_ID_SPACE = 1_000_000_000_000
 # Опциональный общий секрет для подписи HMAC нагрузки, которую 1С забирает из outbox
 ONEC_SHARED_SECRET = os.getenv("ONEC_SHARED_SECRET", "")
 
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+
 app = FastAPI(title="MobileBot Companion API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 router = APIRouter()
@@ -75,7 +77,7 @@ def _enqueue_onec_outgoing_message(
         "dialog_id": dialog_id,
         "text": text,
         "author": author,
-        "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z",
         "bin": bin_value,
         "section": section,
         "direction": direction,
@@ -342,7 +344,9 @@ class DashboardSummaryResponse(BaseModel):
 
 
 def require_api_token(x_api_token: str | None = Header(default=None, alias="X-Api-Token")) -> None:
-    if API_TOKEN and x_api_token != API_TOKEN:
+    if not API_TOKEN:
+        raise HTTPException(status_code=503, detail="API token is not configured")
+    if x_api_token != API_TOKEN:
         raise HTTPException(status_code=403, detail="Invalid API token")
 
 
@@ -409,8 +413,10 @@ def _sanitize_user(user: Dict[str, object]) -> Dict[str, object]:
 
 @router.post("/auth/register", response_model=RegisterResponse)
 def register_user(request: RegisterRequest, _: None = Depends(require_api_token)):
+    logger.info("Registration attempt for email=%s", request.email)
     existing = database.find_user_by_email(request.email)
     if existing:
+        logger.warning("Registration rejected: email=%s already exists", request.email)
         raise HTTPException(status_code=409, detail="User already exists")
     password_hash = hashlib.sha256(request.password.encode("utf-8")).hexdigest()
     try:
@@ -423,21 +429,28 @@ def register_user(request: RegisterRequest, _: None = Depends(require_api_token)
             is_approved=False,
         )
     except ValueError as exc:
+        logger.warning("Registration failed for email=%s: %s", request.email, exc)
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if created_user is None or created_user.get("id") is None:
+        logger.error("Registration failed for email=%s: user not created", request.email)
         raise HTTPException(status_code=500, detail="Failed to create user")
+    logger.info("Registration successful: email=%s, user_id=%s", request.email, created_user["id"])
     return RegisterResponse()
 
 
 @router.post("/auth/login", response_model=AuthResponse)
 def login_user(request: LoginRequest, _: None = Depends(require_api_token)):
+    logger.info("Login attempt for identifier=%s", request.identifier)
     user = database.find_user_by_identifier(request.identifier)
     password_hash = hashlib.sha256(request.password.encode("utf-8")).hexdigest()
     if not user or user["password_hash"] != password_hash:
+        logger.warning("Login failed: invalid credentials for identifier=%s", request.identifier)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.get("is_approved", True):
+        logger.warning("Login blocked: user_id=%s not approved", user["id"])
         raise HTTPException(status_code=403, detail="Аккаунт ожидает подтверждения модератора")
     token = database.create_session(user["id"])
+    logger.info("Login successful: user_id=%s, role=%s", user["id"], user.get("role"))
     sanitized = _sanitize_user(user)
     return AuthResponse(token=token, user=UserResponse(**sanitized))
 
@@ -844,7 +857,7 @@ def list_chats(
 
     def _normalize(value: object, *, fallback: Optional[str] = None) -> str:
         if value is None:
-            return fallback or datetime.utcnow().isoformat()
+            return fallback or datetime.now(timezone.utc).isoformat()
         if isinstance(value, datetime):
             return value.isoformat()
         return str(value)
@@ -959,7 +972,7 @@ def _normalize_optional(value: str | None) -> str | None:
     return trimmed or None
 
 
-def _parse_int_from_string(value: str) -> int:
+def _parse_int_from_string(value: str | None) -> int | None:
     """Парсит целое число из строки, удаляя пробелы и нечисловые символы."""
     if value is None:
         return None
@@ -975,6 +988,8 @@ def _parse_int_from_string(value: str) -> int:
 
 @router.post("/messages/send")
 def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depends(get_current_user)):
+    logger.info("Send message: user_id=%s, chat_id=%s, dialog_id=%s",
+                current_user["id"], request.chat_id, request.dialog_id)
     if current_user["role"] not in (database.ROLE_ADMIN, database.ROLE_MODERATOR, database.ROLE_OPERATOR):
         raise HTTPException(status_code=403, detail="Недостаточно прав для отправки сообщений")
     if request.dialog_id is not None:
@@ -1269,7 +1284,7 @@ def close_dialog(
         "Диалог закрыт. 🤖 AI снова включён. Напишите новое сообщение, чтобы открыть его заново."
     )
 
-    closed_at = datetime.utcnow().isoformat()
+    closed_at = datetime.now(timezone.utc).isoformat()
 
     if chat_type == "onec":
         message_id = database.save_message(
@@ -1391,10 +1406,10 @@ def create_onec_message(
     chat_title = title_candidate or f"1С клиент {external_chat_id}"  # ← Здесь меняем
 
     # Check if customer has a valid contract for 2026
-    logger.info(f"Checking contract for 1C customer BIN: {bin_value}")
+    logger.info("Checking contract for 1C customer BIN: %s", bin_value)
     contract_result = contract_checker.check_customer_contracts(bin_value)
     has_contract = contract_result.get("has_contract", False)
-    logger.info(f"Contract check result for {bin_value}: has_contract={has_contract}")
+    logger.info("Contract check result for %s: has_contract=%s", bin_value, has_contract)
     response_message = None
     
     # Save organization without contract info (for admin tracking)
@@ -1404,7 +1419,7 @@ def create_onec_message(
             customer_legal_address=contract_result.get("customer_legal_address"),
             customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
         )
-        logger.info(f"1C Organization {bin_value} saved as organization without contract")
+        logger.info("1C Organization %s saved as organization without contract", bin_value)
         response_message = (
             "⚠️ Обратите внимание: у вашей организации нет действующего договора с нами на 2026 год.\n"
             "Для заключения договора обратитесь в наш офис."
@@ -1439,8 +1454,8 @@ def create_onec_message(
         dialog_id=dialog_id,
     )
     logger.info(
-        f"1C incoming message saved: ext_id={external_chat_id}, chat_id={chat_id}, "
-        f"dialog_id={dialog_id}, message_id={message_id}, author={author}"
+        "1C incoming message saved: ext_id=%s, chat_id=%s, dialog_id=%s, message_id=%s, author=%s",
+        external_chat_id, chat_id, dialog_id, message_id, author,
     )
 
     if section_id:
@@ -1658,8 +1673,8 @@ def _onec_history_core(
     )
 
     logger.info(
-        f"1C history request: ext_id={normalized_external}, chat_id={resolved_chat_id}, "
-        f"dialog_id={resolved_dialog_id}, messages_count={len(raw_messages)}"
+        "1C history request: ext_id=%s, chat_id=%s, dialog_id=%s, messages_count=%d",
+        normalized_external, resolved_chat_id, resolved_dialog_id, len(raw_messages),
     )
 
     messages: List[OneCMessageEntry] = []

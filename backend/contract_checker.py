@@ -2,16 +2,19 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any, Dict, List, Optional
 
 import httpx
 
+from . import require_env
+
 logger = logging.getLogger(__name__)
 
 GOSZAKUP_API_URL = "https://ows.goszakup.gov.kz/v3/graphql"
-GOSZAKUP_API_TOKEN = "79a212468fca40db901c9475cde94e1b"
-SUPPLIER_BIN = "980540000496"
+GOSZAKUP_API_TOKEN = require_env("GOSZAKUP_API_TOKEN")
+SUPPLIER_BIN = require_env("SUPPLIER_BIN")
 
 CACHE_TTL_SECONDS = 300  # 5 минут для индивидуальных проверок
 BATCH_CACHE_TTL_SECONDS = 1800  # 30 минут для полного списка контрактов
@@ -79,11 +82,11 @@ def _get_all_contracts() -> List[Dict[str, Any]]:
         contracts_data = data.get("data", {}).get("Contract", []) or []
         _all_contracts_cache = contracts_data
         _all_contracts_cache_expiry = now + BATCH_CACHE_TTL_SECONDS
-        logger.info(f"Loaded {len(contracts_data)} contracts for supplier {SUPPLIER_BIN}")
+        logger.info("Loaded %d contracts for supplier %s", len(contracts_data), SUPPLIER_BIN)
         return contracts_data
         
     except Exception as e:
-        logger.error(f"Error loading all contracts: {e}")
+        logger.error("Error loading all contracts: %s", e)
         # Возвращаем старый кэш если есть, иначе пустой список
         return _all_contracts_cache if _all_contracts_cache else []
 
@@ -144,7 +147,7 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
         # Используем предзагруженные контракты вместо отдельного API-запроса
         contracts_data = _get_all_contracts()
         if not contracts_data:
-            logger.info(f"No contracts found for supplier {SUPPLIER_BIN}")
+            logger.info("No contracts found for supplier %s", SUPPLIER_BIN)
             _store_cached_contract(customer_bin, result)
             return result
             
@@ -169,7 +172,7 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
             first_contract = matching_contracts[0]
             result["customer_legal_address"] = first_contract.get("customerLegalAddress")
             result["customer_bank_name_ru"] = first_contract.get("customerBankNameRu")
-            logger.info(f"Found {len(matching_contracts)} contracts for customer {customer_bin}")
+            logger.info("Found %d contracts for customer %s", len(matching_contracts), customer_bin)
         else:
             # No contracts for 2026, but we might have address info from other contracts
             for contract in contracts_data:
@@ -177,10 +180,10 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
                     result["customer_legal_address"] = contract.get("customerLegalAddress")
                     result["customer_bank_name_ru"] = contract.get("customerBankNameRu")
                     break
-            logger.info(f"No 2026 contracts found for customer {customer_bin}")
+            logger.info("No 2026 contracts found for customer %s", customer_bin)
             
     except Exception as e:
-        logger.error(f"Unexpected error checking contracts for {customer_bin}: {e}")
+        logger.error("Unexpected error checking contracts for %s: %s", customer_bin, e)
         
     _store_cached_contract(customer_bin, result)
     return result

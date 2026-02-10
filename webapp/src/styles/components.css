@@ -287,6 +287,17 @@
   box-shadow: var(--ring);
 }
 
+/* page loader — fallback for lazy-loaded pages */
+.page-loader {
+  padding: 48px;
+  text-align: center;
+}
+
+/* main content area */
+.app-main {
+  margin-top: 12px;
+}
+
 /* СЃРµС‚РєРё Рё РїСЂРѕС‡РµРµ */
 /* .sections-grid, .check-chip, .bins-row, .bin-chip, .chip-x
    РѕРїСЂРµРґРµР»РµРЅС‹ РЅРёР¶Рµ РІ РѕР±РЅРѕРІР»С‘РЅРЅРѕРј РІРёРґРµ СЃ CSS-РїРµСЂРµРјРµРЅРЅС‹РјРё */

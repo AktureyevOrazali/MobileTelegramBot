@@ -28,6 +28,7 @@ LOG_FILE = _log_path()
 def show_error_box(message: str):
     """
     Показать Windows MessageBox с текстом ошибки.
+    На других ОС выводит ошибку в stderr.
     """
     try:
         ctypes.windll.user32.MessageBoxW(
@@ -36,9 +37,9 @@ def show_error_box(message: str):
             "Backend error",
             0x10  # MB_ICONERROR
         )
-    except Exception:
-        # Если уж даже окно не удалось показать — просто молчим
-        pass
+    except (AttributeError, OSError):
+        # windll недоступен на Linux/macOS — выводим в stderr
+        print(f"[FATAL] {message}", file=sys.stderr)
 
 
 if __name__ == "__main__":
@@ -47,7 +48,7 @@ if __name__ == "__main__":
     # Логируем и в файл, и в консоль
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[
             logging.FileHandler(LOG_FILE, encoding="utf-8"),
             logging.StreamHandler(sys.stdout),

@@ -14,7 +14,7 @@ type ThemeMode = 'light' | 'dark';
 const THEME_STORAGE_KEY = 'mobilebot-companion-theme';
 
 const PageLoader: React.FC = () => (
-  <div style={{ padding: 48, textAlign: 'center' }}>
+  <div className="page-loader">
     <p className="text-muted">Загрузка…</p>
   </div>
 );
@@ -92,7 +92,7 @@ const App: React.FC = () => {
         <div className="container app-header__inner">
           <div className="app-header__left">
             <span className="app-header__logo">MobileBot</span>
-            <nav className="app-header__nav">
+            <nav className="app-header__nav" role="navigation" aria-label="Основная навигация">
               {navigationTabs.map((tab) => (
                 <NavLink
                   key={tab.path}
@@ -144,7 +144,7 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="container" style={{ marginTop: 12 }}>
+      <main className="container app-main">
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Navigate to="/dialogs" replace />} />

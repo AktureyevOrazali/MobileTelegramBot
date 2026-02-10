@@ -14,7 +14,6 @@ from .ai_manager import ai_manager
 from . import contract_checker
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_BOT_TOKEN:
@@ -140,10 +139,10 @@ def _generate_ai_response(message: telebot.types.Message, section: str) -> None:
             section=section,
         )
         
-        logger.info(f"AI ответ отправлен в чат {chat_id}")
+        logger.info("AI ответ отправлен в чат %s", chat_id)
         
     except Exception as e:
-        logger.error(f"Ошибка генерации AI ответа для чата {chat_id}: {e}")
+        logger.error("Ошибка генерации AI ответа для чата %s: %s", chat_id, e)
         
         # УДАЛЯЕМ СООБЩЕНИЕ "ПОДОЖДИТЕ" ПРИ ОШИБКЕ
         if ai_session['waiting_message_id']:
@@ -182,7 +181,7 @@ def handle_ai_commands(message: telebot.types.Message) -> None:
             "✅ AI помощник включен. Задавайте вопросы по бухгалтерии и налогам РК!\n\n"
             "Чтобы отключить AI напишите /ai_off или 'оператор'"
         )
-        logger.info(f"AI включен для чата {chat_id}")
+        logger.info("AI включен для чата %s", chat_id)
         
     elif command == '/ai_off':
         session['ai_enabled'] = False
@@ -191,7 +190,7 @@ def handle_ai_commands(message: telebot.types.Message) -> None:
             "❌ AI помощник выключен. Ваши сообщения будут направлены оператору.\n\n"
             "Чтобы включить AI напишите /ai_on"
         )
-        logger.info(f"AI выключен для чата {chat_id}")
+        logger.info("AI выключен для чата %s", chat_id)
         
     elif command == '/operator':
         # ВКЛЮЧАЕМ РЕЖИМ ОПЕРАТОРА И ОТКЛЮЧАЕМ AI
@@ -211,7 +210,7 @@ def handle_ai_commands(message: telebot.types.Message) -> None:
             "👨‍💼 Подключаю оператора... AI помощник отключен.\n"
             "Оператор ответит в ближайшее время."
         )
-        logger.info(f"Запрошен оператор для чата {chat_id}, AI отключен")
+        logger.info("Запрошен оператор для чата %s, AI отключен", chat_id)
         
         # Сохраняем запрос оператора в историю
         _persist_message(
@@ -382,7 +381,7 @@ def handle_updates(message: telebot.types.Message) -> None:
                 customer_legal_address=contract_result.get("customer_legal_address"),
                 customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
             )
-            logger.info(f"Organization {normalized_text} saved as organization without contract")
+            logger.info("Organization %s saved as organization without contract", normalized_text)
         
         # Create dialog for ALL BINs (with or without contract)
         was_empty_bin = not chat_record or not chat_record.get("bin")
@@ -475,7 +474,7 @@ def handle_updates(message: telebot.types.Message) -> None:
 
     # ЕСЛИ AI ВЫКЛЮЧЕН ИЛИ ЗАПРОШЕН ОПЕРАТОР - выходим (НИКАКИХ AI ОТВЕТОВ)
     if not ai_session['ai_enabled'] or ai_session['operator_requested']:
-        logger.info(f"AI отключен для чата {chat.id}. Сообщение сохранено для оператора.")
+        logger.info("AI отключен для чата %s. Сообщение сохранено для оператора.", chat.id)
         return
 
     # ЕСЛИ AI ВКЛЮЧЕН - генерируем ответ С ИНДИКАТОРОМ ОЖИДАНИЯ

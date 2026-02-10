@@ -7,7 +7,8 @@ import React, {
   useState,
 } from 'react';
 import { ApiClient } from '../api/ApiClient';
-import { AuthSession, UserBinAssignment } from '../types';
+import { AuthSession } from '../types';
+import { normalizeAssignmentsFromStorage } from '../utils/converters';
 
 interface ApiContextValue {
   apiClient: ApiClient;
@@ -33,47 +34,17 @@ function loadSessionFromStorage(): AuthSession | null {
       const favoriteRaw = parsed.user.favoriteDialogIds ?? parsed.user.favorite_dialog_ids;
       const favoriteDialogIds: number[] = Array.isArray(favoriteRaw)
         ? (favoriteRaw as unknown[])
-            .map((v: unknown) => Number(v))
-            .filter((n) => !Number.isNaN(n))
+          .map((v: unknown) => Number(v))
+          .filter((n) => !Number.isNaN(n))
         : [];
-      const normalizeAssignments = (entries: unknown): UserBinAssignment[] => {
-        if (!Array.isArray(entries)) {
-          return [];
-        }
-        const now = new Date();
-        const assignments: UserBinAssignment[] = [];
-        (entries as unknown[]).forEach((item) => {
-          if (!item || typeof item !== 'object' || typeof (item as any).bin !== 'string') {
-            return;
-          }
-          const bin = ((item as any).bin as string).trim();
-          if (!bin) {
-            return;
-          }
-          const assignedAtRaw = (item as any).assignedAt ?? (item as any).assigned_at;
-          const expiresAtRaw = (item as any).expiresAt ?? (item as any).expires_at;
-          const assignedAt = assignedAtRaw ? new Date(assignedAtRaw) : now;
-          const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
-          assignments.push({
-            bin,
-            assignedAt: Number.isNaN(assignedAt.getTime()) ? now : assignedAt,
-            expiresAt: expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null,
-            assignedBy: typeof (item as any).assignedBy === 'number'
-              ? (item as any).assignedBy
-              : typeof (item as any).assigned_by === 'number'
-              ? (item as any).assigned_by
-              : undefined,
-          });
-        });
-        return assignments;
-      };
+      const normalizedBins = normalizeAssignmentsFromStorage(parsed.user.bins);
       const session: AuthSession = {
         token: parsed.token,
         user: {
           ...parsed.user,
           createdAt: new Date(parsed.user.createdAt ?? parsed.user.created_at ?? new Date().toISOString()),
           sections: Array.isArray(parsed.user.sections) ? parsed.user.sections : [],
-          bins: normalizeAssignments(parsed.user.bins),
+          bins: normalizedBins,
           favoriteDialogIds,
           isAdmin: role === 'admin' || role === 'moderator',
           canReply: role === 'admin' || role === 'moderator' || role === 'operator',
@@ -110,7 +81,7 @@ export const ApiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
       else localStorage.removeItem(SESSION_KEY);
-    } catch {}
+    } catch { }
   }, [session]);
 
   // --- ВАЖНО: проверка штампа сервера ---
@@ -119,12 +90,13 @@ export const ApiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let cancelled = false;
 
     (async () => {
-      if (typeof (apiClient as any).getServerStamp !== 'function') {
+      if (!('getServerStamp' in apiClient) || typeof (apiClient as Record<string, unknown>).getServerStamp !== 'function') {
         // метода нет — ничего не делаем, F5 будет сохранять сессию
         return;
       }
       try {
-        const stamp: string = await (apiClient as any).getServerStamp();
+        const getStamp = (apiClient as Record<string, unknown>).getServerStamp as () => Promise<string>;
+        const stamp: string = await getStamp();
         if (cancelled) return;
 
         const prev = serverStamp;
@@ -135,11 +107,11 @@ export const ApiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           apiClient.setSession(null);
           try {
             localStorage.removeItem(SESSION_KEY);
-          } catch {}
+          } catch { }
         }
 
         setServerStamp(stamp);
-        try { localStorage.setItem(STAMP_KEY, stamp ?? ''); } catch {}
+        try { localStorage.setItem(STAMP_KEY, stamp ?? ''); } catch { }
       } catch (e) {
         // если не удалось получить штамп — ничего не делаем, считаем что сервер не перезапускался
         console.debug('getServerStamp failed (ignored):', e);
@@ -161,7 +133,7 @@ export const ApiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSessionState(null);
     try {
       localStorage.removeItem(SESSION_KEY);
-    } catch {}
+    } catch { }
   }, [apiClient]);
 
   const value = useMemo<ApiContextValue>(

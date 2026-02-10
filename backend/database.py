@@ -5,13 +5,14 @@ import hashlib
 import json
 import threading
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from uuid import uuid4
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 from psycopg2 import sql
 
 from . import require_env
@@ -25,37 +26,71 @@ try:
 except ValueError as exc:  # pragma: no cover - defensive
     raise RuntimeError("DB_PORT must be an integer") from exc
 
+_pool = psycopg2.pool.ThreadedConnectionPool(
+    minconn=2,
+    maxconn=10,
+    dbname=DB_NAME,
+    user=DB_USER,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=DB_PORT,
+)
+
+_thread_local = threading.local()
 
 
-def _connect():
-    connection = psycopg2.connect(
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        host=DB_HOST,
-        port=DB_PORT,
-    )
-    connection.set_client_encoding("UTF8")
-    return connection
+class _PooledLock:
+    """Drop-in replacement for threading.Lock using a connection pool.
+
+    Each ``with _lock:`` block borrows a connection from the pool and stores
+    it in thread-local storage so that ``execute()`` can use it.  Different
+    threads get different connections, enabling parallel DB access.
+
+    Re-entrant: nested ``with _lock:`` blocks reuse the same connection.
+    """
+
+    def __enter__(self):
+        depth = getattr(_thread_local, "depth", 0)
+        if depth == 0:
+            conn = _pool.getconn()
+            conn.autocommit = True
+            conn.set_client_encoding("UTF8")
+            _thread_local.conn = conn
+        _thread_local.depth = depth + 1
+        return self
+
+    def __exit__(self, *exc_info):
+        _thread_local.depth -= 1
+        if _thread_local.depth == 0:
+            conn = _thread_local.conn
+            _thread_local.conn = None
+            _pool.putconn(conn)
 
 
-_connection = _connect()
-_connection.autocommit = True
-_lock = threading.Lock()
+_lock = _PooledLock()
 
 
-def get_cursor():
-    global _connection
-    try:
-        return _connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    except psycopg2.OperationalError:
-        _connection = _connect()
-        _connection.autocommit = True
-    
+def execute(query: str, params: Sequence[Any] | None = None):
+    """Execute a SQL query using a pooled connection.
 
-def execute(sql: str, params: Sequence[Any] | None = None):
-    cursor = get_cursor()
-    cursor.execute(sql, params or ())
+    If called inside a ``with _lock:`` block, reuses that block's connection.
+    Otherwise borrows a one-off connection from the pool.
+    """
+    conn = getattr(_thread_local, "conn", None)
+    if conn is None:
+        conn = _pool.getconn()
+        conn.autocommit = True
+        try:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(query, params or ())
+        except Exception:
+            _pool.putconn(conn, close=True)
+            raise
+        else:
+            _pool.putconn(conn)
+            return cursor
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(query, params or ())
     return cursor
 
 USER_COLUMN_NAMES = (
@@ -398,7 +433,7 @@ def _ensure_admin_account() -> None:
                 (ROLE_ADMIN, password_hash, "Администратор", "admin@example.com", row["id"]),
             )
             return
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     execute(
         """
         INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role, is_approved)
@@ -414,14 +449,6 @@ def _ensure_admin_account() -> None:
             ROLE_ADMIN,
         ),
     )
-
-
-def _ensure_chat_dialog_records() -> None:
-    return
-
-
-def _ensure_favorites_schema() -> None:
-    return
 
 
 _init_db()
@@ -512,7 +539,7 @@ def upsert_chat(
     *,
     external_chat_id: str | None = None,
 ) -> None:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     normalized_external = (external_chat_id or "").strip() or None
     with _lock:
         execute(
@@ -543,7 +570,7 @@ def save_message(
     section: str | None,
     dialog_id: int | None = None,
 ) -> int:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     resolved_dialog_id = dialog_id
     if resolved_dialog_id is None:
         active_dialog = get_active_chat_dialog(chat_id)
@@ -554,25 +581,26 @@ def save_message(
             """
             INSERT INTO messages (chat_id, direction, text, message_id, author, created_at, section, dialog_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (chat_id, direction, text, message_id, author, now, section, resolved_dialog_id),
         )
+        inserted_row = cursor.fetchone()
+        if inserted_row is None:
+            raise RuntimeError("Failed to persist message")
+        inserted_id = int(inserted_row["id"])
         if resolved_dialog_id is not None:
             execute(
                 "UPDATE chat_dialogs SET last_message_at = %s WHERE id = %s",
                 (now, resolved_dialog_id),
             )
-        inserted_raw = cursor.lastrowid
-        if inserted_raw is None:
-            raise RuntimeError("Failed to persist message")
-        inserted_id = int(inserted_raw)
     upsert_chat(chat_id, chat_title, username, chat_type)
     return inserted_id
 
 
 def list_user_ids_by_bin(bin_value: str) -> List[int]:
     refresh_bin_assignments()
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
     with _lock:
         rows = execute(
             """
@@ -735,7 +763,7 @@ def is_dialog_in_operator_mode(dialog_id: int) -> bool:
 
 
 def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optional[Dict[str, object]]:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         dialog_row = execute(
             "SELECT id, chat_id, bin FROM chat_dialogs WHERE id = %s",
@@ -796,7 +824,7 @@ def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optio
 def close_chat_dialog(dialog_id: int) -> Optional[int]:
     """Закрывает указанный диалог, сохраняя BIN и раздел у чата."""
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         dialog_row = execute(
             "SELECT chat_id FROM chat_dialogs WHERE id = %s",
@@ -817,7 +845,7 @@ def close_chat_dialog(dialog_id: int) -> Optional[int]:
 
 
 def close_active_chat_dialog(chat_id: int) -> None:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         active = execute(
             """
@@ -905,7 +933,7 @@ def list_chats_for_user(
             or row["dialog_started_at"]
         )
         if not updated_raw:
-            updated_raw = datetime.utcnow().isoformat()
+            updated_raw = datetime.now(timezone.utc).isoformat()
         chats.append(
             {
                 "chat_id": row["chat_id"],
@@ -927,7 +955,7 @@ def list_chats_for_user(
 
 
 def mark_dialog_read(user_id: int, dialog_id: int) -> None:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         execute(
             """
@@ -1033,7 +1061,7 @@ def get_dialog_section(chat_id: int, dialog_id: int | None = None) -> str | None
 
 def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
     normalized = (bin_value or "").strip()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         if not normalized:
             execute(
@@ -1091,7 +1119,7 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
     if not normalized:
         raise ValueError("BIN value is required to create a dialog")
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         existing_bin = execute(
             "SELECT 1 FROM all_bins WHERE bin = %s",
@@ -1219,7 +1247,7 @@ def get_user_sections(user_id: int) -> List[str]:
 
 def set_user_sections(user_id: int, sections: Iterable[str]) -> List[str]:
     normalized = sorted({section.strip() for section in sections if section and section.strip()})
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         if normalized:
             placeholders = ",".join("%s" for _ in normalized)
@@ -1285,8 +1313,16 @@ def _normalize_bin_assignment_payload(bins: Iterable[Any]) -> Dict[str, str | No
     return normalized
 
 
+_last_bin_refresh: datetime | None = None
+_BIN_REFRESH_INTERVAL = timedelta(seconds=60)
+
+
 def refresh_bin_assignments(now: datetime | None = None) -> None:
-    current_time = now or datetime.utcnow()
+    global _last_bin_refresh
+    current_time = now or datetime.now(timezone.utc)
+    if _last_bin_refresh and (current_time - _last_bin_refresh) < _BIN_REFRESH_INTERVAL:
+        return
+    _last_bin_refresh = current_time
     now_iso = current_time.isoformat()
     with _lock:
         rows = execute(
@@ -1312,7 +1348,7 @@ def refresh_bin_assignments(now: datetime | None = None) -> None:
 
 def get_user_bin_assignments(user_id: int, *, include_expired: bool = False) -> List[Dict[str, object]]:
     refresh_bin_assignments()
-    reference = datetime.utcnow().isoformat()
+    reference = datetime.now(timezone.utc).isoformat()
     query_parts = [
         "SELECT bin, created_at, expires_at, assigned_by",
         "FROM user_bins",
@@ -1350,7 +1386,7 @@ def set_user_bins(
     assigned_by: int | None = None,
 ) -> List[Dict[str, object]]:
     normalized = _normalize_bin_assignment_payload(bins)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
     with _lock:
         existing_rows = execute(
@@ -1427,7 +1463,7 @@ def set_favorite_dialog(user_id: int, dialog_id: int, favorite: bool) -> None:
         if dialog is None:
             raise ValueError("Диалог не найден")
         if favorite:
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             execute(
                 """
                 INSERT INTO favorites (user_id, dialog_id, created_at)
@@ -1474,7 +1510,7 @@ def add_bin(bin_value: str) -> bool:
     normalized = (bin_value or "").strip()
     if not normalized:
         return False
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         existing = execute(
             "SELECT 1 FROM all_bins WHERE bin = %s", (normalized,)
@@ -1512,7 +1548,7 @@ def add_client_bin(chat_id: int, bin_value: str) -> bool:
     normalized = (bin_value or "").strip()
     if not normalized:
         return False
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         existing = execute(
             "SELECT 1 FROM client_bins WHERE chat_id = %s AND bin = %s",
@@ -1555,7 +1591,7 @@ def list_unassigned_bins() -> List[Dict[str, object]]:
     Возвращает список БИНов с договором, которые не назначены ни одному сотруднику.
     """
     refresh_bin_assignments()
-    reference = datetime.utcnow().isoformat()
+    reference = datetime.now(timezone.utc).isoformat()
     with _lock:
         rows = execute(
             """
@@ -1608,7 +1644,7 @@ def _create_notification(
     *,
     created_at: str | None = None,
 ) -> None:
-    timestamp = created_at or datetime.utcnow().isoformat()
+    timestamp = created_at or datetime.now(timezone.utc).isoformat()
     serialized = json.dumps(payload, ensure_ascii=False)
     with _lock:
         execute(
@@ -1661,7 +1697,7 @@ def delete_chat(chat_id: int) -> None:
         if existing is None:
             raise ValueError("Chat not found")
         # Архивируем сообщения перед удалением, чтобы данные дэшборда сохранились
-        archived_at = datetime.utcnow().isoformat()
+        archived_at = datetime.now(timezone.utc).isoformat()
         execute(
             """
             INSERT INTO messages_archive (
@@ -1715,7 +1751,7 @@ def delete_chat_dialog(dialog_id: int) -> None:
                 f"DELETE FROM outbox_onec WHERE message_id IN ({placeholders})",
                 message_ids,
             )
-        archived_at = datetime.utcnow().isoformat()
+        archived_at = datetime.now(timezone.utc).isoformat()
         execute(
             """
             INSERT INTO messages_archive (
@@ -1762,7 +1798,7 @@ def delete_chat_dialog(dialog_id: int) -> None:
             (chat_id,),
         ).fetchone()
         if latest:
-            timestamp = latest["last_message_at"] or latest["started_at"] or datetime.utcnow().isoformat()
+            timestamp = latest["last_message_at"] or latest["started_at"] or datetime.now(timezone.utc).isoformat()
             section_row = execute(
                 """
                 SELECT section
@@ -1802,7 +1838,7 @@ def _cleanup_orphaned_bins(bins: Iterable[str]) -> None:
     )
 
 
-def _row_to_user(row: sqlite3.Row | None) -> dict | None:
+def _row_to_user(row: Mapping[str, Any] | None) -> dict | None:
     if row is None:
         return None
     return {
@@ -1861,7 +1897,7 @@ def create_user(
     existing_login = find_user_by_login(login_value)
     if existing_login:
         raise ValueError("Login already exists")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         cursor = execute(
             """
@@ -1953,7 +1989,7 @@ def update_user_password(user_id: int, password_hash: str) -> dict:
 
 def create_session(user_id: int) -> str:
     token = uuid4().hex
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         execute(
             "INSERT INTO sessions (token, user_id, created_at) VALUES (%s, %s, %s)",
@@ -2151,7 +2187,7 @@ def get_dashboard_summary(
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> dict:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if start_date is None and end_date is None:
         span = max(days, 1)
         end_date = now.date()
@@ -3092,20 +3128,21 @@ def outbox_enqueue_onec(
     payload: Mapping[str, Any],
 ) -> int:
     """Кладёт сообщение оператора в outbox для 1С."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     serialized = json.dumps(dict(payload), ensure_ascii=False, separators=(",", ":"))
     with _lock:
         cursor = execute(
             """
             INSERT INTO outbox_onec (chat_id, external_chat_id, bin, message_id, payload, status, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
+            RETURNING id
             """,
             (chat_id, external_chat_id, (bin_value or None), message_id, serialized, now, now),
         )
-        inserted = cursor.lastrowid
-        if inserted is None:
+        inserted_row = cursor.fetchone()
+        if inserted_row is None:
             raise RuntimeError("Failed to enqueue 1C outbox item")
-        return int(inserted)
+        return int(inserted_row["id"])
 
 
 def outbox_list_pending_onec(external_chat_id: str, limit: int = 100) -> List[Dict[str, Any]]:
@@ -3151,7 +3188,7 @@ def outbox_mark_delivered_onec(ids: Sequence[int]) -> None:
     """Помечает элементы как доставленные."""
     if not ids:
         return
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     placeholders = ",".join("%s" for _ in ids)
     with _lock:
         execute(
@@ -3166,7 +3203,7 @@ def outbox_mark_failed_onec(failed: Sequence[Mapping[str, Any]]) -> None:
     """
     if not failed:
         return
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         for item in failed:
             outbox_id = item.get("id")
@@ -3193,7 +3230,7 @@ def add_organization_without_contract(
     if not normalized_bin:
         return None
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         # Check if already exists
         existing = execute(

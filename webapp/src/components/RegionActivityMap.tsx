@@ -30,7 +30,7 @@ export const REGION_LABELS: Record<string, string> = {
 };
 
 const REGION_MATCHERS: { key: string; patterns: string[] }[] = [
-    { key: 'Almaty (city)', patterns: ['г. алматы', 'город алматы', 'алматы қ', 'almaty city'] },
+    { key: 'Almaty (city)', patterns: ['алматы', 'г.алматы', 'город алматы', 'алматы қ', 'almaty city'] },
     { key: 'Astana', patterns: ['г. астана', 'астана'] },
     { key: 'Shymkent (city)', patterns: ['г. шымкент', 'шымкент', 'shymkent'] },
     { key: 'Almaty', patterns: ['алматин', 'almaty oblast'] },

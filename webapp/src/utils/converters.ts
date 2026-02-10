@@ -19,6 +19,20 @@ import {
   UserBinAssignmentRaw,
 } from '../types';
 
+/**
+ * Shape of a bin assignment entry as it may appear in localStorage
+ * (could be camelCase or snake_case depending on how it was persisted).
+ */
+interface StoredBinEntry {
+  bin?: unknown;
+  assigned_at?: unknown;
+  assignedAt?: unknown;
+  expires_at?: unknown;
+  expiresAt?: unknown;
+  assigned_by?: unknown;
+  assignedBy?: unknown;
+}
+
 export function mapUserProfile(raw: UserProfileRaw): UserProfile {
   const role = raw.role || 'operator';
   const isAdmin = role === 'admin' || role === 'moderator';
@@ -48,14 +62,15 @@ export function mapUserProfile(raw: UserProfileRaw): UserProfile {
         });
         return;
       }
-      const binLabel = typeof entry.bin === 'string' ? entry.bin.trim() : '';
+      const storedEntry = entry as StoredBinEntry;
+      const binLabel = typeof storedEntry.bin === 'string' ? (storedEntry.bin as string).trim() : '';
       if (!binLabel) {
         return;
       }
-      const assignedSource = (entry as UserBinAssignmentRaw).assigned_at ?? (entry as any).assignedAt;
-      const expiresSource = entry.expires_at ?? (entry as any).expiresAt ?? null;
-      const assignedAt = assignedSource ? new Date(assignedSource) : now;
-      const expiresAt = expiresSource ? new Date(expiresSource) : null;
+      const assignedSource = entry.assigned_at ?? storedEntry.assignedAt;
+      const expiresSource = entry.expires_at ?? storedEntry.expiresAt ?? null;
+      const assignedAt = assignedSource ? new Date(assignedSource as string | number) : now;
+      const expiresAt = expiresSource ? new Date(expiresSource as string | number) : null;
       assignments.push({
         bin: binLabel,
         assignedAt: Number.isNaN(assignedAt.getTime()) ? now : assignedAt,
@@ -63,9 +78,9 @@ export function mapUserProfile(raw: UserProfileRaw): UserProfile {
         assignedBy:
           typeof entry.assigned_by === 'number'
             ? entry.assigned_by
-            : typeof (entry as any).assignedBy === 'number'
-            ? (entry as any).assignedBy
-            : undefined,
+            : typeof storedEntry.assignedBy === 'number'
+              ? (storedEntry.assignedBy as number)
+              : undefined,
       });
     });
     assignments.sort((a, b) => a.bin.localeCompare(b.bin));
@@ -88,6 +103,42 @@ export function mapUserProfile(raw: UserProfileRaw): UserProfile {
     isAdmin,
     canReply,
   };
+}
+
+/**
+ * Normalizes bin assignment entries from localStorage (untyped JSON).
+ * Handles both camelCase and snake_case field names.
+ * Used by ApiContext to deserialize persisted session.
+ */
+export function normalizeAssignmentsFromStorage(entries: unknown): UserBinAssignment[] {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+  const now = new Date();
+  const assignments: UserBinAssignment[] = [];
+  (entries as unknown[]).forEach((item) => {
+    if (!item || typeof item !== 'object') return;
+    const entry = item as StoredBinEntry;
+    if (typeof entry.bin !== 'string') return;
+    const bin = (entry.bin as string).trim();
+    if (!bin) return;
+    const assignedAtRaw = entry.assignedAt ?? entry.assigned_at;
+    const expiresAtRaw = entry.expiresAt ?? entry.expires_at;
+    const assignedAt = assignedAtRaw ? new Date(assignedAtRaw as string | number) : now;
+    const expiresAt = expiresAtRaw ? new Date(expiresAtRaw as string | number) : null;
+    assignments.push({
+      bin,
+      assignedAt: Number.isNaN(assignedAt.getTime()) ? now : assignedAt,
+      expiresAt: expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null,
+      assignedBy:
+        typeof entry.assignedBy === 'number'
+          ? (entry.assignedBy as number)
+          : typeof entry.assigned_by === 'number'
+            ? (entry.assigned_by as number)
+            : undefined,
+    });
+  });
+  return assignments;
 }
 
 
@@ -207,90 +258,90 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
 
   const sectionBreakdown = Array.isArray(raw.section_breakdown)
     ? raw.section_breakdown
-        .filter((item): item is DashboardSectionStatRaw => Boolean(item))
-        .map((item) => ({
-          section: item.section ?? null,
-          title: item.title ?? '',
-          dialogs: safeNumber(item.dialogs),
-          percentage: safeNumber(item.percentage),
-        }))
+      .filter((item): item is DashboardSectionStatRaw => Boolean(item))
+      .map((item) => ({
+        section: item.section ?? null,
+        title: item.title ?? '',
+        dialogs: safeNumber(item.dialogs),
+        percentage: safeNumber(item.percentage),
+      }))
     : [];
 
   const topQuestions = Array.isArray(raw.top_questions)
     ? raw.top_questions
-        .filter((item) => Boolean(item) && typeof item.question === 'string')
-        .map((item) => ({
-          question: item.question,
-          count: safeNumber(item.count),
-        }))
+      .filter((item) => Boolean(item) && typeof item.question === 'string')
+      .map((item) => ({
+        question: item.question,
+        count: safeNumber(item.count),
+      }))
     : [];
 
   const questionsBySection = Array.isArray(raw.questions_by_section)
     ? raw.questions_by_section
-        .filter((section): section is DashboardSectionTopQuestionsRaw => Boolean(section))
-        .map((section) => ({
-          section: section.section ?? null,
-          title: section.title ?? '',
-          questions: Array.isArray(section.questions)
-            ? section.questions
-                .filter((item) => Boolean(item) && typeof item.question === 'string')
-                .map((item) => ({
-                  question: item.question,
-                  count: safeNumber(item.count),
-                }))
-            : [],
-        }))
+      .filter((section): section is DashboardSectionTopQuestionsRaw => Boolean(section))
+      .map((section) => ({
+        section: section.section ?? null,
+        title: section.title ?? '',
+        questions: Array.isArray(section.questions)
+          ? section.questions
+            .filter((item) => Boolean(item) && typeof item.question === 'string')
+            .map((item) => ({
+              question: item.question,
+              count: safeNumber(item.count),
+            }))
+          : [],
+      }))
     : [];
 
   const agentBreakdown = Array.isArray(raw.agent_breakdown)
     ? raw.agent_breakdown
-        .filter((agent): agent is DashboardAgentStatRaw => Boolean(agent))
-        .map((agent) => {
-          const dialogs = safeNumber(agent.dialogs);
-          const rawMessages = safeNumber(agent.messages);
-          const messages = dialogs > 0 ? rawMessages : 0;
-          const avgFromApi =
-            typeof agent.avg_messages_per_dialog === 'number' && Number.isFinite(agent.avg_messages_per_dialog)
-              ? agent.avg_messages_per_dialog
-              : null;
-          const avgMessagesPerDialog = dialogs > 0
-            ? (avgFromApi ?? (messages / dialogs))
-            : 0;
-          const avgResponseTimeMinutes =
-            typeof agent.avg_response_time_minutes === 'number' && Number.isFinite(agent.avg_response_time_minutes)
-              ? agent.avg_response_time_minutes
-              : null;
+      .filter((agent): agent is DashboardAgentStatRaw => Boolean(agent))
+      .map((agent) => {
+        const dialogs = safeNumber(agent.dialogs);
+        const rawMessages = safeNumber(agent.messages);
+        const messages = dialogs > 0 ? rawMessages : 0;
+        const avgFromApi =
+          typeof agent.avg_messages_per_dialog === 'number' && Number.isFinite(agent.avg_messages_per_dialog)
+            ? agent.avg_messages_per_dialog
+            : null;
+        const avgMessagesPerDialog = dialogs > 0
+          ? (avgFromApi ?? (messages / dialogs))
+          : 0;
+        const avgResponseTimeMinutes =
+          typeof agent.avg_response_time_minutes === 'number' && Number.isFinite(agent.avg_response_time_minutes)
+            ? agent.avg_response_time_minutes
+            : null;
 
-          return {
-            name: agent.name ?? '',
-            dialogs,
-            messages,
-            avgMessagesPerDialog,
-            avgResponseTimeMinutes,
-            lastActivity: agent.last_activity ? new Date(agent.last_activity) : null,
-          };
-        })
+        return {
+          name: agent.name ?? '',
+          dialogs,
+          messages,
+          avgMessagesPerDialog,
+          avgResponseTimeMinutes,
+          lastActivity: agent.last_activity ? new Date(agent.last_activity) : null,
+        };
+      })
     : [];
 
   const recentActivity = Array.isArray(raw.recent_activity)
     ? raw.recent_activity
-        .filter((item): item is DashboardActivityPointRaw => Boolean(item))
-        .map((item) => ({
-          date: item.date,
-          dialogs: safeNumber(item.dialogs),
-          incomingMessages: safeNumber(item.incoming_messages),
-        }))
+      .filter((item): item is DashboardActivityPointRaw => Boolean(item))
+      .map((item) => ({
+        date: item.date,
+        dialogs: safeNumber(item.dialogs),
+        incomingMessages: safeNumber(item.incoming_messages),
+      }))
     : [];
 
   const responseTimeDialogs = Array.isArray(raw.response_time_dialogs)
     ? raw.response_time_dialogs
-        .filter((item) => Boolean(item) && typeof item.author === 'string')
-        .map((item) => ({
-          chatId: typeof item.chat_id === 'number' ? item.chat_id : null,
-          dialogId: typeof item.dialog_id === 'number' ? item.dialog_id : null,
-          author: item.author,
-          responseTimeMinutes: safeNumber(item.response_time_minutes),
-        }))
+      .filter((item) => Boolean(item) && typeof item.author === 'string')
+      .map((item) => ({
+        chatId: typeof item.chat_id === 'number' ? item.chat_id : null,
+        dialogId: typeof item.dialog_id === 'number' ? item.dialog_id : null,
+        author: item.author,
+        responseTimeMinutes: safeNumber(item.response_time_minutes),
+      }))
     : [];
 
   return {

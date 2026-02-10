@@ -1,6 +1,8 @@
-import React, { FormEvent, useState } from 'react';
-import { ApiClient, ApiError } from '../api/ApiClient';
+import React, { FormEvent, useCallback, useState } from 'react';
+import { ApiClient } from '../api/ApiClient';
 import { AuthSession } from '../types';
+import { extractErrorMessage } from '../utils/errors';
+import { validateName, validatePassword } from '../utils/validation';
 
 interface AuthPageProps {
   apiClient: ApiClient;
@@ -16,104 +18,122 @@ const AuthPage: React.FC<AuthPageProps> = ({ apiClient, onAuthenticated }) => {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
+  const handleSubmit = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      setError(null);
+      setInfo(null);
+
+      if (mode === 'register') {
+        const nameErr = validateName(name);
+        if (nameErr) { setError(nameErr); return; }
+      }
+      const pwdErr = validatePassword(password);
+      if (pwdErr) { setError(pwdErr); return; }
+
+      setLoading(true);
+      try {
+        if (mode === 'login') {
+          const session = await apiClient.login(identifier.trim(), password);
+          onAuthenticated(session);
+          return;
+        }
+        const result = await apiClient.register(name.trim(), identifier.trim(), password);
+        setMode('login');
+        setPassword('');
+        setInfo(result.message || 'Заявка на регистрацию отправлена. Ожидайте подтверждения модератора.');
+      } catch (err) {
+        setError(extractErrorMessage(err, 'Не удалось выполнить запрос.'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [apiClient, identifier, mode, name, onAuthenticated, password],
+  );
+
+  const handleToggleMode = useCallback(() => {
+    setMode((prev) => (prev === 'login' ? 'register' : 'login'));
     setError(null);
     setInfo(null);
-    if (mode === 'register' && name.trim().length < 2) {
-      setError('Имя должно содержать минимум 2 символа.');
-      return;
-    }
-    if (password.trim().length < 5) {
-      setError('Пароль должен содержать минимум 5 символов.');
-      return;
-    }
-    setLoading(true);
-    try {
-      if (mode === 'login') {
-        const session = await apiClient.login(identifier.trim(), password);
-        onAuthenticated(session);
-        return;
-      }
+  }, []);
 
-      const result = await apiClient.register(name.trim(), identifier.trim(), password);
-      setMode('login');
-      setPassword('');
-      setInfo(result.message || 'Заявка на регистрацию отправлена. Ожидайте подтверждения модератора.');
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Не удалось выполнить запрос.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  const isLogin = mode === 'login';
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div className="card" style={{ width: 'min(460px, 100%)' }}>
-        <h2 className="heading" style={{ marginBottom: 12 }}>
-          {mode === 'login' ? 'Добро пожаловать' : 'Создание аккаунта'}
+    <div className="auth-page">
+      <div className="auth-card">
+        <h2 className="auth-card__title">
+          {isLogin ? 'Вход' : 'Регистрация'}
         </h2>
-        <p className="text-muted" style={{ marginBottom: 24 }}>
-          {mode === 'login'
-            ? 'Введите логин или e-mail и пароль, чтобы продолжить работу.'
-            : 'Заполните форму, чтобы подключиться к системе. Пароль должен содержать минимум 5 символов.'}
-        </p>
-        <form onSubmit={handleSubmit} className="flex-gap" style={{ flexDirection: 'column', display: 'flex' }}>
-          {mode === 'register' && (
-            <label className="label" style={{ width: '100%' }}>
-              Имя и фамилия
+
+        <form onSubmit={handleSubmit} className="auth-form">
+          {!isLogin && (
+            <div className="auth-field">
+              <label className="auth-field__label" htmlFor="auth-name">
+                Имя и фамилия
+              </label>
               <input
-                className="input"
+                id="auth-name"
+                className="auth-field__input"
                 value={name}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(e) => setName(e.target.value)}
                 placeholder="Иван Иванов"
+                autoComplete="name"
               />
-            </label>
+            </div>
           )}
-          <label className="label">
-            {mode === 'login' ? 'Логин или e-mail' : 'Рабочий e-mail'}
+
+          <div className="auth-field">
+            <label className="auth-field__label" htmlFor="auth-id">
+              {isLogin ? 'Логин или e-mail' : 'Рабочий e-mail'}
+            </label>
             <input
-              className="input"
-              type={mode === 'login' ? 'text' : 'email'}
+              id="auth-id"
+              className="auth-field__input"
+              type={isLogin ? 'text' : 'email'}
               value={identifier}
-              onChange={(event) => setIdentifier(event.target.value)}
-              placeholder={mode === 'login' ? 'login или email' : 'name@company.kz'}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder={isLogin ? 'login или email' : 'name@company.kz'}
               required
+              autoComplete={isLogin ? 'username' : 'email'}
             />
-          </label>
-          <label className="label">
-            Пароль
+          </div>
+
+          <div className="auth-field">
+            <label className="auth-field__label" htmlFor="auth-pw">
+              Пароль
+            </label>
             <input
-              className="input"
+              id="auth-pw"
+              className="auth-field__input"
               type="password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="Введите пароль"
               required
+              autoComplete={isLogin ? 'current-password' : 'new-password'}
             />
-          </label>
-          {info && <div className="alert alert--success">{info}</div>}
-          {error && <div className="alert">{error}</div>}
-          <button className="button" type="submit" disabled={loading}>
-            {loading ? 'Проверяем...' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+          </div>
+
+          {info && <div className="auth-alert auth-alert--success">{info}</div>}
+          {error && <div className="auth-alert auth-alert--error">{error}</div>}
+
+          <button
+            className={`auth-submit ${loading ? 'auth-submit--loading' : ''}`}
+            type="submit"
+            disabled={loading}
+          >
+            {loading ? 'Проверяем…' : isLogin ? 'Войти' : 'Зарегистрироваться'}
           </button>
         </form>
-        <div style={{ marginTop: 16, textAlign: 'center' }}>
+
+        <div className="auth-toggle">
           <button
-            className="button secondary"
+            className="auth-toggle__btn"
             type="button"
-            onClick={() => {
-              setMode(mode === 'login' ? 'register' : 'login');
-              setError(null);
-            }}
+            onClick={handleToggleMode}
           >
-            {mode === 'login' ? 'Создать новый аккаунт' : 'У меня уже есть аккаунт'}
+            {isLogin ? 'Создать новый аккаунт' : 'У меня уже есть аккаунт'}
           </button>
         </div>
       </div>

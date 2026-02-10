@@ -1,411 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { geoCentroid, geoMercator, geoPath, scaleLinear } from 'd3';
-import type { FeatureCollection, Geometry } from 'geojson';
-import { ApiClient, ApiError } from '../api/ApiClient';
-import { AuthSession, BinDetailed, ChatSummary, Message, MessageNotification, Section } from '../types';
+import { ApiClient } from '../api/ApiClient';
+import { AuthSession, BinDetailed, ChatSummary, MessageNotification, Section } from '../types';
 import { formatDateTime } from '../utils/date';
+import { extractErrorMessage } from '../utils/errors';
 import SelectPill from "../components/SelectPill";
 import StarButton from "../components/StarButton";
-import Modal from "../components/Modal";
 import ConfirmModal from "../components/ConfirmModal";
-import kzMap from '../../kz.json';
-
-const PRESET_MESSAGES = [
-  'Здравствуйте! Чем я могу вам помочь?',
-  'Спасибо за обращение! Готовы помочь в любое время!',
-];
-
+import ChatDetailModal from "../components/ChatDetailModal";
+import RegionActivityMap, {
+  GEOJSON_FEATURES,
+  CITY_REGION_KEYS,
+  detectRegionFromAddress,
+} from "../components/RegionActivityMap";
+import { useDialogFilters } from "../hooks/useDialogFilters";
 
 /* -------------------- Props -------------------- */
 interface DialogsPageProps {
   apiClient: ApiClient;
   session: AuthSession;
 }
-
-interface ChatDetailModalProps {
-  apiClient: ApiClient;
-  chat: ChatSummary;
-  onToggleStatus: (chat: ChatSummary) => void;
-  onClose: () => void;
-}
-
-/* -------------------- Modal -------------------- */
-const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
-  apiClient,
-  chat,
-  onToggleStatus,
-  onClose,
-}) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
-
-  // ВАЖНО: реф именно на прокручиваемый контейнер (modal__scroll), а не на внутренний список
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const pollRef = useRef<number | null>(null);
-  const lastCountRef = useRef<number>(0);
-  const taRef = useRef<HTMLTextAreaElement | null>(null);
-
-  const currentUser = apiClient.currentUser;
-  const canReply = Boolean(currentUser?.canReply);
-  const isClosed = Boolean(chat.dialogClosedAt);
-  const statusLabel = isClosed ? 'Закрыт' : 'Открыт';
-  const statusClassName = `status-badge ${isClosed ? 'status-badge--closed' : 'status-badge--open'}`;
-  const statusBadge = canReply ? (
-    <button
-      type="button"
-      className={`${statusClassName} status-badge-btn status-badge--clickable`}
-      onClick={() => onToggleStatus(chat)}
-      title={isClosed ? 'Открыть диалог' : 'Закрыть диалог'}
-    >
-      {statusLabel}
-    </button>
-  ) : (
-    <span className={statusClassName}>{statusLabel}</span>
-  );
-
-  const scrollToBottom = useCallback((smooth = false) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const top = el.scrollHeight;
-    if (smooth) el.scrollTo({ top, behavior: 'smooth' });
-    else el.scrollTop = top;
-  }, []);
-
-  const autosize = useCallback((el: HTMLTextAreaElement) => {
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 176) + 'px';
-  }, []);
-
-  const loadMessages = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await apiClient.fetchMessages(chat.chatId, 200, chat.dialogId);
-      setMessages(data);
-      lastCountRef.current = data.length;
-      setError(null);
-    } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      else if (err instanceof Error) setError(err.message);
-      else setError('Не удалось загрузить сообщения.');
-    } finally {
-      setLoading(false);
-      // после первой подгрузки — сразу в самый низ
-      requestAnimationFrame(() => scrollToBottom(false));
-    }
-  }, [apiClient, chat.chatId, chat.dialogId, scrollToBottom]);
-
-  useEffect(() => { loadMessages(); }, [loadMessages]);
-
-  // каждый раз при изменении массива сообщений — опускаем вниз (плавно)
-  useEffect(() => {
-    // небольшой кадр для корректной высоты после рендера
-    const id = requestAnimationFrame(() => scrollToBottom(true));
-    return () => cancelAnimationFrame(id);
-  }, [messages, scrollToBottom]);
-
-  // фоновая подтяжка новых сообщений
-  useEffect(() => {
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const data = await apiClient.fetchMessages(chat.chatId, 200, chat.dialogId);
-        if (data.length !== lastCountRef.current) {
-          setMessages(data);
-          lastCountRef.current = data.length;
-          // прокрутка произойдёт через useEffect([messages])
-        }
-      } catch { /* ignore */ }
-    }, 1500);
-    return () => { if (pollRef.current) window.clearInterval(pollRef.current); };
-  }, [apiClient, chat.chatId, chat.dialogId]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  useEffect(() => {
-    if (taRef.current) autosize(taRef.current);
-  }, [input, autosize]);
-
-  const handlePresetClick = useCallback(
-    (text: string) => {
-      setInput(text);
-      if (taRef.current) {
-        taRef.current.focus();
-        requestAnimationFrame(() => autosize(taRef.current!));
-      }
-    },
-    [autosize],
-  );
-
-  const handleSend = async () => {
-    if (!input.trim()) return;
-    setSending(true);
-    try {
-      await apiClient.sendMessage(chat.chatId, input.trim(), chat.dialogId);
-      setInput('');
-      await loadMessages();           // загрузим актуальный список
-      requestAnimationFrame(() => scrollToBottom(true)); // и прокрутим
-    } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      else if (err instanceof Error) setError(err.message);
-      else setError('Не удалось отправить сообщение.');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <Modal open onClose={onClose} className="modal--dialog">
-      <div className="modal__content">
-        <button className="modal__close" type="button" aria-label="Закрыть" onClick={onClose} title="Закрыть">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.41Z" fill="currentColor" />
-          </svg>
-        </button>
-        {/* Header */}
-        <div className="modal__header-row">
-          <div>
-            <h2 className="heading" style={{ marginBottom: 6 }}>{chat.title}</h2>
-            <div className="dialog-status-row">
-              <span className="text-muted" style={{ fontSize: '0.9rem' }}>
-                {chat.username ? `@${chat.username}` : chat.type}
-              </span>
-              {statusBadge}
-            </div>
-            <div className="dialog-meta" style={{ marginTop: 12 }}>
-              {chat.sectionTitle && <span className="chip">Раздел: {chat.sectionTitle}</span>}
-              {chat.bin && <span className="chip">БИН: {chat.bin}</span>}
-              <span className="chip">Начат: {formatDateTime(chat.dialogStartedAt)}</span>
-              <span className="chip">Обновлён: {formatDateTime(chat.updatedAt)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="separator" />
-        {error && <div className="alert">{error}</div>}
-
-        {/* ПРОКРУЧИВАЕМЫЙ контейнер */}
-        <div className="modal__scroll" ref={scrollRef}>
-          {loading ? (
-            <div style={{ padding: '24px 0', textAlign: 'center' }}>Загружаем сообщения...</div>
-          ) : (
-            <div className="message-list">
-              {messages.length === 0 && <div className="text-muted">Нет сообщений в этом диалоге.</div>}
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`message-bubble ${message.direction}`}
-                  style={{ alignSelf: message.direction === 'incoming' ? 'flex-start' : 'flex-end' }}
-                >
-                  {message.author && <div style={{ fontWeight: 600, marginBottom: 6, opacity: 0.85 }}>{message.author}</div>}
-                  <div>{message.text}</div>
-                  <div style={{ marginTop: 6, fontSize: '0.75rem', opacity: 0.7 }}>{formatDateTime(message.createdAt)}</div>
-                  {message.sectionTitle && (
-                    <div style={{ marginTop: 6, fontSize: '0.75rem', opacity: 0.7 }}>Раздел: {message.sectionTitle}</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="separator" />
-
-        {/* Composer */}
-        {canReply && (
-          <div className="preset-replies">
-            {PRESET_MESSAGES.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                className="preset-reply"
-                onClick={() => handlePresetClick(preset)}
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="dialog-composer">
-          <textarea
-            ref={taRef}
-            className="textarea"
-            placeholder={canReply ? 'Ваш ответ клиенту…' : 'У вашей роли нет прав для ответа.'}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              if (taRef.current) autosize(taRef.current);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            disabled={!canReply || sending}
-            rows={1}
-          />
-          <div className="dialog-composer__actions">
-            <button className="button" type="button" onClick={handleSend} disabled={!canReply || sending || !input.trim()}>
-              {sending ? 'Отправляем…' : 'Отправить'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Modal>
-  );
-};
-
-const GEOJSON_FEATURES = kzMap as FeatureCollection<Geometry, { name: string }>;
-
-const REGION_LABELS: Record<string, string> = {
-  Abai: 'Абайская область',
-  Akmola: 'Акмолинская область',
-  Aktobe: 'Актюбинская область',
-  Almaty: 'Алматинская область',
-  'Almaty (city)': 'г. Алматы',
-  Astana: 'г. Астана',
-  Atyrau: 'Атырауская область',
-  'East Kazakhstan': 'Восточно-Казахстанская область',
-  Jambyl: 'Жамбылская область',
-  Jetisu: 'Жетысуская область',
-  Karaganda: 'Карагандинская область',
-  Kostanay: 'Костанайская область',
-  Kyzylorda: 'Кызылординская область',
-  Mangystau: 'Мангистауская область',
-  'North Kazakhstan': 'Северо-Казахстанская область',
-  Pavlodar: 'Павлодарская область',
-  'Shymkent (city)': 'г. Шымкент',
-  Turkestan: 'Туркестанская область',
-  Ulytau: 'Улытауская область',
-  'West Kazakhstan': 'Западно-Казахстанская область',
-};
-
-const REGION_MATCHERS: { key: string; patterns: string[] }[] = [
-  { key: 'Almaty (city)', patterns: ['г. алматы', 'город алматы', 'алматы қ', 'almaty city'] },
-  { key: 'Astana', patterns: ['г. астана', 'астана'] },
-  { key: 'Shymkent (city)', patterns: ['г. шымкент', 'шымкент', 'shymkent'] },
-  { key: 'Almaty', patterns: ['алматин', 'almaty oblast'] },
-  { key: 'Akmola', patterns: ['акмол', 'akmola'] },
-  { key: 'Aktobe', patterns: ['актоб', 'aktobe', 'актюб'] },
-  { key: 'Atyrau', patterns: ['атырау', 'atyrau'] },
-  { key: 'East Kazakhstan', patterns: ['восточно-казахстан', 'east kazakhstan'] },
-  { key: 'West Kazakhstan', patterns: ['западно-казахстан', 'west kazakhstan'] },
-  { key: 'North Kazakhstan', patterns: ['северо-казахстан', 'north kazakhstan'] },
-  { key: 'Jambyl', patterns: ['жамбыл', 'jambyl', 'zhambyl'] },
-  { key: 'Jetisu', patterns: ['жетысу', 'jetisu', 'zhetisu', 'жетісу'] },
-  { key: 'Karaganda', patterns: ['караган', 'karaganda'] },
-  { key: 'Kostanay', patterns: ['костанай', 'kostanay'] },
-  { key: 'Kyzylorda', patterns: ['кызылорд', 'kyzylorda'] },
-  { key: 'Mangystau', patterns: ['мангист', 'mangystau'] },
-  { key: 'Pavlodar', patterns: ['павлодар', 'pavlodar'] },
-  { key: 'Turkestan', patterns: ['туркестан', 'turkestan'] },
-  { key: 'Ulytau', patterns: ['улытау', 'ulytau'] },
-  { key: 'Abai', patterns: ['абай', 'abai'] },
-];
-
-const CITY_REGION_KEYS = new Set(['Almaty (city)', 'Astana', 'Shymkent (city)']);
-
-const detectRegionFromAddress = (address: string | null | undefined) => {
-  if (!address) return null;
-  const normalized = address.toLowerCase().replace(/ё/g, 'е');
-  const match = REGION_MATCHERS.find((entry) =>
-    entry.patterns.some((pattern) => normalized.includes(pattern)),
-  );
-  return match?.key ?? null;
-};
-
-const RegionActivityMap: React.FC<{
-  features: FeatureCollection<Geometry, { name: string }>;
-  counts: Record<string, number>;
-}> = React.memo(({ features, counts }) => {
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const [hovered, setHovered] = useState<{ key: string; x: number; y: number } | null>(null);
-
-  const width = 760;
-  const height = 420;
-  const projection = useMemo(() => geoMercator().fitSize([width, height], features), [features]);
-  const pathGenerator = useMemo(() => geoPath(projection), [projection]);
-  const maxValue = useMemo(() => Math.max(1, ...Object.values(counts)), [counts]);
-  const colorScale = useMemo(
-    () => scaleLinear<string>().domain([0, maxValue]).range(['#a5b4d8', '#4a5d8a']),
-    [maxValue],
-  );
-
-  // Pre-compute all paths and centroids once
-  const regionData = useMemo(() =>
-    features.features.map((feature) => {
-      const key = feature.properties?.name ?? '';
-      const d = pathGenerator(feature) ?? '';
-      const centroid = geoCentroid(feature);
-      const [cx, cy] = projection(centroid) ?? [0, 0];
-      return { key, d, cx, cy };
-    }),
-    [features, pathGenerator, projection]
-  );
-
-  const handleMove = useCallback((event: React.MouseEvent<SVGPathElement>, key: string) => {
-    if (!wrapperRef.current) return;
-    const rect = wrapperRef.current.getBoundingClientRect();
-    setHovered({ key, x: event.clientX - rect.left, y: event.clientY - rect.top });
-  }, []);
-
-  const handleLeave = useCallback(() => setHovered(null), []);
-
-  return (
-    <div className="kz-map" ref={wrapperRef}>
-      <svg className="kz-map__svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Карта Казахстана по регионам">
-        {regionData.map(({ key, d }) => {
-          const value = counts[key] ?? 0;
-          const isActive = hovered?.key === key;
-          return (
-            <path
-              key={key}
-              d={d}
-              fill={colorScale(value)}
-              className={`kz-map__region ${isActive ? 'is-active' : ''}`}
-              onMouseEnter={(event) => handleMove(event, key)}
-              onMouseMove={(event) => handleMove(event, key)}
-              onMouseLeave={handleLeave}
-            />
-          );
-        })}
-        {/* Region count labels */}
-        {regionData.map(({ key, cx, cy }) => {
-          const value = counts[key] ?? 0;
-          if (value === 0) return null;
-          return (
-            <text
-              key={`label-${key}`}
-              x={cx}
-              y={cy}
-              className="kz-map__label"
-              textAnchor="middle"
-              dominantBaseline="central"
-              pointerEvents="none"
-            >
-              {value}
-            </text>
-          );
-        })}
-      </svg>
-      {hovered && (
-        <div
-          className="kz-map__tooltip"
-          style={{ left: hovered.x + 12, top: hovered.y + 12 }}
-        >
-          <div className="kz-map__tooltip-title">{REGION_LABELS[hovered.key] ?? hovered.key}</div>
-          <div className="kz-map__tooltip-value">{counts[hovered.key] ?? 0} БИН</div>
-        </div>
-      )}
-    </div>
-  );
-});
 
 /* -------------------- Page -------------------- */
 const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
@@ -415,11 +28,13 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedSection, setSelectedSection] = useState<string | null>(null);
-  const [selectedBin, setSelectedBin] = useState<string | null>(null);
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
+  const {
+    selectedSection, setSelectedSection,
+    selectedBin, setSelectedBin,
+    showFavoritesOnly, setShowFavoritesOnly,
+    sortOrder, setSortOrder,
+    statusFilter, setStatusFilter,
+  } = useDialogFilters();
 
   const [banner, setBanner] = useState<string | null>(null);
   const [activeChat, setActiveChat] = useState<ChatSummary | null>(null);
@@ -470,9 +85,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
         setError(null);
         if (!updatesCursor) setUpdatesCursor(new Date());
       } catch (err) {
-        if (err instanceof ApiError) setError(err.message);
-        else if (err instanceof Error) setError(err.message);
-        else setError('Не удалось загрузить данные.');
+        setError(extractErrorMessage(err, 'Не удалось загрузить данные.'));
         setLoading(false);
       }
     },
@@ -561,6 +174,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   );
 
   useEffect(() => {
+    let cancelled = false;
     const timer = setInterval(async () => {
       try {
         if (!updatesCursor) {
@@ -568,7 +182,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           return;
         }
         const updates = await apiClient.fetchUpdates(updatesCursor);
-        if (updates.length > 0) {
+        if (!cancelled && updates.length > 0) {
           handleUpdates(updates);
           const lastUpdate = updates[updates.length - 1].createdAt;
           setUpdatesCursor(lastUpdate);
@@ -577,14 +191,15 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
         console.warn('Не удалось получить обновления', err);
       }
     }, 5000);
-    return () => clearInterval(timer);
+    return () => { cancelled = true; clearInterval(timer); };
   }, [apiClient, updatesCursor, handleUpdates, loadSectionsAndChats]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      loadSectionsAndChats(false);
+    let cancelled = false;
+    const interval = window.setInterval(async () => {
+      if (!cancelled) loadSectionsAndChats(false);
     }, 15000);
-    return () => window.clearInterval(interval);
+    return () => { cancelled = true; window.clearInterval(interval); };
   }, [loadSectionsAndChats]);
 
 
@@ -689,13 +304,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       }
       setBanner('Диалог удалён');
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Не удалось удалить диалог.';
-      setBanner(`Ошибка: ${message}`);
+      setBanner(`Ошибка: ${extractErrorMessage(err, 'Не удалось удалить диалог.')}`);
     } finally {
       setDialogDeleteLoading(false);
       setDialogToDelete(null);
@@ -743,13 +352,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           : 'Диалог открыт снова и готов к сообщениям.',
       );
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Не удалось обновить статус диалога.';
-      setBanner(`Ошибка: ${message}`);
+      setBanner(`Ошибка: ${extractErrorMessage(err, 'Не удалось обновить статус диалога.')}`);
     } finally {
       setDialogStatusLoading(false);
       setDialogStatusTarget(null);
@@ -807,13 +410,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           setBanner('AI помощник включён для этого диалога.');
         }
       } catch (err) {
-        const message =
-          err instanceof ApiError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : 'Не удалось обновить режим AI.';
-        setBanner(`Ошибка: ${message}`);
+        setBanner(`Ошибка: ${extractErrorMessage(err, 'Не удалось обновить режим AI.')}`);
       } finally {
         setAiToggleDialogId(null);
       }
@@ -821,10 +418,29 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     [apiClient, updateChatAiStatus],
   );
 
+  const handleToggleFavorite = useCallback(
+    async (dialogId: number, currentIsFavorite: boolean) => {
+      const next = !currentIsFavorite;
+      try {
+        await apiClient.setFavorite(dialogId, next);
+        setChats((prev) =>
+          prev.map((item) =>
+            item.dialogId === dialogId ? { ...item, isFavorite: next } : item,
+          ),
+        );
+        setActiveChat((prev) =>
+          prev && prev.dialogId === dialogId ? { ...prev, isFavorite: next } : prev,
+        );
+      } catch (err) {
+        setBanner(`Ошибка: ${extractErrorMessage(err, 'Не удалось обновить избранное.')}`);
+      }
+    },
+    [apiClient],
+  );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 48 }}>
-      {banner && (<div className="alert" onAnimationEnd={() => setBanner(null)}>{banner}</div>)}
+    <div className="dialogs-page">
+      {banner && (<div className="dialogs-banner" onAnimationEnd={() => setBanner(null)}>{banner}</div>)}
 
       <div className="analytics-banner">
         <div className="analytics-banner__header">
@@ -844,7 +460,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
       </div>
 
       {/* фильтры */}
-      <div className="card sticky-filters">
+      <div className="dialogs-filters">
         <div className="controls-row">
           <SelectPill
             label=""
@@ -888,28 +504,34 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
 
       {/* контент */}
       {loading ? (
-        <div className="card" style={{ textAlign: 'center' }}>Загружаем диалоги...</div>
+        <div className="dialogs-state-card">
+          <span className="dialogs-state-card__icon dialogs-loading-pulse">💬</span>
+          <p className="dialogs-state-card__title">Загружаем диалоги…</p>
+        </div>
       ) : error ? (
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p style={{ marginBottom: 16 }}>Ошибка: {error}</p>
+        <div className="dialogs-state-card">
+          <span className="dialogs-state-card__icon">⚠️</span>
+          <p className="dialogs-state-card__title">Ошибка</p>
+          <p className="dialogs-state-card__text">{error}</p>
           <button className="button" type="button" onClick={() => loadSectionsAndChats(true)}>Повторить попытку</button>
         </div>
       ) : filteredChats.length === 0 ? (
-        <div className="card" style={{ textAlign: 'center' }}>
-          <h3 style={{ marginBottom: 8 }}>Нет активных диалогов</h3>
-          <p className="text-muted">Сообщения из MobileBot появятся здесь автоматически.</p>
+        <div className="dialogs-state-card">
+          <span className="dialogs-state-card__icon">📭</span>
+          <h3 className="dialogs-state-card__title">Нет активных диалогов</h3>
+          <p className="dialogs-state-card__text">Сообщения из MobileBot появятся здесь автоматически.</p>
         </div>
       ) : (
-        filteredChats.map((chat) => (
+        filteredChats.map((chat, i) => (
           <div
             key={`${chat.chatId}-${chat.dialogId}`}
-            className="card"
-            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+            className="dialog-card"
+            style={{ '--card-index': i } as React.CSSProperties}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <h3 style={{ margin: 0 }}>{chat.title}</h3>
+            <div className="dialog-card__header">
+              <div className="dialog-card__info">
+                <div className="dialog-card__title-row">
+                  <h3>{chat.title}</h3>
                   {chat.unreadCount > 0 && (
                     <span className="unread-badge" title="Есть непрочитанные сообщения">
                       <span className="unread-badge__dot" />
@@ -918,45 +540,27 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                   )}
                   <StarButton
                     active={Boolean(chat.isFavorite)}
-                    onToggle={async () => {
-                      const next = !chat.isFavorite;
-                      try {
-                        await apiClient.setFavorite(chat.dialogId, next);
-                        setChats((prev) =>
-                          prev.map((item) =>
-                            item.dialogId === chat.dialogId ? { ...item, isFavorite: next } : item,
-                          ),
-                        );
-                        setActiveChat((prev) =>
-                          prev && prev.dialogId === chat.dialogId ? { ...prev, isFavorite: next } : prev,
-                        );
-                      } catch (err) {
-                        const message =
-                          err instanceof ApiError
-                            ? err.message
-                            : err instanceof Error
-                              ? err.message
-                              : 'Не удалось обновить избранное.';
-                        setBanner(`Ошибка: ${message}`);
-                      }
-                    }}
+                    onToggle={() => handleToggleFavorite(chat.dialogId, chat.isFavorite)}
                     title={chat.isFavorite ? "Убрать из избранного" : "В избранное"}
                   />
                 </div>
-                <div className="dialog-status-row" style={{ marginTop: 4 }}>
+                <div className="dialog-status-row">
                   <span className="text-muted">
                     {chat.username ? `@${chat.username}` : chat.type}
                   </span>
                   {renderStatusBadge(chat)}
+                  <span className="dialog-card__date">{formatDateTime(chat.updatedAt)}</span>
                 </div>
-                <div className="flex-gap" style={{ marginTop: 8 }}>
-                  {chat.sectionTitle && <span className="chip">{chat.sectionTitle}</span>}
-                  {chat.bin && <span className="chip">БИН: {chat.bin}</span>}
-                  <span className="chip">AI: {chat.aiEnabled ? 'включён' : 'отключён'}</span>
+                <div className="dialog-card__chips">
+                  {chat.sectionTitle && <span className="dialog-card__chip">{chat.sectionTitle}</span>}
+                  {chat.bin && <span className="dialog-card__chip">БИН: {chat.bin}</span>}
+                  <span className={`dialog-card__chip ${chat.aiEnabled ? 'dialog-card__chip--ai-on' : 'dialog-card__chip--ai-off'}`}>
+                    AI: {chat.aiEnabled ? 'включён' : 'отключён'}
+                  </span>
                 </div>
               </div>
 
-              <div className="flex-gap" style={{ alignItems: 'center' }}>
+              <div className="dialog-card__actions">
                 <button
                   className="button"
                   type="button"
@@ -989,7 +593,6 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                   <button className="button danger" type="button" onClick={() => setDialogToDelete(chat)}>
                     ✖
                   </button>
-
                 )}
               </div>
             </div>

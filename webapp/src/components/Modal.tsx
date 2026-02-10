@@ -22,17 +22,10 @@ export default function Modal({ open, onClose, children, className }: ModalProps
 
     const { style } = document.body;
     const originalOverflow = style.overflow;
-    const originalPaddingRight = style.paddingRight;
-
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    if (scrollbarWidth > 0) {
-      style.paddingRight = `${scrollbarWidth}px`;
-    }
     style.overflow = 'hidden';
 
     return () => {
       style.overflow = originalOverflow;
-      style.paddingRight = originalPaddingRight;
     };
   }, [open]);
 

@@ -1660,6 +1660,22 @@ def delete_chat(chat_id: int) -> None:
         ).fetchone()
         if existing is None:
             raise ValueError("Chat not found")
+        # Архивируем сообщения перед удалением, чтобы данные дэшборда сохранились
+        archived_at = datetime.utcnow().isoformat()
+        execute(
+            """
+            INSERT INTO messages_archive (
+                chat_id, direction, text, message_id, author,
+                created_at, section, dialog_id, archived_at
+            )
+            SELECT
+                chat_id, direction, text, message_id, author,
+                created_at, section, dialog_id, %s
+            FROM messages
+            WHERE chat_id = %s
+            """,
+            (archived_at, chat_id),
+        )
         execute("DELETE FROM messages WHERE chat_id = %s", (chat_id,))
         dialog_rows = execute(
             "SELECT id, bin FROM chat_dialogs WHERE chat_id = %s",
@@ -2274,6 +2290,7 @@ def get_dashboard_summary(
             operator_filter_clause = f"AND TRIM(LOWER(m.author)) IN ({operator_placeholders})"
             operator_filter_params = [name.lower() for name in operator_names]
 
+
         # Диалоги - считаем по факту сообщений операторов (включая архив для удалённых диалогов)
         total_dialogs = execute(
             """
@@ -2404,8 +2421,19 @@ def get_dashboard_summary(
             ),
         ).fetchone()["total"] or 0
 
-        # Фильтр диалогов, в которых оператор отвечал (outgoing) в периоде
-        # Применяется для всех случаев - общий и индивидуальный дашборд
+        # Фильтр диалогов, в которых сотрудник(и) отвечали (outgoing) в периоде
+        # Для общего дэшборда — любой сотрудник; для конкретного — только он
+        if operator_id is not None and operator_filter_params:
+            _eligible_staff_clause = operator_filter_clause.replace("m.", "m2.")
+            _eligible_staff_params = list(operator_filter_params)
+        elif active_user_names:
+            _elig_placeholders = ", ".join("%s" for _ in active_user_names)
+            _eligible_staff_clause = f"AND TRIM(LOWER(m2.author)) IN ({_elig_placeholders})"
+            _eligible_staff_params = [name.lower() for name in active_user_names]
+        else:
+            _eligible_staff_clause = ""
+            _eligible_staff_params = []
+
         eligible_dialogs_sql = f"""
             AND cd.id IN (
                 SELECT DISTINCT m2.dialog_id
@@ -2416,13 +2444,13 @@ def get_dashboard_summary(
                 AND TRIM(m2.author) != ''
                 AND m2.created_at >= %s
                 AND m2.created_at < %s
-            {operator_filter_clause.replace("m.", "m2.")}{automation_clause.replace("m.", "m2.")}
+            {_eligible_staff_clause}{automation_clause.replace("m.", "m2.")}
             )
             """
         eligible_dialogs_params = (
             start_iso,
             end_exclusive_iso,
-            *operator_filter_params,
+            *_eligible_staff_params,
             *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
         )
 
@@ -2458,34 +2486,60 @@ def get_dashboard_summary(
             (start_iso, end_exclusive_iso, * (assigned_bins or [])),
         ).fetchall()
         
-        # Подсчет диалогов по дням — по факту сообщений операторов
-        # Один запрос для обоих случаев (общий и индивидуальный дашборд)
-        dialogs_by_day_rows = execute(
-            f"""
-            SELECT substr(m.created_at, 1, 10) AS day, COUNT(DISTINCT m.dialog_id) AS cnt
-            FROM {message_union_sql} m
-            WHERE m.direction = 'outgoing'
-              AND m.dialog_id IS NOT NULL
-              AND m.author IS NOT NULL
-              AND TRIM(m.author) != ''
-              AND m.created_at >= %s
-              AND m.created_at < %s
+        # Подсчет новых диалогов по дням — по дате создания диалога (started_at)
+        # Для конкретного оператора — только диалоги, в которых оператор отвечал
+        # Для общего дэшборда — все созданные диалоги
+        _new_dialog_operator_filter = ""
+        _new_dialog_operator_params: tuple = ()
+        if operator_id is not None and operator_filter_params:
+            _new_dialog_operator_filter = f"""
+            AND cd.id IN (
+                SELECT DISTINCT m2.dialog_id
+                FROM {message_union_sql} m2
+                WHERE m2.direction = 'outgoing'
+                AND m2.dialog_id IS NOT NULL
+                AND m2.author IS NOT NULL
+                AND TRIM(m2.author) != ''
+                {operator_filter_clause.replace("m.", "m2.")}
+            )
             """
-            + operator_filter_clause
-            + automation_clause
+            _new_dialog_operator_params = tuple(operator_filter_params)
+
+        dialogs_by_day_rows = execute(
+            """
+            SELECT substr(cd.started_at, 1, 10) AS day, COUNT(*) AS cnt
+            FROM chat_dialogs cd
+            WHERE cd.started_at IS NOT NULL
+              AND cd.started_at >= %s
+              AND cd.started_at < %s
+            """
+            + _new_dialog_operator_filter
             + """
-            GROUP BY substr(m.created_at, 1, 10)
+            GROUP BY substr(cd.started_at, 1, 10)
             ORDER BY day ASC
             """,
             (
                 start_iso,
                 end_exclusive_iso,
-                *operator_filter_params,
-                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
+                *_new_dialog_operator_params,
             ),
         ).fetchall()
         # Подсчет входящих сообщений по дням
-        # Считаем входящие только в диалогах, где оператор(ы) отвечали
+        # Для общего дэшборда — считаем входящие в диалогах, где любой сотрудник отвечал
+        # Для конкретного оператора — только в диалогах, где этот оператор отвечал
+        if operator_id is not None and operator_filter_params:
+            # Per-operator: filter by this operator's messages
+            _incoming_staff_clause = operator_filter_clause.replace("m.", "m2.")
+            _incoming_staff_params = list(operator_filter_params)
+        elif active_user_names:
+            # All employees: filter by any staff member
+            _staff_placeholders = ", ".join("%s" for _ in active_user_names)
+            _incoming_staff_clause = f"AND TRIM(LOWER(m2.author)) IN ({_staff_placeholders})"
+            _incoming_staff_params = [name.lower() for name in active_user_names]
+        else:
+            _incoming_staff_clause = ""
+            _incoming_staff_params = []
+
         incoming_operator_dialog_filter = f"""
             AND m.dialog_id IN (
                 SELECT DISTINCT m2.dialog_id
@@ -2496,13 +2550,13 @@ def get_dashboard_summary(
                   AND TRIM(m2.author) != ''
                   AND m2.created_at >= %s
                   AND m2.created_at < %s
-            {operator_filter_clause.replace("m.", "m2.")}{automation_clause.replace("m.", "m2.")}
+            {_incoming_staff_clause}{automation_clause.replace("m.", "m2.")}
             )
         """
         incoming_operator_dialog_params = [
             start_iso,
             end_exclusive_iso,
-            *operator_filter_params,
+            *_incoming_staff_params,
             *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
         ]
         
@@ -2528,7 +2582,6 @@ def get_dashboard_summary(
             """,
             (start_iso, end_exclusive_iso, *incoming_operator_dialog_params, *(assigned_bins or [])),
         ).fetchall()
-        
         # Подсчет исходящих сообщений от операторов по дням (для статистики сообщений/день)
         outgoing_by_day_rows = execute(
             """

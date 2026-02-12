@@ -81,6 +81,68 @@ class _RoleDropdownPill extends StatelessWidget {
   }
 }
 
+class _AdminStatTile extends StatelessWidget {
+  const _AdminStatTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: enabled ? onTap : null,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceVariant.withOpacity(enabled ? 0.35 : 0.2),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.45)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 
 class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   bool _loading = true;
@@ -91,6 +153,8 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   List<Section> _availableSections = [];
   List<String> _availableBins = [];
   List<UnassignedBin> _unassignedBins = [];
+  List<OrganizationWithoutContract> _organizationsWithoutContracts = [];
+  List<BinDetailed> _binsDetailed = [];
   List<PendingRegistration> _pendingRegistrations = [];
 
   final Set<int> _updatingUserIds = <int>{};
@@ -100,6 +164,8 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
   int? _selectedPendingRegistrationId;
   String? _selectedUnassignedBin;
   int? _selectedUnassignedOperatorId;
+  BinDetailed? _selectedUnassignedBinInfo;
+  bool _selectedUnassignedBinInfoLoading = false;
 
 
   final TextEditingController _searchController = TextEditingController();
@@ -497,6 +563,8 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       final binsFuture = widget.apiClient.fetchBins();
       final unassignedFuture = widget.apiClient.fetchUnassignedBins();
       final pendingFuture = widget.apiClient.fetchPendingRegistrations();
+      final organizationsFuture = widget.apiClient.fetchOrganizationsWithoutContracts();
+      final binsDetailedFuture = widget.apiClient.getBinsDetailed();
 
       final roles = await rolesFuture;
       final users = await usersFuture;
@@ -504,6 +572,8 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       final bins = await binsFuture;
       final unassigned = await unassignedFuture;
       final pendingRegistrations = await pendingFuture;
+      final organizationsWithoutContracts = await organizationsFuture;
+      final binsDetailed = await binsDetailedFuture;
 
       final pendingIds = pendingRegistrations.map((entry) => entry.id).toSet();
       final filteredUsers = users.where((user) => !pendingIds.contains(user.id)).toList();
@@ -518,6 +588,11 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
               ? _selectedUnassignedOperatorId
               : null;
 
+      final unassignedBinValues = unassigned.map((item) => item.bin).toSet();
+      final selectedUnassignedBin =
+          _selectedUnassignedBin != null && unassignedBinValues.contains(_selectedUnassignedBin)
+              ? _selectedUnassignedBin
+              : null;
 
       final selectedPendingRegistrationId =
           _selectedPendingRegistrationId != null && pendingIds.contains(_selectedPendingRegistrationId)
@@ -532,9 +607,14 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         _availableSections = sections;
         _availableBins = bins;
         _unassignedBins = unassigned;
+        _organizationsWithoutContracts = organizationsWithoutContracts;
+        _binsDetailed = binsDetailed;
         _pendingRegistrations = pendingRegistrations;
         _selectedPendingRegistrationId = selectedPendingRegistrationId;
         _selectedUnassignedOperatorId = selectedOperatorId;
+        _selectedUnassignedBin = selectedUnassignedBin;
+        _selectedUnassignedBinInfo = _findBinDetailed(selectedUnassignedBin);
+        _selectedUnassignedBinInfoLoading = false;
 
         _loading = false;
         _updatingUserIds.clear();
@@ -556,6 +636,409 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         isError: true,
       );
     }
+  }
+
+  BinDetailed? _findBinDetailed(String? bin) {
+    if (bin == null || bin.isEmpty) return null;
+    for (final item in _binsDetailed) {
+      if (item.bin == bin) return item;
+    }
+    return null;
+  }
+
+  void _upsertBinDetailed(BinDetailed info) {
+    final index = _binsDetailed.indexWhere((item) => item.bin == info.bin);
+    if (index >= 0) {
+      _binsDetailed[index] = info;
+      return;
+    }
+    _binsDetailed.add(info);
+  }
+
+  Future<void> _loadSelectedUnassignedBinInfo(String? bin) async {
+    if (bin == null || bin.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _selectedUnassignedBinInfo = null;
+        _selectedUnassignedBinInfoLoading = false;
+      });
+      return;
+    }
+
+    final cached = _findBinDetailed(bin);
+    if (cached != null) {
+      if (!mounted) return;
+      setState(() {
+        _selectedUnassignedBinInfo = cached;
+      });
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _selectedUnassignedBinInfoLoading = true;
+    });
+    try {
+      final fresh = await widget.apiClient.getBinInfo(bin);
+      if (!mounted) return;
+      setState(() {
+        _upsertBinDetailed(fresh);
+        if (_selectedUnassignedBin == bin) {
+          _selectedUnassignedBinInfo = fresh;
+        }
+      });
+    } catch (_) {
+      // Keep cached info if fresh fetch fails.
+    } finally {
+      if (mounted) {
+        setState(() {
+          _selectedUnassignedBinInfoLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _deleteBinValue(String bin) async {
+    final confirmed = await showThemedDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Удалить БИН?'),
+          content: Text('БИН $bin будет удален без возможности восстановления.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+              child: const Text('Удалить'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) return;
+
+    try {
+      await widget.apiClient.deleteBin(bin);
+      if (!mounted) return;
+      setState(() {
+        _availableBins.removeWhere((item) => item == bin);
+        _unassignedBins.removeWhere((item) => item.bin == bin);
+        _organizationsWithoutContracts.removeWhere((item) => item.customerBin == bin);
+        _binsDetailed.removeWhere((item) => item.bin == bin);
+        if (_selectedUnassignedBin == bin) {
+          _selectedUnassignedBin = null;
+          _selectedUnassignedBinInfo = null;
+          _selectedUnassignedBinInfoLoading = false;
+        }
+      });
+      showTopMessage(context, 'БИН $bin удален.');
+    } catch (error) {
+      if (!mounted) return;
+      showTopMessage(context, 'Не удалось удалить БИН: $error', isError: true);
+    }
+  }
+
+  Future<void> _openAllBinsSheet(ThemeData theme) async {
+    final searchController = TextEditingController();
+    String searchQuery = '';
+    BinDetailed? selectedInfo;
+    bool loadingInfo = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final binsSource = _binsDetailed.isNotEmpty
+                ? _binsDetailed
+                : _availableBins
+                    .map(
+                      (bin) => BinDetailed(
+                        bin: bin,
+                        hasContract: false,
+                        customerLegalAddress: null,
+                        customerBankNameRu: null,
+                      ),
+                    )
+                    .toList();
+            final normalized = searchQuery.trim().toLowerCase();
+            final filtered = binsSource
+                .where((item) => normalized.isEmpty || item.bin.toLowerCase().contains(normalized))
+                .toList()
+              ..sort((a, b) => a.bin.compareTo(b.bin));
+
+            Future<void> onBinTap(BinDetailed item) async {
+              setModalState(() {
+                loadingInfo = true;
+                selectedInfo = item;
+              });
+              try {
+                final fresh = await widget.apiClient.getBinInfo(item.bin);
+                if (!mounted) return;
+                setState(() {
+                  _upsertBinDetailed(fresh);
+                });
+                if (!sheetContext.mounted) return;
+                setModalState(() {
+                  selectedInfo = fresh;
+                });
+              } catch (_) {
+              } finally {
+                if (sheetContext.mounted) {
+                  setModalState(() {
+                    loadingInfo = false;
+                  });
+                }
+              }
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  14,
+                  16,
+                  MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Все БИНы (${binsSource.length})', style: theme.textTheme.titleLarge),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: searchController,
+                      decoration: const InputDecoration(
+                        labelText: 'Поиск БИН',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onChanged: (value) => setModalState(() => searchQuery = value),
+                    ),
+                    const SizedBox(height: 10),
+                    if (selectedInfo != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    selectedInfo!.bin,
+                                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                if (loadingInfo)
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              selectedInfo!.hasContract ? '✓ Есть договор' : '⚠ Без договора',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: selectedInfo!.hasContract ? Colors.green : theme.colorScheme.error,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if ((selectedInfo!.customerLegalAddress ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text('Адрес: ${selectedInfo!.customerLegalAddress}'),
+                            ],
+                            if ((selectedInfo!.customerBankNameRu ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text('Банк: ${selectedInfo!.customerBankNameRu}'),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 420),
+                      child: filtered.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Text(
+                                'Нет БИНов.',
+                                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 8),
+                              itemBuilder: (_, index) {
+                                final item = filtered[index];
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  tileColor: theme.colorScheme.surfaceVariant.withOpacity(0.25),
+                                  title: Text(item.bin),
+                                  subtitle: Text(item.hasContract ? 'договор' : 'без договора'),
+                                  trailing: IconButton(
+                                    tooltip: 'Удалить БИН',
+                                    icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
+                                    onPressed: () async {
+                                      await _deleteBinValue(item.bin);
+                                      if (!sheetContext.mounted) return;
+                                      setModalState(() {
+                                        if (selectedInfo?.bin == item.bin) {
+                                          selectedInfo = null;
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  onTap: () => onBinTap(item),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    searchController.dispose();
+  }
+
+  Future<void> _openOrganizationsWithoutContractsSheet(ThemeData theme) async {
+    if (_organizationsWithoutContracts.isEmpty) {
+      showTopMessage(context, 'Нет организаций без договора.');
+      return;
+    }
+
+    String? selectedBin;
+    int? selectedOperatorId;
+
+    final action = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final operators = _users
+                .where((u) => u.canReply && !u.isAdmin)
+                .toList()
+              ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  14,
+                  16,
+                  MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Организации без договора (${_organizationsWithoutContracts.length})',
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String?>(
+                      value: selectedBin,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Выберите БИН',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('Не выбран')),
+                        ..._organizationsWithoutContracts.map(
+                          (item) => DropdownMenuItem<String?>(
+                            value: item.customerBin,
+                            child: Text(item.customerBin, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) => setModalState(() => selectedBin = value),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<int?>(
+                      value: selectedOperatorId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Выберите сотрудника (оператор)',
+                        prefixIcon: Icon(Icons.person_search_outlined),
+                      ),
+                      items: [
+                        const DropdownMenuItem<int?>(value: null, child: Text('Не выбран')),
+                        ...operators.map(
+                          (item) => DropdownMenuItem<int?>(
+                            value: item.id,
+                            child: Text(item.name, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) => setModalState(() => selectedOperatorId = value),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        icon: const Icon(Icons.assignment_turned_in_outlined),
+                        label: const Text('Назначить выбранный БИН'),
+                        onPressed: (selectedBin == null || selectedOperatorId == null)
+                            ? null
+                            : () => Navigator.of(sheetContext).pop(true),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _organizationsWithoutContracts.length,
+                        itemBuilder: (_, index) {
+                          final item = _organizationsWithoutContracts[index];
+                          return ListTile(
+                            dense: true,
+                            title: Text(item.customerBin),
+                            subtitle: Text(
+                              (item.customerLegalAddress ?? item.customerBankNameRu ?? 'Нет доп. данных'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (action != true || selectedBin == null || selectedOperatorId == null) return;
+    final operator = _users.firstWhere((u) => u.id == selectedOperatorId);
+    final assignment = await _showBinAssignmentSheet(user: operator, bin: selectedBin!);
+    if (assignment == null) return;
+    final next = List<UserBinAssignment>.from(operator.binAssignments)..add(assignment);
+    await _updateUserBins(operator, next);
+    await refreshAdminData(showLoading: false);
   }
 
   void _onSearchChanged(String value) {
@@ -1366,6 +1849,10 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
       addBin(entry.bin);
     }
 
+    final totalBinsCount = _binsDetailed.isNotEmpty ? _binsDetailed.length : allAvailableBins.length;
+    final withoutContractCount = _organizationsWithoutContracts.length;
+    final withContractCount = _binsDetailed.where((item) => item.hasContract).length;
+
     final searchField = Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: TextField(
@@ -1389,6 +1876,63 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
 
     final listChildren = <Widget>[
       searchField,
+      const SizedBox(height: 12),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 2.4,
+              children: [
+                _AdminStatTile(
+                  label: 'Все БИНы',
+                  value: totalBinsCount.toString(),
+                  icon: Icons.apartment_outlined,
+                  enabled: totalBinsCount > 0,
+                  onTap: _logButtonPress('open all bins sheet', () => _openAllBinsSheet(theme)),
+                ),
+                _AdminStatTile(
+                  label: 'Без договора',
+                  value: withoutContractCount.toString(),
+                  icon: Icons.warning_amber_rounded,
+                  enabled: withoutContractCount > 0,
+                  onTap: _logButtonPress(
+                    'open organizations without contracts sheet',
+                    () => _openOrganizationsWithoutContractsSheet(theme),
+                  ),
+                ),
+                _AdminStatTile(
+                  label: 'С договором',
+                  value: withContractCount.toString(),
+                  icon: Icons.verified_outlined,
+                  enabled: withContractCount > 0,
+                  onTap: _logButtonPress(
+                    'show with contract bins hint',
+                    () => showTopMessage(context, 'Список неразделенных БИНов доступен в блоке ниже.'),
+                  ),
+                ),
+                _AdminStatTile(
+                  label: 'Регистрации',
+                  value: _pendingRegistrations.length.toString(),
+                  icon: Icons.person_add_alt_1_outlined,
+                  enabled: _pendingRegistrations.isNotEmpty,
+                  onTap: _logButtonPress(
+                    'open pending registrations menu from stat',
+                    () => _openPendingRegistrationsMenu(theme),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
       const SizedBox(height: 12),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1463,12 +2007,77 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         );
                       }),
                     ],
-                    onChanged: (value) => setState(() => _selectedUnassignedBin = value),
+                    onChanged: (value) async {
+                      setState(() {
+                        _selectedUnassignedBin = value;
+                        _selectedUnassignedBinInfo = _findBinDetailed(value);
+                      });
+                      await _loadSelectedUnassignedBinInfo(value);
+                    },
                   ),
 
                   const SizedBox(height: 10),
+                  if (_selectedUnassignedBin != null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.45)),
+                      ),
+                      child: _selectedUnassignedBinInfoLoading
+                          ? Row(
+                              children: const [
+                                SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                                SizedBox(width: 8),
+                                Text('Загрузка информации о БИН...'),
+                              ],
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _selectedUnassignedBin!,
+                                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 4),
+                                if (_selectedUnassignedBinInfo == null)
+                                  Text(
+                                    'Дополнительная информация недоступна.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  )
+                                else ...[
+                                  Text(
+                                    _selectedUnassignedBinInfo!.hasContract ? '✓ Есть договор' : '⚠ Без договора',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: _selectedUnassignedBinInfo!.hasContract
+                                          ? Colors.green
+                                          : theme.colorScheme.error,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  if ((_selectedUnassignedBinInfo!.customerLegalAddress ?? '').isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text('Адрес: ${_selectedUnassignedBinInfo!.customerLegalAddress}'),
+                                  ],
+                                  if ((_selectedUnassignedBinInfo!.customerBankNameRu ?? '').isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text('Банк: ${_selectedUnassignedBinInfo!.customerBankNameRu}'),
+                                  ],
+                                ],
+                              ],
+                            ),
+                    ),
 
-                  // ВАЖНО: карточку-описание выбранного БИНа удалили полностью.
+                  // Детали выбранного БИНа отображаются карточкой выше.
 
                   // Операторы
                   Builder(

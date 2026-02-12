@@ -1,4 +1,4 @@
-part of '../main.dart';
+﻿part of '../main.dart';
 
 class ApiException implements Exception {
   const ApiException(this.message);
@@ -171,11 +171,59 @@ class ApiClient {
     }
   }
 
+  Future<void> deleteBin(String binValue) async {
+    final uri = _buildUri('bins/${Uri.encodeComponent(binValue)}');
+    await _sendRequest(
+      () => http.delete(uri, headers: _headers),
+      'Не удалось удалить запись.',
+    );
+  }
+
+  Future<List<OrganizationWithoutContract>>
+      fetchOrganizationsWithoutContracts() async {
+    final uri = _buildUri('organizations/without-contracts');
+    final response = await _sendRequest(
+      () => http.get(uri, headers: _headers),
+      'Не удалось загрузить данные.',
+    );
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(OrganizationWithoutContract.fromJson)
+        .toList();
+  }
+
+  Future<List<BinDetailed>> getBinsDetailed({String? query}) async {
+    final queryParams = (query != null && query.trim().isNotEmpty)
+        ? <String, dynamic>{'query': query.trim()}
+        : null;
+    final uri = _buildUri('bins/detailed', queryParams);
+    final response = await _sendRequest(
+      () => http.get(uri, headers: _headers),
+      'Не удалось загрузить данные.',
+    );
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(BinDetailed.fromJson)
+        .toList();
+  }
+
+  Future<BinDetailed> getBinInfo(String binValue) async {
+    final uri = _buildUri('bins/${Uri.encodeComponent(binValue)}/info');
+    final response = await _sendRequest(
+      () => http.get(uri, headers: _headers),
+      'Не удалось загрузить данные.',
+    );
+    final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
+    return BinDetailed.fromJson(decoded);
+  }
+
   Future<UserProfile> fetchProfile() async {
     final uri = _buildUri('profile');
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
-      'Не удалось загрузить профиль пользователя.',
+      'Не удалось загрузить данные.',
     );
     final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     final profile = UserProfile.fromJson(decoded);
@@ -188,6 +236,7 @@ class ApiClient {
     String jobTitle = '',
     String phone = '',
     String bio = '',
+    String? email,
   }) async {
     final uri = _buildUri('profile');
     final response = await _sendRequest(
@@ -199,6 +248,7 @@ class ApiClient {
           'job_title': jobTitle,
           'phone': phone,
           'bio': bio,
+          if (email != null) 'email': email,
         }),
       ),
       'Не удалось обновить профиль.',
@@ -231,7 +281,8 @@ class ApiClient {
     return session;
   }
 
-  Future<List<ChatSummary>> fetchChats({bool favoritesOnly = false, String? binQuery}) async {
+  Future<List<ChatSummary>> fetchChats(
+      {bool favoritesOnly = false, String? binQuery}) async {
     final query = <String, dynamic>{};
     if (favoritesOnly) {
       query['favorite_only'] = true;
@@ -242,7 +293,7 @@ class ApiClient {
     final uri = _buildUri('chats', query.isNotEmpty ? query : null);
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
-      'Не удалось загрузить список диалогов.',
+      'Не удалось загрузить данные.',
     );
     final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
@@ -268,7 +319,7 @@ class ApiClient {
     final uri = _buildUri('chats/$chatId/messages', params);
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
-      'Не удалось загрузить сообщения.',
+      'Не удалось загрузить данные.',
     );
     final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
@@ -304,7 +355,8 @@ class ApiClient {
       } else {
         updatedFavorites.remove(dialogId);
       }
-      _currentUser = _currentUser!.copyWith(favoriteDialogIds: updatedFavorites);
+      _currentUser =
+          _currentUser!.copyWith(favoriteDialogIds: updatedFavorites);
       _favoriteDialogIds
         ..clear()
         ..addAll(updatedFavorites);
@@ -351,14 +403,15 @@ class ApiClient {
     final uri = _buildUri('chats/$chatId');
     await _sendRequest(
       () => http.delete(uri, headers: _headers),
-      'Не удалось удалить диалог.',
+      'Не удалось удалить запись.',
     );
     if (_currentUser != null) {
-       final updatedFavorites = Set<int>.from(_favoriteDialogIds);
+      final updatedFavorites = Set<int>.from(_favoriteDialogIds);
       _favoriteDialogIds
         ..clear()
         ..addAll(updatedFavorites);
-      _currentUser = _currentUser!.copyWith(favoriteDialogIds: updatedFavorites);
+      _currentUser =
+          _currentUser!.copyWith(favoriteDialogIds: updatedFavorites);
     }
   }
 
@@ -369,7 +422,7 @@ class ApiClient {
     final uri = _buildUri('users', queryParams);
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
-      'Не удалось загрузить список пользователей.',
+      'Не удалось загрузить данные.',
     );
     final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
@@ -381,11 +434,12 @@ class ApiClient {
     final uri = _buildUri('users/pending');
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
-      'Не удалось загрузить регистрации на подтверждение.',
+      'Не удалось загрузить данные.',
     );
     final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
-        .map((item) => PendingRegistration.fromJson(item as Map<String, dynamic>))
+        .map((item) =>
+            PendingRegistration.fromJson(item as Map<String, dynamic>))
         .toList();
   }
 
@@ -411,7 +465,7 @@ class ApiClient {
     final uri = _buildUri('roles');
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
-      'Не удалось загрузить список ролей.',
+      'Не удалось загрузить данные.',
     );
     final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     return decoded
@@ -437,7 +491,8 @@ class ApiClient {
     return profile;
   }
 
-  Future<UserProfile> updateUserSections(int userId, List<String> sections) async {
+  Future<UserProfile> updateUserSections(
+      int userId, List<String> sections) async {
     final uri = _buildUri('users/$userId/sections');
     final response = await _sendRequest(
       () => http.put(
@@ -447,12 +502,15 @@ class ApiClient {
       ),
       'Не удалось обновить назначенные разделы.',
     );
-    return UserProfile.fromJson(jsonDecode(_decodeBody(response)) as Map<String, dynamic>);
+    return UserProfile.fromJson(
+        jsonDecode(_decodeBody(response)) as Map<String, dynamic>);
   }
 
-  Future<UserProfile> updateUserBins(int userId, List<UserBinAssignment> assignments) async {
+  Future<UserProfile> updateUserBins(
+      int userId, List<UserBinAssignment> assignments) async {
     final uri = _buildUri('users/$userId/bins');
-    final payload = assignments.map((assignment) => assignment.toUpdatePayload()).toList();
+    final payload =
+        assignments.map((assignment) => assignment.toUpdatePayload()).toList();
     final response = await _sendRequest(
       () => http.put(
         uri,
@@ -461,10 +519,12 @@ class ApiClient {
       ),
       'Не удалось обновить назначенные БИНы.',
     );
-    return UserProfile.fromJson(jsonDecode(_decodeBody(response)) as Map<String, dynamic>);
+    return UserProfile.fromJson(
+        jsonDecode(_decodeBody(response)) as Map<String, dynamic>);
   }
 
-  Future<UserProfile> adminSetUserPassword(int userId, String newPassword) async {
+  Future<UserProfile> adminSetUserPassword(
+      int userId, String newPassword) async {
     final uri = _buildUri('users/$userId/password');
     final response = await _sendRequest(
       () => http.put(
@@ -474,30 +534,29 @@ class ApiClient {
       ),
       'Не удалось обновить пароль пользователя.',
     );
-    return UserProfile.fromJson(jsonDecode(_decodeBody(response)) as Map<String, dynamic>);
+    return UserProfile.fromJson(
+        jsonDecode(_decodeBody(response)) as Map<String, dynamic>);
   }
 
   Future<void> deleteUser(int userId) async {
     final uri = _buildUri('users/$userId');
     await _sendRequest(
       () => http.delete(uri, headers: _headers),
-      'Не удалось удалить пользователя.',
+      'Не удалось удалить запись.',
     );
   }
 
   Future<List<MessageNotification>> fetchUpdates(DateTime? since) async {
     final query = since != null
         ? <String, dynamic>{
-            'since': since
-                .toUtc()
-                .toIso8601String()
-                .replaceFirst('Z', '+00:00'),
+            'since':
+                since.toUtc().toIso8601String().replaceFirst('Z', '+00:00'),
           }
         : null;
     final uri = _buildUri('updates', query);
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
-      'Не удалось получить обновления.',
+      'Не удалось загрузить данные.',
     );
     final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
     final notifications = <MessageNotification>[];
@@ -510,20 +569,34 @@ class ApiClient {
         notifications.add(notification);
       } else {
         final truncated = item.toString();
-        final printable =
-            truncated.length > 200 ? '${truncated.substring(0, 200)}…' : truncated;
+        final printable = truncated.length > 200
+            ? '${truncated.substring(0, 200)}…'
+            : truncated;
         debugPrint('Пропущено некорректное обновление: $printable');
       }
     }
     return notifications;
   }
 
-  Future<DashboardSummary> fetchDashboardSummary({int? operatorId}) async {
-    final query = operatorId != null ? <String, dynamic>{'operator_id': operatorId} : null;
+  Future<DashboardSummary> fetchDashboardSummary({
+    int? operatorId,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final query = <String, dynamic>{};
+    if (operatorId != null) {
+      query['operator_id'] = operatorId;
+    }
+    if (startDate != null && startDate.trim().isNotEmpty) {
+      query['start_date'] = startDate.trim();
+    }
+    if (endDate != null && endDate.trim().isNotEmpty) {
+      query['end_date'] = endDate.trim();
+    }
     final uri = _buildUri('analytics/dashboard', query);
     final response = await _sendRequest(
       () => http.get(uri, headers: _headers),
-      'Не удалось загрузить дэшборд.',
+      'Не удалось загрузить данные.',
     );
     final decoded = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     return DashboardSummary.fromJson(decoded);
@@ -532,35 +605,35 @@ class ApiClient {
   Future<http.Response> _sendRequest(
     Future<http.Response> Function() request,
     String fallbackMessage,
-    ) async {
-      try {
-        final response = await request().timeout(const Duration(seconds: 12));
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response;
-        }
-        final message = _extractErrorMessage(response) ?? fallbackMessage;
-        throw ApiException(message);
-      } on TimeoutException {
-        throw const ApiException(
-          'Превышено время ожидания ответа от сервера. Попробуйте снова.',
-        );
-      } on http.ClientException catch (error) {
-        final message = error.message.isNotEmpty
-            ? 'Сетевая ошибка: ${error.message}'
-            : fallbackMessage;
-        throw ApiException(message);
-      } catch (error) {
-        if (error is ApiException) {
-          rethrow;
-        }
-        if (isNetworkException(error)) {
-          throw const ApiException(
-            'Не удалось подключиться к серверу. Проверьте интернет-соединение и адрес API.',
-          );
-        }
-        throw ApiException(fallbackMessage);
+  ) async {
+    try {
+      final response = await request().timeout(const Duration(seconds: 12));
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return response;
       }
+      final message = _extractErrorMessage(response) ?? fallbackMessage;
+      throw ApiException(message);
+    } on TimeoutException {
+      throw const ApiException(
+        'Превышено время ожидания ответа от сервера. Попробуйте снова.',
+      );
+    } on http.ClientException catch (error) {
+      final message = error.message.isNotEmpty
+          ? 'Сетевая ошибка: ${error.message}'
+          : fallbackMessage;
+      throw ApiException(message);
+    } catch (error) {
+      if (error is ApiException) {
+        rethrow;
+      }
+      if (isNetworkException(error)) {
+        throw const ApiException(
+          'Не удалось подключиться к серверу. Проверьте интернет-соединение и адрес API.',
+        );
+      }
+      throw ApiException(fallbackMessage);
     }
+  }
 
   String? _extractErrorMessage(http.Response response) {
     final body = _decodeBody(response).trim();
@@ -570,7 +643,8 @@ class ApiClient {
     try {
       final decoded = jsonDecode(body);
       if (decoded is Map<String, dynamic>) {
-        final detail = decoded['detail'] ?? decoded['message'] ?? decoded['error'];
+        final detail =
+            decoded['detail'] ?? decoded['message'] ?? decoded['error'];
         final message = _normalizeDetail(detail);
         if (message != null && message.isNotEmpty) {
           return message;
@@ -701,4 +775,5 @@ class ApiClient {
     }
   }
 }
+
 

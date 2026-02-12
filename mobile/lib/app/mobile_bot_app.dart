@@ -152,7 +152,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
 
   ThemeData _buildTheme(ColorScheme colorScheme, AppColors appColors) {
     final outlineBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(18),
       borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.25)),
     );
 
@@ -176,7 +176,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
       scaffoldBackgroundColor:
           isLight ? appColors.scaffoldBackground : colorScheme.background,
       appBarTheme: AppBarTheme(
-        backgroundColor: appColors.appBarColor,
+        backgroundColor: Colors.transparent,
         foregroundColor:
             isLight ? appColors.appBarForeground : colorScheme.onBackground,
         elevation: 0,
@@ -191,11 +191,19 @@ class _MobileBotModuleState extends State<MobileBotModule> {
       cardTheme: CardThemeData(
         color: isLight ? Colors.white : colorScheme.surface,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: colorScheme.outlineVariant.withOpacity(0.3),
+          ),
+        ),
+        shadowColor: appColors.accentGlow,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: isLight ? Colors.white : colorScheme.background,
+        fillColor: isLight
+            ? colorScheme.surface.withOpacity(0.88)
+            : colorScheme.surface.withOpacity(0.74),
         border: outlineBorder,
         enabledBorder: outlineBorder,
         focusedBorder: outlineBorder.copyWith(
@@ -215,22 +223,28 @@ class _MobileBotModuleState extends State<MobileBotModule> {
         backgroundColor: isLight ? Colors.white : colorScheme.surface,
         indicatorColor: colorScheme.secondary,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-        labelTextStyle: MaterialStateProperty.resolveWith(
+        labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
-            color:
-                states.contains(MaterialState.selected)
-                    ? colorScheme.secondary
-                    : appColors.bottomBarInactive,
+            color: states.contains(WidgetState.selected)
+                ? colorScheme.secondary
+                : appColors.bottomBarInactive,
             fontWeight: FontWeight.w600,
           ),
         ),
-        iconTheme: MaterialStateProperty.resolveWith(
+        iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
-            color:
-                states.contains(MaterialState.selected)
-                    ? colorScheme.secondary
-                    : appColors.bottomBarInactive,
+            color: states.contains(WidgetState.selected)
+                ? colorScheme.secondary
+                : appColors.bottomBarInactive,
           ),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withOpacity(0.4),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -238,19 +252,40 @@ class _MobileBotModuleState extends State<MobileBotModule> {
           backgroundColor: colorScheme.primary,
           foregroundColor: colorScheme.onPrimary,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: colorScheme.primary,
-          side: BorderSide(color: colorScheme.primary),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          side: BorderSide(color: colorScheme.primary.withOpacity(0.5)),
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: colorScheme.primary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
       ),
@@ -264,24 +299,23 @@ class _MobileBotModuleState extends State<MobileBotModule> {
 
     final bool isAuth = _session == null;
 
-    final Widget home =
-        isAuth
-            ? AuthScreen(
-              apiClient: apiClient,
-              onAuthenticated: _handleAuthenticated,
-              themeMode: _themeMode,
-              onThemeModeChanged: _handleThemeModeChanged,
-              isLogin: widget.isLogin,
-            )
-            : ChatListScreen(
-              apiClient: apiClient,
-              session: _session!,
-              onLogout: _handleLogout,
-              onProfileUpdated: _handleProfileUpdated,
-              onSessionRefreshed: _handleSessionRefreshed,
-              themeMode: _themeMode,
-              onThemeModeChanged: _handleThemeModeChanged,
-            );
+    final Widget home = isAuth
+        ? AuthScreen(
+            apiClient: apiClient,
+            onAuthenticated: _handleAuthenticated,
+            themeMode: _themeMode,
+            onThemeModeChanged: _handleThemeModeChanged,
+            isLogin: widget.isLogin,
+          )
+        : ChatListScreen(
+            apiClient: apiClient,
+            session: _session!,
+            onLogout: _handleLogout,
+            onProfileUpdated: _handleProfileUpdated,
+            onSessionRefreshed: _handleSessionRefreshed,
+            themeMode: _themeMode,
+            onThemeModeChanged: _handleThemeModeChanged,
+          );
 
     final platformBrightness =
         MediaQuery.maybeOf(context)?.platformBrightness ?? Brightness.light;
@@ -292,16 +326,12 @@ class _MobileBotModuleState extends State<MobileBotModule> {
       ThemeMode.system => platformBrightness,
     };
 
-    // IMPORTANT: Auth (login) page is always light.
     final ThemeData effectiveTheme =
-        isAuth
-            ? lightTheme
-            : (effectiveBrightness == Brightness.dark ? darkTheme : lightTheme);
+        effectiveBrightness == Brightness.dark ? darkTheme : lightTheme;
 
-    final Widget content =
-        _initializing
-            ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-            : home;
+    final Widget content = _initializing
+        ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+        : home;
 
     return AnimatedTheme(
       data: effectiveTheme,

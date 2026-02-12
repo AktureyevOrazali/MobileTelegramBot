@@ -417,6 +417,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final statusLabel = isClosed ? 'Закрыт' : 'Открыт';
     final statusColors = _statusBadgeColors(theme, isClosed: isClosed);
     final aiColors = _aiBadgeColors(theme, enabled: _chat.aiEnabled);
+    final messageMaxWidth =
+        (MediaQuery.sizeOf(context).width * 0.78).clamp(250.0, 420.0).toDouble();
 
     final startedAtLabel = _chat.dialogStartedAt != null
         ? DateFormat('dd.MM.yyyy HH:mm').format(_chat.dialogStartedAt!.toLocal())
@@ -430,7 +432,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     return Theme(
       data: theme,
       child: PopScope(
-        onPopInvoked: (didPop) {
+        onPopInvokedWithResult: (didPop, result) {
           _dismissKeyboard();
         },
         child: Scaffold(
@@ -439,9 +441,54 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           resizeToAvoidBottomInset: true,
 
           appBar: AppBar(
-            title: Text(_chat.title),
+            titleSpacing: 10,
+            flexibleSpace: Container(
+              decoration: BoxDecoration(
+                gradient: AppGradients.appBar(colorScheme),
+              ),
+            ),
+            title: Row(
+              children: [
+                CircleAvatar(
+                  radius: 17,
+                  backgroundColor: colorScheme.primaryContainer,
+                  foregroundColor: colorScheme.onPrimaryContainer,
+                  child: Text(
+                    _chat.title.isNotEmpty ? _chat.title[0].toUpperCase() : '?',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _chat.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        '@${_chat.username ?? 'без username'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onPrimary.withValues(alpha: 0.86),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
             actions: [
-              IconButton(
+              IconButton.filledTonal(
                 tooltip: _isFavorite ? 'Убрать из избранного' : 'Добавить в избранное',
                 icon: Icon(_isFavorite ? Icons.star : Icons.star_border),
                 color: _isFavorite ? colorScheme.tertiary : null,
@@ -452,6 +499,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               PopupMenuButton<String>(
                 enabled: !_deleting,
+                icon: const Icon(Icons.more_horiz_rounded),
                 onSelected: (value) {
                   switch (value) {
                     case 'toggle_status':
@@ -513,91 +561,88 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
             ],
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(55),
+              preferredSize: const Size.fromHeight(52),
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: statusColors.background,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: statusColors.border, width: 1),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_updatingStatus)
-                                SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: statusColors.foreground,
-                                  ),
-                                )
-                              else
-                                Icon(
-                                  isClosed ? Icons.lock : Icons.lock_open,
-                                  size: 16,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: statusColors.background,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: statusColors.border, width: 1),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_updatingStatus)
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
                                   color: statusColors.foreground,
                                 ),
-                              const SizedBox(width: 8),
-                              Text(
-                                statusLabel,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: statusColors.foreground,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                              )
+                            else
+                              Icon(
+                                isClosed ? Icons.lock : Icons.lock_open,
+                                size: 14,
+                                color: statusColors.foreground,
                               ),
-                            ],
-                          ),
+                            const SizedBox(width: 6),
+                            Text(
+                              statusLabel,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: statusColors.foreground,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: aiColors.background,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: aiColors.border, width: 1),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_togglingAi)
-                                SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: aiColors.foreground,
-                                  ),
-                                )
-                              else
-                                Icon(
-                                  _chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
-                                  size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: aiColors.background,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: aiColors.border, width: 1),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_togglingAi)
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
                                   color: aiColors.foreground,
                                 ),
-                                const SizedBox(width: 8),
-                              Text(
-                                _chat.aiEnabled ? 'AI' : 'AI выключен',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: aiColors.foreground,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                              )
+                            else
+                              Icon(
+                                _chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
+                                size: 14,
+                                color: aiColors.foreground,
                               ),
-                            ],
-                          ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _chat.aiEnabled ? 'AI включен' : 'AI выключен',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: aiColors.foreground,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -606,159 +651,271 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           body: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTap: _dismissKeyboard,
-            child: Column(
-              children: [
-                if (_deleting) const LinearProgressIndicator(),
-                Expanded(
-                  child: _loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _error != null
-                          ? Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('Ошибка: $_error'),
-                                  const SizedBox(height: 12),
-                                  FilledButton(
-                                    onPressed: _logButtonPress('retry load messages', _fetchMessages),
-                                    child: const Text('Обновить'),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.builder(
-                              controller: _scrollController,
-                              reverse: true, // сообщения снизу, пустота сверху
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                              itemCount: _messages.length,
-                              itemBuilder: (context, index) {
-                                final message = _messages[_messages.length - 1 - index];
-
-                                final isOutgoing = message.direction == 'outgoing';
-                                final bubbleColor = isOutgoing
-                                    ? appColors.outgoingMessageBackground
-                                    : appColors.incomingMessageBackground;
-                                final textColor = isOutgoing
-                                    ? appColors.outgoingMessageText
-                                    : appColors.incomingMessageText;
-                                final alignment =
-                                    isOutgoing ? Alignment.centerRight : Alignment.centerLeft;
-
-                                return Align(
-                                  alignment: alignment,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    colorScheme.primary.withValues(alpha: 0.07),
+                    colorScheme.surface,
+                    colorScheme.surface,
+                  ],
+                ),
+              ),
+              child: Column(
+                children: [
+                  if (_deleting) const LinearProgressIndicator(),
+                  Expanded(
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _error != null
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24),
                                   child: Container(
-                                    margin: const EdgeInsets.symmetric(vertical: 4),
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                    constraints: const BoxConstraints(maxWidth: 340),
+                                    padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
-                                      color: bubbleColor,
-                                      borderRadius: BorderRadius.only(
-                                        topLeft: const Radius.circular(16),
-                                        topRight: const Radius.circular(16),
-                                        bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
-                                        bottomRight: Radius.circular(isOutgoing ? 4 : 16),
-                                      ),
+                                      color: colorScheme.surface,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: colorScheme.outlineVariant),
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: isOutgoing
-                                          ? CrossAxisAlignment.end
-                                          : CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        if (message.author != null)
-                                          Text(
-                                            message.author!,
-                                            style: theme.textTheme.labelSmall?.copyWith(
-                                              color: textColor.withOpacity(0.8),
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        Text(
-                                          message.text,
-                                          style: theme.textTheme.bodyMedium?.copyWith(color: textColor),
+                                        Icon(
+                                          Icons.error_outline_rounded,
+                                          color: colorScheme.error,
                                         ),
-                                        if (message.sectionTitle != null) ...[
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            message.sectionTitle!,
-                                            style: theme.textTheme.labelSmall?.copyWith(
-                                              color: textColor.withOpacity(0.7),
-                                            ),
-                                          ),
-                                        ],
-                                        const SizedBox(height: 4),
+                                        const SizedBox(height: 10),
                                         Text(
-                                          message.createdAtLabel,
-                                          style: theme.textTheme.labelSmall?.copyWith(
-                                            color: textColor.withOpacity(0.7),
-                                          ),
+                                          'Ошибка загрузки: $_error',
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        const SizedBox(height: 12),
+                                        FilledButton.icon(
+                                          onPressed:
+                                              _logButtonPress('retry load messages', _fetchMessages),
+                                          icon: const Icon(Icons.refresh_rounded),
+                                          label: const Text('Повторить'),
                                         ),
                                       ],
                                     ),
                                   ),
-                                );
-                              },
-                            ),
-                ),
-              
-                const Divider(height: 1),
+                                ),
+                              )
+                            : _messages.isEmpty
+                                ? Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 28),
+                                      child: Text(
+                                        'Пока нет сообщений. Первое сообщение появится здесь.',
+                                        textAlign: TextAlign.center,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    controller: _scrollController,
+                                    reverse: true,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 12,
+                                    ),
+                                    keyboardDismissBehavior:
+                                        ScrollViewKeyboardDismissBehavior.onDrag,
+                                    itemCount: _messages.length,
+                                    itemBuilder: (context, index) {
+                                      final message = _messages[_messages.length - 1 - index];
+                                      final isOutgoing = message.direction == 'outgoing';
+                                      final bubbleColor = isOutgoing
+                                          ? appColors.outgoingMessageBackground
+                                          : appColors.incomingMessageBackground;
+                                      final textColor = isOutgoing
+                                          ? appColors.outgoingMessageText
+                                          : appColors.incomingMessageText;
+                                      final alignment = isOutgoing
+                                          ? Alignment.centerRight
+                                          : Alignment.centerLeft;
 
-                // ФИКС iOS + корректная работа с клавиатурой:
-                // 1) SafeArea(bottom: true) чтобы инпут не залезал под home-indicator.
-                // 2) Никаких ручных padding’ов viewInsets.bottom здесь не нужно —
-                //    Scaffold(resizeToAvoidBottomInset: true) сам поднимет всё.
+                                      return Align(
+                                        alignment: alignment,
+                                        child: Container(
+                                          margin: const EdgeInsets.symmetric(vertical: 3),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 9,
+                                          ),
+                                          constraints: BoxConstraints(maxWidth: messageMaxWidth),
+                                          decoration: BoxDecoration(
+                                            gradient: isOutgoing
+                                                ? AppGradients.outgoingBubble(colorScheme)
+                                                : null,
+                                            color: isOutgoing ? null : bubbleColor,
+                                            borderRadius: BorderRadius.only(
+                                              topLeft: const Radius.circular(18),
+                                              topRight: const Radius.circular(18),
+                                              bottomLeft: Radius.circular(isOutgoing ? 18 : 5),
+                                              bottomRight: Radius.circular(isOutgoing ? 5 : 18),
+                                            ),
+                                            border: Border.all(
+                                              color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: colorScheme.shadow.withValues(alpha: 0.04),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: isOutgoing
+                                                ? CrossAxisAlignment.end
+                                                : CrossAxisAlignment.start,
+                                            children: [
+                                              if (!isOutgoing && message.author != null) ...[
+                                                Text(
+                                                  message.author!,
+                                                  style: theme.textTheme.labelSmall?.copyWith(
+                                                    color: textColor.withValues(alpha: 0.82),
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                              ],
+                                              Text(
+                                                message.text,
+                                                style: theme.textTheme.bodyMedium?.copyWith(
+                                                  color: textColor,
+                                                  height: 1.3,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Wrap(
+                                                spacing: 6,
+                                                runSpacing: 2,
+                                                crossAxisAlignment: WrapCrossAlignment.center,
+                                                children: [
+                                                  if (message.sectionTitle != null &&
+                                                      message.sectionTitle!.isNotEmpty) ...[
+                                                    Icon(
+                                                      Icons.category_outlined,
+                                                      size: 11,
+                                                      color: textColor.withValues(alpha: 0.68),
+                                                    ),
+                                                    Text(
+                                                      message.sectionTitle!,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: theme.textTheme.labelSmall?.copyWith(
+                                                        color: textColor.withValues(alpha: 0.72),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                  Text(
+                                                    message.createdAtLabel,
+                                                    style: theme.textTheme.labelSmall?.copyWith(
+                                                      color: textColor.withValues(alpha: 0.72),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                  ),
+
                 SafeArea(
                   top: false,
                   bottom: true,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    child: Row(
+                    padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                    child: Column(
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _messageController,
-                            decoration: InputDecoration(
-                              hintText: canSend
-                                  ? 'Напишите сообщение...'
-                                  : 'Только просмотр. Свяжитесь с администратором для прав ответа.',
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        if (!canSend)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              'У вашей роли нет прав на отправку ответов. Обратитесь к администратору.',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.error,
+                              ),
                             ),
-                            enabled: canSend && !_deleting,
-                            keyboardType: TextInputType.multiline,
-                            textCapitalization: TextCapitalization.sentences,
-                            minLines: 1,
-                            maxLines: 5,
-                            onSubmitted: canSend && !_deleting ? (_) => _sendMessage() : null,
-                            onTap: () => _scrollToBottom(animated: true),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        IconButton.filled(
-                          onPressed: _logButtonPress(
-                            'send chat message',
-                            canSend && !_deleting ? _sendMessage : null,
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surface.withValues(alpha: 0.96),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: colorScheme.outlineVariant),
+                            boxShadow: [
+                              BoxShadow(
+                                color: colorScheme.shadow.withValues(alpha: 0.06),
+                                blurRadius: 14,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                          icon: const Icon(Icons.send),
-                          tooltip: 'Отправить',
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _messageController,
+                                  decoration: InputDecoration(
+                                    hintText: canSend ? 'Напишите сообщение...' : 'Только просмотр',
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                  enabled: canSend && !_deleting,
+                                  keyboardType: TextInputType.multiline,
+                                  textCapitalization: TextCapitalization.sentences,
+                                  minLines: 1,
+                                  maxLines: 5,
+                                  onSubmitted: canSend && !_deleting ? (_) => _sendMessage() : null,
+                                  onTap: () => _scrollToBottom(animated: true),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(14),
+                                  gradient: AppGradients.primaryAction(colorScheme),
+                                ),
+                                child: IconButton(
+                                  onPressed: _logButtonPress(
+                                    'send chat message',
+                                    canSend && !_deleting ? _sendMessage : null,
+                                  ),
+                                  icon: const Icon(Icons.send_rounded),
+                                  color: colorScheme.onPrimary,
+                                  tooltip: 'Отправить',
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
-
-                if (!canSend)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      'У вашей роли нет прав на отправку ответов. Обратитесь к администратору.',
-                      style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.error),
-                    ),
-                  ),
               ],
             ),
           ),
         ),
       ),
+    ),
     );
   }
 }
+

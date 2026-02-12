@@ -12,6 +12,7 @@ class DashboardSummary {
     required this.averageMessagesPerDialog,
     required this.avgDialogDurationMinutes,
     required this.avgResponseTimeMinutes,
+    required this.responseTimeDialogs,
     required this.sectionBreakdown,
     required this.topQuestions,
     required this.questionsBySection,
@@ -30,6 +31,7 @@ class DashboardSummary {
   final double averageMessagesPerDialog;
   final double? avgDialogDurationMinutes;
   final double? avgResponseTimeMinutes;
+  final List<DashboardResponseTimeDialog> responseTimeDialogs;
   final List<DashboardSectionStat> sectionBreakdown;
   final List<DashboardTopQuestion> topQuestions;
   final List<DashboardSectionTopQuestions> questionsBySection;
@@ -50,6 +52,7 @@ class DashboardSummary {
       averageMessagesPerDialog: 0,
       avgDialogDurationMinutes: null,
       avgResponseTimeMinutes: null,
+      responseTimeDialogs: const [],
       sectionBreakdown: const [],
       topQuestions: const [],
       questionsBySection: const [],
@@ -106,6 +109,10 @@ class DashboardSummary {
         .whereType<Map<String, dynamic>>()
         .map(DashboardActivityPoint.fromJson)
         .toList();
+    final responseTimeDialogs = (json['response_time_dialogs'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardResponseTimeDialog.fromJson)
+        .toList();
 
     final avgDialogDuration = parseDoubleNullable(json['avg_dialog_duration_minutes']);
     final avgResponseMinutes = parseResponseMinutes(
@@ -126,6 +133,7 @@ class DashboardSummary {
       averageMessagesPerDialog: parseDouble(json['average_messages_per_dialog']),
       avgDialogDurationMinutes: avgDialogDuration?.isFinite == true ? avgDialogDuration : null,
       avgResponseTimeMinutes: avgResponseMinutes?.isFinite == true ? avgResponseMinutes : null,
+      responseTimeDialogs: responseTimeDialogs,
       sectionBreakdown: sectionBreakdown,
       topQuestions: topQuestions,
       questionsBySection: questionsBySection,
@@ -203,6 +211,7 @@ class DashboardAgentStat {
     required this.dialogs,
     required this.messages,
     required this.avgMessagesPerDialog,
+    required this.avgResponseTimeMinutes,
     required this.lastActivity,
   });
 
@@ -210,6 +219,7 @@ class DashboardAgentStat {
   final int dialogs;
   final int messages;
   final double avgMessagesPerDialog;
+  final double? avgResponseTimeMinutes;
   final DateTime? lastActivity;
 
   factory DashboardAgentStat.fromJson(Map<String, dynamic> json) {
@@ -224,7 +234,35 @@ class DashboardAgentStat {
       dialogs: dialogs,
       messages: messages,
       avgMessagesPerDialog: computedAvg,
+      avgResponseTimeMinutes: () {
+        final value = _parseDoubleValue(json['avg_response_time_minutes']);
+        return value != null && value.isFinite ? value : null;
+      }(),
       lastActivity: _parseDateTime(json['last_activity']),
+    );
+  }
+}
+
+class DashboardResponseTimeDialog {
+  DashboardResponseTimeDialog({
+    required this.chatId,
+    required this.dialogId,
+    required this.author,
+    required this.responseTimeMinutes,
+  });
+
+  final int? chatId;
+  final int? dialogId;
+  final String author;
+  final double responseTimeMinutes;
+
+  factory DashboardResponseTimeDialog.fromJson(Map<String, dynamic> json) {
+    final value = _parseDoubleValue(json['response_time_minutes']) ?? 0;
+    return DashboardResponseTimeDialog(
+      chatId: _parseIntValue(json['chat_id']),
+      dialogId: _parseIntValue(json['dialog_id']),
+      author: (json['author'] as String?)?.trim() ?? '',
+      responseTimeMinutes: value.isFinite ? value : 0,
     );
   }
 }
@@ -481,6 +519,59 @@ class UnassignedBin {
         ? rawCount
         : int.tryParse(rawCount?.toString() ?? '') ?? 0;
     return UnassignedBin(bin: parsedBin, openDialogs: count);
+  }
+}
+
+class OrganizationWithoutContract {
+  const OrganizationWithoutContract({
+    required this.customerBin,
+    required this.customerLegalAddress,
+    required this.customerBankNameRu,
+    required this.createdAt,
+  });
+
+  final String customerBin;
+  final String? customerLegalAddress;
+  final String? customerBankNameRu;
+  final DateTime createdAt;
+
+  factory OrganizationWithoutContract.fromJson(Map<String, dynamic> json) {
+    final createdAt = _parseDateTime(json['created_at']) ?? DateTime.now();
+    return OrganizationWithoutContract(
+      customerBin: (json['customer_bin'] as String? ?? '').trim(),
+      customerLegalAddress: (json['customer_legal_address'] as String?)?.trim(),
+      customerBankNameRu: (json['customer_bank_name_ru'] as String?)?.trim(),
+      createdAt: createdAt,
+    );
+  }
+}
+
+class BinDetailed {
+  const BinDetailed({
+    required this.bin,
+    required this.hasContract,
+    required this.customerLegalAddress,
+    required this.customerBankNameRu,
+  });
+
+  final String bin;
+  final bool hasContract;
+  final String? customerLegalAddress;
+  final String? customerBankNameRu;
+
+  factory BinDetailed.fromJson(Map<String, dynamic> json) {
+    final hasContractRaw = json['has_contract'];
+    final hasContract = hasContractRaw is bool
+        ? hasContractRaw
+        : hasContractRaw is num
+            ? hasContractRaw != 0
+            : hasContractRaw?.toString().toLowerCase() == 'true';
+    return BinDetailed(
+      bin: (json['bin'] as String? ?? '').trim(),
+      hasContract: hasContract,
+      customerLegalAddress: (json['customer_legal_address'] as String?)?.trim(),
+      customerBankNameRu: (json['customer_bank_name_ru'] as String?)?.trim(),
+    );
   }
 }
 

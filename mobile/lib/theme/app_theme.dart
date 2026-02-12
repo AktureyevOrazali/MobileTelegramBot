@@ -5,6 +5,115 @@ const Color brandTeal = Color(0xFF0F7F71);
 const Color brandScaffoldBackground = Color(0xFFF1F6EF);
 const Color brandPrimaryText = Color(0xFF1F1F1F);
 const Color brandError = Color(0xFFB00020);
+const Color brandAccentMint = Color(0xFF7ED9B7);
+
+class AppGradients {
+  const AppGradients._();
+
+  static LinearGradient authBackground(ColorScheme colorScheme) {
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        colorScheme.primary.withOpacity(0.22),
+        colorScheme.secondary.withOpacity(0.15),
+        colorScheme.tertiary.withOpacity(0.08),
+        colorScheme.surface,
+      ],
+      stops: const [0, 0.3, 0.6, 1],
+    );
+  }
+
+  static LinearGradient primaryAction(ColorScheme colorScheme) {
+    return LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: [
+        colorScheme.primary,
+        brandAccentMint,
+      ],
+    );
+  }
+
+  static LinearGradient appBar(ColorScheme colorScheme) {
+    final isDark = colorScheme.brightness == Brightness.dark;
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: isDark
+          ? [
+              const Color(0xFF1A2F28),
+              const Color(0xFF0D1F1A),
+            ]
+          : [
+              brandTeal,
+              const Color(0xFF0A6B5E),
+            ],
+    );
+  }
+
+  static LinearGradient cardHeader(ColorScheme colorScheme) {
+    final isDark = colorScheme.brightness == Brightness.dark;
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: isDark
+          ? [
+              colorScheme.primary.withOpacity(0.18),
+              colorScheme.secondary.withOpacity(0.10),
+            ]
+          : [
+              colorScheme.primary.withOpacity(0.08),
+              colorScheme.secondary.withOpacity(0.04),
+            ],
+    );
+  }
+
+  static LinearGradient surfaceOverlay(ColorScheme colorScheme) {
+    final isDark = colorScheme.brightness == Brightness.dark;
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: isDark
+          ? [
+              colorScheme.surface.withOpacity(0.85),
+              colorScheme.surface.withOpacity(0.95),
+            ]
+          : [
+              colorScheme.surface.withOpacity(0.88),
+              colorScheme.surface.withOpacity(0.96),
+            ],
+    );
+  }
+
+  static LinearGradient selectedChip(ColorScheme colorScheme) {
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        colorScheme.primary,
+        colorScheme.primary.withOpacity(0.78),
+      ],
+    );
+  }
+
+  static LinearGradient outgoingBubble(ColorScheme colorScheme) {
+    final isDark = colorScheme.brightness == Brightness.dark;
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: isDark
+          ? [
+              const Color(0xFF164D38),
+              const Color(0xFF103D2D),
+            ]
+          : [
+              const Color(0xFFDAFDD4),
+              const Color(0xFFC8F0C0),
+            ],
+    );
+  }
+}
 
 class AppBadgeColors {
   final Color background;
@@ -17,7 +126,8 @@ class AppBadgeColors {
     required this.foreground,
   });
 
-  AppBadgeColors copyWith({Color? background, Color? border, Color? foreground}) {
+  AppBadgeColors copyWith(
+      {Color? background, Color? border, Color? foreground}) {
     return AppBadgeColors(
       background: background ?? this.background,
       border: border ?? this.border,
@@ -37,9 +147,11 @@ class AppBadgeColors {
     if (b == null) return a;
 
     return AppBadgeColors(
-      background: Color.lerp(a?.background, b?.background, t) ?? Colors.transparent,
-      border: Color.lerp(a?.border, b?.border, t) ?? Colors.transparent,
-      foreground: Color.lerp(a?.foreground, b?.foreground, t) ?? Colors.transparent,
+      background:
+          Color.lerp(a.background, b.background, t) ?? Colors.transparent,
+      border: Color.lerp(a.border, b.border, t) ?? Colors.transparent,
+      foreground:
+          Color.lerp(a.foreground, b.foreground, t) ?? Colors.transparent,
     );
   }
 }
@@ -58,6 +170,9 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color scaffoldBackground;
   final Color appBarColor;
   final Color appBarForeground;
+  final Color cardGradientStart;
+  final Color cardGradientEnd;
+  final Color accentGlow;
 
   const AppColors({
     required this.statusOpenBadge,
@@ -72,6 +187,9 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.scaffoldBackground,
     required this.appBarColor,
     required this.appBarForeground,
+    required this.cardGradientStart,
+    required this.cardGradientEnd,
+    required this.accentGlow,
   });
 
   static const light = AppColors(
@@ -103,6 +221,9 @@ class AppColors extends ThemeExtension<AppColors> {
     scaffoldBackground: brandScaffoldBackground,
     appBarColor: brandTeal,
     appBarForeground: Colors.white,
+    cardGradientStart: Color(0xFFF0FAF0),
+    cardGradientEnd: Colors.white,
+    accentGlow: Color(0x2A4CAF50),
   );
 
   static const dark = AppColors(
@@ -134,6 +255,9 @@ class AppColors extends ThemeExtension<AppColors> {
     scaffoldBackground: Color(0xFF121212),
     appBarColor: Color(0xFF121212),
     appBarForeground: Colors.white,
+    cardGradientStart: Color(0xFF1A2A22),
+    cardGradientEnd: Color(0xFF1E1E1E),
+    accentGlow: Color(0x3A4CAF50),
   );
 
   @override
@@ -150,20 +274,28 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? scaffoldBackground,
     Color? appBarColor,
     Color? appBarForeground,
+    Color? cardGradientStart,
+    Color? cardGradientEnd,
+    Color? accentGlow,
   }) {
     return AppColors(
       statusOpenBadge: statusOpenBadge ?? this.statusOpenBadge,
       statusClosedBadge: statusClosedBadge ?? this.statusClosedBadge,
       aiEnabledBadge: aiEnabledBadge ?? this.aiEnabledBadge,
       aiDisabledBadge: aiDisabledBadge ?? this.aiDisabledBadge,
-      incomingMessageBackground: incomingMessageBackground ?? this.incomingMessageBackground,
+      incomingMessageBackground:
+          incomingMessageBackground ?? this.incomingMessageBackground,
       incomingMessageText: incomingMessageText ?? this.incomingMessageText,
-      outgoingMessageBackground: outgoingMessageBackground ?? this.outgoingMessageBackground,
+      outgoingMessageBackground:
+          outgoingMessageBackground ?? this.outgoingMessageBackground,
       outgoingMessageText: outgoingMessageText ?? this.outgoingMessageText,
       bottomBarInactive: bottomBarInactive ?? this.bottomBarInactive,
       scaffoldBackground: scaffoldBackground ?? this.scaffoldBackground,
       appBarColor: appBarColor ?? this.appBarColor,
       appBarForeground: appBarForeground ?? this.appBarForeground,
+      cardGradientStart: cardGradientStart ?? this.cardGradientStart,
+      cardGradientEnd: cardGradientEnd ?? this.cardGradientEnd,
+      accentGlow: accentGlow ?? this.accentGlow,
     );
   }
 
@@ -172,28 +304,44 @@ class AppColors extends ThemeExtension<AppColors> {
     if (other is! AppColors) return this;
 
     return AppColors(
-      statusOpenBadge: AppBadgeColors.lerp(statusOpenBadge, other.statusOpenBadge, t),
+      statusOpenBadge:
+          AppBadgeColors.lerp(statusOpenBadge, other.statusOpenBadge, t),
       statusClosedBadge:
           AppBadgeColors.lerp(statusClosedBadge, other.statusClosedBadge, t),
-      aiEnabledBadge: AppBadgeColors.lerp(aiEnabledBadge, other.aiEnabledBadge, t),
-      aiDisabledBadge: AppBadgeColors.lerp(aiDisabledBadge, other.aiDisabledBadge, t),
-      incomingMessageBackground:
-          Color.lerp(incomingMessageBackground, other.incomingMessageBackground, t) ??
-              incomingMessageBackground,
+      aiEnabledBadge:
+          AppBadgeColors.lerp(aiEnabledBadge, other.aiEnabledBadge, t),
+      aiDisabledBadge:
+          AppBadgeColors.lerp(aiDisabledBadge, other.aiDisabledBadge, t),
+      incomingMessageBackground: Color.lerp(
+              incomingMessageBackground, other.incomingMessageBackground, t) ??
+          incomingMessageBackground,
       incomingMessageText:
-          Color.lerp(incomingMessageText, other.incomingMessageText, t) ?? incomingMessageText,
-      outgoingMessageBackground:
-          Color.lerp(outgoingMessageBackground, other.outgoingMessageBackground, t) ??
-              outgoingMessageBackground,
+          Color.lerp(incomingMessageText, other.incomingMessageText, t) ??
+              incomingMessageText,
+      outgoingMessageBackground: Color.lerp(
+              outgoingMessageBackground, other.outgoingMessageBackground, t) ??
+          outgoingMessageBackground,
       outgoingMessageText:
-          Color.lerp(outgoingMessageText, other.outgoingMessageText, t) ?? outgoingMessageText,
+          Color.lerp(outgoingMessageText, other.outgoingMessageText, t) ??
+              outgoingMessageText,
       bottomBarInactive:
-          Color.lerp(bottomBarInactive, other.bottomBarInactive, t) ?? bottomBarInactive,
+          Color.lerp(bottomBarInactive, other.bottomBarInactive, t) ??
+              bottomBarInactive,
       scaffoldBackground:
-          Color.lerp(scaffoldBackground, other.scaffoldBackground, t) ?? scaffoldBackground,
+          Color.lerp(scaffoldBackground, other.scaffoldBackground, t) ??
+              scaffoldBackground,
       appBarColor: Color.lerp(appBarColor, other.appBarColor, t) ?? appBarColor,
       appBarForeground:
-          Color.lerp(appBarForeground, other.appBarForeground, t) ?? appBarForeground,
+          Color.lerp(appBarForeground, other.appBarForeground, t) ??
+              appBarForeground,
+      cardGradientStart:
+          Color.lerp(cardGradientStart, other.cardGradientStart, t) ??
+              cardGradientStart,
+      cardGradientEnd:
+          Color.lerp(cardGradientEnd, other.cardGradientEnd, t) ??
+              cardGradientEnd,
+      accentGlow:
+          Color.lerp(accentGlow, other.accentGlow, t) ?? accentGlow,
     );
   }
 }

@@ -24,6 +24,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   bool _togglingAi = false;
   bool _updatingStatus = false;
   int? _lastMessageId;
+  bool _showScrollFab = false;
 
   void _dismissKeyboard() {
     FocusManager.instance.primaryFocus?.unfocus();
@@ -40,6 +41,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     _fetchMessages();
     _timer = Timer.periodic(const Duration(seconds: 3), (_) => _fetchMessages());
     _isFavorite = _chat.isFavorite;
+    _scrollController.addListener(_onScroll);
   }
 
   @override
@@ -51,6 +53,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     });
     _timer.cancel();
     _messageController.dispose();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
@@ -104,6 +107,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     const threshold = 120.0;
     final offset = _scrollController.offset;
     return offset <= threshold;
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final showFab = _scrollController.offset > 200;
+    if (showFab != _showScrollFab) {
+      setState(() => _showScrollFab = showFab);
+    }
   }
 
   Future<void> _refreshChatFromServer() async {
@@ -444,19 +455,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             titleSpacing: 10,
             flexibleSpace: Container(
               decoration: BoxDecoration(
-                gradient: AppGradients.appBar(colorScheme),
+                gradient: AppGradients.heroBanner(colorScheme),
               ),
             ),
             title: Row(
               children: [
                 CircleAvatar(
                   radius: 17,
-                  backgroundColor: colorScheme.primaryContainer,
-                  foregroundColor: colorScheme.onPrimaryContainer,
+                  backgroundColor: Colors.white.withValues(alpha: 0.2),
+                  foregroundColor: Colors.white,
                   child: Text(
                     _chat.title.isNotEmpty ? _chat.title[0].toUpperCase() : '?',
                     style: theme.textTheme.labelLarge?.copyWith(
                       fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -472,6 +484,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
+                          color: Colors.white,
                         ),
                       ),
                       Text(
@@ -479,7 +492,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onPrimary.withValues(alpha: 0.86),
+                          color: Colors.white.withValues(alpha: 0.8),
                         ),
                       ),
                     ],
@@ -488,10 +501,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ],
             ),
             actions: [
-              IconButton.filledTonal(
+              IconButton(
                 tooltip: _isFavorite ? 'Убрать из избранного' : 'Добавить в избранное',
-                icon: Icon(_isFavorite ? Icons.star : Icons.star_border),
-                color: _isFavorite ? colorScheme.tertiary : null,
+                icon: Icon(
+                  _isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                ),
+                color: _isFavorite
+                    ? const Color(0xFFFFD54F)
+                    : Colors.white.withValues(alpha: 0.8),
                 onPressed: _logButtonPress(
                   'toggle favorite in chat details',
                   (_updatingFavorite || _deleting) ? null : _toggleFavorite,
@@ -499,7 +516,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               PopupMenuButton<String>(
                 enabled: !_deleting,
-                icon: const Icon(Icons.more_horiz_rounded),
+                icon: Icon(
+                  Icons.more_horiz_rounded,
+                  color: Colors.white.withValues(alpha: 0.8),
+                ),
                 onSelected: (value) {
                   switch (value) {
                     case 'toggle_status':
@@ -561,44 +581,44 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
             ],
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(52),
+              preferredSize: const Size.fromHeight(44),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: statusColors.background,
+                          color: Colors.white.withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: statusColors.border, width: 1),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (_updatingStatus)
                               SizedBox(
-                                width: 14,
-                                height: 14,
+                                width: 13,
+                                height: 13,
                                 child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: statusColors.foreground,
+                                  strokeWidth: 1.5,
+                                  color: Colors.white.withValues(alpha: 0.9),
                                 ),
                               )
                             else
                               Icon(
-                                isClosed ? Icons.lock : Icons.lock_open,
-                                size: 14,
-                                color: statusColors.foreground,
+                                isClosed ? Icons.lock_rounded : Icons.lock_open_rounded,
+                                size: 13,
+                                color: Colors.white.withValues(alpha: 0.9),
                               ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 5),
                             Text(
                               statusLabel,
                               style: theme.textTheme.labelSmall?.copyWith(
-                                color: statusColors.foreground,
-                                fontWeight: FontWeight.w700,
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
                               ),
                             ),
                           ],
@@ -606,36 +626,36 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       ),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: aiColors.background,
+                          color: Colors.white.withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: aiColors.border, width: 1),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (_togglingAi)
                               SizedBox(
-                                width: 14,
-                                height: 14,
+                                width: 13,
+                                height: 13,
                                 child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: aiColors.foreground,
+                                  strokeWidth: 1.5,
+                                  color: Colors.white.withValues(alpha: 0.9),
                                 ),
                               )
                             else
                               Icon(
-                                _chat.aiEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
-                                size: 14,
-                                color: aiColors.foreground,
+                                _chat.aiEnabled ? Icons.smart_toy_rounded : Icons.smart_toy_outlined,
+                                size: 13,
+                                color: Colors.white.withValues(alpha: 0.9),
                               ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 5),
                             Text(
-                              _chat.aiEnabled ? 'AI включен' : 'AI выключен',
+                              _chat.aiEnabled ? 'AI вкл' : 'AI выкл',
                               style: theme.textTheme.labelSmall?.copyWith(
-                                color: aiColors.foreground,
-                                fontWeight: FontWeight.w700,
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
                               ),
                             ),
                           ],
@@ -667,168 +687,187 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 children: [
                   if (_deleting) const LinearProgressIndicator(),
                   Expanded(
-                    child: _loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _error != null
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: colorScheme.surface,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: colorScheme.outlineVariant),
-                                    ),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.error_outline_rounded,
-                                          color: colorScheme.error,
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          'Ошибка загрузки: $_error',
-                                          textAlign: TextAlign.center,
-                                        ),
-                                        const SizedBox(height: 12),
-                                        FilledButton.icon(
-                                          onPressed:
-                                              _logButtonPress('retry load messages', _fetchMessages),
-                                          icon: const Icon(Icons.refresh_rounded),
-                                          label: const Text('Повторить'),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : _messages.isEmpty
+                    child: Stack(
+                      children: [
+                        _loading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _error != null
                                 ? Center(
                                     child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 28),
-                                      child: Text(
-                                        'Пока нет сообщений. Первое сообщение появится здесь.',
-                                        textAlign: TextAlign.center,
-                                        style: theme.textTheme.bodyMedium?.copyWith(
-                                          color: colorScheme.onSurfaceVariant,
+                                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.surface,
+                                          borderRadius: BorderRadius.circular(16),
+                                          border: Border.all(color: colorScheme.outlineVariant),
+                                        ),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.error_outline_rounded,
+                                              color: colorScheme.error,
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Text(
+                                              'Ошибка загрузки: $_error',
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 12),
+                                            FilledButton.icon(
+                                              onPressed:
+                                                  _logButtonPress('retry load messages', _fetchMessages),
+                                              icon: const Icon(Icons.refresh_rounded),
+                                              label: const Text('Повторить'),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
                                   )
-                                : ListView.builder(
-                                    controller: _scrollController,
-                                    reverse: true,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 12,
-                                    ),
-                                    keyboardDismissBehavior:
-                                        ScrollViewKeyboardDismissBehavior.onDrag,
-                                    itemCount: _messages.length,
-                                    itemBuilder: (context, index) {
-                                      final message = _messages[_messages.length - 1 - index];
-                                      final isOutgoing = message.direction == 'outgoing';
-                                      final bubbleColor = isOutgoing
-                                          ? appColors.outgoingMessageBackground
-                                          : appColors.incomingMessageBackground;
-                                      final textColor = isOutgoing
-                                          ? appColors.outgoingMessageText
-                                          : appColors.incomingMessageText;
-                                      final alignment = isOutgoing
-                                          ? Alignment.centerRight
-                                          : Alignment.centerLeft;
+                                : _messages.isEmpty
+                                    ? Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 28),
+                                          child: Text(
+                                            'Пока нет сообщений. Первое сообщение появится здесь.',
+                                            textAlign: TextAlign.center,
+                                            style: theme.textTheme.bodyMedium?.copyWith(
+                                              color: colorScheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    : ListView.builder(
+                                        controller: _scrollController,
+                                        reverse: true,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 12,
+                                        ),
+                                        keyboardDismissBehavior:
+                                            ScrollViewKeyboardDismissBehavior.onDrag,
+                                        itemCount: _messages.length,
+                                        itemBuilder: (context, index) {
+                                          final message = _messages[_messages.length - 1 - index];
+                                          final isOutgoing = message.direction == 'outgoing';
+                                          final bubbleColor = isOutgoing
+                                              ? appColors.outgoingMessageBackground
+                                              : appColors.incomingMessageBackground;
+                                          final textColor = isOutgoing
+                                              ? appColors.outgoingMessageText
+                                              : appColors.incomingMessageText;
+                                          final alignment = isOutgoing
+                                              ? Alignment.centerRight
+                                              : Alignment.centerLeft;
 
-                                      return Align(
-                                        alignment: alignment,
-                                        child: Container(
-                                          margin: const EdgeInsets.symmetric(vertical: 3),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 9,
-                                          ),
-                                          constraints: BoxConstraints(maxWidth: messageMaxWidth),
-                                          decoration: BoxDecoration(
-                                            gradient: isOutgoing
-                                                ? AppGradients.outgoingBubble(colorScheme)
-                                                : null,
-                                            color: isOutgoing ? null : bubbleColor,
-                                            borderRadius: BorderRadius.only(
-                                              topLeft: const Radius.circular(18),
-                                              topRight: const Radius.circular(18),
-                                              bottomLeft: Radius.circular(isOutgoing ? 18 : 5),
-                                              bottomRight: Radius.circular(isOutgoing ? 5 : 18),
-                                            ),
-                                            border: Border.all(
-                                              color: colorScheme.outlineVariant.withValues(alpha: 0.4),
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: colorScheme.shadow.withValues(alpha: 0.04),
-                                                blurRadius: 8,
-                                                offset: const Offset(0, 2),
+                                          return Align(
+                                            alignment: alignment,
+                                            child: Container(
+                                              margin: const EdgeInsets.symmetric(vertical: 3),
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 9,
                                               ),
-                                            ],
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment: isOutgoing
-                                                ? CrossAxisAlignment.end
-                                                : CrossAxisAlignment.start,
-                                            children: [
-                                              if (!isOutgoing && message.author != null) ...[
-                                                Text(
-                                                  message.author!,
-                                                  style: theme.textTheme.labelSmall?.copyWith(
-                                                    color: textColor.withValues(alpha: 0.82),
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
+                                              constraints: BoxConstraints(maxWidth: messageMaxWidth),
+                                              decoration: BoxDecoration(
+                                                gradient: isOutgoing
+                                                    ? AppGradients.outgoingBubble(colorScheme)
+                                                    : null,
+                                                color: isOutgoing ? null : bubbleColor,
+                                                borderRadius: BorderRadius.only(
+                                                  topLeft: const Radius.circular(18),
+                                                  topRight: const Radius.circular(18),
+                                                  bottomLeft: Radius.circular(isOutgoing ? 18 : 4),
+                                                  bottomRight: Radius.circular(isOutgoing ? 4 : 18),
                                                 ),
-                                                const SizedBox(height: 2),
-                                              ],
-                                              Text(
-                                                message.text,
-                                                style: theme.textTheme.bodyMedium?.copyWith(
-                                                  color: textColor,
-                                                  height: 1.3,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Wrap(
-                                                spacing: 6,
-                                                runSpacing: 2,
-                                                crossAxisAlignment: WrapCrossAlignment.center,
-                                                children: [
-                                                  if (message.sectionTitle != null &&
-                                                      message.sectionTitle!.isNotEmpty) ...[
-                                                    Icon(
-                                                      Icons.category_outlined,
-                                                      size: 11,
-                                                      color: textColor.withValues(alpha: 0.68),
-                                                    ),
-                                                    Text(
-                                                      message.sectionTitle!,
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: theme.textTheme.labelSmall?.copyWith(
-                                                        color: textColor.withValues(alpha: 0.72),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                  Text(
-                                                    message.createdAtLabel,
-                                                    style: theme.textTheme.labelSmall?.copyWith(
-                                                      color: textColor.withValues(alpha: 0.72),
-                                                    ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: colorScheme.shadow.withValues(alpha: 0.03),
+                                                    blurRadius: 4,
+                                                    offset: const Offset(0, 1),
                                                   ),
                                                 ],
                                               ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
+                                              child: Column(
+                                                crossAxisAlignment: isOutgoing
+                                                    ? CrossAxisAlignment.end
+                                                    : CrossAxisAlignment.start,
+                                                children: [
+                                                  if (!isOutgoing && message.author != null) ...[
+                                                    Text(
+                                                      message.author!,
+                                                      style: theme.textTheme.labelSmall?.copyWith(
+                                                        color: textColor.withValues(alpha: 0.82),
+                                                        fontWeight: FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                  ],
+                                                  Text(
+                                                    message.text,
+                                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                                      color: textColor,
+                                                      height: 1.3,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Wrap(
+                                                    spacing: 6,
+                                                    runSpacing: 2,
+                                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                                    children: [
+                                                      if (message.sectionTitle != null &&
+                                                          message.sectionTitle!.isNotEmpty) ...[
+                                                        Icon(
+                                                          Icons.category_outlined,
+                                                          size: 11,
+                                                          color: textColor.withValues(alpha: 0.68),
+                                                        ),
+                                                        Text(
+                                                          message.sectionTitle!,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: theme.textTheme.labelSmall?.copyWith(
+                                                            color: textColor.withValues(alpha: 0.72),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                      Text(
+                                                        message.createdAtLabel,
+                                                        style: theme.textTheme.labelSmall?.copyWith(
+                                                          color: textColor.withValues(alpha: 0.72),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                        // Scroll-to-bottom FAB
+                        Positioned(
+                          right: 12,
+                          bottom: 8,
+                          child: AnimatedScale(
+                            scale: _showScrollFab ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOut,
+                            child: FloatingActionButton.small(
+                              heroTag: 'scroll_to_bottom',
+                              onPressed: () => _scrollToBottom(animated: true),
+                              backgroundColor: colorScheme.surface,
+                              foregroundColor: colorScheme.primary,
+                              elevation: 3,
+                              child: const Icon(Icons.keyboard_arrow_down_rounded),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
 
                 SafeArea(
@@ -850,16 +889,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                             ),
                           ),
                         Container(
-                          padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
+                          padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
                           decoration: BoxDecoration(
-                            color: colorScheme.surface.withValues(alpha: 0.96),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: colorScheme.outlineVariant),
+                            color: colorScheme.surface,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                            ),
                             boxShadow: [
                               BoxShadow(
-                                color: colorScheme.shadow.withValues(alpha: 0.06),
-                                blurRadius: 14,
-                                offset: const Offset(0, 4),
+                                color: colorScheme.shadow.withValues(alpha: 0.04),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
                             ],
                           ),
@@ -873,7 +914,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                                     border: InputBorder.none,
                                     isDense: true,
                                     contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
+                                      horizontal: 14,
                                       vertical: 10,
                                     ),
                                   ),
@@ -886,10 +927,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                                   onTap: () => _scrollToBottom(animated: true),
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 4),
                               DecoratedBox(
                                 decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(18),
                                   gradient: AppGradients.primaryAction(colorScheme),
                                 ),
                                 child: IconButton(

@@ -506,10 +506,12 @@ class UnassignedBin {
   const UnassignedBin({
     required this.bin,
     required this.openDialogs,
+    required this.hasContract,
   });
 
   final String bin;
   final int openDialogs;
+  final bool hasContract;
 
   factory UnassignedBin.fromJson(Map<String, dynamic> json) {
     final rawBin = json['bin'] ?? '';
@@ -518,7 +520,11 @@ class UnassignedBin {
     final count = rawCount is int
         ? rawCount
         : int.tryParse(rawCount?.toString() ?? '') ?? 0;
-    return UnassignedBin(bin: parsedBin, openDialogs: count);
+    final hasContractRaw = json['has_contract'];
+    final hasContract = hasContractRaw is bool
+        ? hasContractRaw
+        : hasContractRaw != 0 && hasContractRaw != null;
+    return UnassignedBin(bin: parsedBin, openDialogs: count, hasContract: hasContract);
   }
 }
 

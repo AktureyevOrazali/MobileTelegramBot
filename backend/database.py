@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+import time
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
@@ -26,17 +27,37 @@ try:
 except ValueError as exc:  # pragma: no cover - defensive
     raise RuntimeError("DB_PORT must be an integer") from exc
 
+_POOL_MINCONN = 2
+try:
+    _POOL_MAXCONN = int(require_env("DB_POOL_MAXCONN", default="60"))
+except ValueError as exc:  # pragma: no cover - defensive
+    raise RuntimeError("DB_POOL_MAXCONN must be an integer") from exc
+if _POOL_MAXCONN < _POOL_MINCONN:
+    raise RuntimeError("DB_POOL_MAXCONN must be >= 2")
+
 _pool = psycopg2.pool.ThreadedConnectionPool(
-    minconn=2,
-    maxconn=10,
+    minconn=_POOL_MINCONN,
+    maxconn=_POOL_MAXCONN,
     dbname=DB_NAME,
     user=DB_USER,
     password=DB_PASSWORD,
     host=DB_HOST,
     port=DB_PORT,
 )
+_pool_slots = threading.BoundedSemaphore(_POOL_MAXCONN)
 
 _thread_local = threading.local()
+
+
+def _borrow_connection_with_retry(timeout_seconds: float = 15.0):
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            return _pool.getconn()
+        except psycopg2.pool.PoolError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 class _PooledLock:
@@ -52,10 +73,15 @@ class _PooledLock:
     def __enter__(self):
         depth = getattr(_thread_local, "depth", 0)
         if depth == 0:
-            conn = _pool.getconn()
-            conn.autocommit = True
-            conn.set_client_encoding("UTF8")
-            _thread_local.conn = conn
+            _pool_slots.acquire()
+            try:
+                conn = _borrow_connection_with_retry()
+                conn.autocommit = True
+                conn.set_client_encoding("UTF8")
+                _thread_local.conn = conn
+            except Exception:
+                _pool_slots.release()
+                raise
         _thread_local.depth = depth + 1
         return self
 
@@ -64,7 +90,10 @@ class _PooledLock:
         if _thread_local.depth == 0:
             conn = _thread_local.conn
             _thread_local.conn = None
-            _pool.putconn(conn)
+            try:
+                _pool.putconn(conn)
+            finally:
+                _pool_slots.release()
 
 
 _lock = _PooledLock()
@@ -75,23 +104,60 @@ def execute(query: str, params: Sequence[Any] | None = None):
 
     If called inside a ``with _lock:`` block, reuses that block's connection.
     Otherwise borrows a one-off connection from the pool.
+
+    Automatically retries once on ``OperationalError`` (stale/broken
+    connection) by discarding the bad connection and borrowing a fresh one.
     """
     conn = getattr(_thread_local, "conn", None)
     if conn is None:
-        conn = _pool.getconn()
+        return _execute_oneoff(query, params)
+    return _execute_with_retry(conn, query, params)
+
+
+def _execute_oneoff(query: str, params: Sequence[Any] | None):
+    """Borrow a one-off connection, execute, and return the cursor."""
+    _pool_slots.acquire()
+    conn = None
+    try:
+        conn = _borrow_connection_with_retry()
         conn.autocommit = True
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         try:
+            cursor.execute(query, params or ())
+        except psycopg2.OperationalError:
+            # Connection is stale — discard and retry with a fresh one.
+            _pool.putconn(conn, close=True)
+            conn = _borrow_connection_with_retry()
+            conn.autocommit = True
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute(query, params or ())
-        except Exception:
+    except Exception:
+        if conn is not None:
             _pool.putconn(conn, close=True)
-            raise
-        else:
-            _pool.putconn(conn)
-            return cursor
+        raise
+    else:
+        _pool.putconn(conn)
+        return cursor
+    finally:
+        _pool_slots.release()
+
+
+def _execute_with_retry(conn, query: str, params: Sequence[Any] | None):
+    """Execute using the thread-local connection, reconnect on stale error."""
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute(query, params or ())
-    return cursor
+    try:
+        cursor.execute(query, params or ())
+        return cursor
+    except psycopg2.OperationalError:
+        # The connection held by _lock is dead.  Replace it in-place.
+        _pool.putconn(conn, close=True)
+        new_conn = _borrow_connection_with_retry()
+        new_conn.autocommit = True
+        new_conn.set_client_encoding("UTF8")
+        _thread_local.conn = new_conn
+        cursor = new_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(query, params or ())
+        return cursor
 
 USER_COLUMN_NAMES = (
     "id",
@@ -465,9 +531,12 @@ def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
     if normalized.endswith("Z"):
         normalized = normalized[:-1] + "+00:00"
     try:
-        return datetime.fromisoformat(normalized)
+        parsed = datetime.fromisoformat(normalized)
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _fetch_user(where_clause: str, *params: object) -> dict | None:
@@ -1588,7 +1657,8 @@ def remove_client_bin(chat_id: int, bin_value: str) -> bool:
 
 def list_unassigned_bins() -> List[Dict[str, object]]:
     """
-    Возвращает список БИНов с договором, которые не назначены ни одному сотруднику.
+    Возвращает список всех БИНов, которые не назначены ни одному сотруднику.
+    Включает поле has_contract для отображения статуса договора.
     """
     refresh_bin_assignments()
     reference = datetime.now(timezone.utc).isoformat()
@@ -1614,7 +1684,8 @@ def list_unassigned_bins() -> List[Dict[str, object]]:
             )
             SELECT
                 ab.bin AS bin,
-                COALESCE(dc.open_dialogs, 0) AS open_dialogs
+                COALESCE(dc.open_dialogs, 0) AS open_dialogs,
+                CASE WHEN owc.customer_bin IS NULL THEN 1 ELSE 0 END AS has_contract
             FROM all_bins ab
             LEFT JOIN assigned_bins asb ON asb.bin = ab.bin
             LEFT JOIN organizations_without_contracts owc ON owc.customer_bin = ab.bin
@@ -1622,7 +1693,6 @@ def list_unassigned_bins() -> List[Dict[str, object]]:
             WHERE ab.bin IS NOT NULL
               AND TRIM(ab.bin) != ''
               AND asb.bin IS NULL
-              AND owc.customer_bin IS NULL
             ORDER BY COALESCE(dc.open_dialogs, 0) DESC, ab.bin ASC
             """,
             (reference,),
@@ -1631,6 +1701,7 @@ def list_unassigned_bins() -> List[Dict[str, object]]:
         {
             "bin": row["bin"],
             "open_dialogs": int(row["open_dialogs"] or 0),
+            "has_contract": bool(row["has_contract"]),
         }
         for row in rows
         if row["bin"]
@@ -3231,33 +3302,19 @@ def add_organization_without_contract(
         return None
 
     now = datetime.now(timezone.utc).isoformat()
-    with _lock:
-        # Check if already exists
-        existing = execute(
-            "SELECT id FROM organizations_without_contracts WHERE customer_bin = %s",
-            (normalized_bin,),
-        ).fetchone()
-        if existing:
-            # Update existing record with new address/bank info if provided
-            execute(
-                """
-                UPDATE organizations_without_contracts
-                SET customer_legal_address = COALESCE(%s, customer_legal_address),
-                    customer_bank_name_ru = COALESCE(%s, customer_bank_name_ru)
-                WHERE customer_bin = %s
-                """,
-                (customer_legal_address, customer_bank_name_ru, normalized_bin),
-            )
-            return None
-
-        execute(
-            """
-            INSERT INTO organizations_without_contracts
-                (customer_bin, customer_legal_address, customer_bank_name_ru, created_at)
-            VALUES (%s, %s, %s, %s)
-            """,
-            (normalized_bin, customer_legal_address, customer_bank_name_ru, now),
-        )
+    # Use atomic upsert to avoid UniqueViolation race conditions
+    # between concurrent requests for the same BIN.
+    execute(
+        """
+        INSERT INTO organizations_without_contracts
+            (customer_bin, customer_legal_address, customer_bank_name_ru, created_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (customer_bin) DO UPDATE
+        SET customer_legal_address = COALESCE(EXCLUDED.customer_legal_address, organizations_without_contracts.customer_legal_address),
+            customer_bank_name_ru = COALESCE(EXCLUDED.customer_bank_name_ru, organizations_without_contracts.customer_bank_name_ru)
+        """,
+        (normalized_bin, customer_legal_address, customer_bank_name_ru, now),
+    )
     return {
         "customer_bin": normalized_bin,
         "customer_legal_address": customer_legal_address,

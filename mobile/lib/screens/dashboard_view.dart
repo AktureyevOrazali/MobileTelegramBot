@@ -146,8 +146,17 @@ class _DashboardViewState extends State<DashboardView> {
       final users = await widget.apiClient.fetchUsers();
       if (!mounted) return;
 
+      // Filter pending users (same logic as AdminUserManagementView)
+      List<PendingRegistration> pending = [];
+      try {
+        pending = await widget.apiClient.fetchPendingRegistrations();
+      } catch (_) {
+        // Ignore errors (e.g. if user has no permission to list pending)
+      }
+      final pendingIds = pending.map((p) => p.id).toSet();
+
       final filtered = users
-          .where((user) => !user.isAdmin)
+          .where((user) => !user.isAdmin && !pendingIds.contains(user.id))
           .where((user) {
             final normalized = ('${user.name} ${user.login}').toLowerCase();
             if (normalized.trim().isEmpty) return true;
@@ -247,24 +256,206 @@ class _DashboardViewState extends State<DashboardView> {
     return '$secondsPart с';
   }
 
+  Widget _buildDashboardShimmer(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final shimmerBase = colorScheme.onSurface.withValues(alpha: 0.07);
+
+    Widget shimmerBox({
+      required double width,
+      required double height,
+      double radius = 8,
+      bool isCircle = false,
+    }) {
+      return TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.4, end: 1.0),
+        duration: const Duration(milliseconds: 900),
+        curve: Curves.easeInOut,
+        builder: (context, value, child) {
+          return Opacity(opacity: 0.5 + 0.5 * value, child: child);
+        },
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: shimmerBase,
+            borderRadius: isCircle ? null : BorderRadius.circular(radius),
+            shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
+          ),
+        ),
+      );
+    }
+
+    Widget shimmerCard({required List<Widget> children}) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: colorScheme.shadow.withValues(alpha: 0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
+        ),
+      );
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            colorScheme.primary.withValues(alpha: 0.12),
+            colorScheme.secondaryContainer.withValues(alpha: 0.05),
+            colorScheme.surface,
+          ],
+        ),
+      ),
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        children: [
+          // ── Header card skeleton ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+            child: Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.shadow.withValues(alpha: 0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Card header shimmer
+                  Container(
+                    width: double.infinity,
+                    height: 52,
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                    child: Row(
+                      children: [
+                        shimmerBox(width: 100, height: 16, radius: 6),
+                        const Spacer(),
+                        shimmerBox(width: 70, height: 26, radius: 8),
+                      ],
+                    ),
+                  ),
+                  // Date chips
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: List.generate(6, (i) =>
+                        shimmerBox(width: 44 + (i % 3) * 12, height: 28, radius: 999),
+                      ),
+                    ),
+                  ),
+                  // Operator dropdown
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                    child: shimmerBox(width: double.infinity, height: 44, radius: 14),
+                  ),
+                  // Tab bar
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: shimmerBox(width: double.infinity, height: 36, radius: 999),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // ── Content card 1 skeleton ──
+          shimmerCard(
+            children: [
+              shimmerBox(width: 140, height: 14, radius: 6),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  shimmerBox(width: 80, height: 80, radius: 999),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        shimmerBox(width: double.infinity, height: 12),
+                        const SizedBox(height: 10),
+                        shimmerBox(width: double.infinity, height: 12),
+                        const SizedBox(height: 10),
+                        shimmerBox(width: double.infinity, height: 12),
+                        const SizedBox(height: 14),
+                        shimmerBox(width: double.infinity, height: 1, radius: 0),
+                        const SizedBox(height: 10),
+                        shimmerBox(width: double.infinity, height: 12),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // ── Content card 2 skeleton ──
+          shimmerCard(
+            children: [
+              shimmerBox(width: 100, height: 14, radius: 6),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(child: shimmerBox(width: double.infinity, height: 50, radius: 12)),
+                  const SizedBox(width: 8),
+                  Expanded(child: shimmerBox(width: double.infinity, height: 50, radius: 12)),
+                  const SizedBox(width: 8),
+                  Expanded(child: shimmerBox(width: double.infinity, height: 50, radius: 12)),
+                ],
+              ),
+              const SizedBox(height: 14),
+              shimmerBox(width: double.infinity, height: 1, radius: 0),
+              const SizedBox(height: 10),
+              shimmerBox(width: 160, height: 12),
+              const SizedBox(height: 8),
+              shimmerBox(width: 120, height: 12),
+            ],
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildDashboardShimmer(context);
     }
 
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final moduleTheme = theme.copyWith(
       cardTheme: theme.cardTheme.copyWith(
-        elevation: 0,
+        elevation: 2,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.55),
-          ),
         ),
+        shadowColor: colorScheme.shadow.withValues(alpha: 0.08),
         color: colorScheme.surface.withValues(alpha: 0.97),
       ),
       inputDecorationTheme: theme.inputDecorationTheme.copyWith(
@@ -585,25 +776,17 @@ class _DashboardViewState extends State<DashboardView> {
     }();
 
     final headerCard = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Card header ──
             Container(
               width: double.infinity,
-              height: 4,
-              decoration: BoxDecoration(
-                gradient: AppGradients.primaryAction(colorScheme),
-              ),
-            ),
-            Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+              padding: const EdgeInsets.fromLTRB(14, 12, 10, 10),
+              child: Row(
                 children: [
                   Expanded(
                     child: Column(
@@ -611,172 +794,262 @@ class _DashboardViewState extends State<DashboardView> {
                       children: [
                         Text(
                           'Статистика',
-                          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: colorScheme.onSurface,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '$selectedOperatorLabel · $rangeLabel · $updatedAtLabel',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                          '$selectedOperatorLabel · $rangeLabel',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
                   ),
                   SizedBox(
-                    height: 36,
-                    child: FilledButton.icon(
+                    height: 32,
+                    child: FilledButton.tonalIcon(
                       style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+                        foregroundColor: colorScheme.primary,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
+                        elevation: 0,
                       ),
                       onPressed: _logButtonPress(
                         'refresh dashboard',
                         _refreshing ? null : () => _loadSummary(initial: false),
                       ),
-                      icon: const Icon(Icons.refresh_rounded, size: 16),
-                      label: Text(_refreshing ? 'Обновляем…' : 'Обновить'),
+                      icon: Icon(
+                        _refreshing ? Icons.hourglass_top_rounded : Icons.refresh_rounded,
+                        size: 14,
+                      ),
+                      label: Text(
+                        _refreshing ? 'Обновляем…' : 'Обновить',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
+            ),
+            // ── Quick stats row ──
+
+            // ── Body ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _DashboardMiniChip(
-                    label: 'Сегодня',
-                    selected: _timePreset == _TimePreset.today,
-                    onTap: () => _setPreset(_TimePreset.today),
+                  // ── Time preset chips (compact) ──
+                  SizedBox(
+                    width: double.infinity,
+                    child: Builder(
+                      builder: (context) {
+                        final presets = [
+                          ('Сегодня', _TimePreset.today),
+                          ('Вчера', _TimePreset.yesterday),
+                          ('7д', _TimePreset.last7),
+                          ('30д', _TimePreset.last30),
+                          ('90д', _TimePreset.last90),
+                          (_timePreset == _TimePreset.custom ? 'Даты*' : 'Даты', _TimePreset.custom),
+                        ];
+                        return Row(
+                          children: presets.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final (label, preset) = entry.value;
+                            final isSelected = _timePreset == preset;
+                            return Flexible(
+                              child: Padding(
+                                padding: EdgeInsets.only(left: index == 0 ? 0 : 4),
+                                child: GestureDetector(
+                                  onTap: preset == _TimePreset.custom
+                                      ? _pickCustomRange
+                                      : () => _setPreset(preset),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      gradient: isSelected
+                                          ? AppGradients.selectedChip(colorScheme)
+                                          : null,
+                                      color: isSelected
+                                          ? null
+                                          : colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? colorScheme.primary.withValues(alpha: 0.4)
+                                            : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                                        width: 0.8,
+                                      ),
+                                      boxShadow: isSelected
+                                          ? [
+                                              BoxShadow(
+                                                color: colorScheme.primary.withValues(alpha: 0.15),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ]
+                                          : null,
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        label,
+                                        style: theme.textTheme.labelSmall?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          color: isSelected
+                                              ? colorScheme.onPrimary
+                                              : colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
                   ),
-                  _DashboardMiniChip(
-                    label: 'Вчера',
-                    selected: _timePreset == _TimePreset.yesterday,
-                    onTap: () => _setPreset(_TimePreset.yesterday),
+                  const SizedBox(height: 12),
+                  // ── Operator dropdown (compact) ──
+                  SizedBox(
+                    height: 48,
+                    child: DropdownButtonFormField<int?>(
+                      value: _activeOperatorId,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Сотрудник',
+                        isDense: true,
+                        prefixIcon: Icon(Icons.person_outline_rounded, size: 20, color: colorScheme.primary.withValues(alpha: 0.7)),
+                        prefixIconConstraints: const BoxConstraints(minWidth: 40),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      ),
+                      style: theme.textTheme.bodySmall,
+                      items: operatorItems,
+                      onChanged: _operatorsLoading || _dashboardTab == _DashboardTab.operators
+                          ? null
+                          : _handleOperatorChanged,
+                    ),
                   ),
-                  _DashboardMiniChip(
-                    label: '7д',
-                    selected: _timePreset == _TimePreset.last7,
-                    onTap: () => _setPreset(_TimePreset.last7),
-                  ),
-                  _DashboardMiniChip(
-                    label: '30д',
-                    selected: _timePreset == _TimePreset.last30,
-                    onTap: () => _setPreset(_TimePreset.last30),
-                  ),
-                  _DashboardMiniChip(
-                    label: '90д',
-                    selected: _timePreset == _TimePreset.last90,
-                    onTap: () => _setPreset(_TimePreset.last90),
-                  ),
-                  _DashboardMiniChip(
-                    label: _timePreset == _TimePreset.custom ? 'Даты*' : 'Свои даты',
-                    selected: _timePreset == _TimePreset.custom,
-                    onTap: _pickCustomRange,
+                  if (_dashboardTab == _DashboardTab.operators) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'На вкладке "Сотрудники" показывается агрегированная статистика по всем.',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  if (_operatorsLoading) ...[
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: const LinearProgressIndicator(minHeight: 3),
+                    ),
+                  ],
+                  if (_operatorsError != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      _operatorsError!,
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                    ),
+                  ],
+                  if (!hasData && _error == null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Нет данных для отображения. Попробуйте выбрать другого сотрудника или обновить дэшборд.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  if (_error != null && hasData) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Ошибка при обновлении: $_error',
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  // ── Tab navigation (segmented style) ──
+                  Container(
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      children: [
+                        _TabSegment(
+                          label: 'Обзор',
+                          selected: _dashboardTab == _DashboardTab.overview,
+                          onTap: () => _setDashboardTab(_DashboardTab.overview),
+                        ),
+                        _TabSegment(
+                          label: 'Сотрудники',
+                          selected: _dashboardTab == _DashboardTab.operators,
+                          onTap: () => _setDashboardTab(_DashboardTab.operators),
+                        ),
+                        _TabSegment(
+                          label: 'Разделы',
+                          selected: _dashboardTab == _DashboardTab.sections,
+                          onTap: () => _setDashboardTab(_DashboardTab.sections),
+                        ),
+                        _TabSegment(
+                          label: 'Активность',
+                          selected: _dashboardTab == _DashboardTab.activity,
+                          onTap: () => _setDashboardTab(_DashboardTab.activity),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<int?>(
-                value: _activeOperatorId,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Сотрудник', isDense: true),
-                items: operatorItems,
-                onChanged: _operatorsLoading || _dashboardTab == _DashboardTab.operators
-                    ? null
-                    : _handleOperatorChanged,
-              ),
-              if (_dashboardTab == _DashboardTab.operators) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'На вкладке "Сотрудники" показывается агрегированная статистика по всем.',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-              if (_operatorsLoading) ...[
-                const SizedBox(height: 10),
-                const LinearProgressIndicator(),
-              ],
-              if (_operatorsError != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _operatorsError!,
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
-                ),
-              ],
-              if (!hasData && _error == null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  'Нет данных для отображения. Попробуйте выбрать другого сотрудника или обновить дэшборд.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-              if (_error != null && hasData) ...[
-                const SizedBox(height: 10),
-                Text(
-                  'Ошибка при обновлении: $_error',
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
-                ),
-              ],
-              const SizedBox(height: 12),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                  const SizedBox(width: 8),
-                  _DashboardMiniChip(
-                    label: 'Обзор',
-                    selected: _dashboardTab == _DashboardTab.overview,
-                    onTap: () => _setDashboardTab(_DashboardTab.overview),
-                  ),
-                  const SizedBox(width: 8),
-                  _DashboardMiniChip(
-                    label: 'Сотрудники',
-                    selected: _dashboardTab == _DashboardTab.operators,
-                    onTap: () => _setDashboardTab(_DashboardTab.operators),
-                  ),
-                  const SizedBox(width: 8),
-                  _DashboardMiniChip(
-                    label: 'Разделы',
-                    selected: _dashboardTab == _DashboardTab.sections,
-                    onTap: () => _setDashboardTab(_DashboardTab.sections),
-                  ),
-                  _DashboardMiniChip(
-                    label: 'Активность',
-                    selected: _dashboardTab == _DashboardTab.activity,
-                    onTap: () => _setDashboardTab(_DashboardTab.activity),
-                  ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-
-            ],
-          ),
-        ),
+            ),
           ],
         ),
       ),
     );
 
     final sectionCard = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Обращения по разделам',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.pie_chart_outline_rounded, size: 18, color: colorScheme.primary),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Обращения по разделам',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               if (data.sectionBreakdown.isEmpty)
@@ -810,9 +1083,22 @@ class _DashboardViewState extends State<DashboardView> {
                           const SizedBox(height: 6),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(999),
-                            child: LinearProgressIndicator(
-                              minHeight: 6,
-                              value: progress.toDouble(),
+                            child: Container(
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: colorScheme.outlineVariant.withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: FractionallySizedBox(
+                                alignment: Alignment.centerLeft,
+                                widthFactor: progress.toDouble(),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: AppGradients.primaryAction(colorScheme),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -823,14 +1109,20 @@ class _DashboardViewState extends State<DashboardView> {
             ],
           ),
         ),
+          ],
+        ),
       ),
     );
 
     final questionsCard = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -842,15 +1134,34 @@ class _DashboardViewState extends State<DashboardView> {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Частые вопросы',
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(Icons.question_answer_outlined, size: 18, color: colorScheme.primary),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Частые вопросы',
+                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 10),
                         DropdownButtonFormField<String>(
                           value: _selectedQuestionSection,
                           isExpanded: true,
-                          decoration: const InputDecoration(labelText: 'Раздел', isDense: true),
+                          decoration: InputDecoration(
+                            labelText: 'Раздел',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            prefixIcon: Icon(Icons.category_outlined, size: 20, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7)),
+                            prefixIconConstraints: const BoxConstraints(minWidth: 40),
+                          ),
                           items: questionSectionItems,
                           onChanged: (value) {
                             if (value == null) return;
@@ -865,9 +1176,22 @@ class _DashboardViewState extends State<DashboardView> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Text(
-                          'Частые вопросы',
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(Icons.question_answer_outlined, size: 18, color: colorScheme.primary),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Частые вопросы',
+                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -930,20 +1254,39 @@ class _DashboardViewState extends State<DashboardView> {
             ],
           ),
         ),
+          ],
+        ),
       ),
     );
 
     final agentsCard = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Дэшборд сотрудников',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.groups_rounded, size: 18, color: colorScheme.primary),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Дэшборд сотрудников',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               if (agentStats.isEmpty)
@@ -952,105 +1295,148 @@ class _DashboardViewState extends State<DashboardView> {
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 )
               else
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final columns = constraints.maxWidth >= 760 ? 2 : 1;
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: agentStats.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final agent = agentStats[index];
+                    final lastActivityLabel = agent.lastActivity != null
+                        ? DateFormat('dd.MM.yyyy HH:mm').format(agent.lastActivity!.toLocal())
+                        : '-';
 
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: agentStats.length,
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: columns == 1 ? 2.7 : 3.2,
+                    return Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                          width: 0.8,
+                        ),
                       ),
-                      itemBuilder: (context, index) {
-                        final agent = agentStats[index];
-                        final lastActivityLabel = agent.lastActivity != null
-                            ? DateFormat('dd.MM.yyyy HH:mm').format(agent.lastActivity!.toLocal())
-                            : '-';
-
-                        return Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
+                      child: IntrinsicHeight(
+                        child: Row(
+                          children: [
+                            // Gradient accent bar on the left
+                            Container(
+                              width: 3,
+                              decoration: BoxDecoration(
+                                gradient: AppGradients.primaryAction(colorScheme),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: Text(
-                                      agent.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.titleSmall?.copyWith(
-                                        fontWeight: FontWeight.w700,
+                                  Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 14,
+                                        backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+                                        child: Text(
+                                          agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?',
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: colorScheme.primary,
+                                            fontSize: 11,
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          agent.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.titleSmall?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        lastActivityLabel,
+                                        style: theme.textTheme.labelSmall?.copyWith(
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    lastActivityLabel,
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _AgentStatChip(
+                                          label: 'Диалогов',
+                                          value: numberFormatter.format(agent.dialogs),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: _AgentStatChip(
+                                          label: 'Сообщений',
+                                          value: numberFormatter.format(agent.messages),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: _AgentStatChip(
+                                          label: 'Среднее',
+                                          value: agent.avgMessagesPerDialog.toStringAsFixed(1),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _AgentStatChip(
-                                      label: 'Диалогов',
-                                      value: numberFormatter.format(agent.dialogs),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: _AgentStatChip(
-                                      label: 'Сообщений',
-                                      value: numberFormatter.format(agent.messages),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: _AgentStatChip(
-                                      label: 'Среднее',
-                                      value: agent.avgMessagesPerDialog.toStringAsFixed(1),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+                            ),
+                          ],
+                        ),
+                      ),
                     );
                   },
                 ),
             ],
           ),
         ),
+          ],
+        ),
       ),
     );
 
      final activityCard = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Активность по дням',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.show_chart_rounded, size: 18, color: colorScheme.primary),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Активность по дням',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               if (data.recentActivity.isEmpty)
@@ -1123,23 +1509,42 @@ class _DashboardViewState extends State<DashboardView> {
             ],
           ),
         ),
+          ],
+        ),
       ),
     );
 
     final responseCard = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      'Скорость ответа',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.speed_rounded, size: 18, color: colorScheme.primary),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Скорость ответа',
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ],
                     ),
                   ),
                   Text(
@@ -1155,8 +1560,8 @@ class _DashboardViewState extends State<DashboardView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    width: 124,
-                    height: 124,
+                    width: 100,
+                    height: 100,
                     child: _DashboardDonut(
                       segments: responseSegments
                           .map((item) => _DonutSegment(
@@ -1218,23 +1623,42 @@ class _DashboardViewState extends State<DashboardView> {
             ],
           ),
         ),
+          ],
+        ),
       ),
     );
 
     final topOperatorsCard = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      'TOP-10',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.emoji_events_rounded, size: 18, color: colorScheme.primary),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'TOP-10',
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ],
                     ),
                   ),
                   Wrap(
@@ -1280,20 +1704,57 @@ class _DashboardViewState extends State<DashboardView> {
                       _TopMetric.messages => numberFormatter.format(item.messages),
                       _TopMetric.dialogs => numberFormatter.format(item.dialogs),
                     };
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 5),
+                    return Container(
+                      margin: const EdgeInsets.symmetric(vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: index.isEven
+                            ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.15)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: index < 3
+                            ? Border(
+                                left: BorderSide(
+                                  color: colorScheme.primary.withValues(alpha: 0.6),
+                                  width: 3,
+                                ),
+                              )
+                            : null,
+                      ),
                       child: Row(
                         children: [
-                          SizedBox(
+                          Container(
                             width: 22,
+                            height: 22,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              gradient: index < 3 ? AppGradients.primaryAction(colorScheme) : null,
+                              color: index >= 3 ? colorScheme.surfaceContainerHighest : null,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                             child: Text(
-                              '${index + 1}.',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w700,
+                              '${index + 1}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: index < 3 ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+                                fontSize: 10,
                               ),
                             ),
                           ),
+                          const SizedBox(width: 8),
+                          CircleAvatar(
+                            radius: 14,
+                            backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+                            child: Text(
+                              item.name.isNotEmpty ? item.name[0].toUpperCase() : '?',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: colorScheme.primary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               item.name,
@@ -1303,20 +1764,19 @@ class _DashboardViewState extends State<DashboardView> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                metricLabel,
-                                style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              metricLabel,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: colorScheme.primary,
                               ),
-                              Text(
-                                metricTitle,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ],
                       ),
@@ -1326,58 +1786,108 @@ class _DashboardViewState extends State<DashboardView> {
             ],
           ),
         ),
+          ],
+        ),
       ),
     );
 
+    final messagesPerDay = activeRange.start == null || activeRange.end == null
+        ? 0
+        : ((data.totalOutgoingMessages) /
+                (activeRange.end!.difference(activeRange.start!).inDays + 1))
+            .round();
+
     final dialogsCard = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Диалоги',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.chat_bubble_outline_rounded, size: 18, color: colorScheme.primary),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Диалоги',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
               ),
+              const SizedBox(height: 14),
+              // ── KPI metric tiles row ──
+              Row(
+                children: [
+                  Expanded(
+                    child: _KpiTile(
+                      icon: Icons.forum_rounded,
+                      iconColor: colorScheme.primary,
+                      label: 'Всего',
+                      value: numberFormatter.format(data.totalDialogs),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _KpiTile(
+                      icon: Icons.mark_chat_unread_rounded,
+                      iconColor: const Color(0xFF22C55E),
+                      label: 'Активные',
+                      value: numberFormatter.format(data.openDialogs),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _KpiTile(
+                      icon: Icons.check_circle_outline_rounded,
+                      iconColor: colorScheme.onSurfaceVariant,
+                      label: 'Закрытые',
+                      value: numberFormatter.format(data.closedDialogs),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
               const SizedBox(height: 10),
-              _DashboardKvRow(
-                label: 'Всего',
-                value: numberFormatter.format(data.totalDialogs),
-              ),
-              _DashboardKvRow(
-                label: 'Активные',
-                value: numberFormatter.format(data.openDialogs),
-              ),
-              _DashboardKvRow(
-                label: 'Закрытые',
-                value: numberFormatter.format(data.closedDialogs),
+              // ── Messages row (compact) ──
+              Row(
+                children: [
+                  Expanded(
+                    child: _AgentStatChip(
+                      label: 'Сообщений',
+                      value: numberFormatter.format(data.totalMessages),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _AgentStatChip(
+                      label: 'Сообщений/день',
+                      value: numberFormatter.format(messagesPerDay),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
-              Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
-              const SizedBox(height: 8),
-              _DashboardKvRow(
-                label: 'Сообщений',
-                value: numberFormatter.format(data.totalMessages),
-              ),
-              _DashboardKvRow(
-                label: 'Сообщений/день',
-                value: numberFormatter.format(
-                  activeRange.start == null || activeRange.end == null
-                      ? 0
-                      : ((data.totalOutgoingMessages) /
-                              (activeRange.end!.difference(activeRange.start!).inDays + 1))
-                          .round(),
-                ),
-              ),
-              const SizedBox(height: 4),
               Text(
                 'Период: $rangeLabel',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
             ],
           ),
+        ),
+          ],
         ),
       ),
     );
@@ -1399,8 +1909,8 @@ class _DashboardViewState extends State<DashboardView> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              colorScheme.primary.withValues(alpha: 0.08),
-              colorScheme.surface,
+              colorScheme.primary.withValues(alpha: 0.12),
+              colorScheme.secondaryContainer.withValues(alpha: 0.05),
               colorScheme.surface,
             ],
           ),
@@ -1427,17 +1937,24 @@ class _DashboardKvRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
           Expanded(
             child: Text(
               label,
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ),
-          Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          Text(
+            value,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: colorScheme.primary,
+            ),
+          ),
         ],
       ),
     );
@@ -1529,11 +2046,14 @@ class _DashboardDonut extends StatelessWidget {
           children: [
             Text(
               centerValue,
-              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             Text(
               centerLabel,
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 9,
+              ),
             ),
           ],
         ),
@@ -1854,11 +2374,11 @@ class _AgentStatChip extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.6)),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1868,14 +2388,82 @@ class _AgentStatChip extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontSize: 9,
+            ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: colorScheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── KPI metric tile with colored icon container ──
+class _KpiTile extends StatelessWidget {
+  const _KpiTile({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: iconColor),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontSize: 10,
+            ),
           ),
         ],
       ),
@@ -1955,7 +2543,112 @@ class _DashboardMiniChip extends StatelessWidget {
   }
 }
 
+// ── Quick stat in the header hero row ──
+class _QuickStat extends StatelessWidget {
+  const _QuickStat({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.valueColor,
+  });
 
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: colorScheme.primary.withValues(alpha: 0.5)),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: valueColor ?? colorScheme.onSurface,
+              ),
+            ),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 9,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Segmented tab button ──
+class _TabSegment extends StatelessWidget {
+  const _TabSegment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          height: 34,
+          margin: const EdgeInsets.all(1),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: selected ? AppGradients.selectedChip(colorScheme) : null,
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: colorScheme.primary.withValues(alpha: 0.15),
+                      blurRadius: 6,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: selected ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Gradient accent strip for sub-cards ──
+Widget _cardAccentStrip(ColorScheme colorScheme) {
+  return const SizedBox.shrink();
+}
 
 
 

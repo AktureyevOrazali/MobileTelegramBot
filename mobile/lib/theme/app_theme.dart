@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-const Color brandPrimaryGreen = Color(0xFF4CAF50);
-const Color brandTeal = Color(0xFF0F7F71);
-const Color brandScaffoldBackground = Color(0xFFF1F6EF);
-const Color brandPrimaryText = Color(0xFF1F1F1F);
-const Color brandError = Color(0xFFB00020);
-const Color brandAccentMint = Color(0xFF7ED9B7);
+const Color brandPrimaryGreen = Color(0xFF22C55E);
+const Color brandTeal = Color(0xFF1A9B8A);
+const Color brandScaffoldBackground = Color(0xFFF7F8FA);
+const Color brandPrimaryText = Color(0xFF1A1A1A);
+const Color brandError = Color(0xFFDC2626);
+const Color brandAccentMint = Color(0xFF6EE7B7);
 
 class AppGradients {
   const AppGradients._();
@@ -38,16 +38,37 @@ class AppGradients {
   static LinearGradient appBar(ColorScheme colorScheme) {
     final isDark = colorScheme.brightness == Brightness.dark;
     return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      stops: isDark ? null : const [0.0, 0.3, 1.0],
+      colors: isDark
+          ? [
+              const Color(0xFF152E25),
+              const Color(0xFF0F172A),
+            ]
+          : [
+              const Color(0xFFC8E6C9).withValues(alpha: 0.45),
+              const Color(0xFFE8F5E9).withValues(alpha: 0.25),
+              const Color(0xFFFAFDFA),
+            ],
+    );
+  }
+
+  /// Teal gradient for content hero banners (dashboard header, chat detail bar).
+  /// Kept separate from [appBar] which is now light/white.
+  static LinearGradient heroBanner(ColorScheme colorScheme) {
+    final isDark = colorScheme.brightness == Brightness.dark;
+    return LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: isDark
           ? [
-              const Color(0xFF1A2F28),
-              const Color(0xFF0D1F1A),
+              const Color(0xFF152E25),
+              const Color(0xFF0F2018),
             ]
           : [
-              brandTeal,
-              const Color(0xFF0A6B5E),
+              const Color(0xFF1A9B8A),
+              const Color(0xFF148577),
             ],
     );
   }
@@ -104,12 +125,12 @@ class AppGradients {
       end: Alignment.bottomRight,
       colors: isDark
           ? [
-              const Color(0xFF164D38),
-              const Color(0xFF103D2D),
+              const Color(0xFF1A5C42),
+              const Color(0xFF134A34),
             ]
           : [
-              const Color(0xFFDAFDD4),
-              const Color(0xFFC8F0C0),
+              const Color(0xFFDCFCE7),
+              const Color(0xFFC6F5D5),
             ],
     );
   }
@@ -194,70 +215,70 @@ class AppColors extends ThemeExtension<AppColors> {
 
   static const light = AppColors(
     statusOpenBadge: AppBadgeColors(
-      background: Color(0xFFE8F5E9),
-      border: Color(0xFFA5D6A7),
-      foreground: Color(0xFF388E3C),
+      background: Color(0xFFECFDF5),
+      border: Color(0xFFA7F3D0),
+      foreground: Color(0xFF059669),
     ),
     statusClosedBadge: AppBadgeColors(
-      background: Color(0xFFFFEBEE),
-      border: Color(0xFFEF9A9A),
-      foreground: Color(0xFFD32F2F),
+      background: Color(0xFFFFF7ED),
+      border: Color(0xFFFED7AA),
+      foreground: Color(0xFFEA580C),
     ),
     aiEnabledBadge: AppBadgeColors(
-      background: Color(0xFFE8EAF6),
-      border: Color(0xFF9FA8DA),
-      foreground: Color(0xFF303F9F),
+      background: Color(0xFFEFF6FF),
+      border: Color(0xFFBFDBFE),
+      foreground: Color(0xFF2563EB),
     ),
     aiDisabledBadge: AppBadgeColors(
-      background: Color(0xFFEEEEEE),
-      border: Color(0xFFE0E0E0),
-      foreground: Color(0xFF616161),
+      background: Color(0xFFF1F5F9),
+      border: Color(0xFFE2E8F0),
+      foreground: Color(0xFF64748B),
     ),
     incomingMessageBackground: Colors.white,
     incomingMessageText: brandPrimaryText,
-    outgoingMessageBackground: Color(0xFFD9FDD3),
+    outgoingMessageBackground: Color(0xFFDCFCE7),
     outgoingMessageText: brandPrimaryText,
-    bottomBarInactive: Color(0xFF9E9E9E),
+    bottomBarInactive: Color(0xFF94A3B8),
     scaffoldBackground: brandScaffoldBackground,
-    appBarColor: brandTeal,
-    appBarForeground: Colors.white,
-    cardGradientStart: Color(0xFFF0FAF0),
+    appBarColor: Colors.white,
+    appBarForeground: brandPrimaryText,
+    cardGradientStart: Color(0xFFF0FDF4),
     cardGradientEnd: Colors.white,
-    accentGlow: Color(0x2A4CAF50),
+    accentGlow: Color(0x2A22C55E),
   );
 
   static const dark = AppColors(
     statusOpenBadge: AppBadgeColors(
-      background: Color(0xFF1F3326),
-      border: Color(0xFF2F5D3A),
-      foreground: Color(0xFF9CE6B3),
+      background: Color(0xFF1A3A2A),
+      border: Color(0xFF2D6B4A),
+      foreground: Color(0xFF86EFAC),
     ),
     statusClosedBadge: AppBadgeColors(
-      background: Color(0xFF3A2226),
-      border: Color(0xFF6A2D35),
-      foreground: Color(0xFFFFB3C0),
+      background: Color(0xFF3D2814),
+      border: Color(0xFF7C5230),
+      foreground: Color(0xFFFBBF7E),
     ),
     aiEnabledBadge: AppBadgeColors(
-      background: Color(0xFF1F2B46),
-      border: Color(0xFF304B7A),
-      foreground: Color(0xFFB8CCFF),
+      background: Color(0xFF1E2D4D),
+      border: Color(0xFF3B5998),
+      foreground: Color(0xFF93C5FD),
     ),
     aiDisabledBadge: AppBadgeColors(
-      background: Color(0xFF2A2C33),
-      border: Color(0xFF3C4048),
-      foreground: Color(0xFFB0B4BE),
+      background: Color(0xFF1E293B),
+      border: Color(0xFF334155),
+      foreground: Color(0xFF94A3B8),
     ),
-    incomingMessageBackground: Color(0xFF1E1E1E),
-    incomingMessageText: Colors.white,
-    outgoingMessageBackground: Color(0xFF144D37),
-    outgoingMessageText: Colors.white,
-    bottomBarInactive: Color(0xFF9E9E9E),
-    scaffoldBackground: Color(0xFF121212),
-    appBarColor: Color(0xFF121212),
+    incomingMessageBackground: Color(0xFF1E293B),
+    incomingMessageText: Color(0xFFF1F5F9),
+    outgoingMessageBackground: Color(0xFF1A5C42),
+    outgoingMessageText: Color(0xFFF1F5F9),
+    bottomBarInactive: Color(0xFF64748B),
+    scaffoldBackground: Color(0xFF0F172A),
+    appBarColor: Color(0xFF0F172A),
     appBarForeground: Colors.white,
-    cardGradientStart: Color(0xFF1A2A22),
-    cardGradientEnd: Color(0xFF1E1E1E),
-    accentGlow: Color(0x3A4CAF50),
+    cardGradientStart: Color(0xFF162A20),
+    cardGradientEnd: Color(0xFF1E293B),
+    accentGlow: Color(0x3A22C55E),
   );
 
   @override
@@ -350,29 +371,29 @@ const ColorScheme brandLightColorScheme = ColorScheme(
   brightness: Brightness.light,
   primary: brandPrimaryGreen,
   onPrimary: Colors.white,
-  primaryContainer: Color(0xFFC8E6C9),
-  onPrimaryContainer: brandPrimaryText,
+  primaryContainer: Color(0xFFDCFCE7),
+  onPrimaryContainer: Color(0xFF14532D),
   secondary: brandTeal,
   onSecondary: Colors.white,
-  secondaryContainer: Color(0xFFB2DFDB),
-  onSecondaryContainer: brandPrimaryText,
-  tertiary: Color(0xFF4DB6AC),
+  secondaryContainer: Color(0xFFCCFBF1),
+  onSecondaryContainer: Color(0xFF134E4A),
+  tertiary: Color(0xFF14B8A6),
   onTertiary: Colors.white,
-  tertiaryContainer: Color(0xFFB2EBF2),
-  onTertiaryContainer: brandPrimaryText,
+  tertiaryContainer: Color(0xFFCCFBF1),
+  onTertiaryContainer: Color(0xFF134E4A),
   error: brandError,
   onError: Colors.white,
   background: brandScaffoldBackground,
   onBackground: brandPrimaryText,
   surface: Colors.white,
   onSurface: brandPrimaryText,
-  surfaceVariant: Color(0xFFE5E8E3),
-  onSurfaceVariant: Color(0xFF6F6F6F),
-  outline: Color(0xFFBDBDBD),
-  outlineVariant: Color(0xFFE0E0E0),
+  surfaceVariant: Color(0xFFF1F5F9),
+  onSurfaceVariant: Color(0xFF64748B),
+  outline: Color(0xFFCBD5E1),
+  outlineVariant: Color(0xFFE2E8F0),
   shadow: Colors.black,
   scrim: Colors.black,
-  inverseSurface: Color(0xFF2E2E2E),
+  inverseSurface: Color(0xFF1E293B),
   onInverseSurface: Colors.white,
   inversePrimary: brandPrimaryGreen,
 );
@@ -381,29 +402,29 @@ final ColorScheme brandDarkColorScheme = ColorScheme(
   brightness: Brightness.dark,
   primary: brandPrimaryGreen,
   onPrimary: Colors.white,
-  primaryContainer: const Color(0xFF1B5E20),
-  onPrimaryContainer: Colors.white,
+  primaryContainer: const Color(0xFF166534),
+  onPrimaryContainer: const Color(0xFFBBF7D0),
   secondary: brandTeal,
   onSecondary: Colors.white,
-  secondaryContainer: const Color(0xFF0C5F56),
-  onSecondaryContainer: Colors.white,
-  tertiary: const Color(0xFF26A69A),
+  secondaryContainer: const Color(0xFF115E59),
+  onSecondaryContainer: const Color(0xFF99F6E4),
+  tertiary: const Color(0xFF2DD4BF),
   onTertiary: Colors.black,
-  tertiaryContainer: const Color(0xFF16433E),
-  onTertiaryContainer: Colors.white,
-  error: brandError,
+  tertiaryContainer: const Color(0xFF134E4A),
+  onTertiaryContainer: const Color(0xFF99F6E4),
+  error: const Color(0xFFEF4444),
   onError: Colors.white,
-  background: const Color(0xFF121212),
-  onBackground: Colors.white,
-  surface: const Color(0xFF1E1E1E),
-  onSurface: Colors.white,
-  surfaceVariant: const Color(0xFF2C2F2B),
-  onSurfaceVariant: Colors.white70,
-  outline: Colors.white24,
-  outlineVariant: Colors.white10,
+  background: const Color(0xFF0F172A),
+  onBackground: const Color(0xFFF1F5F9),
+  surface: const Color(0xFF1E293B),
+  onSurface: const Color(0xFFF1F5F9),
+  surfaceVariant: const Color(0xFF334155),
+  onSurfaceVariant: const Color(0xFFCBD5E1),
+  outline: const Color(0xFF475569),
+  outlineVariant: const Color(0xFF334155),
   shadow: Colors.black,
   scrim: Colors.black,
-  inverseSurface: Colors.white,
-  onInverseSurface: brandPrimaryText,
+  inverseSurface: const Color(0xFFF1F5F9),
+  onInverseSurface: const Color(0xFF0F172A),
   inversePrimary: brandPrimaryGreen,
 );

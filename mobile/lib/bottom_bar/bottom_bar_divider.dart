@@ -81,7 +81,6 @@ class _BottomBarDividerState extends State<BottomBarDivider> {
 
   @override
   Widget build(BuildContext context) {
-    final double width = MediaQuery.of(context).size.width;
     return BuildLayout(
       decoration: BoxDecoration(
         color: widget.backgroundColor,
@@ -89,49 +88,59 @@ class _BottomBarDividerState extends State<BottomBarDivider> {
       ),
       blur: widget.blur,
       child: widget.items.isNotEmpty
-          ? Stack(
-              alignment: widget.styleDivider == StyleDivider.bottom
-                  ? Alignment.bottomCenter
-                  : Alignment.topCenter,
-              children: <Widget>[
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: List.generate(widget.items.length, (index) {
-                      final String value = widget.items[index].key ?? '';
-                      return Expanded(
-                        child: InkWell(
-                          key: Key(value),
-                          onTap: () => widget.onTap?.call(index),
-                          child: SizedBox(
-                            child: buildItem(
-                              context,
-                              item: widget.items[index],
-                              color: widget.color,
-                              isSelected: index == widget.indexSelected,
+          ? LayoutBuilder(
+              builder: (context, constraints) {
+                final double barWidth = constraints.maxWidth;
+                return ClipRect(
+                  child: Stack(
+                    alignment: widget.styleDivider == StyleDivider.bottom
+                        ? Alignment.bottomCenter
+                        : Alignment.topCenter,
+                    children: <Widget>[
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: List.generate(widget.items.length, (index) {
+                            final String value = widget.items[index].key ?? '';
+                            return Expanded(
+                              child: InkWell(
+                                key: Key(value),
+                                onTap: () => widget.onTap?.call(index),
+                                child: SizedBox(
+                                  child: buildItem(
+                                    context,
+                                    item: widget.items[index],
+                                    color: widget.color,
+                                    isSelected: index == widget.indexSelected,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                      Positioned(
+                        width: barWidth,
+                        child: AnimatedAlign(
+                          alignment: Alignment(_getIndicatorPosition(widget.indexSelected), 0),
+                          curve: widget.curve ?? Curves.ease,
+                          duration: widget.animated
+                              ? (widget.duration ?? const Duration(milliseconds: 300))
+                              : const Duration(milliseconds: 0),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: widget.colorSelected,
+                              borderRadius: BorderRadius.circular(2),
                             ),
+                            width: barWidth / widget.items.length,
+                            height: 3,
                           ),
                         ),
-                      );
-                    }),
+                      ),
+                    ],
                   ),
-                ),
-                Positioned(
-                  width: width,
-                  child: AnimatedAlign(
-                    alignment: Alignment(_getIndicatorPosition(widget.indexSelected), 0),
-                    curve: widget.curve ?? Curves.ease,
-                    duration: widget.animated
-                        ? (widget.duration ?? const Duration(milliseconds: 300))
-                        : const Duration(milliseconds: 0),
-                    child: Container(
-                      color: widget.colorSelected,
-                      width: width / widget.items.length,
-                      height: 4,
-                    ),
-                  ),
-                ),
-              ],
+                );
+              },
             )
           : null,
     );

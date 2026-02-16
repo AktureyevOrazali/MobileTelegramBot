@@ -180,10 +180,11 @@ class _MobileBotModuleState extends State<MobileBotModule> {
         foregroundColor:
             isLight ? appColors.appBarForeground : colorScheme.onBackground,
         elevation: 0,
-        centerTitle: true,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
         titleTextStyle: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
           color:
               isLight ? appColors.appBarForeground : colorScheme.onBackground,
         ),

@@ -478,11 +478,26 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           ),
                         ),
                       ),
-                      Text(
-                        'Фильтры диалогов',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.tune_rounded,
+                            size: 20,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Фильтры диалогов',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Divider(
+                        height: 1,
+                        color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String?>(
@@ -521,50 +536,58 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         ],
                         onChanged: (value) => setModalState(() => bin = value),
                       ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<DialogStatusFilter>(
-                        value: status,
-                        decoration: const InputDecoration(
-                          labelText: 'Статус диалога',
+                      const SizedBox(height: 16),
+                      // Status filter — segmented
+                      Text('Статус',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
-                        items: const [
-                          DropdownMenuItem(
+                      ),
+                      const SizedBox(height: 8),
+                      SegmentedButton<DialogStatusFilter>(
+                        segments: const [
+                          ButtonSegment(
                             value: DialogStatusFilter.all,
-                            child: Text('Все диалоги'),
+                            label: Text('Все'),
                           ),
-                          DropdownMenuItem(
+                          ButtonSegment(
                             value: DialogStatusFilter.open,
-                            child: Text('Только открытые'),
+                            label: Text('Открытые'),
                           ),
-                          DropdownMenuItem(
+                          ButtonSegment(
                             value: DialogStatusFilter.closed,
-                            child: Text('Только закрытые'),
+                            label: Text('Закрытые'),
                           ),
                         ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setModalState(() => status = value);
+                        selected: {status},
+                        onSelectionChanged: (value) {
+                          setModalState(() => status = value.first);
                         },
                       ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<ChatSortOrder>(
-                        value: sort,
-                        decoration: const InputDecoration(
-                          labelText: 'Сортировка по времени',
+                      const SizedBox(height: 16),
+                      // Sort order — segmented
+                      Text('Сортировка',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
-                        items: const [
-                          DropdownMenuItem(
+                      ),
+                      const SizedBox(height: 8),
+                      SegmentedButton<ChatSortOrder>(
+                        segments: const [
+                          ButtonSegment(
                             value: ChatSortOrder.newest,
-                            child: Text('Сначала новые'),
+                            label: Text('Новые'),
+                            icon: Icon(Icons.arrow_upward_rounded, size: 16),
                           ),
-                          DropdownMenuItem(
+                          ButtonSegment(
                             value: ChatSortOrder.oldest,
-                            child: Text('Сначала старые'),
+                            label: Text('Старые'),
+                            icon: Icon(Icons.arrow_downward_rounded, size: 16),
                           ),
                         ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setModalState(() => sort = value);
+                        selected: {sort},
+                        onSelectionChanged: (value) {
+                          setModalState(() => sort = value.first);
                         },
                       ),
                       const SizedBox(height: 12),
@@ -578,7 +601,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       const SizedBox(height: 16),
                       Row(
                         children: [
-                          TextButton(
+                          OutlinedButton(
                             onPressed: _logButtonPress(
                               'reset chat filters',
                               () {
@@ -726,9 +749,93 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return buildProfileAppBar() as PreferredSizeWidget;
   }
 
+  Widget _buildShimmerSkeleton() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final shimmerBase = colorScheme.onSurface.withValues(alpha: 0.08);
+    final shimmerHighlight = colorScheme.onSurface.withValues(alpha: 0.14);
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      itemCount: 6,
+      itemBuilder: (context, index) {
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.0, end: 1.0),
+          duration: Duration(milliseconds: 800 + index * 100),
+          curve: Curves.easeInOut,
+          builder: (context, value, child) {
+            return Opacity(
+              opacity: 0.5 + 0.5 * (0.5 + 0.5 * (1 - value)),
+              child: child,
+            );
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                // Avatar circle
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: shimmerBase,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Text lines
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 120 + (index % 3) * 30,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: shimmerHighlight,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 80 + (index % 2) * 40,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: shimmerBase,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Timestamp placeholder
+                Container(
+                  width: 36,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: shimmerBase,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildChatTab() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildShimmerSkeleton();
     }
     if (_error != null) {
       return Center(
@@ -837,71 +944,62 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
 
     final filtersCard = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: AppGradients.surfaceOverlay(colorScheme),
-          borderRadius: BorderRadius.circular(18),
-          border:
-              Border.all(color: colorScheme.outlineVariant.withOpacity(0.35)),
-          boxShadow: [
-            BoxShadow(
-              color: colorScheme.shadow.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Фильтры',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed: _logButtonPress(
-                      'open chat filters',
-                      _showFiltersSheet,
-                    ),
-                    icon: const Icon(Icons.tune_rounded, size: 16),
-                    label: const Text('Настроить'),
-                  ),
-                ],
+              Text(
+                'Фильтры',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
-              const SizedBox(height: 8),
-              if (chips.isEmpty)
-                Text(
-                  'Активные фильтры отсутствуют',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+              const Spacer(),
+              SizedBox(
+                height: 34,
+                child: OutlinedButton.icon(
+                  onPressed: _logButtonPress(
+                    'open chat filters',
+                    _showFiltersSheet,
                   ),
-                )
-              else
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: chips
-                        .map(
-                          (chip) => Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: chip,
-                          ),
-                        )
-                        .toList(),
+                  icon: const Icon(Icons.tune_rounded, size: 16),
+                  label: const Text('Настроить'),
+                  style: OutlinedButton.styleFrom(
+                    textStyle: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    side: BorderSide(
+                      color: colorScheme.primary.withValues(alpha: 0.4),
+                    ),
                   ),
                 ),
+              ),
             ],
           ),
-        ),
+          if (chips.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: chips
+                    .map(
+                      (chip) => Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: chip,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+          ],
+        ],
       ),
     );
 
@@ -945,21 +1043,36 @@ class _ChatListScreenState extends State<ChatListScreen> {
           final aiColors = _aiBadgeColors(theme, enabled: chat.aiEnabled);
           final isStatusUpdating = _statusUpdatingDialogId == chat.dialogId;
           final isAiUpdating = _aiTogglingDialogId == chat.dialogId;
+          final hasUnread = chat.unreadCount > 0;
+
+          // Subtitle: section + BIN info
+          final subtitleParts = <String>[];
+          if (chat.sectionTitle != null && chat.sectionTitle!.isNotEmpty) {
+            subtitleParts.add(chat.sectionTitle!);
+          }
+          if (chat.bin != null && chat.bin!.isNotEmpty) {
+            subtitleParts.add('BIN ${chat.bin}');
+          }
+          if (subtitleParts.isEmpty) {
+            subtitleParts.add(
+              chat.username != null ? '@${chat.username}' : chat.type,
+            );
+          }
+          final subtitle = subtitleParts.join(' · ');
 
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Card(
               clipBehavior: Clip.antiAlias,
-              elevation: 1,
-              shadowColor: theme.extension<AppColors>()?.accentGlow ?? Colors.transparent,
+              elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
                 side: BorderSide(
-                  color: colorScheme.outlineVariant.withOpacity(0.3),
+                  color: colorScheme.outlineVariant.withOpacity(0.5),
                 ),
               ),
               child: InkWell(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(16),
                 onTap: () async {
                   UiLogger.navigation(
                     'chat_list',
@@ -970,11 +1083,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   // ВАЖНО: фиксируем "правильную" тему модуля ДО пуша
                   final moduleTheme = _ensureAppColorsTheme(Theme.of(context));
 
-                  final chatToOpen = chat.unreadCount > 0
+                  final chatToOpen = hasUnread
                       ? chat.copyWith(unreadCount: 0)
                       : chat;
 
-                  if (chat.unreadCount > 0) {
+                  if (hasUnread) {
                     setState(() {
                       _allChats = _allChats
                           .map(
@@ -1010,340 +1123,264 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     await _loadData(showLoading: false);
                   }
                 },
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-                  child: Column(
+                child: Container(
+                  decoration: hasUnread
+                      ? BoxDecoration(
+                          border: Border(
+                            left: BorderSide(
+                              color: colorScheme.primary,
+                              width: 3,
+                            ),
+                          ),
+                        )
+                      : null,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                      // Avatar
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: colorScheme.primaryContainer,
+                        foregroundColor: colorScheme.onPrimaryContainer,
+                        child: Text(
+                          chat.title.isNotEmpty
+                              ? chat.title[0].toUpperCase()
+                              : '?',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Content
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Row 1: Name + status icons + timestamp
+                            Row(
                               children: [
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        chat.title,
-                                        style: theme.textTheme.titleMedium
-                                            ?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                Flexible(
+                                  child: Text(
+                                    chat.title,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: hasUnread
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
                                     ),
-                                    if (chat.unreadCount > 0)
-                                      Container(
-                                        margin: const EdgeInsets.only(left: 8),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color:
-                                              theme.colorScheme.errorContainer,
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: theme.colorScheme.error
-                                                .withOpacity(0.35),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.mark_chat_unread,
-                                              size: 16,
-                                              color: theme
-                                                  .colorScheme.onErrorContainer,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              '${chat.unreadCount}',
-                                              style: theme.textTheme.labelMedium
-                                                  ?.copyWith(
-                                                color: theme.colorScheme
-                                                    .onErrorContainer,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                  ],
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 6,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: statusColors.background,
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                        border: Border.all(
-                                          color: statusColors.border,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (isStatusUpdating)
-                                            SizedBox(
-                                              width: 14,
-                                              height: 14,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: statusColors.foreground,
-                                              ),
-                                            )
-                                          else
-                                            Icon(
-                                              chat.isClosed
-                                                  ? Icons.lock
-                                                  : Icons.lock_open,
-                                              size: 14,
-                                              color: statusColors.foreground,
-                                            ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            statusLabel,
-                                            style: theme.textTheme.labelSmall
-                                                ?.copyWith(
-                                              color: statusColors.foreground,
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: 0.2,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                const SizedBox(width: 6),
+                                // Status icon (lock)
+                                if (isStatusUpdating)
+                                  SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.5,
+                                      color: statusColors.foreground,
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: aiColors.background,
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                        border: Border.all(
-                                          color: aiColors.border,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (isAiUpdating)
-                                            SizedBox(
-                                              width: 14,
-                                              height: 14,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: aiColors.foreground,
-                                              ),
-                                            )
-                                          else
-                                            Icon(
-                                              chat.aiEnabled
-                                                  ? Icons.smart_toy
-                                                  : Icons.smart_toy_outlined,
-                                              size: 14,
-                                              color: aiColors.foreground,
-                                            ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            chat.aiEnabled ? 'AI' : 'AI выкл',
-                                            style: theme.textTheme.labelSmall
-                                                ?.copyWith(
-                                              color: aiColors.foreground,
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: 0.2,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                  )
+                                else
+                                  Icon(
+                                    chat.isClosed
+                                        ? Icons.lock_rounded
+                                        : Icons.lock_open_rounded,
+                                    size: 14,
+                                    color: statusColors.foreground,
+                                  ),
+                                const SizedBox(width: 4),
+                                // AI icon (robot)
+                                if (isAiUpdating)
+                                  SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.5,
+                                      color: aiColors.foreground,
                                     ),
-                                  ],
+                                  )
+                                else
+                                  Icon(
+                                    chat.aiEnabled
+                                        ? Icons.smart_toy_rounded
+                                        : Icons.smart_toy_outlined,
+                                    size: 14,
+                                    color: aiColors.foreground,
+                                  ),
+                                const SizedBox(width: 8),
+                                // Timestamp
+                                Text(
+                                  chat.updatedAtLabel,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: hasUnread
+                                        ? colorScheme.primary
+                                        : colorScheme.onSurfaceVariant,
+                                    fontWeight: hasUnread
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Align(
-                            alignment: Alignment.topRight,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                            const SizedBox(height: 6),
+                            // Row 2: Subtitle + unread + star + menu
+                            Row(
                               children: [
-                                IconButton.filledTonal(
-                                  icon: Icon(
-                                    chat.isFavorite
-                                        ? Icons.star
-                                        : Icons.star_border,
-                                  ),
-                                  color: chat.isFavorite
-                                      ? theme.colorScheme.tertiary
-                                      : theme.colorScheme.onSurfaceVariant,
-                                  tooltip: chat.isFavorite
-                                      ? 'Убрать из избранного'
-                                      : 'Добавить в избранное',
-                                  onPressed: _logButtonPress(
-                                    'toggle favorite for ${chat.title}',
-                                    () => _toggleFavorite(chat),
+                                Expanded(
+                                  child: Text(
+                                    subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(width: 4),
-                                PopupMenuButton<String>(
-                                  enabled: canManageDialogs &&
-                                      !isStatusUpdating &&
-                                      !isAiUpdating,
-                                  icon: const Icon(Icons.more_horiz_rounded),
-                                  onSelected: (value) {
-                                    switch (value) {
-                                      case 'toggle_status':
-                                        _toggleDialogStatus(chat);
-                                        break;
-                                      case 'toggle_ai':
-                                        _toggleAi(chat);
-                                        break;
-                                      case 'delete':
-                                        _confirmDeleteChat(chat);
-                                        break;
-                                    }
-                                  },
-                                  itemBuilder: (context) {
-                                    return [
-                                      PopupMenuItem(
-                                        value: 'toggle_status',
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              chat.isClosed
-                                                  ? Icons.lock_open
-                                                  : Icons.lock_outline,
-                                              size: 18,
-                                              color: theme
-                                                  .colorScheme.onSurfaceVariant,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              chat.isClosed
-                                                  ? 'Открыть диалог'
-                                                  : 'Закрыть диалог',
-                                            ),
-                                          ],
-                                        ),
+                                // Unread counter
+                                if (hasUnread)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.primary,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '${chat.unreadCount}',
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                        color: colorScheme.onPrimary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 11,
                                       ),
-                                      PopupMenuItem(
-                                        value: 'toggle_ai',
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              chat.aiEnabled
-                                                  ? Icons.smart_toy
-                                                  : Icons.smart_toy_outlined,
-                                              size: 18,
-                                              color: theme
-                                                  .colorScheme.onSurfaceVariant,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              chat.aiEnabled
-                                                  ? 'Отключить AI'
-                                                  : 'Включить AI',
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      if (canDeleteChats)
+                                    ),
+                                  ),
+                                // Favorite star
+                                SizedBox(
+                                  width: 30,
+                                  height: 30,
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    iconSize: 18,
+                                    icon: Icon(
+                                      chat.isFavorite
+                                          ? Icons.star_rounded
+                                          : Icons.star_outline_rounded,
+                                    ),
+                                    color: chat.isFavorite
+                                        ? colorScheme.tertiary
+                                        : colorScheme.onSurfaceVariant
+                                            .withOpacity(0.4),
+                                    tooltip: chat.isFavorite
+                                        ? 'Убрать из избранного'
+                                        : 'Добавить в избранное',
+                                    onPressed: _logButtonPress(
+                                      'toggle favorite for ${chat.title}',
+                                      () => _toggleFavorite(chat),
+                                    ),
+                                  ),
+                                ),
+                                // Menu
+                                SizedBox(
+                                  width: 32,
+                                  height: 32,
+                                  child: PopupMenuButton<String>(
+                                    padding: EdgeInsets.zero,
+                                    iconSize: 20,
+                                    enabled: canManageDialogs &&
+                                        !isStatusUpdating &&
+                                        !isAiUpdating,
+                                    icon: Icon(
+                                      Icons.more_horiz_rounded,
+                                      color: colorScheme.onSurfaceVariant
+                                          .withOpacity(0.6),
+                                    ),
+                                    onSelected: (value) {
+                                      switch (value) {
+                                        case 'toggle_status':
+                                          _toggleDialogStatus(chat);
+                                          break;
+                                        case 'toggle_ai':
+                                          _toggleAi(chat);
+                                          break;
+                                        case 'delete':
+                                          _confirmDeleteChat(chat);
+                                          break;
+                                      }
+                                    },
+                                    itemBuilder: (context) {
+                                      return [
                                         PopupMenuItem(
-                                          value: 'delete',
+                                          value: 'toggle_status',
                                           child: Row(
-                                            children: const [
+                                            children: [
                                               Icon(
-                                                Icons.delete_outline,
+                                                chat.isClosed
+                                                    ? Icons.lock_open
+                                                    : Icons.lock_outline,
                                                 size: 18,
+                                                color: theme.colorScheme
+                                                    .onSurfaceVariant,
                                               ),
-                                              SizedBox(width: 8),
-                                              Text('Удалить диалог'),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                chat.isClosed
+                                                    ? 'Открыть диалог'
+                                                    : 'Закрыть диалог',
+                                              ),
                                             ],
                                           ),
                                         ),
-                                    ];
-                                  },
+                                        PopupMenuItem(
+                                          value: 'toggle_ai',
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                chat.aiEnabled
+                                                    ? Icons.smart_toy
+                                                    : Icons.smart_toy_outlined,
+                                                size: 18,
+                                                color: theme.colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                chat.aiEnabled
+                                                    ? 'Отключить AI'
+                                                    : 'Включить AI',
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (canDeleteChats)
+                                          const PopupMenuItem(
+                                            value: 'delete',
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.delete_outline,
+                                                  size: 18,
+                                                ),
+                                                SizedBox(width: 8),
+                                                Text('Удалить диалог'),
+                                              ],
+                                            ),
+                                          ),
+                                      ];
+                                    },
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          if (chat.sectionTitle != null) ...[
-                            Icon(
-                              Icons.category_outlined,
-                              size: 14,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                chat.sectionTitle!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ),
                           ],
-                          if (chat.bin != null && chat.bin!.isNotEmpty) ...[
-                            if (chat.sectionTitle != null)
-                              const SizedBox(width: 10),
-                            Icon(
-                              Icons.badge_outlined,
-                              size: 14,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                'BIN ${chat.bin}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ),
-                          ],
-                          if (chat.sectionTitle == null &&
-                              (chat.bin == null || chat.bin!.isEmpty))
-                            Text(
-                              chat.username != null
-                                  ? '@${chat.username}'
-                                  : 'Тип: ${chat.type}',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
@@ -1486,69 +1523,67 @@ class _ChatListScreenState extends State<ChatListScreen> {
           }
         },
 
-        child: Scaffold(
-          appBar: _buildAppBar(currentIndex, isAdmin),
-          body: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _dismissKeyboard,
-            child: IndexedStack(index: currentIndex, children: tabs),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: AppGradients.appBar(colorScheme),
           ),
-          bottomNavigationBar: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: navigationBarBackgroundColor,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withOpacity(0.45),
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: _buildAppBar(currentIndex, isAdmin),
+            body: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _dismissKeyboard,
+              child: IndexedStack(index: currentIndex, children: tabs),
+            ),
+          bottomNavigationBar: DecoratedBox(
+            decoration: BoxDecoration(
+              color: navigationBarBackgroundColor,
+              border: Border(
+                top: BorderSide(
+                  color: colorScheme.outlineVariant.withOpacity(0.3),
+                  width: 0.5,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.shadow.withOpacity(0.07),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: BottomBarDivider(
-                items: barItems,
-                indexSelected: currentIndex,
-                onTap: (index) {
-                  _dismissKeyboard();
-                  final callback = callbacks[index];
-                  final from = barItems[currentIndex].key ?? '$currentIndex';
-                  final to = barItems[index].key ?? '$index';
-                  if (currentIndex == index) {
-                    UiLogger.action(
-                      'NAV',
-                      'reselected tab',
-                      details: {'tab': to},
-                    );
-                    callback?.call();
-                    return;
-                  }
-                  UiLogger.navigation(from, to, reason: 'tab tap');
-                  setState(() {
-                    _activeTabKey = barItems[index].key ?? 'dialogs';
-                  });
-                  callback?.call();
-                },
-                backgroundColor: Colors.transparent,
-                color: colorScheme.onSurfaceVariant,
-                colorSelected: colorScheme.primary,
-                iconSize: 24,
-                titleStyle: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11.5,
-                ),
-                styleDivider: StyleDivider.top,
-                enableShadow: false,
-                top: 10,
-                bottom: 2,
-                pad: 3,
               ),
             ),
+            child: BottomBarDivider(
+              items: barItems,
+              indexSelected: currentIndex,
+              onTap: (index) {
+                _dismissKeyboard();
+                final callback = callbacks[index];
+                final from = barItems[currentIndex].key ?? '$currentIndex';
+                final to = barItems[index].key ?? '$index';
+                if (currentIndex == index) {
+                  UiLogger.action(
+                    'NAV',
+                    'reselected tab',
+                    details: {'tab': to},
+                  );
+                  callback?.call();
+                  return;
+                }
+                UiLogger.navigation(from, to, reason: 'tab tap');
+                setState(() {
+                  _activeTabKey = barItems[index].key ?? 'dialogs';
+                });
+                callback?.call();
+              },
+              backgroundColor: Colors.transparent,
+              color: colorScheme.onSurfaceVariant,
+              colorSelected: colorScheme.primary,
+              iconSize: 24,
+              titleStyle: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
+              ),
+              styleDivider: StyleDivider.top,
+              enableShadow: false,
+              top: 10,
+              bottom: 4,
+              pad: 3,
+            ),
           ),
+        ),
         ),
       ),
     );

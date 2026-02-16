@@ -216,6 +216,7 @@ class BinsUpdateRequest(BaseModel):
 class UnassignedBinResponse(BaseModel):
     bin: str
     open_dialogs: int
+    has_contract: bool = True
 
 
 class OrganizationWithoutContractResponse(BaseModel):

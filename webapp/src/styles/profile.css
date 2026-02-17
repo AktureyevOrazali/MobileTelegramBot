@@ -7,6 +7,7 @@
   background: var(--surface-color);
   border-bottom: 1px solid var(--border-color);
   padding: 0;
+  margin-bottom: 12px;
 }
 
 .app-header__inner {
@@ -827,4 +828,10 @@
   .modal.bin-modal__container .bin-modal {
     padding: 20px 18px 18px;
   }
+}
+
+/* ─── Dark theme overrides for profile hero ─── */
+[data-theme='dark'] .profile-hero {
+  background: linear-gradient(135deg, #2d2a5e 0%, #3d3a8f 50%, #5a56b8 100%);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.2);
 }

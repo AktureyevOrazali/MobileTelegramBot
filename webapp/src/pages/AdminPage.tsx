@@ -21,19 +21,30 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [search, setSearch] = useState('');
   const [pendingSearch, setPendingSearch] = useState('');
   const [pendingModalOpen, setPendingModalOpen] = useState(false);
-  const [assignBinValue, setAssignBinValue] = useState('');
-  const [assignUserId, setAssignUserId] = useState('');
+  const [allBinsModalOpen, setAllBinsModalOpen] = useState(false);
+  const [allBinsSearch, setAllBinsSearch] = useState('');
+
+  // Without-contract modal
+  const [orgModalOpen, setOrgModalOpen] = useState(false);
+  const [orgSearch, setOrgSearch] = useState('');
+
+  // With-contract modal
+  const [contractModalOpen, setContractModalOpen] = useState(false);
+  const [contractSearch, setContractSearch] = useState('');
+
+  // Unassigned BINs modal
+  const [unassignedModalOpen, setUnassignedModalOpen] = useState(false);
+  const [unassignedBinSearch, setUnassignedBinSearch] = useState('');
+
+  // Assignment modal (separate from unassigned list)
   const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assignBinValue, setAssignBinValue] = useState('');
+  const [assignEmployeeSearch, setAssignEmployeeSearch] = useState('');
+  const [assignUserId, setAssignUserId] = useState('');
   const [assignIndefinite, setAssignIndefinite] = useState(true);
   const [assignExpiresAt, setAssignExpiresAt] = useState('');
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
-  const [unassignedBinsModalOpen, setUnassignedBinsModalOpen] = useState(false);
-  const [organizationsModalOpen, setOrganizationsModalOpen] = useState(false);
-  const [orgBinValue, setOrgBinValue] = useState('');
-  const [orgUserId, setOrgUserId] = useState('');
-  const [allBinsModalOpen, setAllBinsModalOpen] = useState(false);
-  const [allBinsSearch, setAllBinsSearch] = useState('');
 
   // ── Data loading (debounced search) ──
   useEffect(() => {
@@ -67,13 +78,51 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
     );
   }, [admin.pendingRegistrations, pendingSearch]);
 
+  const filteredOrganizations = useMemo(() => {
+    const query = orgSearch.trim().toLowerCase();
+    if (!query) return admin.organizationsWithoutContracts;
+    return admin.organizationsWithoutContracts.filter((item) =>
+      item.customerBin.toLowerCase().includes(query),
+    );
+  }, [admin.organizationsWithoutContracts, orgSearch]);
+
+  const binsWithContract = useMemo(
+    () => admin.binsDetailed.filter((b) => b.hasContract),
+    [admin.binsDetailed],
+  );
+
+  const filteredBinsWithContract = useMemo(() => {
+    const query = contractSearch.trim().toLowerCase();
+    if (!query) return binsWithContract;
+    return binsWithContract.filter((item) => item.bin.toLowerCase().includes(query));
+  }, [binsWithContract, contractSearch]);
+
+  const filteredUnassignedBins = useMemo(() => {
+    const binQuery = unassignedBinSearch.trim().toLowerCase();
+    if (!binQuery) return admin.unassignedBins;
+    return admin.unassignedBins.filter((item) => item.bin.toLowerCase().includes(binQuery));
+  }, [admin.unassignedBins, unassignedBinSearch]);
+
+  // Filtered assignable users for assignment modal
+  const filteredAssignableUsers = useMemo(() => {
+    const query = assignEmployeeSearch.trim().toLowerCase();
+    if (!query) return admin.assignableUsers;
+    return admin.assignableUsers.filter((user) =>
+      user.name.toLowerCase().includes(query) ||
+      user.email.toLowerCase().includes(query),
+    );
+  }, [admin.assignableUsers, assignEmployeeSearch]);
+
   const selectedAssignUser = useMemo(
     () => admin.assignableUsers.find((user) => String(user.id) === assignUserId) ?? null,
     [admin.assignableUsers, assignUserId],
   );
 
-  // ── Assign BIN handlers ──
-  const openAssignModal = () => {
+  // ── Open assignment modal for a specific BIN ──
+  const openAssignModal = (bin: string) => {
+    setAssignBinValue(bin);
+    setAssignEmployeeSearch('');
+    setAssignUserId('');
     setAssignIndefinite(true);
     setAssignExpiresAt('');
     setAssignError(null);
@@ -81,10 +130,9 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   };
 
   const closeAssignModal = () => {
-    if (assignLoading) return;
     setAssignModalOpen(false);
-    setAssignIndefinite(true);
-    setAssignExpiresAt('');
+    setAssignBinValue('');
+    setAssignUserId('');
     setAssignError(null);
   };
 
@@ -124,8 +172,6 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
         },
       ].sort((a, b) => a.bin.localeCompare(b.bin));
       await admin.handleBinsSave(selectedAssignUser.id, next);
-      setAssignBinValue('');
-      setAssignUserId('');
       closeAssignModal();
     } catch (err) {
       setAssignError(extractErrorMessage(err, 'Не удалось назначить БИН'));
@@ -162,7 +208,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
           <button
             type="button"
             className="admin-stat-pill"
-            onClick={() => setOrganizationsModalOpen(true)}
+            onClick={() => setOrgModalOpen(true)}
             disabled={admin.organizationsWithoutContracts.length === 0}
           >
             <span className="admin-stat-pill__value">{admin.organizationsWithoutContracts.length}</span>
@@ -172,11 +218,21 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
           <button
             type="button"
             className="admin-stat-pill"
-            onClick={() => setUnassignedBinsModalOpen(true)}
+            onClick={() => setContractModalOpen(true)}
+            disabled={binsWithContract.length === 0}
+          >
+            <span className="admin-stat-pill__value">{binsWithContract.length}</span>
+            <span className="admin-stat-pill__label">С договором</span>
+          </button>
+
+          <button
+            type="button"
+            className="admin-stat-pill"
+            onClick={() => setUnassignedModalOpen(true)}
             disabled={admin.unassignedBins.length === 0}
           >
             <span className="admin-stat-pill__value">{admin.unassignedBins.length}</span>
-            <span className="admin-stat-pill__label">С договором</span>
+            <span className="admin-stat-pill__label">Неназначенные</span>
           </button>
 
           <button
@@ -339,196 +395,269 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
         </div>
       </Modal>
 
-      {/* Unassigned Bins Modal */}
+      {/* Organizations Without Contracts Modal (info only) */}
       <Modal
-        open={unassignedBinsModalOpen}
-        onClose={() => setUnassignedBinsModalOpen(false)}
+        open={orgModalOpen}
+        onClose={() => { setOrgModalOpen(false); setOrgSearch(''); admin.setSelectedBinInfo(null); }}
         className="admin-modal__container"
       >
         <div className="admin-modal">
           <div className="admin-modal__header">
-            <h3>С договором ({admin.unassignedBins.length})</h3>
+            <h3>Без договора ({admin.organizationsWithoutContracts.length})</h3>
           </div>
 
-          {admin.unassignedBins.length === 0 ? (
-            <span className="text-muted">Нет доступных БИНов.</span>
+          <input
+            className="input"
+            placeholder="Поиск БИН..."
+            value={orgSearch}
+            onChange={(e) => setOrgSearch(e.target.value)}
+          />
+
+          {admin.binInfoLoading ? (
+            <div className="bin-info-panel">
+              <span className="text-muted">Загрузка...</span>
+            </div>
+          ) : admin.selectedBinInfo ? (
+            <div className="bin-info-panel">
+              <button type="button" className="admin-modal__back-btn" onClick={() => admin.setSelectedBinInfo(null)}>← Назад</button>
+              <div className="bin-info-details">
+                <h4>{admin.selectedBinInfo.bin}</h4>
+                <p className="text-warning">⚠ Без договора</p>
+                {admin.selectedBinInfo.customerLegalAddress && (
+                  <p><strong>Адрес:</strong> {admin.selectedBinInfo.customerLegalAddress}</p>
+                )}
+                {admin.selectedBinInfo.customerBankNameRu && (
+                  <p><strong>Банк:</strong> {admin.selectedBinInfo.customerBankNameRu}</p>
+                )}
+                {!admin.selectedBinInfo.customerLegalAddress && !admin.selectedBinInfo.customerBankNameRu && (
+                  <p className="text-muted">Дополнительная информация недоступна</p>
+                )}
+              </div>
+            </div>
+          ) : filteredOrganizations.length === 0 ? (
+            <span className="text-muted">Нет организаций без договора.</span>
           ) : (
-            <>
-              <div className="admin-assign-grid">
-                <div className="admin-assign-grid__item">
-                  <SelectPill
-                    label=""
-                    showLabelInside={false}
-                    options={admin.assignBinOptions}
-                    value={assignBinValue}
-                    onChange={(value) => setAssignBinValue(value)}
-                    searchable
-                    style={{ minWidth: 0, width: '100%' }}
-                  />
-                </div>
-
-                <div className="admin-assign-grid__item">
-                  <SelectPill
-                    label=""
-                    showLabelInside={false}
-                    options={admin.assignUserOptions}
-                    value={assignUserId}
-                    onChange={(value) => setAssignUserId(value)}
-                    searchable
-                    style={{ minWidth: 0, width: '100%' }}
-                  />
-                </div>
-
-                <button
-                  className="button admin-assign-grid__btn"
-                  type="button"
-                  disabled={!assignBinValue || !assignUserId}
-                  onClick={() => {
-                    setUnassignedBinsModalOpen(false);
-                    openAssignModal();
-                  }}
+            <div className="admin-section__list admin-section__list--grid">
+              {filteredOrganizations.map((item) => (
+                <span
+                  key={item.customerBin}
+                  className="chip bin-chip bin-chip--compact bin-chip--clickable"
+                  onClick={() => admin.handleBinClick(item.customerBin)}
                 >
-                  Назначить
-                </button>
-              </div>
-
-              <div className="admin-section__list admin-section__list--grid">
-                {admin.unassignedBins.map((item) => (
-                  <span key={item.bin} className="chip bin-chip bin-chip--compact">
-                    <span className="bin-chip__title">{item.bin}</span>
-                  </span>
-                ))}
-              </div>
-            </>
+                  <span className="bin-chip__title">{item.customerBin}</span>
+                  <span className="bin-chip__status bin-chip__status--no-contract">без договора</span>
+                </span>
+              ))}
+            </div>
           )}
         </div>
       </Modal>
 
+      {/* BINs With Contract Modal (info only) */}
+      <Modal
+        open={contractModalOpen}
+        onClose={() => { setContractModalOpen(false); setContractSearch(''); admin.setSelectedBinInfo(null); }}
+        className="admin-modal__container"
+      >
+        <div className="admin-modal">
+          <div className="admin-modal__header">
+            <h3>С договором ({binsWithContract.length})</h3>
+          </div>
 
-      <Modal open={assignModalOpen} onClose={closeAssignModal} className="bin-modal__container">
-        <div className="bin-modal">
-          <div className="bin-modal__header">
-            <h3>Назначение БИНа</h3>
-          </div>
-          <div className="bin-modal__options">
-            <label className={`bin-modal__option ${assignIndefinite ? 'bin-modal__option--active' : ''}`}>
-              <input
-                className="bin-modal__radio"
-                type="radio"
-                name="assign-bin-duration"
-                checked={assignIndefinite}
-                onChange={() => handleAssignIndefiniteChange(true)}
-              />
-              <div className="bin-modal__option-body">
-                <span className="bin-modal__option-title">Бессрочно</span>
+          <input
+            className="input"
+            placeholder="Поиск БИН..."
+            value={contractSearch}
+            onChange={(e) => setContractSearch(e.target.value)}
+          />
+
+          {admin.binInfoLoading ? (
+            <div className="bin-info-panel">
+              <span className="text-muted">Загрузка...</span>
+            </div>
+          ) : admin.selectedBinInfo ? (
+            <div className="bin-info-panel">
+              <button type="button" className="admin-modal__back-btn" onClick={() => admin.setSelectedBinInfo(null)}>← Назад</button>
+              <div className="bin-info-details">
+                <h4>{admin.selectedBinInfo.bin}</h4>
+                <p className="text-success">✓ Есть договор</p>
+                {admin.selectedBinInfo.customerLegalAddress && (
+                  <p><strong>Адрес:</strong> {admin.selectedBinInfo.customerLegalAddress}</p>
+                )}
+                {admin.selectedBinInfo.customerBankNameRu && (
+                  <p><strong>Банк:</strong> {admin.selectedBinInfo.customerBankNameRu}</p>
+                )}
+                {!admin.selectedBinInfo.customerLegalAddress && !admin.selectedBinInfo.customerBankNameRu && (
+                  <p className="text-muted">Дополнительная информация недоступна</p>
+                )}
               </div>
-            </label>
-            <label className={`bin-modal__option ${!assignIndefinite ? 'bin-modal__option--active' : ''}`}>
-              <input
-                className="bin-modal__radio"
-                type="radio"
-                name="assign-bin-duration"
-                checked={!assignIndefinite}
-                onChange={() => handleAssignIndefiniteChange(false)}
-              />
-              <div className="bin-modal__option-body">
-                <span className="bin-modal__option-title">Временно</span>
-              </div>
-            </label>
-          </div>
-          {!assignIndefinite && (
-            <div className="bin-modal__field">
-              <label htmlFor="assign-bin-expires">Дата окончания</label>
-              <input
-                id="assign-bin-expires"
-                className="input"
-                type="datetime-local"
-                value={assignExpiresAt}
-                min={formatDateTimeLocalInput(new Date())}
-                onChange={(event) => {
-                  setAssignExpiresAt(event.target.value);
-                  if (assignError) setAssignError(null);
-                }}
-              />
+            </div>
+          ) : filteredBinsWithContract.length === 0 ? (
+            <span className="text-muted">Нет БИНов с договором.</span>
+          ) : (
+            <div className="admin-section__list admin-section__list--grid">
+              {filteredBinsWithContract.map((item) => (
+                <span
+                  key={item.bin}
+                  className="chip bin-chip bin-chip--compact bin-chip--clickable"
+                  onClick={() => admin.handleBinClick(item.bin)}
+                >
+                  <span className="bin-chip__title">{item.bin}</span>
+                  <span className="bin-chip__status bin-chip__status--contract">договор</span>
+                </span>
+              ))}
             </div>
           )}
-          {assignError && <div className="alert error" style={{ marginTop: 6 }}>{assignError}</div>}
-          <div className="bin-modal__actions">
-            <button className="button secondary" type="button" onClick={closeAssignModal} disabled={assignLoading}>
-              Отмена
+        </div>
+      </Modal>
+
+      {/* Unassigned BINs Modal (list only — assignment opens separate modal) */}
+      <Modal
+        open={unassignedModalOpen}
+        onClose={() => { setUnassignedModalOpen(false); setUnassignedBinSearch(''); }}
+        className="admin-modal__container"
+      >
+        <div className="admin-modal">
+          <div className="admin-modal__header">
+            <h3>Неназначенные БИНы ({admin.unassignedBins.length})</h3>
+          </div>
+
+          <input
+            className="input"
+            placeholder="🔍 Поиск по БИН..."
+            value={unassignedBinSearch}
+            onChange={(e) => setUnassignedBinSearch(e.target.value)}
+          />
+
+          {filteredUnassignedBins.length === 0 ? (
+            <span className="text-muted">{unassignedBinSearch ? 'БИНы не найдены' : 'Нет неназначенных БИНов.'}</span>
+          ) : (
+            <div className="admin-section__list admin-section__list--grid">
+              {filteredUnassignedBins.map((item) => (
+                <span
+                  key={item.bin}
+                  className="chip bin-chip bin-chip--compact bin-chip--clickable"
+                  onClick={() => openAssignModal(item.bin)}
+                >
+                  <span className="bin-chip__title">{item.bin}</span>
+                  <span className={`bin-chip__status ${item.hasContract ? 'bin-chip__status--contract' : 'bin-chip__status--no-contract'}`}>
+                    {item.hasContract ? 'договор' : 'без договора'}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Assignment Modal (opened when clicking a BIN in unassigned list) */}
+      <Modal
+        open={assignModalOpen}
+        onClose={closeAssignModal}
+        className="admin-modal__container"
+      >
+        <div className="admin-modal">
+          <div className="admin-modal__header">
+            <h3>Назначить БИН</h3>
+          </div>
+
+          <div className="admin-assign-modal__bin-label">
+            {assignBinValue}
+          </div>
+
+          <input
+            className="input"
+            placeholder="🔍 Поиск по сотруднику..."
+            value={assignEmployeeSearch}
+            onChange={(e) => setAssignEmployeeSearch(e.target.value)}
+          />
+
+          {filteredAssignableUsers.length === 0 ? (
+            <span className="text-muted">Нет доступных сотрудников</span>
+          ) : (
+            <div className="admin-assign-modal__users">
+              {filteredAssignableUsers.map((user) => (
+                <button
+                  key={user.id}
+                  type="button"
+                  className={`admin-assign-modal__user-btn ${assignUserId === String(user.id) ? 'admin-assign-modal__user-btn--selected' : ''}`}
+                  onClick={() => setAssignUserId(String(user.id))}
+                >
+                  <span className="admin-assign-modal__user-name">{user.name}</span>
+                  <span className="admin-assign-modal__user-email">{user.email}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {assignUserId && (
+            <div className="admin-assign-modal__duration">
+              <div className="bin-modal__options">
+                <label className={`bin-modal__option ${assignIndefinite ? 'bin-modal__option--active' : ''}`}>
+                  <input
+                    className="bin-modal__radio"
+                    type="radio"
+                    name="assign-modal-duration"
+                    checked={assignIndefinite}
+                    onChange={() => handleAssignIndefiniteChange(true)}
+                  />
+                  <div className="bin-modal__option-body">
+                    <span className="bin-modal__option-title">Бессрочно</span>
+                  </div>
+                </label>
+                <label className={`bin-modal__option ${!assignIndefinite ? 'bin-modal__option--active' : ''}`}>
+                  <input
+                    className="bin-modal__radio"
+                    type="radio"
+                    name="assign-modal-duration"
+                    checked={!assignIndefinite}
+                    onChange={() => handleAssignIndefiniteChange(false)}
+                  />
+                  <div className="bin-modal__option-body">
+                    <span className="bin-modal__option-title">Временно</span>
+                  </div>
+                </label>
+              </div>
+
+              {!assignIndefinite && (
+                <div className="bin-modal__field">
+                  <label htmlFor="assign-modal-expires">Дата окончания</label>
+                  <input
+                    id="assign-modal-expires"
+                    className="input"
+                    type="datetime-local"
+                    value={assignExpiresAt}
+                    min={formatDateTimeLocalInput(new Date())}
+                    onChange={(event) => {
+                      setAssignExpiresAt(event.target.value);
+                      if (assignError) setAssignError(null);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {assignError && <div className="alert error">{assignError}</div>}
+
+          <div className="admin-assign-modal__actions">
+            <button
+              className="button secondary"
+              type="button"
+              onClick={closeAssignModal}
+              disabled={assignLoading}
+            >
+              Отменить
             </button>
             <button
               className="button"
               type="button"
               onClick={handleAssignBin}
-              disabled={!assignBinValue || !assignUserId || assignLoading}
+              disabled={assignLoading || !assignUserId}
             >
               {assignLoading ? '...' : 'Назначить'}
             </button>
           </div>
-        </div>
-      </Modal>
-
-      {/* Organizations Without Contracts Modal */}
-      <Modal open={organizationsModalOpen} onClose={() => setOrganizationsModalOpen(false)} className="admin-modal__container">
-        <div className="admin-modal">
-          <div className="admin-modal__header">
-            <h3>Организации без договора ({admin.organizationsWithoutContracts.length})</h3>
-          </div>
-
-          {admin.organizationsWithoutContracts.length === 0 ? (
-            <span className="text-muted">Нет организаций без договора.</span>
-          ) : (
-            <>
-              <div className="admin-assign-grid">
-                <div className="admin-assign-grid__item">
-                  <SelectPill
-                    label=""
-                    showLabelInside={false}
-                    options={admin.orgBinOptions}
-                    value={orgBinValue}
-                    onChange={(value) => setOrgBinValue(value)}
-                    searchable
-                    style={{ minWidth: 0, width: '100%' }}
-                  />
-                </div>
-
-                <div className="admin-assign-grid__item">
-                  <SelectPill
-                    label=""
-                    showLabelInside={false}
-                    options={admin.assignUserOptions}
-                    value={orgUserId}
-                    onChange={(value) => setOrgUserId(value)}
-                    searchable
-                    style={{ minWidth: 0, width: '100%' }}
-                  />
-                </div>
-
-                <button
-                  className="button admin-assign-grid__btn"
-                  type="button"
-                  disabled={!orgBinValue || !orgUserId}
-                  onClick={() => {
-                    setAssignBinValue(orgBinValue);
-                    setAssignUserId(orgUserId);
-                    setOrganizationsModalOpen(false);
-                    openAssignModal();
-                  }}
-                >
-                  Назначить
-                </button>
-              </div>
-
-              <div className="admin-section__list admin-section__list--grid">
-                {admin.organizationsWithoutContracts.map((item) => (
-                  <span key={item.customerBin} className="chip bin-chip bin-chip--compact">
-                    <span className="bin-chip__title">{item.customerBin}</span>
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
         </div>
       </Modal>
 
@@ -544,7 +673,6 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
             placeholder="Поиск БИН..."
             value={allBinsSearch}
             onChange={(e) => setAllBinsSearch(e.target.value)}
-            style={{ marginBottom: 12 }}
           />
 
           {admin.binInfoLoading ? (
@@ -553,7 +681,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
             </div>
           ) : admin.selectedBinInfo ? (
             <div className="bin-info-panel">
-              <button type="button" className="btn btn--ghost" onClick={() => admin.setSelectedBinInfo(null)}>← Назад</button>
+              <button type="button" className="admin-modal__back-btn" onClick={() => admin.setSelectedBinInfo(null)}>← Назад</button>
               <div className="bin-info-details">
                 <h4>{admin.selectedBinInfo.bin}</h4>
                 <p className={admin.selectedBinInfo.hasContract ? 'text-success' : 'text-warning'}>
@@ -579,7 +707,6 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                   key={item.bin}
                   className="chip bin-chip bin-chip--compact bin-chip--deletable bin-chip--clickable"
                   onClick={() => admin.handleBinClick(item.bin)}
-                  style={{ cursor: 'pointer' }}
                 >
                   <span className="bin-chip__title">{item.bin}</span>
                   <span className={`bin-chip__status ${item.hasContract ? 'bin-chip__status--contract' : 'bin-chip__status--no-contract'}`}>

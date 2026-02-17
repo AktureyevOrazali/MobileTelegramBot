@@ -15,11 +15,13 @@ export interface UserBinAssignment {
 export interface UnassignedBinRaw {
   bin: string;
   open_dialogs: number;
+  has_contract: boolean;
 }
 
 export interface UnassignedBin {
   bin: string;
   openDialogs: number;
+  hasContract: boolean;
 }
 
 export interface OrganizationWithoutContractRaw {

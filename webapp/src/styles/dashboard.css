@@ -10,7 +10,7 @@
 /* ── Gradient hero header ── */
 
 .dashboard-hero {
-  background: linear-gradient(135deg, #3d5a8f 0%, #5a7ab8 48%, #7a9ad0 100%);
+  background: linear-gradient(135deg, #3b5998 0%, #5a7ab8 50%, #7c9fd6 100%);
   border-radius: 20px;
   padding: 14px 20px;
   color: #f8fafc;
@@ -827,4 +827,10 @@ body {
 
 .textarea--autogrow {
   overflow: hidden;
+}
+
+/* ─── Dark theme overrides for dashboard hero ─── */
+[data-theme='dark'] .dashboard-hero {
+  background: linear-gradient(135deg, #2d2a5e 0%, #3d3a8f 50%, #5a56b8 100%);
+  box-shadow: 0 12px 40px rgba(99, 102, 241, 0.15);
 }

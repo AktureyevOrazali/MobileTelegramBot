@@ -314,6 +314,7 @@ export class ApiClient {
       items.map((item) => ({
         bin: item.bin,
         openDialogs: typeof item.open_dialogs === 'number' ? item.open_dialogs : 0,
+        hasContract: Boolean(item.has_contract),
       }));
     try {
       const response = await this.request<UnassignedBinRaw[]>('bins/unassigned', { method: 'GET' });

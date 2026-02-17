@@ -132,7 +132,7 @@
   padding: 20px;
   z-index: 1200;
   overflow-y: auto;
-  min-height: 100vh;
+  overscroll-behavior: contain;
 }
 
 .modal-overlay--dialog {

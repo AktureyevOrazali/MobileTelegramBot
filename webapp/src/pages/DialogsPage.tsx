@@ -5,9 +5,7 @@ import SelectPill from '../components/SelectPill';
 import ConfirmModal from '../components/ConfirmModal';
 import ChatDetailModal from '../components/ChatDetailModal';
 import DialogCard from '../components/DialogCard';
-import RegionActivityMap, {
-  GEOJSON_FEATURES,
-} from '../components/RegionActivityMap';
+import RegionActivityMap from '../components/RegionActivityMap';
 import { useDialogsData } from '../hooks/useDialogsData';
 
 /* -------------------- Props -------------------- */
@@ -21,6 +19,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const {
     filteredChats,
     regionCounts,
+    rayonCounts,
     maxRegionCount,
     loading,
     error,
@@ -84,7 +83,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           </div>
         </div>
         <div className="analytics-banner__body">
-          <RegionActivityMap features={GEOJSON_FEATURES} counts={regionCounts} />
+          <RegionActivityMap counts={regionCounts} rayonCounts={rayonCounts} />
         </div>
       </div>
 

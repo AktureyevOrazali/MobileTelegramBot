@@ -6,7 +6,10 @@ import { useDialogFilters } from './useDialogFilters';
 import {
     GEOJSON_FEATURES,
     detectRegionFromAddress,
+    detectRayonFromAddress,
+    SVG_ID_TO_REGION_KEY,
 } from '../components/RegionActivityMap';
+import { OBLAST_RAYONS } from '../data/kzMapData';
 
 /* ------------------------------------------------------------------ */
 /*  Return type                                                        */
@@ -19,6 +22,7 @@ export interface UseDialogsDataReturn {
     filteredChats: ChatSummary[];
     binDetails: BinDetailed[];
     regionCounts: Record<string, number>;
+    rayonCounts: Record<string, Record<number, number>>;
     maxRegionCount: number;
 
     /* UI state */
@@ -363,6 +367,27 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
         [regionCounts],
     );
 
+    /* ---- Derived: rayon counts (oblastSvgId → rayonIndex → binCount) ---- */
+    const rayonCounts = useMemo(() => {
+        const result: Record<string, Record<number, number>> = {};
+        // Build reverse lookup: regionKey → oblastId
+        const regionKeyToSvgId: Record<string, string> = {};
+        for (const svgId of Object.keys(SVG_ID_TO_REGION_KEY)) {
+            regionKeyToSvgId[SVG_ID_TO_REGION_KEY[svgId]] = svgId;
+        }
+        binDetails.forEach((detail) => {
+            const regionKey = detectRegionFromAddress(detail.customerLegalAddress);
+            if (!regionKey) return;
+            const oblastId = regionKeyToSvgId[regionKey];
+            if (!oblastId || !OBLAST_RAYONS[oblastId]) return;
+            const rayonIdx = detectRayonFromAddress(detail.customerLegalAddress, oblastId);
+            if (rayonIdx === null) return;
+            if (!result[oblastId]) result[oblastId] = {};
+            result[oblastId][rayonIdx] = (result[oblastId][rayonIdx] ?? 0) + 1;
+        });
+        return result;
+    }, [binDetails]);
+
     /* ---- Derived: filtered & sorted chats ---- */
     const filteredChats = useMemo(() => {
         let list = chats;
@@ -552,6 +577,7 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
         filteredChats,
         binDetails,
         regionCounts,
+        rayonCounts,
         maxRegionCount,
         loading,
         error,

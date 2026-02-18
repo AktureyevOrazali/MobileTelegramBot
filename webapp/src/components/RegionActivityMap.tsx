@@ -3,6 +3,7 @@ import type { FeatureCollection, Geometry } from 'geojson';
 import { scaleLinear } from 'd3';
 import kzMap from '../../kz.json';
 import { OBLASTS, OBLAST_RAYONS, MAIN_VIEWBOX } from '../data/kzMapData';
+import type { RegionStats } from '../hooks/useDialogsData';
 
 /** GeoJSON features for Kazakhstan regions — kept for useDialogsData compatibility. */
 export const GEOJSON_FEATURES = kzMap as FeatureCollection<Geometry, { name: string }>;
@@ -69,6 +70,133 @@ export const detectRegionFromAddress = (address: string | null | undefined): str
 };
 
 /**
+ * Extra search patterns for rayons that can't be detected by simple name matching.
+ * Key: oblastId, value: array of [rayonName, additionalPatterns[]].
+ * Rayon name must exactly match the name field in OBLAST_RAYONS data.
+ */
+const RAYON_EXTRA_PATTERNS: Record<string, [string, string[]][]> = {
+    turkistanOblast: [
+        ['Сауран', ['г. туркестан', 'г.туркестан', 'город туркестан', 'кентау', 'саура']],
+        ['Cайрам', ['сайрам']],
+        ['Шымкент', ['шымкент']],
+        ['Арыс', ['арыс']],
+        ['Сарыагаш', ['сарыагаш']],
+        ['Мактаарал', ['мактаарал']],
+        ['Казыгурт', ['казыгурт']],
+        ['Толеби', ['толеби']],
+        ['Тулкибас', ['тулкибас']],
+        ['Ордабасы', ['ордабасы']],
+        ['Байдибек', ['байдибек']],
+        ['Шардаринский', ['шардар']],
+        ['Отырарский', ['отырар']],
+        ['Сузакский район', ['сузак']],
+        ['Жетисай', ['жетисай']],
+        ['Келес', ['келес']],
+        ['Тұран', ['туран', 'тұран']],
+        ['Аль-Фараби', ['аль-фараби', 'фараби']],
+        ['Каратау', ['каратау']],
+        ['Абай', ['абай']],
+        ['Енбекшин', ['енбекшин']],
+    ],
+    jambylOblast: [
+        ['Турара Рыскулова', ['рыскулов', 'турара']],
+        ['Жуалынский', ['жуалын']],
+        ['Жамбылский', ['жамбыл']],
+        ['Кордайский', ['кордай']],
+        ['Шуский', ['шуск', 'шуйск']],
+        ['Талас', ['талас']],
+        ['Сарысуский', ['сарысу']],
+        ['Байзакский', ['байзак']],
+        ['Мойынкумский', ['мойынкум']],
+        ['Меркенский', ['меркен']],
+    ],
+    aktobeOblast: [
+        ['Актобе', ['актобе', 'актюбинск']],
+        ['Хромтау', ['хромтау']],
+        ['Айтекеби', ['айтекеби']],
+        ['Мугалжарский', ['мугалжар']],
+        ['Шалкарский', ['шалкар']],
+    ],
+    karagandyOblast: [
+        ['Нұра', ['нура', 'нұра']],
+        ['Бухар-Жырауский', ['бухар-жырау', 'бухар жырау']],
+        ['Шетский район', ['шетск']],
+        ['Нуринский район', ['нурин']],
+        ['Актогайский район', ['актогай']],
+    ],
+    pavlodarOblast: [
+        ['Павлодар', ['павлодар']],
+        ['Экибастуз', ['экибастуз']],
+        ['Аксу', ['г. аксу', 'г.аксу']],
+        ['Тереңкөл', ['тереңкол', 'теренкол']],
+        ['Аққулы', ['аккулы', 'аққулы']],
+    ],
+    VKO: [
+        ['Семей Г.А', ['семей', 'семипалатинск']],
+        ['Глубоковский', ['глубоков']],
+        ['Уланский', ['уланск']],
+    ],
+    abayOblast: [
+        ['Аягозский', ['аягоз']],
+        ['Урджарский', ['урджар']],
+        ['Зайсанский', ['зайсан']],
+        ['Курчумский', ['курчум']],
+    ],
+    almatyOblast: [
+        ['Конаев', ['конаев', 'капчагай']],
+        ['Талгарский', ['талгар']],
+        ['Карасай', ['карасай']],
+        ['Илийский', ['илийск']],
+        ['Енбекшиказахский', ['енбекшиказах']],
+        ['Райымбекский', ['райымбек']],
+    ],
+    jetisuOblast: [
+        ['Панфиловский', ['панфилов', 'жаркент']],
+        ['Саркандский', ['сарканд']],
+        ['Алакольский', ['алаколь']],
+        ['Кербулак', ['кербулак']],
+    ],
+    kostanaiOblast: [
+        ['Костанай', ['костанай', 'кустанай']],
+        ['Аркалык', ['аркалык']],
+        ['Житикара', ['житикара']],
+        ['район Б.Майлина', ['майлин']],
+    ],
+    SKO: [
+        ['Район Мусрепова', ['мусрепов']],
+        ['Район Шал Акына', ['шал акын']],
+        ['Район Магжана Жумабаева', ['магжан', 'жумабаев']],
+    ],
+    akmolaOblast: [
+        ['Биржан сал', ['биржан']],
+        ['Еремейнтау', ['еремейнтау']],
+        ['Коргалжын', ['коргалжын']],
+        ['Шортандинский район', ['шортанд']],
+    ],
+    kyzylordaOblast: [
+        ['Кызылорда', ['кызылорда', 'қызылорда']],
+        ['Жанакорган', ['жанакорган']],
+        ['Шиели', ['шиели']],
+    ],
+    almaty: [
+        ['МЕДЕУ', ['медеу']],
+        ['Бостандық', ['бостандық', 'бостандык']],
+        ['Турксибский', ['турксиб']],
+        ['Наурызбай', ['наурызбай']],
+        ['Ауэзов', ['ауэзов']],
+        ['Алатау', ['алатау']],
+    ],
+};
+
+/** Normalize text for rayon matching: lowercase, ё→е, latin→cyrillic */
+function normalizeForMatch(s: string): string {
+    return s
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/c/gi, 'с');
+}
+
+/**
  * Detects a rayon index within an oblast from a free-text address string.
  * Returns the rayon array index or null if no match found.
  */
@@ -79,23 +207,43 @@ export const detectRayonFromAddress = (
     if (!address) return null;
     const oblastData = OBLAST_RAYONS[oblastId];
     if (!oblastData) return null;
-    const normalized = address.toLowerCase().replace(/ё/g, 'е').replace(/c/gi, 'с');
+    const normalized = normalizeForMatch(address);
+
+    // Phase 1: Try extra patterns first (most reliable, covers cities and named rayons)
+    const extraPatterns = RAYON_EXTRA_PATTERNS[oblastId];
+    if (extraPatterns) {
+        for (const [rayonName, patterns] of extraPatterns) {
+            if (patterns.some((p) => normalized.includes(normalizeForMatch(p)))) {
+                // Find the rayon index by name
+                const idx = oblastData.rayons.findIndex(
+                    (r) => normalizeForMatch(r.name) === normalizeForMatch(rayonName),
+                );
+                if (idx >= 0) return idx;
+            }
+        }
+    }
+
+    // Phase 2: Generic matching — try direct name include + root extraction
     for (let i = 0; i < oblastData.rayons.length; i++) {
-        const rayonName = oblastData.rayons[i].name.toLowerCase().replace(/ё/g, 'е').replace(/c/gi, 'с');
-        if (!rayonName) continue;
-        // Extract root: remove "район" and common suffixes for fuzzy match
-        const root = rayonName
-            .replace(/\s*район$/i, '')
-            .replace(/ский$|ская$|ское$|ный$|ная$|ное$/i, '')
+        const rawName = oblastData.rayons[i].name;
+        if (!rawName) continue;
+        const rayonNorm = normalizeForMatch(rawName);
+
+        // Direct name match (e.g. address contains "бейнеу", rayon is "Бейнеу")
+        if (rayonNorm.length >= 3 && normalized.includes(rayonNorm)) {
+            return i;
+        }
+
+        // Root extraction: remove "район" suffix, then adjective endings
+        const withoutRayon = rayonNorm.replace(/\s*район$/i, '').trim();
+        const root = withoutRayon
+            .replace(/ский$|ская$|ское$|ный$|ная$|ное$|ской$|нской$/, '')
             .trim();
         if (root.length >= 3 && normalized.includes(root)) {
             return i;
         }
-        // Also try direct name match (e.g. "Бейнеу", "Арыс")
-        if (rayonName.length >= 3 && normalized.includes(rayonName)) {
-            return i;
-        }
     }
+
     return null;
 };
 
@@ -275,7 +423,9 @@ function useIsDarkTheme(): boolean {
 const RegionActivityMap: React.FC<{
     counts: Record<string, number>;
     rayonCounts?: Record<string, Record<number, number>>;
-}> = React.memo(({ counts, rayonCounts }) => {
+    regionStats?: Record<string, RegionStats>;
+    rayonStats?: Record<string, Record<number, RegionStats>>;
+}> = React.memo(({ counts, rayonCounts, regionStats, rayonStats }) => {
     const wrapperRef = useRef<HTMLDivElement | null>(null);
     const [hovered, setHovered] = useState<{ key: string; x: number; y: number } | null>(null);
     const [selectedOblast, setSelectedOblast] = useState<string | null>(null);
@@ -473,18 +623,24 @@ const RegionActivityMap: React.FC<{
                                     onMouseMove={(e) => handleMouseMove(e, `rayon-${index}`)}
                                     onMouseLeave={handleMouseLeave}
                                 />
-                                {rayonValue > 0 && (
-                                    <text
-                                        x={rcx}
-                                        y={rcy}
-                                        className="kz-map__count-label"
-                                        textAnchor="middle"
-                                        dominantBaseline="central"
-                                        pointerEvents="none"
-                                    >
-                                        {rayonValue}
-                                    </text>
-                                )}
+                                {rayonValue > 0 && (() => {
+                                    // Scale font to match main map visual size (main viewBox=900 wide, font=14)
+                                    const vbWidth = parseFloat(selectedOblastData.viewBox.split(' ')[2] ?? '900');
+                                    const scaledFont = 14 * (vbWidth / 900);
+                                    return (
+                                        <text
+                                            x={rcx}
+                                            y={rcy}
+                                            className="kz-map__count-label"
+                                            textAnchor="middle"
+                                            dominantBaseline="central"
+                                            pointerEvents="none"
+                                            style={{ fontSize: `${scaledFont}px` }}
+                                        >
+                                            {rayonValue}
+                                        </text>
+                                    );
+                                })()}
                             </g>
                         );
                     })}
@@ -502,6 +658,7 @@ const RegionActivityMap: React.FC<{
                             const idx = parseInt(hovered.key.replace('rayon-', ''), 10);
                             const rayon = selectedOblastData.rayons[idx];
                             const rayonValue = currentRayonCounts[idx] ?? 0;
+                            const rs = rayonStats?.[selectedOblast!]?.[idx];
                             return (
                                 <>
                                     <div className="kz-map__tooltip-title">
@@ -510,18 +667,40 @@ const RegionActivityMap: React.FC<{
                                     <div className="kz-map__tooltip-value">
                                         {rayonValue} БИН
                                     </div>
+                                    {rs && (
+                                        <div className="kz-map__tooltip-stats">
+                                            <div>Диалогов: {rs.totalDialogs}</div>
+                                            <div>Открытых: {rs.openDialogs}</div>
+                                            <div>Закрытых: {rs.closedDialogs}</div>
+                                            {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                                        </div>
+                                    )}
                                 </>
                             );
                         })()
                     ) : (
-                        <>
-                            <div className="kz-map__tooltip-title">
-                                {REGION_LABELS[SVG_ID_TO_REGION_KEY[hovered.key] ?? ''] ?? hovered.key}
-                            </div>
-                            <div className="kz-map__tooltip-value">
-                                {counts[SVG_ID_TO_REGION_KEY[hovered.key] ?? ''] ?? 0} БИН
-                            </div>
-                        </>
+                        (() => {
+                            const regionKey = SVG_ID_TO_REGION_KEY[hovered.key] ?? '';
+                            const rs = regionStats?.[regionKey];
+                            return (
+                                <>
+                                    <div className="kz-map__tooltip-title">
+                                        {REGION_LABELS[regionKey] ?? hovered.key}
+                                    </div>
+                                    <div className="kz-map__tooltip-value">
+                                        {counts[regionKey] ?? 0} БИН
+                                    </div>
+                                    {rs && (
+                                        <div className="kz-map__tooltip-stats">
+                                            <div>Диалогов: {rs.totalDialogs}</div>
+                                            <div>Открытых: {rs.openDialogs}</div>
+                                            <div>Закрытых: {rs.closedDialogs}</div>
+                                            {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                                        </div>
+                                    )}
+                                </>
+                            );
+                        })()
                     )}
                 </div>
             )}

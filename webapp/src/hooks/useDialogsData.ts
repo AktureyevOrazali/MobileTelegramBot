@@ -11,6 +11,14 @@ import {
 } from '../components/RegionActivityMap';
 import { OBLAST_RAYONS } from '../data/kzMapData';
 
+/** Per-region/rayon aggregated statistics. */
+export interface RegionStats {
+    totalDialogs: number;
+    openDialogs: number;
+    closedDialogs: number;
+    unreadCount: number;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Return type                                                        */
 /* ------------------------------------------------------------------ */
@@ -23,6 +31,8 @@ export interface UseDialogsDataReturn {
     binDetails: BinDetailed[];
     regionCounts: Record<string, number>;
     rayonCounts: Record<string, Record<number, number>>;
+    regionStats: Record<string, RegionStats>;
+    rayonStats: Record<string, Record<number, RegionStats>>;
     maxRegionCount: number;
 
     /* UI state */
@@ -379,14 +389,103 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
             const regionKey = detectRegionFromAddress(detail.customerLegalAddress);
             if (!regionKey) return;
             const oblastId = regionKeyToSvgId[regionKey];
-            if (!oblastId || !OBLAST_RAYONS[oblastId]) return;
-            const rayonIdx = detectRayonFromAddress(detail.customerLegalAddress, oblastId);
-            if (rayonIdx === null) return;
-            if (!result[oblastId]) result[oblastId] = {};
-            result[oblastId][rayonIdx] = (result[oblastId][rayonIdx] ?? 0) + 1;
+            if (oblastId && OBLAST_RAYONS[oblastId]) {
+                const rayonIdx = detectRayonFromAddress(detail.customerLegalAddress, oblastId);
+                if (rayonIdx !== null) {
+                    if (!result[oblastId]) result[oblastId] = {};
+                    result[oblastId][rayonIdx] = (result[oblastId][rayonIdx] ?? 0) + 1;
+                }
+            }
+            // Шымкент dual-display: also count in Turkestan oblast
+            if (regionKey === 'Shymkent (city)') {
+                const turkestanOblastId = 'turkistanOblast';
+                const rayonIdx = detectRayonFromAddress(detail.customerLegalAddress, turkestanOblastId);
+                if (rayonIdx !== null) {
+                    if (!result[turkestanOblastId]) result[turkestanOblastId] = {};
+                    result[turkestanOblastId][rayonIdx] = (result[turkestanOblastId][rayonIdx] ?? 0) + 1;
+                }
+            }
         });
         return result;
     }, [binDetails]);
+
+    /* ---- Derived: BIN → regionKey lookup ---- */
+    const binToRegion = useMemo(() => {
+        const map: Record<string, string> = {};
+        binDetails.forEach((d) => {
+            const rk = detectRegionFromAddress(d.customerLegalAddress);
+            if (rk) map[d.bin] = rk;
+        });
+        return map;
+    }, [binDetails]);
+
+    /* ---- Derived: region stats (per oblast) ---- */
+    const regionStats = useMemo(() => {
+        const stats: Record<string, RegionStats> = {};
+        const ensure = (key: string) => {
+            if (!stats[key]) stats[key] = { totalDialogs: 0, openDialogs: 0, closedDialogs: 0, unreadCount: 0 };
+        };
+        chats.forEach((chat) => {
+            if (!chat.bin) return;
+            const rk = binToRegion[chat.bin];
+            if (!rk) return;
+            ensure(rk);
+            stats[rk].totalDialogs++;
+            if (chat.dialogClosedAt) stats[rk].closedDialogs++;
+            else stats[rk].openDialogs++;
+            stats[rk].unreadCount += chat.unreadCount;
+        });
+        return stats;
+    }, [chats, binToRegion]);
+
+    /* ---- Derived: rayon stats (oblastId → rayonIdx → stats) ---- */
+    const rayonStats = useMemo(() => {
+        const result: Record<string, Record<number, RegionStats>> = {};
+        const regionKeyToSvgId: Record<string, string> = {};
+        for (const svgId of Object.keys(SVG_ID_TO_REGION_KEY)) {
+            regionKeyToSvgId[SVG_ID_TO_REGION_KEY[svgId]] = svgId;
+        }
+        // BIN → (oblastId, rayonIdx) lookup
+        const binToRayon: Record<string, { oblastId: string; rayonIdx: number }[]> = {};
+        binDetails.forEach((d) => {
+            const rk = detectRegionFromAddress(d.customerLegalAddress);
+            if (!rk) return;
+            const oblastId = regionKeyToSvgId[rk];
+            if (oblastId && OBLAST_RAYONS[oblastId]) {
+                const idx = detectRayonFromAddress(d.customerLegalAddress, oblastId);
+                if (idx !== null) {
+                    if (!binToRayon[d.bin]) binToRayon[d.bin] = [];
+                    binToRayon[d.bin].push({ oblastId, rayonIdx: idx });
+                }
+            }
+            // Шымкент dual-display
+            if (rk === 'Shymkent (city)') {
+                const turkId = 'turkistanOblast';
+                const idx = detectRayonFromAddress(d.customerLegalAddress, turkId);
+                if (idx !== null) {
+                    if (!binToRayon[d.bin]) binToRayon[d.bin] = [];
+                    binToRayon[d.bin].push({ oblastId: turkId, rayonIdx: idx });
+                }
+            }
+        });
+        chats.forEach((chat) => {
+            if (!chat.bin) return;
+            const entries = binToRayon[chat.bin];
+            if (!entries) return;
+            for (const { oblastId, rayonIdx } of entries) {
+                if (!result[oblastId]) result[oblastId] = {};
+                if (!result[oblastId][rayonIdx]) {
+                    result[oblastId][rayonIdx] = { totalDialogs: 0, openDialogs: 0, closedDialogs: 0, unreadCount: 0 };
+                }
+                const s = result[oblastId][rayonIdx];
+                s.totalDialogs++;
+                if (chat.dialogClosedAt) s.closedDialogs++;
+                else s.openDialogs++;
+                s.unreadCount += chat.unreadCount;
+            }
+        });
+        return result;
+    }, [chats, binDetails]);
 
     /* ---- Derived: filtered & sorted chats ---- */
     const filteredChats = useMemo(() => {
@@ -578,6 +677,8 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
         binDetails,
         regionCounts,
         rayonCounts,
+        regionStats,
+        rayonStats,
         maxRegionCount,
         loading,
         error,

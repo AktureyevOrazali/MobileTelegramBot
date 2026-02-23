@@ -148,36 +148,44 @@
   background: rgba(255, 255, 255, 0.22);
 }
 
-/* Табы — растягиваются на всю ширину */
+/* Табы — растягиваются на всю ширину или прокручиваются */
 
 .dashboard-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  flex-wrap: nowrap;
   gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.dashboard-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .dashboard-tab {
+  flex: 1;
+  min-width: max-content;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
-  padding: 8px 0;
-  font-size: 0.82rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 8px 16px;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   text-align: center;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: all 0.2s ease;
 }
 
 .dashboard-tab:hover {
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .dashboard-tab.is-active {
-  background: rgba(255, 255, 255, 0.24);
-  border-color: rgba(255, 255, 255, 0.5);
-  color: #fff;
+  background: #fff;
+  color: #3b5998;
+  border-color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   transform: translateY(-1px);
 }
 
@@ -247,16 +255,16 @@
   border-radius: inherit;
 }
 
-/* ── Overview: two-column ── */
+/* ── Overview: 2-column responsive grid ── */
 
 .dashboard-overview-row {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   align-items: stretch;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 768px) {
   .dashboard-overview-row {
     grid-template-columns: 1fr;
   }
@@ -273,20 +281,20 @@
 
 .dashboard-speed__body {
   display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 14px;
+  grid-template-columns: 130px 1fr;
+  gap: 16px;
   align-items: center;
 }
 
 @media (max-width: 640px) {
   .dashboard-speed__body {
-    grid-template-columns: 120px 1fr;
+    grid-template-columns: 110px 1fr;
   }
 }
 
 .dashboard-donut {
-  width: 140px;
-  height: 140px;
+  width: 130px;
+  height: 130px;
   transform: rotate(-90deg);
 }
 
@@ -316,7 +324,7 @@
 }
 
 .dashboard-donut__center-value {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   fill: var(--text-heading);
   transform: rotate(90deg);
@@ -324,7 +332,7 @@
 }
 
 .dashboard-donut__center-sub {
-  font-size: 11px;
+  font-size: 10px;
   fill: var(--text-muted);
   transform: rotate(90deg);
   transform-origin: center;
@@ -335,31 +343,33 @@
 .dashboard-legend {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .dashboard-legend-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .dashboard-legend-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .dashboard-legend-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .dashboard-legend-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -378,12 +388,16 @@
 
 .dashboard-legend-label {
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dashboard-legend-count {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-size: 0.88rem;
 }
 
 .dashboard-legend-meta {
@@ -395,7 +409,7 @@
 .dashboard-legend-divider {
   height: 1px;
   background: var(--border-color);
-  margin: 4px 0;
+  margin: 3px 0;
 }
 
 /* ── KV (key-value) card ── */

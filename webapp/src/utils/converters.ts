@@ -9,6 +9,8 @@ import {
   DashboardAgentStatRaw,
   DashboardSectionStatRaw,
   DashboardSectionTopQuestionsRaw,
+  DashboardTopBinRaw,
+  DashboardHeatmapPointRaw,
   Message,
   MessageNotification,
   MessageNotificationRaw,
@@ -344,6 +346,25 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
       }))
     : [];
 
+  const topBinsWithoutContract = Array.isArray(raw.top_bins_without_contract)
+    ? raw.top_bins_without_contract
+      .filter((item): item is DashboardTopBinRaw => Boolean(item))
+      .map((item) => ({
+        bin: item.bin ?? '',
+        requests: safeNumber(item.requests),
+      }))
+    : [];
+
+  const peakLoadHeatmap = Array.isArray(raw.peak_load_heatmap)
+    ? raw.peak_load_heatmap
+      .filter((item): item is DashboardHeatmapPointRaw => Boolean(item))
+      .map((item) => ({
+        dayOfWeek: safeNumber(item.day_of_week),
+        hour: safeNumber(item.hour),
+        count: safeNumber(item.count),
+      }))
+    : [];
+
   return {
     totalDialogs: safeNumber(raw.total_dialogs),
     openDialogs: safeNumber(raw.open_dialogs),
@@ -352,6 +373,17 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
     totalMessages: safeNumber(raw.total_messages),
     totalIncomingMessages: safeNumber(raw.total_incoming_messages),
     totalOutgoingMessages: safeNumber(raw.total_outgoing_messages),
+    aiClosedDialogs: safeNumber(raw.ai_closed_dialogs),
+    transferredToOperatorDialogs: safeNumber(raw.transferred_to_operator_dialogs),
+    avgMessagesBeforeTransfer: typeof raw.avg_messages_before_transfer === 'number' ? raw.avg_messages_before_transfer : null,
+    aiMessagesCount: safeNumber(raw.ai_messages_count),
+    requestsWithContract: safeNumber(raw.requests_with_contract),
+    requestsWithoutContract: safeNumber(raw.requests_without_contract),
+    recurringRequestsCount: safeNumber(raw.recurring_requests_count),
+    recurringRequestsPercentage: typeof raw.recurring_requests_percentage === 'number' ? raw.recurring_requests_percentage : null,
+    slaViolationsCount: safeNumber(raw.sla_violations_count),
+    slaCompliancePercentage: typeof raw.sla_compliance_percentage === 'number' ? raw.sla_compliance_percentage : null,
+    averageFirstMessageLength: typeof raw.average_first_message_length === 'number' ? raw.average_first_message_length : null,
     averageMessagesPerDialog: safeNumber(raw.average_messages_per_dialog),
     avgDialogDurationMinutes:
       typeof raw.avg_dialog_duration_minutes === 'number' && Number.isFinite(raw.avg_dialog_duration_minutes)
@@ -364,6 +396,8 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
     questionsBySection,
     agentBreakdown,
     recentActivity,
+    topBinsWithoutContract,
+    peakLoadHeatmap,
     updatedAt: raw.updated_at ? new Date(raw.updated_at) : new Date(),
   };
 }

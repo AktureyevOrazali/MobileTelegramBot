@@ -1,4 +1,4 @@
-// Auto-generated from zxzxzxzxzxzxzzxzx.html — do not edit manually
+﻿// Auto-generated from zxzxzxzxzxzxzzxzx.html — do not edit manually
 
 export interface OblastData {
   id: string;
@@ -1453,7 +1453,7 @@ export const OBLAST_RAYONS: Record<string, OblastRayonData> = {
         labelY: 0,
       },
       {
-        name: "АЛМАТЫ",
+        name: "Алмалинский",
         d: "M320.67,522.5c.63-.51,1.41-.79,2.22-.79h45.84c.52,0,1.04-.12,1.51-.34l13.6-6.46,14.78-7.6c.1-.05.2-.1.3-.14l39.74-15.89c.12-.05.24-.09.36-.12l34.76-9.68c.23-.06.46-.1.69-.12l49.72-3.56c1.55-.11,4.7-.48,4.87,1.06l-.25,4.74s0,.06,0,.09l8.25,85.79c.17,1.59-.98,3.02-2.57,3.18l-182.91,19.25c-.64.07-1.25.31-1.76.69l-13.9,10.54c-.61.46-1.36.71-2.12.71h0c-1.66,0-3.1-1.16-3.44-2.79l-2.06-9.76c-.08-.37-.22-.73-.41-1.06l-12.58-21.36c-.32-.54-.49-1.16-.49-1.78v-38.2c0-1.06.48-2.06,1.3-2.73l4.54-3.7Z",
         labelX: 0,
         labelY: 0,
@@ -1485,3 +1485,5 @@ export const OBLAST_RAYONS: Record<string, OblastRayonData> = {
     ],
   },
 };
+
+

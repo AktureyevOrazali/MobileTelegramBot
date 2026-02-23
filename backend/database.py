@@ -2281,13 +2281,14 @@ def get_dashboard_summary(
     # ВАЖНО: дэшборд больше не фильтруется по BIN. Метрики считаются по факту сообщений оператора.
     assigned_bins: List[str] | None = None
 
-    # Получаем список всех операторов для фильтрации сообщений
+    # Получаем список операторов и модераторов для фильтрации сообщений
+    # (ответы админов НЕ учитываются как "человеческое вмешательство" в AI-метриках)
     operator_names: set[str] = set()
     active_user_names: set[str] = set()
     with _lock:
         operator_rows = execute(
-            f"SELECT {_user_columns('u')} FROM users u WHERE u.role = %s AND COALESCE(u.is_approved, 1) = 1",
-            (ROLE_OPERATOR,),
+            f"SELECT {_user_columns('u')} FROM users u WHERE u.role IN (%s, %s) AND COALESCE(u.is_approved, 1) = 1",
+            (ROLE_OPERATOR, ROLE_MODERATOR),
         ).fetchall()
         for row in operator_rows:
             user = _row_to_user(row)
@@ -2311,7 +2312,8 @@ def get_dashboard_summary(
             if login:
                 active_user_names.add(login.lower())
 
-    # Если выбран конкретный сотрудник — фильтруем по нему (name/login), а не по текущим BIN.
+    # Если выбран конкретный сотрудник — фильтруем по нему (name/login) и по его БИНам.
+    operator_assigned_bins: List[str] | None = None
     if operator_id is not None:
         target = get_user_by_id(operator_id)
         if not target:
@@ -2327,6 +2329,9 @@ def get_dashboard_summary(
             return _empty_summary()
         operator_names = selected
         active_user_names = selected
+        # Load operator's assigned BINs for dialog-level filtering
+        # (AI metrics, contracts, heatmap — the operator's zone of responsibility)
+        operator_assigned_bins = get_user_bins(operator_id)
 
     message_union_sql = """
         (
@@ -2365,6 +2370,17 @@ def get_dashboard_summary(
             "total_messages": 0,
             "total_incoming_messages": 0,
             "total_outgoing_messages": 0,
+            "ai_closed_dialogs": 0,
+            "transferred_to_operator_dialogs": 0,
+            "ai_messages_count": 0,
+            "avg_messages_before_transfer": None,
+            "requests_with_contract": 0,
+            "requests_without_contract": 0,
+            "recurring_requests_count": 0,
+            "recurring_requests_percentage": None,
+            "sla_violations_count": 0,
+            "sla_compliance_percentage": None,
+            "average_first_message_length": None,
             "average_messages_per_dialog": 0.0,
             "avg_dialog_duration_minutes": None,
             "avg_response_time_minutes": None,
@@ -2375,6 +2391,8 @@ def get_dashboard_summary(
             "questions_by_section": [],
             "agent_breakdown": [],
             "recent_activity": recent_activity,
+            "top_bins_without_contract": [],
+            "peak_load_heatmap": [],
             "updated_at": now.isoformat(),
         }
 
@@ -3047,6 +3065,246 @@ def get_dashboard_summary(
             }
         )
 
+    ai_closed_dialogs = 0
+    transferred_to_operator_dialogs = total_dialogs
+    ai_messages_count = 0
+    avg_messages_before_transfer = None
+    recurring_requests_count = 0
+    recurring_requests_percentage = None
+    sla_violations_count = 0
+    sla_compliance_percentage = None
+    peak_load_heatmap = []
+    requests_with_contract = 0
+    requests_without_contract = 0
+    top_bins_without_contract = []
+    average_first_message_length = None
+
+    # Build reusable BIN-based filter for dialog-level metrics.
+    # When an operator is selected, we filter by their assigned BINs (zone of responsibility).
+    # This correctly attributes AI-closed dialogs, contract stats, heatmap, etc.
+    if operator_id is not None and operator_assigned_bins:
+        _bin_placeholders = ", ".join("%s" for _ in operator_assigned_bins)
+        operator_dialog_filter_sql = f"""
+            AND COALESCE(cd.bin, (SELECT c.bin FROM chats c WHERE c.chat_id = cd.chat_id)) IN ({_bin_placeholders})
+        """
+        operator_dialog_filter_params = list(operator_assigned_bins)
+
+        # For incoming messages: filter to dialogs with BINs assigned to this operator
+        operator_incoming_dialog_filter_sql = f"""
+            AND m.dialog_id IN (
+                SELECT cd_bin.id
+                FROM chat_dialogs cd_bin
+                LEFT JOIN chats c_bin ON c_bin.chat_id = cd_bin.chat_id
+                WHERE COALESCE(cd_bin.bin, c_bin.bin) IN ({_bin_placeholders})
+            )
+        """
+        operator_incoming_dialog_filter_params = list(operator_assigned_bins)
+    elif operator_id is not None:
+        # Operator has no assigned BINs — return zeros for dialog-level metrics
+        operator_dialog_filter_sql = "AND 1=0"
+        operator_dialog_filter_params = []
+        operator_incoming_dialog_filter_sql = "AND 1=0"
+        operator_incoming_dialog_filter_params = []
+    else:
+        operator_dialog_filter_sql = ""
+        operator_dialog_filter_params = []
+        operator_incoming_dialog_filter_sql = ""
+        operator_incoming_dialog_filter_params = []
+
+    with _lock:
+        # AI messages count (bot messages) — filtered by operator BINs if selected
+        ai_messages_clause = (
+            f"AND TRIM(LOWER(m.author)) IN ({automation_author_placeholders})"
+            if automation_author_placeholders
+            else "AND 1=0"
+        )
+        ai_params = [name.lower() for name in AUTOMATION_AUTHOR_NAMES] if automation_author_placeholders else []
+
+        ai_messages_count = execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM """ + message_union_sql + """ m
+            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
+            LEFT JOIN chats c ON c.chat_id = m.chat_id
+            WHERE m.direction = 'outgoing'
+              AND m.author IS NOT NULL
+              """ + ai_messages_clause + """
+              AND m.created_at >= %s AND m.created_at < %s
+            """ + operator_incoming_dialog_filter_sql + """
+            """,
+            (*ai_params, start_iso, end_exclusive_iso, *operator_incoming_dialog_filter_params)
+        ).fetchone()["total"] or 0
+
+        # Count ALL closed dialogs in the period (optionally filtered by operator BINs).
+        # This is the denominator for the AI automation percentage.
+        all_period_closed_dialogs = execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM chat_dialogs cd
+            WHERE cd.started_at >= %s AND cd.started_at < %s
+              AND cd.ended_at IS NOT NULL
+            """ + operator_dialog_filter_sql + """
+            """,
+            (start_iso, end_exclusive_iso, *operator_dialog_filter_params)
+        ).fetchone()["total"] or 0
+
+        # AI fully-closed dialogs: closed dialogs without any human operator reply
+        ai_closed_dialogs = execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM chat_dialogs cd
+            WHERE cd.started_at >= %s AND cd.started_at < %s
+              AND cd.ended_at IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM """ + message_union_sql + """ m
+                  WHERE m.dialog_id = cd.id
+                    AND m.direction = 'outgoing'
+                    AND m.author IS NOT NULL
+                    """ + automation_clause + """
+              )
+            """ + operator_dialog_filter_sql + """
+            """,
+            (
+                start_iso, end_exclusive_iso,
+                *([name.lower() for name in AUTOMATION_AUTHOR_NAMES] if automation_author_placeholders else []),
+                *operator_dialog_filter_params,
+            )
+        ).fetchone()["total"] or 0
+
+        transferred_to_operator_dialogs = max(0, all_period_closed_dialogs - ai_closed_dialogs)
+
+        # Avg messages before transfer
+        avg_messages_before_transfer_row = execute(
+            """
+            WITH first_human_reply AS (
+                SELECT dialog_id, MIN(created_at) AS first_reply_at
+                FROM """ + message_union_sql + """ m
+                WHERE m.direction = 'outgoing'
+                  AND m.author IS NOT NULL
+                  """ + automation_clause + """
+                  AND m.created_at >= %s AND m.created_at < %s
+                """ + (operator_filter_clause if operator_filter_clause else "") + """
+                GROUP BY m.dialog_id
+            ),
+            incoming_before AS (
+                SELECT m.dialog_id, COUNT(*) AS msg_count
+                FROM """ + message_union_sql + """ m
+                JOIN first_human_reply fhr ON m.dialog_id = fhr.dialog_id
+                WHERE m.direction = 'incoming'
+                  AND m.created_at < fhr.first_reply_at
+                GROUP BY m.dialog_id
+            )
+            SELECT AVG(msg_count) AS avg_msgs
+            FROM incoming_before
+            """,
+            (
+                *([name.lower() for name in AUTOMATION_AUTHOR_NAMES] if automation_author_placeholders else []),
+                start_iso, end_exclusive_iso,
+                *operator_filter_params,
+            )
+        ).fetchone()
+        if avg_messages_before_transfer_row and avg_messages_before_transfer_row["avg_msgs"] is not None:
+            avg_messages_before_transfer = float(avg_messages_before_transfer_row["avg_msgs"])
+
+        # SLA Calculations
+        if response_deltas:
+            sla_violations_count = sum(1 for d in response_deltas if d > 300)
+            sla_compliance_percentage = ((len(response_deltas) - sla_violations_count) / len(response_deltas)) * 100
+
+        # Contract analytics — filter by dialogs where selected operator participated
+        bin_contract_stats = execute(
+            """
+            SELECT 
+                COALESCE(cd.bin, c.bin) as chat_bin,
+                CASE WHEN owc.customer_bin IS NOT NULL THEN 0 ELSE 1 END as has_contract,
+                COUNT(DISTINCT cd.id) as dialog_count
+            FROM chat_dialogs cd
+            LEFT JOIN chats c ON c.chat_id = cd.chat_id
+            LEFT JOIN organizations_without_contracts owc ON owc.customer_bin = COALESCE(cd.bin, c.bin)
+            WHERE cd.started_at >= %s AND cd.started_at < %s
+            """ + operator_dialog_filter_sql + """
+            GROUP BY COALESCE(cd.bin, c.bin), has_contract
+            """,
+            (start_iso, end_exclusive_iso, *operator_dialog_filter_params)
+        ).fetchall()
+
+        requests_with_contract = sum(row["dialog_count"] for row in bin_contract_stats if row["has_contract"] == 1)
+        requests_without_contract = sum(row["dialog_count"] for row in bin_contract_stats if row["has_contract"] == 0)
+
+        top_bins_without_contract_raw = [
+            {"bin": row["chat_bin"] or "Неизвестно", "requests": row["dialog_count"]}
+            for row in bin_contract_stats if row["has_contract"] == 0
+        ]
+        top_bins_without_contract_raw.sort(key=lambda x: x["requests"], reverse=True)
+        top_bins_without_contract = top_bins_without_contract_raw[:10]
+
+        # Recurring requests (within 7 days) — filter by operator's dialogs
+        # Need to re-alias cd -> cd2 for the BIN filter since this query uses cd1/cd2
+        _recurring_bin_filter = operator_dialog_filter_sql.replace("cd.", "cd2.")
+        recurring_requests_count = execute(
+            """
+            SELECT COUNT(DISTINCT cd2.id) AS recurring_count
+            FROM chat_dialogs cd1
+            JOIN chat_dialogs cd2 ON COALESCE(cd1.bin, (SELECT bin FROM chats c WHERE c.chat_id = cd1.chat_id)) = COALESCE(cd2.bin, (SELECT bin FROM chats c WHERE c.chat_id = cd2.chat_id))
+            WHERE cd1.ended_at IS NOT NULL
+              AND cd2.started_at > cd1.ended_at
+              AND CAST(cd2.started_at AS TIMESTAMP) <= CAST(cd1.ended_at AS TIMESTAMP) + INTERVAL '7 days'
+              AND cd2.started_at >= %s AND cd2.started_at < %s
+            """ + _recurring_bin_filter + """
+            """,
+            (start_iso, end_exclusive_iso, *operator_dialog_filter_params)
+        ).fetchone()["recurring_count"] or 0
+        
+        total_period_dialogs = requests_with_contract + requests_without_contract
+        if total_period_dialogs > 0:
+            recurring_requests_percentage = (recurring_requests_count / total_period_dialogs) * 100
+
+        # Peak load heatmap — filter incoming messages to dialogs where operator answered
+        heatmap_rows = execute(
+            """
+            SELECT 
+                EXTRACT(ISODOW FROM CAST(m.created_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS day_of_week,
+                EXTRACT(HOUR FROM CAST(m.created_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS hour_of_day,
+                COUNT(*) AS count
+            FROM """ + message_union_sql + """ m
+            WHERE m.direction = 'incoming'
+              AND m.created_at >= %s AND m.created_at < %s
+            """ + operator_incoming_dialog_filter_sql + """
+            GROUP BY day_of_week, hour_of_day
+            """,
+            (start_iso, end_exclusive_iso, *operator_incoming_dialog_filter_params)
+        ).fetchall()
+        
+        peak_load_heatmap = [
+            {
+                "day_of_week": int(row["day_of_week"]) - 1,
+                "hour": int(row["hour_of_day"]),
+                "count": int(row["count"])
+            }
+            for row in heatmap_rows
+        ]
+
+        # Average First Message Length — filter by operator's dialogs
+        first_msg_len_row = execute(
+            """
+            WITH first_incoming AS (
+                SELECT m.dialog_id, MIN(m.created_at) AS first_msg_at
+                FROM """ + message_union_sql + """ m
+                WHERE m.direction = 'incoming'
+                  AND m.created_at >= %s AND m.created_at < %s
+                """ + operator_incoming_dialog_filter_sql + """
+                GROUP BY m.dialog_id
+            )
+            SELECT AVG(LENGTH(m.text)) AS avg_len
+            FROM """ + message_union_sql + """ m
+            JOIN first_incoming fi ON m.dialog_id = fi.dialog_id AND m.created_at = fi.first_msg_at
+            WHERE m.direction = 'incoming'
+            """,
+            (start_iso, end_exclusive_iso, *operator_incoming_dialog_filter_params)
+        ).fetchone()
+        if first_msg_len_row and first_msg_len_row["avg_len"] is not None:
+            average_first_message_length = float(first_msg_len_row["avg_len"])
+
     return {
         "total_dialogs": int(total_dialogs),
         "open_dialogs": int(open_dialogs),
@@ -3055,6 +3313,17 @@ def get_dashboard_summary(
         "total_messages": int(total_messages),
         "total_incoming_messages": int(total_incoming),
         "total_outgoing_messages": int(total_outgoing),
+        "ai_closed_dialogs": int(ai_closed_dialogs),
+        "transferred_to_operator_dialogs": int(transferred_to_operator_dialogs),
+        "avg_messages_before_transfer": avg_messages_before_transfer,
+        "ai_messages_count": int(ai_messages_count),
+        "requests_with_contract": int(requests_with_contract),
+        "requests_without_contract": int(requests_without_contract),
+        "recurring_requests_count": int(recurring_requests_count),
+        "recurring_requests_percentage": recurring_requests_percentage,
+        "sla_violations_count": int(sla_violations_count),
+        "sla_compliance_percentage": sla_compliance_percentage,
+        "average_first_message_length": average_first_message_length,
         "average_messages_per_dialog": average_messages_per_dialog,
         "avg_dialog_duration_minutes": avg_dialog_duration_minutes,
         "avg_response_time_minutes": avg_response_time_minutes,
@@ -3065,6 +3334,8 @@ def get_dashboard_summary(
         "questions_by_section": questions_by_section,
         "agent_breakdown": agent_breakdown,
         "recent_activity": recent_activity,
+        "top_bins_without_contract": top_bins_without_contract,
+        "peak_load_heatmap": peak_load_heatmap,
         "updated_at": now.isoformat(),
     }
 

@@ -112,6 +112,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             { key: 'operators', label: '👥 Сотрудники' },
             { key: 'sections', label: '📂 Разделы' },
             { key: 'activity', label: '📈 Активность' },
+            { key: 'commercial', label: '💼 Аналитика' },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -154,109 +155,222 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
           <>
             {/* ── Overview tab ── */}
             {d.dashboardTab === 'overview' && (
-              <div className="dashboard-overview-row">
-                <div className="dashboard-card">
-                  <div className="dashboard-speed__header">
-                    <h3 className="dashboard-card__title">Скорость ответа</h3>
-                    <span className="text-muted" style={{ fontSize: '0.82rem' }}>
-                      {d.activeOperatorId === null
-                        ? `${d.numberFormatter.format(d.totalOperators)} оператор${d.totalOperators === 1 ? '' : d.totalOperators < 5 ? 'а' : 'ов'}`
-                        : d.selectedOperatorLabel}
-                    </span>
-                  </div>
-
-                  <div className="dashboard-speed__body">
-                    <div>
-                      <svg viewBox="0 0 120 120" className="dashboard-donut" role="img" aria-label="Скорость ответа операторов">
-                        <circle className="dashboard-donut__track" cx="60" cy="60" r={d.donutMulti.radius} />
-                        {d.donutMulti.arcs.map((seg) => (
-                          <circle
-                            key={seg.key}
-                            className={`dashboard-donut__segment dashboard-donut__segment--${seg.key}`}
-                            cx="60"
-                            cy="60"
-                            r={d.donutMulti.radius}
-                            strokeDasharray={seg.dashArray}
-                            strokeDashoffset={seg.dashOffset}
-                          >
-                            <title>
-                              {speedLabel(seg.key)}: {seg.count} ({seg.percentage.toFixed(1)}%), ср. {formatMinutes(seg.avgMinutes)}
-                            </title>
-                          </circle>
-                        ))}
-                        <text x="60" y="58" textAnchor="middle" className="dashboard-donut__center-value">
-                          {d.numberFormatter.format(d.responseSegments.reduce((sum, seg) => sum + seg.count, 0))}
-                        </text>
-                        <text x="60" y="75" textAnchor="middle" className="dashboard-donut__center-sub">
-                          {d.activeOperatorId === null ? 'операторов' : 'диалогов'}
-                        </text>
-                      </svg>
+              <>
+                {/* Row 1: Скорость ответа + Диалоги */}
+                <div className="dashboard-overview-row">
+                  <div className="dashboard-card">
+                    <div className="dashboard-speed__header">
+                      <h3 className="dashboard-card__title">Скорость ответа</h3>
+                      <span className="text-muted" style={{ fontSize: '0.82rem' }}>
+                        {d.activeOperatorId === null
+                          ? `${d.numberFormatter.format(d.totalOperators)} оператор${d.totalOperators === 1 ? '' : d.totalOperators < 5 ? 'а' : 'ов'}`
+                          : d.selectedOperatorLabel}
+                      </span>
                     </div>
 
-                    <div className="dashboard-legend">
-                      {(['fast', 'medium', 'slow'] as const).map((k) => {
-                        const seg = d.responseSegments.find((s) => s.key === k) ?? { key: k, count: 0, avgMinutes: null, percentage: 0 };
-                        return (
-                          <div key={k} className="dashboard-legend-row">
-                            <div className="dashboard-legend-left">
-                              <span className={`dashboard-legend-dot dashboard-legend-dot--${k}`} />
-                              <span className="dashboard-legend-label">{speedLabel(k)}</span>
+                    <div className="dashboard-speed__body">
+                      <div>
+                        <svg viewBox="0 0 120 120" className="dashboard-donut" role="img" aria-label="Скорость ответа операторов">
+                          <circle className="dashboard-donut__track" cx="60" cy="60" r={d.donutMulti.radius} />
+                          {d.donutMulti.arcs.map((seg) => (
+                            <circle
+                              key={seg.key}
+                              className={`dashboard-donut__segment dashboard-donut__segment--${seg.key}`}
+                              cx="60"
+                              cy="60"
+                              r={d.donutMulti.radius}
+                              strokeDasharray={seg.dashArray}
+                              strokeDashoffset={seg.dashOffset}
+                            >
+                              <title>
+                                {speedLabel(seg.key)}: {seg.count} ({seg.percentage.toFixed(1)}%), ср. {formatMinutes(seg.avgMinutes)}
+                              </title>
+                            </circle>
+                          ))}
+                          <text x="60" y="56" textAnchor="middle" className="dashboard-donut__center-value">
+                            {d.numberFormatter.format(d.responseSegments.reduce((sum, seg) => sum + seg.count, 0))}
+                          </text>
+                          <text x="60" y="72" textAnchor="middle" className="dashboard-donut__center-sub">
+                            {d.activeOperatorId === null ? 'операторов' : 'диалогов'}
+                          </text>
+                        </svg>
+                      </div>
+
+                      <div className="dashboard-legend">
+                        {(['fast', 'medium', 'slow'] as const).map((k) => {
+                          const seg = d.responseSegments.find((s) => s.key === k) ?? { key: k, count: 0, avgMinutes: null, percentage: 0 };
+                          return (
+                            <div key={k} className="dashboard-legend-row">
+                              <div className="dashboard-legend-left">
+                                <span className={`dashboard-legend-dot dashboard-legend-dot--${k}`} />
+                                <span className="dashboard-legend-label">{speedLabel(k)}</span>
+                              </div>
+                              <div className="dashboard-legend-right">
+                                <span className="dashboard-legend-count">{seg.count}</span>
+                              </div>
                             </div>
-                            <div className="dashboard-legend-right">
-                              <span className="dashboard-legend-count">{seg.count}</span>
-                            </div>
+                          );
+                        })}
+
+                        <div className="dashboard-legend-divider" />
+
+                        <div className="dashboard-legend-row">
+                          <div className="dashboard-legend-left">
+                            <span className="dashboard-legend-label">Ср. время ответа</span>
                           </div>
-                        );
-                      })}
-
-                      <div className="dashboard-legend-divider" />
-
-                      <div className="dashboard-legend-row">
-                        <div className="dashboard-legend-left">
-                          <span className="dashboard-legend-label">Среднее время ответа</span>
-                        </div>
-                        <div className="dashboard-legend-right">
-                          <span className="dashboard-legend-meta">{d.avgResponseTimeLabel}</span>
+                          <div className="dashboard-legend-right">
+                            <span className="dashboard-legend-meta">{d.avgResponseTimeLabel}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
+
+                  <div className="dashboard-card dashboard-card--delay-1">
+                    <h3 className="dashboard-card__title">Диалоги</h3>
+
+                    <div className="dashboard-kv">
+                      <div className="dashboard-kv__row">
+                        <span className="dashboard-kv__key">Всего</span>
+                        <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.totalDialogs)}</span>
+                      </div>
+                      <div className="dashboard-kv__row">
+                        <span className="dashboard-kv__key">Активные</span>
+                        <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.openDialogs)}</span>
+                      </div>
+                      <div className="dashboard-kv__row">
+                        <span className="dashboard-kv__key">Закрытые</span>
+                        <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.closedDialogs)}</span>
+                      </div>
+
+                      <div className="dashboard-kv__divider" />
+
+                      <div className="dashboard-kv__row">
+                        <span className="dashboard-kv__key">Сообщений</span>
+                        <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.totalMessages)}</span>
+                      </div>
+                      <div className="dashboard-kv__row">
+                        <span className="dashboard-kv__key">Ср. за день</span>
+                        <span className="dashboard-kv__val">{d.numberFormatter.format(d.messagesPerDay)}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-muted" style={{ fontSize: '0.82rem', marginTop: 'auto' }}>
+                      Период: {d.timeRange.label}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="dashboard-card dashboard-card--delay-1">
-                  <h3 className="dashboard-card__title">Диалоги</h3>
+                {/* Row 2: AI + SLA */}
+                <div className="dashboard-overview-row">
+                  <div className="dashboard-card dashboard-card--delay-2">
+                    <h3 className="dashboard-card__title">Автоматизация (AI)</h3>
 
-                  <div className="dashboard-kv">
-                    <div className="dashboard-kv__row">
-                      <span className="dashboard-kv__key">Всего</span>
-                      <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.totalDialogs)}</span>
-                    </div>
-                    <div className="dashboard-kv__row">
-                      <span className="dashboard-kv__key">Активные</span>
-                      <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.openDialogs)}</span>
-                    </div>
-                    <div className="dashboard-kv__row">
-                      <span className="dashboard-kv__key">Закрытые</span>
-                      <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.closedDialogs)}</span>
-                    </div>
+                    <div className="dashboard-speed__body">
+                      <div>
+                        <svg viewBox="0 0 120 120" className="dashboard-donut" role="img" aria-label="Автоматизация (AI)">
+                          <circle className="dashboard-donut__track" cx="60" cy="60" r={d.aiDonut.radius} />
+                          {d.aiDonut.arcs.map((seg) => (
+                            <circle
+                              key={seg.key}
+                              className={`dashboard-donut__segment dashboard-donut__segment--${seg.key}`}
+                              cx="60"
+                              cy="60"
+                              r={d.aiDonut.radius}
+                              strokeDasharray={seg.dashArray}
+                              strokeDashoffset={seg.dashOffset}
+                              stroke={seg.key === 'ai' ? '#3b82f6' : '#e2e8f0'}
+                            >
+                              <title>
+                                {seg.key === 'ai' ? 'Решено ботом' : 'Переведено оператору'}: {seg.count} ({seg.percentage.toFixed(1)}%)
+                              </title>
+                            </circle>
+                          ))}
+                          <text x="60" y="56" textAnchor="middle" className="dashboard-donut__center-value">
+                            {d.data.aiClosedDialogs + d.data.transferredToOperatorDialogs > 0 ? ((d.data.aiClosedDialogs / (d.data.aiClosedDialogs + d.data.transferredToOperatorDialogs)) * 100).toFixed(0) + '%' : '—'}
+                          </text>
+                          <text x="60" y="72" textAnchor="middle" className="dashboard-donut__center-sub">
+                            ботом
+                          </text>
+                        </svg>
+                      </div>
 
-                    <div className="dashboard-kv__divider" />
+                      <div className="dashboard-legend">
+                        <div className="dashboard-legend-row">
+                          <div className="dashboard-legend-left">
+                            <span className="dashboard-legend-dot" style={{ background: '#3b82f6' }} />
+                            <span className="dashboard-legend-label">Решено ботом</span>
+                          </div>
+                          <div className="dashboard-legend-right">
+                            <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.aiClosedDialogs)}</span>
+                          </div>
+                        </div>
+                        <div className="dashboard-legend-row">
+                          <div className="dashboard-legend-left">
+                            <span className="dashboard-legend-dot" style={{ background: '#e2e8f0' }} />
+                            <span className="dashboard-legend-label">Переведено оператору</span>
+                          </div>
+                          <div className="dashboard-legend-right">
+                            <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.transferredToOperatorDialogs)}</span>
+                          </div>
+                        </div>
 
-                    <div className="dashboard-kv__row">
-                      <span className="dashboard-kv__key">Сообщений</span>
-                      <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.totalMessages)}</span>
-                    </div>
-                    <div className="dashboard-kv__row">
-                      <span className="dashboard-kv__key">Сообщений/день</span>
-                      <span className="dashboard-kv__val">{d.numberFormatter.format(d.messagesPerDay)}</span>
+                        <div className="dashboard-legend-divider" />
+
+                        <div className="dashboard-legend-row">
+                          <div className="dashboard-legend-left">
+                            <span className="dashboard-legend-label">Сообщений от бота</span>
+                          </div>
+                          <div className="dashboard-legend-right">
+                            <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.aiMessagesCount)}</span>
+                          </div>
+                        </div>
+                        <div className="dashboard-legend-row">
+                          <div className="dashboard-legend-left">
+                            <span className="dashboard-legend-label">Ср. до перевода</span>
+                          </div>
+                          <div className="dashboard-legend-right">
+                            <span className="dashboard-legend-count">
+                              {d.data.avgMessagesBeforeTransfer !== null ? d.data.avgMessagesBeforeTransfer.toFixed(1) : '—'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="text-muted" style={{ fontSize: '0.82rem' }}>
-                    Период: {d.timeRange.label}
+                  <div className="dashboard-card dashboard-card--delay-3">
+                    <h3 className="dashboard-card__title">Качество обслуживания</h3>
+                    <div className="dashboard-kv">
+                      <div className="dashboard-kv__row">
+                        <span className="dashboard-kv__key">SLA (ответ до 5 мин)</span>
+                        <span className="dashboard-kv__val" style={{ color: (d.data.slaCompliancePercentage || 0) < 80 ? 'var(--input-error-color)' : 'var(--success-color)' }}>
+                          {d.data.slaCompliancePercentage !== null ? d.data.slaCompliancePercentage.toFixed(1) + '%' : '—'}
+                        </span>
+                      </div>
+                      <div className="dashboard-kv__row">
+                        <span className="dashboard-kv__key">Ответов с задержкой</span>
+                        <span className="dashboard-kv__val" style={{ color: d.data.slaViolationsCount > 0 ? 'var(--input-error-color)' : 'inherit' }}>
+                          {d.numberFormatter.format(d.data.slaViolationsCount)}
+                        </span>
+                      </div>
+
+                      <div className="dashboard-kv__divider" />
+
+                      <div className="dashboard-kv__row">
+                        <span className="dashboard-kv__key">Повторные обращения</span>
+                        <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.recurringRequestsCount)}</span>
+                      </div>
+                      <div className="dashboard-kv__row">
+                        <span className="dashboard-kv__key">Доля повторных</span>
+                        <span className="dashboard-kv__val">
+                          {d.data.recurringRequestsPercentage !== null ? d.data.recurringRequestsPercentage.toFixed(1) + '%' : '—'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </>
             )}
 
             {/* ── Operators tab ── */}
@@ -472,11 +586,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                             );
                           })}
 
-                          {sorted.map((r, i) => (
-                            <text key={`x${i}`} x={toX(i)} y={H - 6} textAnchor="middle" className="dashboard-chart__label">
-                              {r.date.slice(5).replace('-', '.')}
-                            </text>
-                          ))}
+                          {sorted.map((r, i) => {
+                            const showLabel = sorted.length <= 10 || i % Math.ceil(sorted.length / 10) === 0 || i === sorted.length - 1;
+                            if (!showLabel) return null;
+                            return (
+                              <text key={`x${i}`} x={toX(i)} y={H - 6} textAnchor="middle" className="dashboard-chart__label">
+                                {r.date.slice(8) + '.' + r.date.slice(5, 7)}
+                              </text>
+                            );
+                          })}
 
                           <path d={dialogsPath} fill="none" stroke="#5a7ab8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                           <path d={messagesPath} fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -496,6 +614,171 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                     );
                   })()
                 )}
+              </div>
+            )}
+            {/* ── Commercial tab ── */}
+            {d.dashboardTab === 'commercial' && (
+              <div className="dashboard-columns">
+                <div className={`dashboard-card ${d.isLoading ? 'dashboard-card--loading' : ''}`}>
+                  <h3 className="dashboard-card__title">Контракты и Лиды</h3>
+                  <div className="dashboard-speed__body mt-3" style={{ marginBottom: '1.5rem' }}>
+                    <div>
+                      <svg viewBox="0 0 120 120" className="dashboard-donut" role="img" aria-label="Контракты">
+                        <circle className="dashboard-donut__track" cx="60" cy="60" r={d.contractDonut.radius} />
+                        {d.contractDonut.arcs.map((seg) => (
+                          <circle
+                            key={seg.key}
+                            className={`dashboard-donut__segment dashboard-donut__segment--${seg.key}`}
+                            cx="60"
+                            cy="60"
+                            r={d.contractDonut.radius}
+                            strokeDasharray={seg.dashArray}
+                            strokeDashoffset={seg.dashOffset}
+                            stroke={seg.key === 'with_contract' ? '#10b981' : '#f43f5e'}
+                          >
+                            <title>
+                              {seg.key === 'with_contract' ? 'С договором' : 'Без договора'}: {seg.count} ({seg.percentage.toFixed(1)}%)
+                            </title>
+                          </circle>
+                        ))}
+                        <text x="60" y="56" textAnchor="middle" className="dashboard-donut__center-value">
+                          {d.data.requestsWithContract + d.data.requestsWithoutContract > 0 ? ((d.data.requestsWithContract / (d.data.requestsWithContract + d.data.requestsWithoutContract)) * 100).toFixed(0) + '%' : '—'}
+                        </text>
+                        <text x="60" y="72" textAnchor="middle" className="dashboard-donut__center-sub">
+                          с договором
+                        </text>
+                      </svg>
+                    </div>
+
+                    <div className="dashboard-legend">
+                      <div className="dashboard-legend-row">
+                        <div className="dashboard-legend-left">
+                          <span className="dashboard-legend-dot" style={{ background: '#10b981' }} />
+                          <span className="dashboard-legend-label">Обращений с договором</span>
+                        </div>
+                        <div className="dashboard-legend-right">
+                          <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.requestsWithContract)}</span>
+                        </div>
+                      </div>
+                      <div className="dashboard-legend-row">
+                        <div className="dashboard-legend-left">
+                          <span className="dashboard-legend-dot" style={{ background: '#f43f5e' }} />
+                          <span className="dashboard-legend-label">Обращений <b>без</b> договора</span>
+                        </div>
+                        <div className="dashboard-legend-right">
+                          <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.requestsWithoutContract)}</span>
+                        </div>
+                      </div>
+
+                      {d.data.averageFirstMessageLength !== null && (
+                        <>
+                          <div className="dashboard-legend-divider" />
+                          <div className="dashboard-legend-row">
+                            <div className="dashboard-legend-left">
+                              <span className="dashboard-legend-label">Ср. длина 1-го сообщения</span>
+                            </div>
+                            <div className="dashboard-legend-right">
+                              <span className="dashboard-legend-meta" style={{ color: 'var(--text-color)' }}>{Math.round(d.data.averageFirstMessageLength)} симв.</span>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <h4 className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    ТОП-10 БИН БЕЗ ДОГОВОРА
+                  </h4>
+                  {d.data.topBinsWithoutContract.length === 0 ? (
+                    <div className="dashboard-empty" style={{ paddingTop: '1rem', paddingBottom: '1rem' }}>
+                      <p className="dashboard-empty__text" style={{ margin: 0 }}>Не найдено.</p>
+                    </div>
+                  ) : (
+                    <ul className="section-progress-list mt-3">
+                      {d.data.topBinsWithoutContract.map((item, index) => {
+                        const total = d.data.requestsWithoutContract || 1;
+                        const percentage = (item.requests / total) * 100;
+                        return (
+                          <li key={item.bin || index} className="section-progress-item">
+                            <div className="section-progress-item__header">
+                              <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{item.bin || 'Анонимно'}</span>
+                              <span className="text-muted">
+                                {d.numberFormatter.format(item.requests)}
+                              </span>
+                            </div>
+                            <div className="progress-bar" aria-hidden="true" style={{ height: '4px', marginTop: '4px' }}>
+                              <span
+                                className="progress-bar__fill"
+                                style={{ width: `${Math.min(Math.max(percentage, 0), 100)}%`, backgroundColor: 'var(--input-error-color)' }}
+                              />
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                <div className={`dashboard-card dashboard-card--delay-1 flex-1 ${d.isLoading ? 'dashboard-card--loading' : ''}`}>
+                  <h3 className="dashboard-card__title">Пиковые нагрузки (Тепловая карта)</h3>
+                  {d.data.peakLoadHeatmap.length === 0 ? (
+                    <div className="dashboard-empty">
+                      <div className="dashboard-empty__icon">🔥</div>
+                      <p className="dashboard-empty__text">Нет данных о потоке сообщений.</p>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: 'auto repeat(12, 1fr)', gap: '4px', fontSize: '11px', flex: 1 }}>
+                      {/* This is a simple heatmap grid using HTML and CSS grids */}
+                      <div style={{ paddingRight: '12px', textAlign: 'right' }}></div>
+                      {[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22].map((h) => (
+                        <div key={h} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{h}</div>
+                      ))}
+
+                      {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((dayObj, dayIdx) => {
+                        const maxCount = Math.max(...d.data.peakLoadHeatmap.map(s => s.count), 1);
+                        return (
+                          <React.Fragment key={dayIdx}>
+                            <div style={{ paddingRight: '12px', textAlign: 'right', fontWeight: 600, alignSelf: 'center', color: 'var(--text-muted)' }}>{dayObj}</div>
+                            {[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22].map((hour) => {
+                              // Aggregate counts for 2-hour blocks
+                              let cellCount = 0;
+                              for (let h = hour; h < hour + 2; h++) {
+                                const item = d.data.peakLoadHeatmap.find(c => c.dayOfWeek === dayIdx && c.hour === h);
+                                if (item) cellCount += item.count;
+                              }
+                              // Calculate opacity based on max value in 2-hour blocks
+                              const intensity = Math.min(cellCount / maxCount, 1);
+                              const opacity = intensity > 0 ? 0.2 + (0.8 * intensity) : 0;
+
+                              return (
+                                <div
+                                  key={hour}
+                                  style={{
+                                    backgroundColor: cellCount > 0 ? `rgba(40, 167, 69, ${opacity})` : 'rgba(0,0,0,0.03)',
+                                    height: '100%',
+                                    minHeight: '36px',
+                                    borderRadius: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: cellCount > 0 ? 'help' : 'default',
+                                  }}
+                                  title={cellCount > 0 ? `${cellCount} сообщ.` : ''}
+                                >
+                                </div>
+                              );
+                            })}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {d.data.peakLoadHeatmap.length > 0 && (
+                    <div className="text-muted mt-3" style={{ fontSize: '0.82rem', textAlign: 'center' }}>
+                      Указано местное время (UTC+5), группировка по 2 часа
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </>

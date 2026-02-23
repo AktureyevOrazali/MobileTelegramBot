@@ -22,6 +22,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     rayonCounts,
     regionStats,
     rayonStats,
+    binDetails,
     maxRegionCount,
     loading,
     error,
@@ -85,7 +86,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           </div>
         </div>
         <div className="analytics-banner__body">
-          <RegionActivityMap counts={regionCounts} rayonCounts={rayonCounts} regionStats={regionStats} rayonStats={rayonStats} />
+          <RegionActivityMap counts={regionCounts} rayonCounts={rayonCounts} regionStats={regionStats} rayonStats={rayonStats} binDetails={binDetails} />
         </div>
       </div>
 

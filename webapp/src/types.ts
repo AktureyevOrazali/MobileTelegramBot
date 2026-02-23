@@ -261,6 +261,17 @@ export interface DashboardResponseTimeDialogRaw {
   response_time_minutes: number;
 }
 
+export interface DashboardTopBinRaw {
+  bin: string;
+  requests: number;
+}
+
+export interface DashboardHeatmapPointRaw {
+  day_of_week: number;
+  hour: number;
+  count: number;
+}
+
 export interface DashboardSummaryRaw {
   total_dialogs: number;
   open_dialogs: number;
@@ -269,6 +280,17 @@ export interface DashboardSummaryRaw {
   total_messages?: number;
   total_incoming_messages?: number;
   total_outgoing_messages?: number;
+  ai_closed_dialogs?: number;
+  transferred_to_operator_dialogs?: number;
+  avg_messages_before_transfer?: number | null;
+  ai_messages_count?: number;
+  requests_with_contract?: number;
+  requests_without_contract?: number;
+  recurring_requests_count?: number;
+  recurring_requests_percentage?: number | null;
+  sla_violations_count?: number;
+  sla_compliance_percentage?: number | null;
+  average_first_message_length?: number | null;
   average_messages_per_dialog?: number | null;
   avg_dialog_duration_minutes?: number | null;
   avg_response_time_minutes?: number | null;
@@ -279,6 +301,8 @@ export interface DashboardSummaryRaw {
   questions_by_section?: DashboardSectionTopQuestionsRaw[];
   agent_breakdown?: DashboardAgentStatRaw[];
   recent_activity?: DashboardActivityPointRaw[];
+  top_bins_without_contract?: DashboardTopBinRaw[];
+  peak_load_heatmap?: DashboardHeatmapPointRaw[];
   updated_at?: string;
 }
 
@@ -322,6 +346,17 @@ export interface DashboardResponseTimeDialog {
   responseTimeMinutes: number;
 }
 
+export interface DashboardTopBin {
+  bin: string;
+  requests: number;
+}
+
+export interface DashboardHeatmapPoint {
+  dayOfWeek: number;
+  hour: number;
+  count: number;
+}
+
 export interface DashboardSummary {
   totalDialogs: number;
   openDialogs: number;
@@ -330,6 +365,17 @@ export interface DashboardSummary {
   totalMessages: number;
   totalIncomingMessages: number;
   totalOutgoingMessages: number;
+  aiClosedDialogs: number;
+  transferredToOperatorDialogs: number;
+  avgMessagesBeforeTransfer: number | null;
+  aiMessagesCount: number;
+  requestsWithContract: number;
+  requestsWithoutContract: number;
+  recurringRequestsCount: number;
+  recurringRequestsPercentage: number | null;
+  slaViolationsCount: number;
+  slaCompliancePercentage: number | null;
+  averageFirstMessageLength: number | null;
   averageMessagesPerDialog: number;
   avgDialogDurationMinutes: number | null;
   avgResponseTimeMinutes: number | null;
@@ -339,5 +385,7 @@ export interface DashboardSummary {
   questionsBySection: DashboardSectionTopQuestions[];
   agentBreakdown: DashboardAgentStat[];
   recentActivity: DashboardActivityPoint[];
+  topBinsWithoutContract: DashboardTopBin[];
+  peakLoadHeatmap: DashboardHeatmapPoint[];
   updatedAt: Date;
 }

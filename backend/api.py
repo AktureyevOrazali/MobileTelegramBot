@@ -19,6 +19,9 @@ from .ai_manager import ai_manager
 from .telegram_bot import bot, enable_ai_session
 from . import contract_checker
 
+# ------------------------ Temporary import for Aziret's employee cabinet ------------------
+from .kabinet_sotrudnika_by_Aziret import kabinet_backend
+
 API_TOKEN = os.getenv("MOBILE_API_TOKEN")
 ONEC_INTEGRATION_TOKEN = os.getenv("ONEC_INTEGRATION_TOKEN")
 
@@ -323,6 +326,17 @@ class DashboardResponseTimeDialog(BaseModel):
     response_time_minutes: float
 
 
+class DashboardTopBin(BaseModel):
+    bin: str
+    requests: int
+
+
+class DashboardHeatmapPoint(BaseModel):
+    day_of_week: int
+    hour: int
+    count: int
+
+
 class DashboardSummaryResponse(BaseModel):
     total_dialogs: int
     open_dialogs: int
@@ -331,6 +345,17 @@ class DashboardSummaryResponse(BaseModel):
     total_messages: int
     total_incoming_messages: int
     total_outgoing_messages: int
+    ai_closed_dialogs: int = 0
+    transferred_to_operator_dialogs: int = 0
+    avg_messages_before_transfer: float | None = None
+    ai_messages_count: int = 0
+    requests_with_contract: int = 0
+    requests_without_contract: int = 0
+    recurring_requests_count: int = 0
+    recurring_requests_percentage: float | None = None
+    sla_violations_count: int = 0
+    sla_compliance_percentage: float | None = None
+    average_first_message_length: float | None = None
     average_messages_per_dialog: float
     avg_dialog_duration_minutes: float | None = None
     avg_response_time_minutes: float | None = None
@@ -341,6 +366,8 @@ class DashboardSummaryResponse(BaseModel):
     questions_by_section: List[DashboardSectionQuestions] = Field(default_factory=list)
     agent_breakdown: List[DashboardAgentStat] = Field(default_factory=list)
     recent_activity: List[DashboardActivityPoint] = Field(default_factory=list)
+    top_bins_without_contract: List[DashboardTopBin] = Field(default_factory=list)
+    peak_load_heatmap: List[DashboardHeatmapPoint] = Field(default_factory=list)
     updated_at: str
 
 
@@ -1956,3 +1983,5 @@ def healthcheck() -> Dict[str, str]:
 
 app.include_router(router)
 app.include_router(router, prefix="/api")
+
+app.include_router(kabinet_backend.router, prefix="/kabinet")

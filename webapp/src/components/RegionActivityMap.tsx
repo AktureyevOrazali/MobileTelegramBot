@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection, Geometry } from 'geojson';
 import { scaleLinear } from 'd3';
 import kzMap from '../../kz.json';
 import { OBLASTS, OBLAST_RAYONS, MAIN_VIEWBOX } from '../data/kzMapData';
 import type { RegionStats } from '../hooks/useDialogsData';
+import type { BinDetailed } from '../types';
 
 /** GeoJSON features for Kazakhstan regions — kept for useDialogsData compatibility. */
 export const GEOJSON_FEATURES = kzMap as FeatureCollection<Geometry, { name: string }>;
@@ -179,6 +180,7 @@ const RAYON_EXTRA_PATTERNS: Record<string, [string, string[]][]> = {
         ['Шиели', ['шиели']],
     ],
     almaty: [
+        ['Алмалинский', ['алмалин', 'алмалы', 'район алматы']],
         ['МЕДЕУ', ['медеу']],
         ['Бостандық', ['бостандық', 'бостандык']],
         ['Турксибский', ['турксиб']],
@@ -425,7 +427,8 @@ const RegionActivityMap: React.FC<{
     rayonCounts?: Record<string, Record<number, number>>;
     regionStats?: Record<string, RegionStats>;
     rayonStats?: Record<string, Record<number, RegionStats>>;
-}> = React.memo(({ counts, rayonCounts, regionStats, rayonStats }) => {
+    binDetails?: BinDetailed[];
+}> = React.memo(({ counts, rayonCounts, regionStats, rayonStats, binDetails }) => {
     const wrapperRef = useRef<HTMLDivElement | null>(null);
     const [hovered, setHovered] = useState<{ key: string; x: number; y: number } | null>(null);
     const [selectedOblast, setSelectedOblast] = useState<string | null>(null);
@@ -482,14 +485,18 @@ const RegionActivityMap: React.FC<{
         return () => document.removeEventListener('keydown', onKey);
     }, [isFullscreen]);
 
-    // Lock body scroll when fullscreen
+    // Lock body scroll when fullscreen (save/restore scroll position)
     useEffect(() => {
         if (isFullscreen) {
-            document.body.style.overflow = 'hidden';
-        } else {
-            document.body.style.overflow = '';
+            const scrollY = window.scrollY;
+            document.body.classList.add('kz-map-scroll-lock');
+            document.body.style.top = `-${scrollY}px`;
+            return () => {
+                document.body.classList.remove('kz-map-scroll-lock');
+                document.body.style.top = '';
+                window.scrollTo(0, scrollY);
+            };
         }
-        return () => { document.body.style.overflow = ''; };
     }, [isFullscreen]);
 
     const selectedOblastData = selectedOblast ? OBLAST_RAYONS[selectedOblast] : null;
@@ -516,196 +523,354 @@ const RegionActivityMap: React.FC<{
         return result;
     }, [selectedOblastData]);
 
+    // ─── Oblast-level analytics for the right panel ───
+    const oblastAnalytics = useMemo(() => {
+        if (!selectedOblast || !selectedRegionKey) return null;
+        const rs = regionStats?.[selectedRegionKey];
+        const oblastBins = (binDetails ?? []).filter((d) => {
+            const rk = detectRegionFromAddress(d.customerLegalAddress);
+            return rk === selectedRegionKey;
+        });
+        const withContract = oblastBins.filter((b) => b.hasContract).length;
+        const withoutContract = oblastBins.length - withContract;
+
+        // Per-rayon breakdown for table — include ALL rayons
+        const rayonBreakdown: { name: string; bins: number; stats: RegionStats | null }[] = [];
+        if (selectedOblastData) {
+            selectedOblastData.rayons.forEach((rayon, idx) => {
+                const bins = currentRayonCounts[idx] ?? 0;
+                const rs2 = rayonStats?.[selectedOblast]?.[idx] ?? null;
+                rayonBreakdown.push({ name: rayon.name || `Район ${idx + 1}`, bins, stats: rs2 });
+            });
+            rayonBreakdown.sort((a, b) => b.bins - a.bins);
+        }
+
+        return {
+            totalBins: oblastBins.length,
+            withContract,
+            withoutContract,
+            totalDialogs: rs?.totalDialogs ?? 0,
+            openDialogs: rs?.openDialogs ?? 0,
+            closedDialogs: rs?.closedDialogs ?? 0,
+            unreadCount: rs?.unreadCount ?? 0,
+            rayonBreakdown,
+        };
+    }, [selectedOblast, selectedRegionKey, regionStats, binDetails, selectedOblastData, currentRayonCounts, rayonStats]);
+
     const wrapperClass = [
         'kz-map',
         isFullscreen ? 'kz-map--fullscreen' : '',
     ].filter(Boolean).join(' ');
 
     return (
-        <div className={wrapperClass} ref={wrapperRef}>
-            {/* Controls bar */}
-            <div className="kz-map__controls">
-                {selectedOblast && (
+        <>
+            {isFullscreen && (
+                <div
+                    className="kz-map__backdrop"
+                    onClick={toggleFullscreen}
+                    aria-hidden="true"
+                />
+            )}
+            <div className={wrapperClass} ref={wrapperRef}>
+                {/* Controls bar */}
+                <div className="kz-map__controls">
+                    {selectedOblast && (
+                        <button
+                            className="kz-map__back-btn"
+                            onClick={handleBack}
+                            title="Назад к областям"
+                            type="button"
+                        >
+                            ← Назад
+                        </button>
+                    )}
+                    {selectedOblast && (
+                        <span className="kz-map__district-title">
+                            {selectedOblastName}
+                            {oblastBinCount > 0 && (
+                                <span className="kz-map__district-count"> — {oblastBinCount} БИН</span>
+                            )}
+                        </span>
+                    )}
                     <button
-                        className="kz-map__back-btn"
-                        onClick={handleBack}
-                        title="Назад к областям"
+                        className="kz-map__expand-btn"
+                        onClick={toggleFullscreen}
+                        title={isFullscreen ? 'Свернуть карту' : 'Развернуть карту'}
                         type="button"
                     >
-                        ← Назад
+                        {isFullscreen ? '✕' : '⛶'}
                     </button>
-                )}
-                {selectedOblast && (
-                    <span className="kz-map__district-title">
-                        {selectedOblastName}
-                        {oblastBinCount > 0 && (
-                            <span className="kz-map__district-count"> — {oblastBinCount} БИН</span>
-                        )}
-                    </span>
-                )}
-                <button
-                    className="kz-map__expand-btn"
-                    onClick={toggleFullscreen}
-                    title={isFullscreen ? 'Свернуть карту' : 'Развернуть карту'}
-                    type="button"
-                >
-                    {isFullscreen ? '✕' : '⛶'}
-                </button>
-            </div>
+                </div>
 
-            {/* Oblast-level view */}
-            {!selectedOblastData && (
-                <svg
-                    className="kz-map__svg"
-                    viewBox={MAIN_VIEWBOX}
-                    role="img"
-                    aria-label="Карта Казахстана по регионам"
-                    preserveAspectRatio="xMidYMid meet"
-                >
-                    {OBLASTS.map((oblast) => {
-                        const regionKey = SVG_ID_TO_REGION_KEY[oblast.id] ?? '';
-                        const value = counts[regionKey] ?? 0;
-                        const isActive = hovered?.key === oblast.id;
-                        const fillColor = value > 0 ? colorScale(value) : palette.empty;
-                        const [cx, cy] = oblastCentroids[oblast.id] ?? [0, 0];
-                        return (
-                            <g key={oblast.id}>
-                                <path
-                                    d={oblast.d}
-                                    fill={fillColor}
-                                    className={`kz-map__region ${isActive ? 'is-active' : ''}`}
-                                    onMouseEnter={(e) => handleMouseMove(e, oblast.id)}
-                                    onMouseMove={(e) => handleMouseMove(e, oblast.id)}
-                                    onMouseLeave={handleMouseLeave}
-                                    onClick={() => handleOblastClick(oblast.id)}
-                                />
-                                {value > 0 && (
-                                    <text
-                                        x={cx}
-                                        y={cy}
-                                        className="kz-map__count-label"
-                                        textAnchor="middle"
-                                        dominantBaseline="central"
-                                        pointerEvents="none"
-                                    >
-                                        {value}
-                                    </text>
-                                )}
-                            </g>
-                        );
-                    })}
-                </svg>
-            )}
-
-            {/* District (rayon) view */}
-            {selectedOblastData && (
-                <svg
-                    className="kz-map__svg kz-map__svg--district"
-                    viewBox={selectedOblastData.viewBox}
-                    role="img"
-                    aria-label={`Карта районов: ${selectedOblastName}`}
-                    preserveAspectRatio="xMidYMid meet"
-                >
-                    {selectedOblastData.rayons.map((rayon, index) => {
-                        const isActive = hovered?.key === `rayon-${index}`;
-                        const rayonValue = currentRayonCounts[index] ?? 0;
-                        const fillColor = rayonValue > 0
-                            ? rayonColorScale(rayonValue)
-                            : palette.rayonEmpty;
-                        const [rcx, rcy] = rayonCentroids[index] ?? [0, 0];
-                        return (
-                            <g key={`rayon-${index}`}>
-                                <path
-                                    d={rayon.d}
-                                    fill={fillColor}
-                                    className={`kz-map__rayon ${isActive ? 'is-active' : ''}`}
-                                    onMouseEnter={(e) => handleMouseMove(e, `rayon-${index}`)}
-                                    onMouseMove={(e) => handleMouseMove(e, `rayon-${index}`)}
-                                    onMouseLeave={handleMouseLeave}
-                                />
-                                {rayonValue > 0 && (() => {
-                                    // Scale font to match main map visual size (main viewBox=900 wide, font=14)
-                                    const vbWidth = parseFloat(selectedOblastData.viewBox.split(' ')[2] ?? '900');
-                                    const scaledFont = 14 * (vbWidth / 900);
-                                    return (
+                {/* Oblast-level view */}
+                {!selectedOblastData && (
+                    <svg
+                        className="kz-map__svg"
+                        viewBox={MAIN_VIEWBOX}
+                        role="img"
+                        aria-label="Карта Казахстана по регионам"
+                        preserveAspectRatio="xMidYMid meet"
+                    >
+                        {OBLASTS.map((oblast) => {
+                            const regionKey = SVG_ID_TO_REGION_KEY[oblast.id] ?? '';
+                            const value = counts[regionKey] ?? 0;
+                            const isActive = hovered?.key === oblast.id;
+                            const fillColor = value > 0 ? colorScale(value) : palette.empty;
+                            const [cx, cy] = oblastCentroids[oblast.id] ?? [0, 0];
+                            return (
+                                <g key={oblast.id}>
+                                    <path
+                                        d={oblast.d}
+                                        fill={fillColor}
+                                        className={`kz-map__region ${isActive ? 'is-active' : ''}`}
+                                        onMouseEnter={(e) => handleMouseMove(e, oblast.id)}
+                                        onMouseMove={(e) => handleMouseMove(e, oblast.id)}
+                                        onMouseLeave={handleMouseLeave}
+                                        onClick={() => handleOblastClick(oblast.id)}
+                                    />
+                                    {value > 0 && (
                                         <text
-                                            x={rcx}
-                                            y={rcy}
+                                            x={cx}
+                                            y={cy}
                                             className="kz-map__count-label"
                                             textAnchor="middle"
                                             dominantBaseline="central"
                                             pointerEvents="none"
-                                            style={{ fontSize: `${scaledFont}px` }}
                                         >
-                                            {rayonValue}
+                                            {value}
                                         </text>
-                                    );
-                                })()}
-                            </g>
-                        );
-                    })}
-                </svg>
-            )}
+                                    )}
+                                </g>
+                            );
+                        })}
+                    </svg>
+                )}
 
-            {/* Tooltip */}
-            {hovered && (
-                <div
-                    className="kz-map__tooltip"
-                    style={{ left: hovered.x + 12, top: hovered.y + 12 }}
-                >
-                    {selectedOblastData ? (
-                        (() => {
-                            const idx = parseInt(hovered.key.replace('rayon-', ''), 10);
-                            const rayon = selectedOblastData.rayons[idx];
-                            const rayonValue = currentRayonCounts[idx] ?? 0;
-                            const rs = rayonStats?.[selectedOblast!]?.[idx];
-                            return (
-                                <>
-                                    <div className="kz-map__tooltip-title">
-                                        {rayon?.name || 'Район'}
+                {/* District (rayon) view — split layout with analytics */}
+                {selectedOblastData && (
+                    <div className="kz-map__split">
+                        {/* Left: map */}
+                        <div className="kz-map__split-left">
+                            <svg
+                                className="kz-map__svg kz-map__svg--district"
+                                viewBox={selectedOblastData.viewBox}
+                                role="img"
+                                aria-label={`Карта районов: ${selectedOblastName}`}
+                                preserveAspectRatio="xMidYMid meet"
+                            >
+                                {selectedOblastData.rayons.map((rayon, index) => {
+                                    const isActive = hovered?.key === `rayon-${index}`;
+                                    const rayonValue = currentRayonCounts[index] ?? 0;
+                                    const fillColor = rayonValue > 0
+                                        ? rayonColorScale(rayonValue)
+                                        : palette.rayonEmpty;
+                                    const [rcx, rcy] = rayonCentroids[index] ?? [0, 0];
+                                    return (
+                                        <g key={`rayon-${index}`}>
+                                            <path
+                                                d={rayon.d}
+                                                fill={fillColor}
+                                                className={`kz-map__rayon ${isActive ? 'is-active' : ''}`}
+                                                onMouseEnter={(e) => handleMouseMove(e, `rayon-${index}`)}
+                                                onMouseMove={(e) => handleMouseMove(e, `rayon-${index}`)}
+                                                onMouseLeave={handleMouseLeave}
+                                            />
+                                            {rayonValue > 0 && (() => {
+                                                const vbWidth = parseFloat(selectedOblastData.viewBox.split(' ')[2] ?? '900');
+                                                const scaledFont = 14 * (vbWidth / 900);
+                                                return (
+                                                    <text
+                                                        x={rcx}
+                                                        y={rcy}
+                                                        className="kz-map__count-label"
+                                                        textAnchor="middle"
+                                                        dominantBaseline="central"
+                                                        pointerEvents="none"
+                                                        style={{ fontSize: `${scaledFont}px` }}
+                                                    >
+                                                        {rayonValue}
+                                                    </text>
+                                                );
+                                            })()}
+                                        </g>
+                                    );
+                                })}
+                            </svg>
+                        </div>
+
+                        {/* Right: analytics panel */}
+                        {oblastAnalytics && (
+                            <div className="kz-map__split-right">
+                                {/* Summary stat cards */}
+                                <div className="kz-panel__stats">
+                                    <div className="kz-panel__stat">
+                                        <span className="kz-panel__stat-value">{oblastAnalytics.totalBins}</span>
+                                        <span className="kz-panel__stat-label">БИН</span>
                                     </div>
-                                    <div className="kz-map__tooltip-value">
-                                        {rayonValue} БИН
+                                    <div className="kz-panel__stat">
+                                        <span className="kz-panel__stat-value">{oblastAnalytics.totalDialogs}</span>
+                                        <span className="kz-panel__stat-label">Диалогов</span>
                                     </div>
-                                    {rs && (
-                                        <div className="kz-map__tooltip-stats">
-                                            <div>Диалогов: {rs.totalDialogs}</div>
-                                            <div>Открытых: {rs.openDialogs}</div>
-                                            <div>Закрытых: {rs.closedDialogs}</div>
-                                            {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                                    <div className="kz-panel__stat kz-panel__stat--open">
+                                        <span className="kz-panel__stat-value">{oblastAnalytics.openDialogs}</span>
+                                        <span className="kz-panel__stat-label">Открытых</span>
+                                    </div>
+                                    <div className="kz-panel__stat kz-panel__stat--closed">
+                                        <span className="kz-panel__stat-value">{oblastAnalytics.closedDialogs}</span>
+                                        <span className="kz-panel__stat-label">Закрытых</span>
+                                    </div>
+                                    {oblastAnalytics.unreadCount > 0 && (
+                                        <div className="kz-panel__stat kz-panel__stat--unread">
+                                            <span className="kz-panel__stat-value">{oblastAnalytics.unreadCount}</span>
+                                            <span className="kz-panel__stat-label">Непрочит.</span>
                                         </div>
                                     )}
-                                </>
-                            );
-                        })()
-                    ) : (
-                        (() => {
-                            const regionKey = SVG_ID_TO_REGION_KEY[hovered.key] ?? '';
-                            const rs = regionStats?.[regionKey];
-                            return (
-                                <>
-                                    <div className="kz-map__tooltip-title">
-                                        {REGION_LABELS[regionKey] ?? hovered.key}
+                                </div>
+
+                                {/* Contracts breakdown */}
+                                <details className="kz-panel__section kz-panel__collapsible">
+                                    <summary className="kz-panel__section-title">Контракты</summary>
+                                    <div className="kz-panel__bar-row">
+                                        <div
+                                            className="kz-panel__bar-fill kz-panel__bar-fill--contract"
+                                            style={{ flex: oblastAnalytics.withContract || 0.5 }}
+                                            title={`С контрактом: ${oblastAnalytics.withContract}`}
+                                        />
+                                        <div
+                                            className="kz-panel__bar-fill kz-panel__bar-fill--no-contract"
+                                            style={{ flex: oblastAnalytics.withoutContract || 0.5 }}
+                                            title={`Без контракта: ${oblastAnalytics.withoutContract}`}
+                                        />
                                     </div>
-                                    <div className="kz-map__tooltip-value">
-                                        {counts[regionKey] ?? 0} БИН
+                                    <div className="kz-panel__bar-legend">
+                                        <span className="kz-panel__legend-item">
+                                            <span className="kz-panel__legend-dot kz-panel__legend-dot--contract" />
+                                            С контрактом: {oblastAnalytics.withContract}
+                                        </span>
+                                        <span className="kz-panel__legend-item">
+                                            <span className="kz-panel__legend-dot kz-panel__legend-dot--no-contract" />
+                                            Без: {oblastAnalytics.withoutContract}
+                                        </span>
                                     </div>
-                                    {rs && (
-                                        <div className="kz-map__tooltip-stats">
-                                            <div>Диалогов: {rs.totalDialogs}</div>
-                                            <div>Открытых: {rs.openDialogs}</div>
-                                            <div>Закрытых: {rs.closedDialogs}</div>
-                                            {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                                </details>
+
+                                {/* Rayon bar chart */}
+                                <details className="kz-panel__section kz-panel__collapsible" open>
+                                    <summary className="kz-panel__section-title">Районы по БИН</summary>
+                                    <div className="kz-panel__rayon-bars">
+                                        {oblastAnalytics.rayonBreakdown.slice(0, 8).map((r) => {
+                                            const maxBins = oblastAnalytics.rayonBreakdown[0].bins || 1;
+                                            const pct = Math.round((r.bins / maxBins) * 100);
+                                            return (
+                                                <div className="kz-panel__rayon-bar" key={r.name}>
+                                                    <span className="kz-panel__rayon-name" title={r.name}>{r.name}</span>
+                                                    <div className="kz-panel__rayon-track">
+                                                        <div
+                                                            className="kz-panel__rayon-fill"
+                                                            style={{ width: `${pct}%` }}
+                                                        />
+                                                    </div>
+                                                    <span className="kz-panel__rayon-value">{r.bins}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </details>
+
+                                {/* Rayon details table */}
+                                <details className="kz-panel__section kz-panel__collapsible">
+                                    <summary className="kz-panel__section-title">Детали по районам</summary>
+                                    <div className="kz-panel__table-wrap">
+                                        <table className="kz-panel__table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Район</th>
+                                                    <th>БИН</th>
+                                                    <th>Диал.</th>
+                                                    <th>Откр.</th>
+                                                    <th>Закр.</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {oblastAnalytics.rayonBreakdown.map((r) => (
+                                                    <tr key={r.name}>
+                                                        <td>{r.name}</td>
+                                                        <td>{r.bins}</td>
+                                                        <td>{r.stats?.totalDialogs ?? 0}</td>
+                                                        <td>{r.stats?.openDialogs ?? 0}</td>
+                                                        <td>{r.stats?.closedDialogs ?? 0}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </details>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Tooltip */}
+                {hovered && (
+                    <div
+                        className="kz-map__tooltip"
+                        style={{ left: hovered.x + 12, top: hovered.y + 12 }}
+                    >
+                        {selectedOblastData ? (
+                            (() => {
+                                const idx = parseInt(hovered.key.replace('rayon-', ''), 10);
+                                const rayon = selectedOblastData.rayons[idx];
+                                const rayonValue = currentRayonCounts[idx] ?? 0;
+                                const rs = rayonStats?.[selectedOblast!]?.[idx];
+                                return (
+                                    <>
+                                        <div className="kz-map__tooltip-title">
+                                            {rayon?.name || 'Район'}
                                         </div>
-                                    )}
-                                </>
-                            );
-                        })()
-                    )}
-                </div>
-            )}
-        </div>
+                                        <div className="kz-map__tooltip-value">
+                                            {rayonValue} БИН
+                                        </div>
+                                        {rs && (
+                                            <div className="kz-map__tooltip-stats">
+                                                <div>Диалогов: {rs.totalDialogs}</div>
+                                                <div>Открытых: {rs.openDialogs}</div>
+                                                <div>Закрытых: {rs.closedDialogs}</div>
+                                                {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                                            </div>
+                                        )}
+                                    </>
+                                );
+                            })()
+                        ) : (
+                            (() => {
+                                const regionKey = SVG_ID_TO_REGION_KEY[hovered.key] ?? '';
+                                const rs = regionStats?.[regionKey];
+                                return (
+                                    <>
+                                        <div className="kz-map__tooltip-title">
+                                            {REGION_LABELS[regionKey] ?? hovered.key}
+                                        </div>
+                                        <div className="kz-map__tooltip-value">
+                                            {counts[regionKey] ?? 0} БИН
+                                        </div>
+                                        {rs && (
+                                            <div className="kz-map__tooltip-stats">
+                                                <div>Диалогов: {rs.totalDialogs}</div>
+                                                <div>Открытых: {rs.openDialogs}</div>
+                                                <div>Закрытых: {rs.closedDialogs}</div>
+                                                {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                                            </div>
+                                        )}
+                                    </>
+                                );
+                            })()
+                        )}
+                    </div>
+                )}
+            </div>
+        </>
     );
 });
 
 export default RegionActivityMap;
+

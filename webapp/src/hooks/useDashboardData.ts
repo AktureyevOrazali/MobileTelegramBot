@@ -19,7 +19,7 @@ import {
 
 export type LoadMode = 'initial' | 'refresh';
 export type TimePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'last90' | 'custom';
-export type DashboardTab = 'overview' | 'operators' | 'sections' | 'activity';
+export type DashboardTab = 'overview' | 'operators' | 'sections' | 'activity' | 'commercial';
 export type OperatorMetricKey = 'avgResponse' | 'messages' | 'dialogs';
 
 /**
@@ -482,6 +482,50 @@ export function useDashboardData(apiClient: ApiClient) {
         return { radius, circumference, arcs };
     }, [responseSegments]);
 
+    const aiDonut = useMemo(() => {
+        const radius = 46;
+        const circumference = 2 * Math.PI * radius;
+        const total = data.aiClosedDialogs + data.transferredToOperatorDialogs;
+        if (total === 0) return { radius, circumference, arcs: [] };
+
+        const ordered = [
+            { key: 'ai', count: data.aiClosedDialogs, percentage: (data.aiClosedDialogs / total) * 100 },
+            { key: 'transferred', count: data.transferredToOperatorDialogs, percentage: (data.transferredToOperatorDialogs / total) * 100 }
+        ];
+
+        let acc = 0;
+        const arcs = ordered.map((seg) => {
+            const dash = (seg.percentage / 100) * circumference;
+            const dashArray = `${dash} ${circumference - dash}`;
+            const dashOffset = -acc;
+            acc += dash;
+            return { ...seg, dashArray, dashOffset };
+        });
+        return { radius, circumference, arcs };
+    }, [data.aiClosedDialogs, data.transferredToOperatorDialogs]);
+
+    const contractDonut = useMemo(() => {
+        const radius = 46;
+        const circumference = 2 * Math.PI * radius;
+        const total = data.requestsWithContract + data.requestsWithoutContract;
+        if (total === 0) return { radius, circumference, arcs: [] };
+
+        const ordered = [
+            { key: 'with_contract', count: data.requestsWithContract, percentage: (data.requestsWithContract / total) * 100 },
+            { key: 'without_contract', count: data.requestsWithoutContract, percentage: (data.requestsWithoutContract / total) * 100 }
+        ];
+
+        let acc = 0;
+        const arcs = ordered.map((seg) => {
+            const dash = (seg.percentage / 100) * circumference;
+            const dashArray = `${dash} ${circumference - dash}`;
+            const dashOffset = -acc;
+            acc += dash;
+            return { ...seg, dashArray, dashOffset };
+        });
+        return { radius, circumference, arcs };
+    }, [data.requestsWithContract, data.requestsWithoutContract]);
+
     // ── Misc derived ──
 
     const avgResponseTimeLabel = useMemo(() => formatMinutes(avgResponseTimeMinutes), [avgResponseTimeMinutes]);
@@ -560,6 +604,8 @@ export function useDashboardData(apiClient: ApiClient) {
         responseSegments,
         avgResponseTimeLabel,
         donutMulti,
+        aiDonut,
+        contractDonut,
 
         // Questions
         selectedQuestionSection,

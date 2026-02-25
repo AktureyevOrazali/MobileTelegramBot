@@ -1,4 +1,5 @@
 import { CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type Option = { value: string; label: string; meta?: string };
 
@@ -121,7 +122,7 @@ export default function SelectPill({
         <span className="value">{currentLabel}</span>
         <span className="caret">▾</span>
       </div>
-      {open && !disabled && (
+      {open && !disabled && createPortal(
         <div
           className="menu"
           role="listbox"
@@ -155,7 +156,8 @@ export default function SelectPill({
               Ничего не найдено
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

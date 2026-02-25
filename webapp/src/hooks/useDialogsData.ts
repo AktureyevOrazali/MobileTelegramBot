@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiClient } from '../api/ApiClient';
-import { AuthSession, BinDetailed, ChatSummary, MessageNotification, Section } from '../types';
+import { AuthSession, BinDetailed, ChatSummary, DashboardSummary, MessageNotification, Section } from '../types';
 import { extractErrorMessage } from '../utils/errors';
 import { useDialogFilters } from './useDialogFilters';
 import {
@@ -17,6 +17,10 @@ export interface RegionStats {
     openDialogs: number;
     closedDialogs: number;
     unreadCount: number;
+    aiClosedDialogs: number;
+    responseSpeedFast: number;
+    responseSpeedMedium: number;
+    responseSpeedSlow: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -34,6 +38,7 @@ export interface UseDialogsDataReturn {
     regionStats: Record<string, RegionStats>;
     rayonStats: Record<string, Record<number, RegionStats>>;
     maxRegionCount: number;
+    dashboardSummary: DashboardSummary | null;
 
     /* UI state */
     loading: boolean;
@@ -110,6 +115,7 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
     const [dialogStatusTarget, setDialogStatusTarget] = useState<{ chat: ChatSummary; action: 'open' | 'close' } | null>(null);
     const [dialogStatusLoading, setDialogStatusLoading] = useState(false);
     const [binDetails, setBinDetails] = useState<BinDetailed[]>([]);
+    const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
 
     const currentUser = session.user;
     const canDeleteDialog = currentUser.isAdmin;
@@ -135,9 +141,13 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
                 const favoritesOnly =
                     overrides && 'favoritesOnly' in overrides ? overrides.favoritesOnly ?? false : showFavoritesOnly;
 
-                const [loadedSections, loadedChats] = await Promise.all([
+                const [loadedSections, loadedChats, summary] = await Promise.all([
                     apiClient.fetchSections(),
                     apiClient.fetchChats({ favoriteOnly: favoritesOnly, binQuery: binFilter ?? undefined }),
+                    apiClient.fetchDashboardSummary().catch(err => {
+                        console.warn('Dashboard summary not available (operator role lacks access):', err);
+                        return null;
+                    })
                 ]);
 
                 const visibleSections = currentUser.isAdmin
@@ -146,6 +156,7 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
 
                 setSections(visibleSections);
                 setChats(applyAiOverrides(loadedChats));
+                setDashboardSummary(summary as DashboardSummary | null);
 
                 setLoading(false);
                 setError(null);
@@ -191,7 +202,18 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
             const filtered = currentUser.isAdmin ? data : data.filter((item) => bins.includes(item.bin));
             setBinDetails(filtered);
         } catch (err) {
-            console.warn('Не удалось загрузить детали БИНов', err);
+            console.warn('Cannot load full bin details (operator role lacks access):', err);
+            // Fallback for operators who can't access `/api/bins/detailed`
+            // We can just construct a basic detailed list out of their assigned bins
+            if (!currentUser.isAdmin) {
+                const fallback = bins.map(b => ({
+                    bin: b,
+                    hasContract: true,
+                    customerLegalAddress: null,
+                    customerBankNameRu: null
+                }));
+                setBinDetails(fallback);
+            }
         }
     }, [apiClient, bins, currentUser.isAdmin]);
 
@@ -423,7 +445,18 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
     const regionStats = useMemo(() => {
         const stats: Record<string, RegionStats> = {};
         const ensure = (key: string) => {
-            if (!stats[key]) stats[key] = { totalDialogs: 0, openDialogs: 0, closedDialogs: 0, unreadCount: 0 };
+            if (!stats[key]) {
+                stats[key] = {
+                    totalDialogs: 0,
+                    openDialogs: 0,
+                    closedDialogs: 0,
+                    unreadCount: 0,
+                    aiClosedDialogs: 0,
+                    responseSpeedFast: 0,
+                    responseSpeedMedium: 0,
+                    responseSpeedSlow: 0,
+                };
+            }
         };
         chats.forEach((chat) => {
             if (!chat.bin) return;
@@ -435,8 +468,28 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
             else stats[rk].openDialogs++;
             stats[rk].unreadCount += chat.unreadCount;
         });
+
+        if (dashboardSummary?.dialogMetrics) {
+            dashboardSummary.dialogMetrics.forEach((metric) => {
+                if (!metric.bin) return;
+                const rk = binToRegion[metric.bin];
+                if (!rk) return;
+                ensure(rk);
+
+                if (metric.isAiClosed) {
+                    stats[rk].aiClosedDialogs++;
+                }
+
+                if (metric.responseTimeMinutes !== null) {
+                    if (metric.responseTimeMinutes < 2) stats[rk].responseSpeedFast++;
+                    else if (metric.responseTimeMinutes <= 7) stats[rk].responseSpeedMedium++;
+                    else stats[rk].responseSpeedSlow++;
+                }
+            });
+        }
+
         return stats;
-    }, [chats, binToRegion]);
+    }, [chats, binToRegion, dashboardSummary]);
 
     /* ---- Derived: rayon stats (oblastId → rayonIdx → stats) ---- */
     const rayonStats = useMemo(() => {
@@ -468,24 +521,61 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
                 }
             }
         });
+
+        const ensureRayon = (oblastId: string, rayonIdx: number) => {
+            if (!result[oblastId]) result[oblastId] = {};
+            if (!result[oblastId][rayonIdx]) {
+                result[oblastId][rayonIdx] = {
+                    totalDialogs: 0,
+                    openDialogs: 0,
+                    closedDialogs: 0,
+                    unreadCount: 0,
+                    aiClosedDialogs: 0,
+                    responseSpeedFast: 0,
+                    responseSpeedMedium: 0,
+                    responseSpeedSlow: 0,
+                };
+            }
+            return result[oblastId][rayonIdx];
+        };
+
         chats.forEach((chat) => {
             if (!chat.bin) return;
             const entries = binToRayon[chat.bin];
             if (!entries) return;
             for (const { oblastId, rayonIdx } of entries) {
-                if (!result[oblastId]) result[oblastId] = {};
-                if (!result[oblastId][rayonIdx]) {
-                    result[oblastId][rayonIdx] = { totalDialogs: 0, openDialogs: 0, closedDialogs: 0, unreadCount: 0 };
-                }
-                const s = result[oblastId][rayonIdx];
+                const s = ensureRayon(oblastId, rayonIdx);
                 s.totalDialogs++;
                 if (chat.dialogClosedAt) s.closedDialogs++;
                 else s.openDialogs++;
                 s.unreadCount += chat.unreadCount;
             }
         });
+
+        if (dashboardSummary?.dialogMetrics) {
+            dashboardSummary.dialogMetrics.forEach((metric) => {
+                if (!metric.bin) return;
+                const entries = binToRayon[metric.bin];
+                if (!entries) return;
+
+                for (const { oblastId, rayonIdx } of entries) {
+                    const s = ensureRayon(oblastId, rayonIdx);
+
+                    if (metric.isAiClosed) {
+                        s.aiClosedDialogs++;
+                    }
+
+                    if (metric.responseTimeMinutes !== null) {
+                        if (metric.responseTimeMinutes < 2) s.responseSpeedFast++;
+                        else if (metric.responseTimeMinutes <= 7) s.responseSpeedMedium++;
+                        else s.responseSpeedSlow++;
+                    }
+                }
+            });
+        }
+
         return result;
-    }, [chats, binDetails]);
+    }, [chats, binDetails, dashboardSummary]);
 
     /* ---- Derived: filtered & sorted chats ---- */
     const filteredChats = useMemo(() => {
@@ -680,6 +770,7 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
         regionStats,
         rayonStats,
         maxRegionCount,
+        dashboardSummary,
         loading,
         error,
         banner,

@@ -1084,11 +1084,11 @@ body.kz-map-scroll-lock {
 }
 
 .kz-panel__legend-dot--contract {
-  background: #3b82f6;
+  background: #10b981;
 }
 
 .kz-panel__legend-dot--no-contract {
-  background: #f97316;
+  background: #f43f5e;
 }
 
 /* ─── Horizontal rayon bar chart ─── */

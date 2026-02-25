@@ -272,6 +272,14 @@ export interface DashboardHeatmapPointRaw {
   count: number;
 }
 
+export interface DashboardDialogMetricRaw {
+  dialog_id: number;
+  bin: string | null;
+  is_open: boolean;
+  is_ai_closed: boolean;
+  response_time_minutes: number | null;
+}
+
 export interface DashboardSummaryRaw {
   total_dialogs: number;
   open_dialogs: number;
@@ -302,7 +310,9 @@ export interface DashboardSummaryRaw {
   agent_breakdown?: DashboardAgentStatRaw[];
   recent_activity?: DashboardActivityPointRaw[];
   top_bins_without_contract?: DashboardTopBinRaw[];
+  top_bins_with_contract?: DashboardTopBinRaw[];
   peak_load_heatmap?: DashboardHeatmapPointRaw[];
+  dialog_metrics?: DashboardDialogMetricRaw[];
   updated_at?: string;
 }
 
@@ -357,6 +367,14 @@ export interface DashboardHeatmapPoint {
   count: number;
 }
 
+export interface DashboardDialogMetric {
+  dialogId: number;
+  bin: string | null;
+  isOpen: boolean;
+  isAiClosed: boolean;
+  responseTimeMinutes: number | null;
+}
+
 export interface DashboardSummary {
   totalDialogs: number;
   openDialogs: number;
@@ -386,6 +404,8 @@ export interface DashboardSummary {
   agentBreakdown: DashboardAgentStat[];
   recentActivity: DashboardActivityPoint[];
   topBinsWithoutContract: DashboardTopBin[];
+  topBinsWithContract: DashboardTopBin[];
   peakLoadHeatmap: DashboardHeatmapPoint[];
+  dialogMetrics: DashboardDialogMetric[];
   updatedAt: Date;
 }

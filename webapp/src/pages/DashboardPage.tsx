@@ -1,4 +1,6 @@
 import React from 'react';
+import * as echarts from 'echarts';
+import EChartsWrapper from '../components/EChartsWrapper';
 import { ApiClient } from '../api/ApiClient';
 import { formatDate, formatDateTime } from '../utils/date';
 import { formatMinutes, getInitials, parseQuestion, speedLabel, toInputDate } from '../utils/dashboard-helpers';
@@ -9,8 +11,15 @@ interface DashboardPageProps {
   apiClient: ApiClient;
 }
 
+/* ── Color palettes ── */
+
+const SECTION_COLORS = ['#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+const HEATMAP_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const HEATMAP_HOURS = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
+
 const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   const d = useDashboardData(apiClient);
+  const [topBinFilter, setTopBinFilter] = React.useState<'without_contract' | 'with_contract'>('without_contract');
 
   const lastUpdated = d.hasData ? formatDateTime(d.data.updatedAt) : '';
 
@@ -153,11 +162,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
           )
         ) : (
           <>
-            {/* ── Overview tab ── */}
+            {/* ══════════════════ Overview tab ══════════════════ */}
             {d.dashboardTab === 'overview' && (
               <>
                 {/* Row 1: Скорость ответа + Диалоги */}
                 <div className="dashboard-overview-row">
+                  {/* ── Response speed donut ── */}
                   <div className="dashboard-card">
                     <div className="dashboard-speed__header">
                       <h3 className="dashboard-card__title">Скорость ответа</h3>
@@ -168,32 +178,53 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                       </span>
                     </div>
 
-                    <div className="dashboard-speed__body">
-                      <div>
-                        <svg viewBox="0 0 120 120" className="dashboard-donut" role="img" aria-label="Скорость ответа операторов">
-                          <circle className="dashboard-donut__track" cx="60" cy="60" r={d.donutMulti.radius} />
-                          {d.donutMulti.arcs.map((seg) => (
-                            <circle
-                              key={seg.key}
-                              className={`dashboard-donut__segment dashboard-donut__segment--${seg.key}`}
-                              cx="60"
-                              cy="60"
-                              r={d.donutMulti.radius}
-                              strokeDasharray={seg.dashArray}
-                              strokeDashoffset={seg.dashOffset}
-                            >
-                              <title>
-                                {speedLabel(seg.key)}: {seg.count} ({seg.percentage.toFixed(1)}%), ср. {formatMinutes(seg.avgMinutes)}
-                              </title>
-                            </circle>
-                          ))}
-                          <text x="60" y="56" textAnchor="middle" className="dashboard-donut__center-value">
+                    <div className="dashboard-donut-col">
+                      <div style={{ position: 'relative', width: 120, height: 120, margin: '0 auto' }}>
+                        <EChartsWrapper
+                          option={{
+                            tooltip: {
+                              trigger: 'item',
+                              backgroundColor: 'var(--surface-color, #ffffff)',
+                              borderColor: 'var(--border-color, #e2e8f0)',
+                              borderWidth: 1,
+                              textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                              formatter: (params: any) => {
+                                if (params.name === 'empty') return '';
+                                const seg = d.responseSegments.find((s) => s.key === params.name);
+                                return `${speedLabel(params.name)}: <b>${params.value}</b><br/>Ср. время: ${formatMinutes(seg?.avgMinutes || 0)}`;
+                              }
+                            },
+                            series: [
+                              {
+                                type: 'pie',
+                                radius: ['75%', '88%'],
+                                center: ['50%', '50%'],
+                                avoidLabelOverlap: false,
+                                itemStyle: {
+                                  borderRadius: 5,
+                                  borderColor: 'transparent',
+                                  borderWidth: 2
+                                },
+                                label: { show: false },
+                                data: d.responseSegments.reduce((sum, seg) => sum + seg.count, 0) === 0 ?
+                                  [{ value: 1, name: 'empty', itemStyle: { color: '#e2e8f0' } }] :
+                                  d.responseSegments.filter(s => s.count > 0).map(seg => ({
+                                    value: seg.count,
+                                    name: seg.key,
+                                    itemStyle: { color: seg.key === 'fast' ? '#22c55e' : seg.key === 'medium' ? '#f59e0b' : '#ef4444' }
+                                  }))
+                              }
+                            ]
+                          }}
+                        />
+                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: 1, color: 'var(--text-color, #1e293b)' }}>
                             {d.numberFormatter.format(d.responseSegments.reduce((sum, seg) => sum + seg.count, 0))}
-                          </text>
-                          <text x="60" y="72" textAnchor="middle" className="dashboard-donut__center-sub">
+                          </span>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--text-muted, #64748b)', marginTop: 2 }}>
                             {d.activeOperatorId === null ? 'операторов' : 'диалогов'}
-                          </text>
-                        </svg>
+                          </span>
+                        </div>
                       </div>
 
                       <div className="dashboard-legend">
@@ -226,6 +257,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                     </div>
                   </div>
 
+                  {/* ── Dialogs card (clean key-value) ── */}
                   <div className="dashboard-card dashboard-card--delay-1">
                     <h3 className="dashboard-card__title">Диалоги</h3>
 
@@ -263,55 +295,181 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
                 {/* Row 2: AI + SLA */}
                 <div className="dashboard-overview-row">
+                  {/* ── AI progress bar ── */}
                   <div className="dashboard-card dashboard-card--delay-2">
                     <h3 className="dashboard-card__title">Автоматизация (AI)</h3>
 
-                    <div className="dashboard-speed__body">
-                      <div>
-                        <svg viewBox="0 0 120 120" className="dashboard-donut" role="img" aria-label="Автоматизация (AI)">
-                          <circle className="dashboard-donut__track" cx="60" cy="60" r={d.aiDonut.radius} />
-                          {d.aiDonut.arcs.map((seg) => (
-                            <circle
-                              key={seg.key}
-                              className={`dashboard-donut__segment dashboard-donut__segment--${seg.key}`}
-                              cx="60"
-                              cy="60"
-                              r={d.aiDonut.radius}
-                              strokeDasharray={seg.dashArray}
-                              strokeDashoffset={seg.dashOffset}
-                              stroke={seg.key === 'ai' ? '#3b82f6' : '#e2e8f0'}
-                            >
-                              <title>
-                                {seg.key === 'ai' ? 'Решено ботом' : 'Переведено оператору'}: {seg.count} ({seg.percentage.toFixed(1)}%)
-                              </title>
-                            </circle>
-                          ))}
-                          <text x="60" y="56" textAnchor="middle" className="dashboard-donut__center-value">
-                            {d.data.aiClosedDialogs + d.data.transferredToOperatorDialogs > 0 ? ((d.data.aiClosedDialogs / (d.data.aiClosedDialogs + d.data.transferredToOperatorDialogs)) * 100).toFixed(0) + '%' : '—'}
-                          </text>
-                          <text x="60" y="72" textAnchor="middle" className="dashboard-donut__center-sub">
-                            ботом
-                          </text>
-                        </svg>
-                      </div>
+                    {(() => {
+                      const total = d.data.aiClosedDialogs + d.data.transferredToOperatorDialogs;
+                      const aiPct = total > 0 ? (d.data.aiClosedDialogs / total) * 100 : 0;
+                      return (
+                        <div className="dashboard-ai-bar">
+                          <div className="dashboard-ai-bar__hero">
+                            <span className="dashboard-ai-bar__pct">{total > 0 ? aiPct.toFixed(0) + '%' : '—'}</span>
+                            <span className="dashboard-ai-bar__pct-label">решено ботом</span>
+                          </div>
+
+                          {/* Stacked bar */}
+                          <div style={{ height: 16, width: '100%', marginTop: 12, marginBottom: 12, borderRadius: 8, overflow: 'hidden' }}>
+                            <EChartsWrapper
+                              option={{
+                                tooltip: {
+                                  trigger: 'axis',
+                                  axisPointer: { type: 'none' },
+                                  backgroundColor: 'var(--surface-color, #ffffff)',
+                                  borderColor: 'var(--border-color, #e2e8f0)',
+                                  borderWidth: 1,
+                                  textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                                  formatter: (params: any) => {
+                                    if (total === 0) return 'Нет данных';
+                                    return params.map((p: any) => `${p.seriesName}: <b>${p.value}</b>`).join('<br/>');
+                                  }
+                                },
+                                grid: { top: 0, bottom: 0, left: 0, right: 0 },
+                                xAxis: { type: 'value', show: false, max: total > 0 ? total : 1 },
+                                yAxis: { type: 'category', data: ['AI'], show: false },
+                                series: total === 0 ? [
+                                  { type: 'bar', data: [1], barWidth: 14, itemStyle: { color: '#e2e8f0' }, animation: false }
+                                ] : [
+                                  {
+                                    name: 'Решено ботом',
+                                    type: 'bar',
+                                    stack: 'total',
+                                    data: [d.data.aiClosedDialogs],
+                                    barWidth: 14,
+                                    itemStyle: { color: '#3b82f6', borderRadius: [8, 0, 0, 8] }
+                                  },
+                                  {
+                                    name: 'Переведено оператору',
+                                    type: 'bar',
+                                    stack: 'total',
+                                    data: [d.data.transferredToOperatorDialogs],
+                                    barWidth: 14,
+                                    itemStyle: { color: '#cbd5e1', borderRadius: [0, 8, 8, 0] }
+                                  }
+                                ]
+                              }}
+                            />
+                          </div>
+
+                          <div className="dashboard-legend" style={{ marginTop: 12 }}>
+                            <div className="dashboard-legend-row">
+                              <div className="dashboard-legend-left">
+                                <span className="dashboard-legend-dot" style={{ background: '#3b82f6' }} />
+                                <span className="dashboard-legend-label">Решено ботом</span>
+                              </div>
+                              <div className="dashboard-legend-right">
+                                <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.aiClosedDialogs)}</span>
+                              </div>
+                            </div>
+                            <div className="dashboard-legend-row">
+                              <div className="dashboard-legend-left">
+                                <span className="dashboard-legend-dot" style={{ background: '#cbd5e1' }} />
+                                <span className="dashboard-legend-label">Переведено оператору</span>
+                              </div>
+                              <div className="dashboard-legend-right">
+                                <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.transferredToOperatorDialogs)}</span>
+                              </div>
+                            </div>
+
+                            <div className="dashboard-legend-divider" />
+
+                            <div className="dashboard-legend-row">
+                              <div className="dashboard-legend-left">
+                                <span className="dashboard-legend-label">Сообщений от бота</span>
+                              </div>
+                              <div className="dashboard-legend-right">
+                                <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.aiMessagesCount)}</span>
+                              </div>
+                            </div>
+                            <div className="dashboard-legend-row">
+                              <div className="dashboard-legend-left">
+                                <span className="dashboard-legend-label">Ср. до перевода</span>
+                              </div>
+                              <div className="dashboard-legend-right">
+                                <span className="dashboard-legend-count">
+                                  {d.data.avgMessagesBeforeTransfer !== null ? d.data.avgMessagesBeforeTransfer.toFixed(1) : '—'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* ── SLA semicircle gauge ── */}
+                  <div className="dashboard-card dashboard-card--delay-3">
+                    <h3 className="dashboard-card__title">Качество обслуживания</h3>
+
+                    <div className="dashboard-donut-col">
+                      {(() => {
+                        const slaValue = d.data.slaCompliancePercentage ?? 0;
+                        const gaugeColor = slaValue >= 80 ? '#22c55e' : '#ef4444';
+                        // SVG semicircle: radius 48, using full circumference for correct dasharray
+                        const radius = 48;
+                        const fullCirc = Math.PI * 2 * radius;
+                        const halfCirc = fullCirc / 2;
+                        const filled = (slaValue / 100) * halfCirc;
+                        return (
+                          <div style={{ position: 'relative', width: 200, height: 110, margin: '0 auto', top: -10 }}>
+                            <EChartsWrapper
+                              option={{
+                                series: [
+                                  {
+                                    type: 'gauge',
+                                    startAngle: 180,
+                                    endAngle: 0,
+                                    center: ['50%', '80%'],
+                                    radius: '100%',
+                                    min: 0,
+                                    max: 100,
+                                    splitNumber: 1,
+                                    itemStyle: {
+                                      color: gaugeColor
+                                    },
+                                    progress: {
+                                      show: true,
+                                      width: 10,
+                                      roundCap: true
+                                    },
+                                    axisLine: {
+                                      roundCap: true,
+                                      lineStyle: {
+                                        width: 10,
+                                        color: [[1, '#e2e8f0']]
+                                      }
+                                    },
+                                    pointer: { show: false },
+                                    axisTick: { show: false },
+                                    splitLine: { show: false },
+                                    axisLabel: { show: false },
+                                    detail: { show: false },
+                                    data: [{ value: slaValue }]
+                                  }
+                                ]
+                              }}
+                            />
+                            <div className="dashboard-sla-gauge__label" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, marginTop: 0 }}>
+                              <span className="dashboard-sla-gauge__value" style={{ color: gaugeColor }}>
+                                {d.data.slaCompliancePercentage !== null ? d.data.slaCompliancePercentage.toFixed(1) + '%' : '—'}
+                              </span>
+                              <span className="dashboard-sla-gauge__sub">SLA (ответ до 5 мин)</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <div className="dashboard-legend">
                         <div className="dashboard-legend-row">
                           <div className="dashboard-legend-left">
-                            <span className="dashboard-legend-dot" style={{ background: '#3b82f6' }} />
-                            <span className="dashboard-legend-label">Решено ботом</span>
+                            <span className="dashboard-legend-dot" style={{ background: '#ef4444' }} />
+                            <span className="dashboard-legend-label">Ответов с задержкой</span>
                           </div>
                           <div className="dashboard-legend-right">
-                            <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.aiClosedDialogs)}</span>
-                          </div>
-                        </div>
-                        <div className="dashboard-legend-row">
-                          <div className="dashboard-legend-left">
-                            <span className="dashboard-legend-dot" style={{ background: '#e2e8f0' }} />
-                            <span className="dashboard-legend-label">Переведено оператору</span>
-                          </div>
-                          <div className="dashboard-legend-right">
-                            <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.transferredToOperatorDialogs)}</span>
+                            <span className="dashboard-legend-count" style={{ color: d.data.slaViolationsCount > 0 ? 'var(--input-error-color)' : 'inherit' }}>
+                              {d.numberFormatter.format(d.data.slaViolationsCount)}
+                            </span>
                           </div>
                         </div>
 
@@ -319,53 +477,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
                         <div className="dashboard-legend-row">
                           <div className="dashboard-legend-left">
-                            <span className="dashboard-legend-label">Сообщений от бота</span>
+                            <span className="dashboard-legend-label">Повторные обращения</span>
                           </div>
                           <div className="dashboard-legend-right">
-                            <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.aiMessagesCount)}</span>
+                            <span className="dashboard-legend-count">{d.numberFormatter.format(d.data.recurringRequestsCount)}</span>
                           </div>
                         </div>
                         <div className="dashboard-legend-row">
                           <div className="dashboard-legend-left">
-                            <span className="dashboard-legend-label">Ср. до перевода</span>
+                            <span className="dashboard-legend-label">Доля повторных</span>
                           </div>
                           <div className="dashboard-legend-right">
                             <span className="dashboard-legend-count">
-                              {d.data.avgMessagesBeforeTransfer !== null ? d.data.avgMessagesBeforeTransfer.toFixed(1) : '—'}
+                              {d.data.recurringRequestsPercentage !== null ? d.data.recurringRequestsPercentage.toFixed(1) + '%' : '—'}
                             </span>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="dashboard-card dashboard-card--delay-3">
-                    <h3 className="dashboard-card__title">Качество обслуживания</h3>
-                    <div className="dashboard-kv">
-                      <div className="dashboard-kv__row">
-                        <span className="dashboard-kv__key">SLA (ответ до 5 мин)</span>
-                        <span className="dashboard-kv__val" style={{ color: (d.data.slaCompliancePercentage || 0) < 80 ? 'var(--input-error-color)' : 'var(--success-color)' }}>
-                          {d.data.slaCompliancePercentage !== null ? d.data.slaCompliancePercentage.toFixed(1) + '%' : '—'}
-                        </span>
-                      </div>
-                      <div className="dashboard-kv__row">
-                        <span className="dashboard-kv__key">Ответов с задержкой</span>
-                        <span className="dashboard-kv__val" style={{ color: d.data.slaViolationsCount > 0 ? 'var(--input-error-color)' : 'inherit' }}>
-                          {d.numberFormatter.format(d.data.slaViolationsCount)}
-                        </span>
-                      </div>
-
-                      <div className="dashboard-kv__divider" />
-
-                      <div className="dashboard-kv__row">
-                        <span className="dashboard-kv__key">Повторные обращения</span>
-                        <span className="dashboard-kv__val">{d.numberFormatter.format(d.data.recurringRequestsCount)}</span>
-                      </div>
-                      <div className="dashboard-kv__row">
-                        <span className="dashboard-kv__key">Доля повторных</span>
-                        <span className="dashboard-kv__val">
-                          {d.data.recurringRequestsPercentage !== null ? d.data.recurringRequestsPercentage.toFixed(1) + '%' : '—'}
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -373,9 +500,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
               </>
             )}
 
-            {/* ── Operators tab ── */}
+            {/* ══════════════════ Operators tab ══════════════════ */}
             {d.dashboardTab === 'operators' && (
               <div className="dashboard-columns">
+                {/* ── TOP-10 horizontal bar chart ── */}
                 <div className={`dashboard-card ${d.isLoading ? 'dashboard-card--loading' : ''}`}>
                   <div className="dashboard-card__header">
                     <h3 className="dashboard-card__title">TOP-10</h3>
@@ -395,33 +523,65 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                       <p className="dashboard-empty__text">Нет данных по сотрудникам.</p>
                     </div>
                   ) : (
-                    <ul className="dashboard-top-list">
-                      {d.topOperators.map((agent) => {
-                        const normalizedName = agent.name.trim().toLowerCase();
-                        const meta = d.operatorMetaByName.get(normalizedName);
-                        const metricValue = d.activeMetricConfig.getValue(agent);
-                        return (
-                          <li key={agent.name} className="dashboard-top-item">
-                            <div className="dashboard-top-item__identity">
-                              <div className="dashboard-avatar">{getInitials(agent.name || 'NA')}</div>
-                              <div>
-                                <div className="dashboard-top-item__name">{agent.name || 'Без имени'}</div>
-                                <div className="dashboard-top-item__role">{meta?.roleLabel ?? 'Сотрудник'}</div>
-                              </div>
-                            </div>
-                            <div className="dashboard-top-item__metric">
-                              <div className="dashboard-top-item__value">
-                                {metricValue === null ? '—' : d.activeMetricConfig.format(metricValue)}
-                              </div>
-                              <div className="dashboard-top-item__label">{d.activeMetricConfig.label}</div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    <EChartsWrapper
+                      option={{
+                        tooltip: {
+                          trigger: 'axis',
+                          axisPointer: { type: 'none' },
+                          backgroundColor: 'var(--surface-color, #ffffff)',
+                          borderColor: 'var(--border-color, #e2e8f0)',
+                          borderWidth: 1,
+                          textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                          formatter: (params: any) => {
+                            const data = params[0].data;
+                            return `${params[0].name}<br/>${d.activeMetricConfig.label}: <b>${data.formattedLabel}</b>`;
+                          }
+                        },
+                        grid: { top: 4, right: 60, bottom: 4, left: 8, containLabel: true },
+                        xAxis: { type: 'value', show: false },
+                        yAxis: {
+                          type: 'category',
+                          data: d.topOperators.map(a => a.name || 'Без имени'),
+                          axisLine: { show: false },
+                          axisTick: { show: false },
+                          axisLabel: { fontSize: 12, color: 'var(--text-color, #334155)', margin: 12 },
+                          inverse: true
+                        },
+                        series: [
+                          {
+                            type: 'bar',
+                            barWidth: 22,
+                            label: {
+                              show: true,
+                              position: 'right',
+                              formatter: (params: any) => params.data.formattedLabel,
+                              fontSize: 12,
+                              fontWeight: 'bold',
+                              color: 'var(--text-color, #334155)'
+                            },
+                            itemStyle: {
+                              borderRadius: [0, 6, 6, 0],
+                              color: (params: any) => {
+                                if (params.dataIndex === 0) return '#6366f1';
+                                if (params.dataIndex < 3) return '#818cf8';
+                                return '#c7d2fe';
+                              }
+                            },
+                            data: d.topOperators.map(agent => {
+                              const raw = d.activeMetricConfig.getValue(agent);
+                              return {
+                                value: raw ?? 0,
+                                formattedLabel: raw === null ? '—' : d.activeMetricConfig.format(raw),
+                              };
+                            })
+                          }
+                        ]
+                      }}
+                    />
                   )}
                 </div>
 
+                {/* ── Employee table (deduplicated: removed "Ответ" column) ── */}
                 <div className={`dashboard-card dashboard-card--delay-1 ${d.isLoading ? 'dashboard-card--loading' : ''}`}>
                   <h3 className="dashboard-card__title">Дэшборд сотрудников</h3>
                   {d.agentStats.length === 0 ? (
@@ -429,41 +589,64 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                       <div className="dashboard-empty__icon">📋</div>
                       <p className="dashboard-empty__text">Пока нет активности сотрудников.</p>
                     </div>
-                  ) : (
-                    <div className="table-scroll">
-                      <table className="dashboard-table">
-                        <thead>
-                          <tr>
-                            <th>Сотрудник</th>
-                            <th>Диалогов</th>
-                            <th>Сообщений</th>
-                            <th>Сообщ./диалог</th>
-                            <th>Ответ</th>
-                            <th>Активность</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {d.agentStats.map((agent) => (
-                            <tr key={agent.name}>
-                              <td>{agent.name}</td>
-                              <td>{d.numberFormatter.format(agent.dialogs)}</td>
-                              <td>{d.numberFormatter.format(agent.messages)}</td>
-                              <td>{agent.avgMessagesPerDialog.toFixed(1)}</td>
-                              <td>{formatMinutes(agent.avgResponseTimeMinutes)}</td>
-                              <td>{agent.lastActivity ? formatDateTime(agent.lastActivity) : '—'}</td>
+                  ) : (() => {
+                    const maxDialogs = Math.max(1, ...d.agentStats.map((a) => a.dialogs));
+                    return (
+                      <div className="table-scroll">
+                        <table className="dashboard-table">
+                          <thead>
+                            <tr>
+                              <th>Сотрудник</th>
+                              <th>Диалоги</th>
+                              <th style={{ minWidth: 80 }}>Нагрузка</th>
+                              <th>Сообщ.</th>
+                              <th>Сообщ./диал.</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                          </thead>
+                          <tbody>
+                            {d.agentStats.map((agent) => (
+                              <tr key={agent.name}>
+                                <td>{agent.name}</td>
+                                <td>{d.numberFormatter.format(agent.dialogs)}</td>
+                                <td>
+                                  <div style={{ height: 12, width: '100%' }}>
+                                    <EChartsWrapper
+                                      option={{
+                                        grid: { top: 0, bottom: 0, left: 0, right: 0 },
+                                        xAxis: { type: 'value', show: false, max: maxDialogs },
+                                        yAxis: { type: 'category', data: [''], show: false },
+                                        series: [
+                                          {
+                                            type: 'bar',
+                                            data: [agent.dialogs],
+                                            barWidth: '100%',
+                                            itemStyle: { color: '#6366f1', borderRadius: 4 },
+                                            showBackground: true,
+                                            backgroundStyle: { color: '#e2e8f0', borderRadius: 4 }
+                                          }
+                                        ],
+                                        tooltip: { show: false }
+                                      }}
+                                    />
+                                  </div>
+                                </td>
+                                <td>{d.numberFormatter.format(agent.messages)}</td>
+                                <td>{agent.avgMessagesPerDialog.toFixed(1)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
 
-            {/* ── Sections tab ── */}
+            {/* ══════════════════ Sections tab ══════════════════ */}
             {d.dashboardTab === 'sections' && (
               <div className="dashboard-columns">
+                {/* ── Section breakdown pie chart ── */}
                 <div className={`dashboard-card ${d.isLoading ? 'dashboard-card--loading' : ''}`}>
                   <h3 className="dashboard-card__title">Обращения по разделам</h3>
                   {d.data.sectionBreakdown.length === 0 ? (
@@ -472,27 +655,66 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                       <p className="dashboard-empty__text">Данных пока нет.</p>
                     </div>
                   ) : (
-                    <ul className="section-progress-list">
-                      {d.data.sectionBreakdown.map((section) => (
-                        <li key={section.section ?? section.title} className="section-progress-item">
-                          <div className="section-progress-item__header">
+                    <>
+                      <div style={{ width: '100%', height: 260 }}>
+                        <EChartsWrapper
+                          option={{
+                            tooltip: {
+                              trigger: 'item',
+                              backgroundColor: 'var(--surface-color, #ffffff)',
+                              borderColor: 'var(--border-color, #e2e8f0)',
+                              borderWidth: 1,
+                              textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                              formatter: '{b}: <b>{c}</b> ({d}%)'
+                            },
+                            series: [
+                              {
+                                type: 'pie',
+                                radius: ['60%', '80%'],
+                                center: ['50%', '50%'],
+                                itemStyle: {
+                                  borderRadius: 5,
+                                  borderColor: 'transparent',
+                                  borderWidth: 2
+                                },
+                                label: {
+                                  show: true,
+                                  formatter: '{d}%',
+                                  fontWeight: 'bold',
+                                  fontSize: 11,
+                                  color: 'var(--text-color, #334155)'
+                                },
+                                labelLine: {
+                                  show: true,
+                                  length: 10,
+                                  length2: 10,
+                                  lineStyle: { color: 'var(--text-muted, #94a3b8)' }
+                                },
+                                data: d.data.sectionBreakdown.map((s, idx) => ({
+                                  name: s.title.length > 20 ? s.title.slice(0, 18) + '…' : s.title,
+                                  value: s.dialogs,
+                                  itemStyle: { color: SECTION_COLORS[idx % SECTION_COLORS.length] }
+                                }))
+                              }
+                            ]
+                          }}
+                        />
+                      </div>
+                      {/* Color legend */}
+                      <div className="dashboard-section-legend">
+                        {d.data.sectionBreakdown.map((section, idx) => (
+                          <div key={section.section ?? section.title} className="dashboard-section-legend__item">
+                            <span className="dashboard-legend-dot" style={{ background: SECTION_COLORS[idx % SECTION_COLORS.length] }} />
                             <span>{section.title}</span>
-                            <span className="text-muted">
-                              {d.numberFormatter.format(section.dialogs)} · {section.percentage.toFixed(1)}%
-                            </span>
+                            <span className="text-muted" style={{ marginLeft: 'auto', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{d.numberFormatter.format(section.dialogs)}</span>
                           </div>
-                          <div className="progress-bar" aria-hidden="true">
-                            <span
-                              className="progress-bar__fill"
-                              style={{ width: `${Math.min(Math.max(section.percentage, 0), 100)}%` }}
-                            />
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
 
+                {/* ── Frequent questions bar chart ── */}
                 <div className={`dashboard-card dashboard-card--delay-1 ${d.isLoading ? 'dashboard-card--loading' : ''}`}>
                   <div className="dashboard-card__header">
                     <h3 className="dashboard-card__title">Частые вопросы</h3>
@@ -512,26 +734,72 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                       <p className="dashboard-empty__text">Нет популярных вопросов.</p>
                     </div>
                   ) : (
-                    <ol className="question-list">
-                      {d.selectedQuestions.map((item, index) => {
-                        const { text, badge } = parseQuestion(item.question);
-                        return (
-                          <li key={`${item.question}-${index}`} className="question-list__item">
-                            <span>
-                              {badge && <span className="question-badge">{badge}</span>}
-                              {text}
-                            </span>
-                            <span className="question-list__count">{d.numberFormatter.format(item.count)}</span>
-                          </li>
-                        );
-                      })}
-                    </ol>
+                    <div style={{ width: '100%', height: Math.max(120, d.selectedQuestions.length * 36) }}>
+                      <EChartsWrapper
+                        option={{
+                          tooltip: {
+                            trigger: 'axis',
+                            axisPointer: { type: 'none' },
+                            backgroundColor: 'var(--surface-color, #ffffff)',
+                            borderColor: 'var(--border-color, #e2e8f0)',
+                            borderWidth: 1,
+                            textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                            formatter: (params: any) => {
+                              const data = params[0].data;
+                              return `${data.fullName}<br/>Обращений: <b>${params[0].value}</b>`;
+                            }
+                          },
+                          grid: { top: 4, right: 50, bottom: 4, left: 8, containLabel: true },
+                          xAxis: { type: 'value', show: false },
+                          yAxis: {
+                            type: 'category',
+                            data: d.selectedQuestions.map(item => {
+                              const { text, badge } = parseQuestion(item.question);
+                              return (badge ? `[${badge}] ` : '') + (text.length > 30 ? text.slice(0, 28) + '…' : text);
+                            }),
+                            axisLine: { show: false },
+                            axisTick: { show: false },
+                            axisLabel: { fontSize: 11, color: 'var(--text-color, #334155)', margin: 12 },
+                            inverse: true
+                          },
+                          series: [
+                            {
+                              type: 'bar',
+                              barWidth: 18,
+                              label: {
+                                show: true,
+                                position: 'right',
+                                formatter: '{c}',
+                                fontSize: 11,
+                                fontWeight: 'bold',
+                                color: 'var(--text-color, #334155)'
+                              },
+                              itemStyle: {
+                                borderRadius: [0, 6, 6, 0],
+                                color: (params: any) => {
+                                  if (params.dataIndex === 0) return '#6366f1';
+                                  if (params.dataIndex < 3) return '#818cf8';
+                                  return '#a5b4fc';
+                                }
+                              },
+                              data: d.selectedQuestions.map(item => {
+                                const { text, badge } = parseQuestion(item.question);
+                                return {
+                                  value: item.count,
+                                  fullName: (badge ? `[${badge}] ` : '') + text
+                                };
+                              })
+                            }
+                          ]
+                        }}
+                      />
+                    </div>
                   )}
                 </div>
               </div>
             )}
 
-            {/* ── Activity tab ── */}
+            {/* ══════════════════ Activity tab ══════════════════ */}
             {d.dashboardTab === 'activity' && (
               <div className={`dashboard-card ${d.isLoading ? 'dashboard-card--loading' : ''}`}>
                 <h3 className="dashboard-card__title">Активность · {d.timeRange.label}</h3>
@@ -540,114 +808,145 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                     <div className="dashboard-empty__icon">📈</div>
                     <p className="dashboard-empty__text">Нет данных о новых диалогах.</p>
                   </div>
-                ) : (
-                  (() => {
-                    const sorted = [...d.recentWeek].sort((a, b) => a.date.localeCompare(b.date));
-                    const maxVal = Math.max(1, ...sorted.map((r) => Math.max(r.dialogs, r.incomingMessages)));
-                    const W = 600;
-                    const H = 220;
-                    const padL = 40;
-                    const padR = 16;
-                    const padT = 16;
-                    const padB = 32;
-                    const plotW = W - padL - padR;
-                    const plotH = H - padT - padB;
-                    const stepX = sorted.length > 1 ? plotW / (sorted.length - 1) : plotW / 2;
+                ) : (() => {
+                  const sorted = [...d.recentWeek].sort((a, b) => a.date.localeCompare(b.date));
+                  const chartData = sorted.map((r) => ({
+                    date: r.date.slice(8) + '.' + r.date.slice(5, 7),
+                    fullDate: formatDate(r.date),
+                    dialogs: r.dialogs,
+                    messages: r.incomingMessages,
+                  }));
 
-                    const toX = (i: number) => padL + (sorted.length > 1 ? i * stepX : plotW / 2);
-                    const toY = (v: number) => padT + plotH - (v / maxVal) * plotH;
-
-                    const dialogsPath = sorted.map((r, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(r.dialogs)}`).join(' ');
-                    const messagesPath = sorted.map((r, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(r.incomingMessages)}`).join(' ');
-
-                    const yTicks = Array.from({ length: 5 }, (_, i) => Math.round((maxVal * (4 - i)) / 4));
-
-                    return (
-                      <div className="dashboard-chart-wrap">
-                        <div className="dashboard-chart-legend">
-                          <span className="dashboard-chart-legend__item">
-                            <span className="dashboard-chart-legend__dot" style={{ background: '#5a7ab8' }} />
-                            Новых диалогов
-                          </span>
-                          <span className="dashboard-chart-legend__item">
-                            <span className="dashboard-chart-legend__dot" style={{ background: '#22c55e' }} />
-                            Входящих сообщений
-                          </span>
-                        </div>
-
-                        <svg viewBox={`0 0 ${W} ${H}`} className="dashboard-line-chart" preserveAspectRatio="xMidYMid meet">
-                          {yTicks.map((tick, i) => {
-                            const y = toY(tick);
-                            return (
-                              <g key={`y${i}`}>
-                                <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="4 3" />
-                                <text x={padL - 6} y={y + 4} textAnchor="end" className="dashboard-chart__label">{tick}</text>
-                              </g>
-                            );
-                          })}
-
-                          {sorted.map((r, i) => {
-                            const showLabel = sorted.length <= 10 || i % Math.ceil(sorted.length / 10) === 0 || i === sorted.length - 1;
-                            if (!showLabel) return null;
-                            return (
-                              <text key={`x${i}`} x={toX(i)} y={H - 6} textAnchor="middle" className="dashboard-chart__label">
-                                {r.date.slice(8) + '.' + r.date.slice(5, 7)}
-                              </text>
-                            );
-                          })}
-
-                          <path d={dialogsPath} fill="none" stroke="#5a7ab8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                          <path d={messagesPath} fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-
-                          {sorted.map((r, i) => (
-                            <g key={`d${i}`}>
-                              <circle cx={toX(i)} cy={toY(r.dialogs)} r="4" fill="#5a7ab8" stroke="#fff" strokeWidth="2" className="dashboard-chart__dot">
-                                <title>{formatDate(r.date)}: {r.dialogs} диалогов</title>
-                              </circle>
-                              <circle cx={toX(i)} cy={toY(r.incomingMessages)} r="4" fill="#22c55e" stroke="#fff" strokeWidth="2" className="dashboard-chart__dot">
-                                <title>{formatDate(r.date)}: {r.incomingMessages} входящих</title>
-                              </circle>
-                            </g>
-                          ))}
-                        </svg>
-                      </div>
-                    );
-                  })()
-                )}
+                  return (
+                    <div style={{ width: '100%', height: 320 }}>
+                      <EChartsWrapper
+                        option={{
+                          tooltip: {
+                            trigger: 'axis',
+                            formatter: (params: any) => {
+                              const dateStr = params[0].data.fullDate;
+                              let html = `${dateStr}<br/>`;
+                              params.forEach((p: any) => {
+                                const label = p.seriesName === 'dialogs' ? 'Новых диалогов' : 'Входящих сообщений';
+                                html += `<span style="color:${p.color}">${label}</span>: <b>${p.value[1]}</b><br/>`;
+                              });
+                              return html;
+                            }
+                          },
+                          legend: {
+                            data: ['dialogs', 'messages'],
+                            formatter: (name: string) => name === 'dialogs' ? 'Новых диалогов' : 'Входящих сообщений',
+                            bottom: 0,
+                            textStyle: { fontSize: 13, color: 'var(--text-color, #334155)' }
+                          },
+                          grid: { top: 10, right: 20, bottom: 40, left: 10, containLabel: true },
+                          xAxis: {
+                            type: 'category',
+                            boundaryGap: false,
+                            axisLine: { show: false },
+                            axisTick: { show: false },
+                            axisLabel: { color: 'var(--text-muted, #64748b)', fontSize: 12 }
+                          },
+                          yAxis: {
+                            type: 'value',
+                            axisLine: { show: false },
+                            axisTick: { show: false },
+                            splitLine: { show: false },
+                            axisLabel: { color: 'var(--text-muted, #64748b)', fontSize: 12 },
+                            minInterval: 1 // allowDecimals={false} equivalent
+                          },
+                          color: ['#5a7ab8', '#22c55e'],
+                          series: [
+                            {
+                              type: 'line',
+                              name: 'dialogs',
+                              smooth: true,
+                              symbol: 'circle',
+                              symbolSize: 8,
+                              showSymbol: false,
+                              lineStyle: { width: 2.5 },
+                              itemStyle: { color: '#5a7ab8', borderColor: '#fff', borderWidth: 2 },
+                              areaStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                  { offset: 0.05, color: 'rgba(90, 122, 184, 0.3)' },
+                                  { offset: 0.95, color: 'rgba(90, 122, 184, 0)' }
+                                ])
+                              },
+                              data: chartData.map(d => [d.date, d.dialogs, d.fullDate])
+                            },
+                            {
+                              type: 'line',
+                              name: 'messages',
+                              smooth: true,
+                              symbol: 'circle',
+                              symbolSize: 8,
+                              showSymbol: false,
+                              lineStyle: { width: 2.5 },
+                              itemStyle: { color: '#22c55e', borderColor: '#fff', borderWidth: 2 },
+                              areaStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                  { offset: 0.05, color: 'rgba(34, 197, 94, 0.3)' },
+                                  { offset: 0.95, color: 'rgba(34, 197, 94, 0)' }
+                                ])
+                              },
+                              data: chartData.map(d => [d.date, d.messages, d.fullDate])
+                            }
+                          ]
+                        }}
+                      />
+                    </div>
+                  );
+                })()}
               </div>
             )}
-            {/* ── Commercial tab ── */}
+
+            {/* ══════════════════ Commercial tab ══════════════════ */}
             {d.dashboardTab === 'commercial' && (
               <div className="dashboard-columns">
                 <div className={`dashboard-card ${d.isLoading ? 'dashboard-card--loading' : ''}`}>
                   <h3 className="dashboard-card__title">Контракты и Лиды</h3>
                   <div className="dashboard-speed__body mt-3" style={{ marginBottom: '1.5rem' }}>
-                    <div>
-                      <svg viewBox="0 0 120 120" className="dashboard-donut" role="img" aria-label="Контракты">
-                        <circle className="dashboard-donut__track" cx="60" cy="60" r={d.contractDonut.radius} />
-                        {d.contractDonut.arcs.map((seg) => (
-                          <circle
-                            key={seg.key}
-                            className={`dashboard-donut__segment dashboard-donut__segment--${seg.key}`}
-                            cx="60"
-                            cy="60"
-                            r={d.contractDonut.radius}
-                            strokeDasharray={seg.dashArray}
-                            strokeDashoffset={seg.dashOffset}
-                            stroke={seg.key === 'with_contract' ? '#10b981' : '#f43f5e'}
-                          >
-                            <title>
-                              {seg.key === 'with_contract' ? 'С договором' : 'Без договора'}: {seg.count} ({seg.percentage.toFixed(1)}%)
-                            </title>
-                          </circle>
-                        ))}
-                        <text x="60" y="56" textAnchor="middle" className="dashboard-donut__center-value">
+                    <div style={{ position: 'relative', width: 120, height: 120, margin: '0 auto' }}>
+                      <EChartsWrapper
+                        option={{
+                          tooltip: {
+                            trigger: 'item',
+                            backgroundColor: 'var(--surface-color, #ffffff)',
+                            borderColor: 'var(--border-color, #e2e8f0)',
+                            borderWidth: 1,
+                            textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                            formatter: '{b}: <b>{c}</b> ({d}%)'
+                          },
+                          series: [
+                            {
+                              type: 'pie',
+                              radius: ['75%', '88%'],
+                              center: ['50%', '50%'],
+                              avoidLabelOverlap: false,
+                              itemStyle: {
+                                borderRadius: 5,
+                                borderColor: 'transparent',
+                                borderWidth: 2
+                              },
+                              label: { show: false },
+                              data: d.data.requestsWithContract + d.data.requestsWithoutContract === 0 ?
+                                [{ value: 1, name: 'empty', itemStyle: { color: '#e2e8f0' } }] :
+                                [
+                                  { value: d.data.requestsWithContract, name: 'С договором', itemStyle: { color: '#10b981' } },
+                                  { value: d.data.requestsWithoutContract, name: 'Без договора', itemStyle: { color: '#f43f5e' } }
+                                ].filter((s) => s.value > 0)
+                            }
+                          ]
+                        }}
+                      />
+                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: 1, color: 'var(--text-color, #1e293b)' }}>
                           {d.data.requestsWithContract + d.data.requestsWithoutContract > 0 ? ((d.data.requestsWithContract / (d.data.requestsWithContract + d.data.requestsWithoutContract)) * 100).toFixed(0) + '%' : '—'}
-                        </text>
-                        <text x="60" y="72" textAnchor="middle" className="dashboard-donut__center-sub">
+                        </span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--text-muted, #64748b)', marginTop: 2 }}>
                           с договором
-                        </text>
-                      </svg>
+                        </span>
+                      </div>
                     </div>
 
                     <div className="dashboard-legend">
@@ -686,39 +985,90 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                     </div>
                   </div>
 
-                  <h4 className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    ТОП-10 БИН БЕЗ ДОГОВОРА
-                  </h4>
-                  {d.data.topBinsWithoutContract.length === 0 ? (
-                    <div className="dashboard-empty" style={{ paddingTop: '1rem', paddingBottom: '1rem' }}>
-                      <p className="dashboard-empty__text" style={{ margin: 0 }}>Не найдено.</p>
-                    </div>
-                  ) : (
-                    <ul className="section-progress-list mt-3">
-                      {d.data.topBinsWithoutContract.map((item, index) => {
-                        const total = d.data.requestsWithoutContract || 1;
-                        const percentage = (item.requests / total) * 100;
-                        return (
-                          <li key={item.bin || index} className="section-progress-item">
-                            <div className="section-progress-item__header">
-                              <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{item.bin || 'Анонимно'}</span>
-                              <span className="text-muted">
-                                {d.numberFormatter.format(item.requests)}
-                              </span>
-                            </div>
-                            <div className="progress-bar" aria-hidden="true" style={{ height: '4px', marginTop: '4px' }}>
-                              <span
-                                className="progress-bar__fill"
-                                style={{ width: `${Math.min(Math.max(percentage, 0), 100)}%`, backgroundColor: 'var(--input-error-color)' }}
-                              />
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
+                  {/* ── TOP-10 BIN horizontal bar chart ── */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <h4 className="text-muted" style={{ fontSize: '0.85rem', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      ТОП-10 БИН
+                    </h4>
+                    <SelectPill
+                      label=""
+                      options={[
+                        { value: 'without_contract', label: 'Без договора' },
+                        { value: 'with_contract', label: 'С договором' },
+                      ]}
+                      value={topBinFilter}
+                      onChange={(val) => setTopBinFilter(val as 'without_contract' | 'with_contract')}
+                      showLabelInside={false}
+                    />
+                  </div>
+                  {(() => {
+                    const activeBins = topBinFilter === 'without_contract' ? d.data.topBinsWithoutContract : d.data.topBinsWithContract;
+                    const chartColor = topBinFilter === 'without_contract' ? '#f43f5e' : '#10b981'; // red for without, green for with
+                    const chartRgba = topBinFilter === 'without_contract' ? '225, 29, 72' : '16, 185, 129';
+
+                    if (activeBins.length === 0) {
+                      return (
+                        <div className="dashboard-empty" style={{ paddingTop: '1rem', paddingBottom: '1rem' }}>
+                          <p className="dashboard-empty__text" style={{ margin: 0 }}>Не найдено.</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div style={{ width: '100%', height: Math.max(140, activeBins.length * 32) }}>
+                        <EChartsWrapper
+                          option={{
+                            tooltip: {
+                              trigger: 'axis',
+                              axisPointer: { type: 'none' },
+                              backgroundColor: 'var(--surface-color, #ffffff)',
+                              borderColor: 'var(--border-color, #e2e8f0)',
+                              borderWidth: 1,
+                              textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                              formatter: (params: any) => {
+                                return `${params[0].name}<br/>Обращений: <b>${params[0].value}</b>`;
+                              }
+                            },
+                            grid: { top: 0, right: 40, bottom: 0, left: 8, containLabel: true },
+                            xAxis: { type: 'value', show: false },
+                            yAxis: {
+                              type: 'category',
+                              data: activeBins.map(item => item.bin || 'Анонимно'),
+                              axisLine: { show: false },
+                              axisTick: { show: false },
+                              axisLabel: { fontSize: 11, fontFamily: 'monospace', color: 'var(--text-color, #334155)', margin: 12 },
+                              inverse: true
+                            },
+                            series: [
+                              {
+                                type: 'bar',
+                                barWidth: 16,
+                                label: {
+                                  show: true,
+                                  position: 'right',
+                                  formatter: '{c}',
+                                  fontSize: 11,
+                                  fontWeight: 'bold',
+                                  color: 'var(--text-color, #334155)'
+                                },
+                                itemStyle: {
+                                  borderRadius: [0, 6, 6, 0],
+                                  color: (params: any) => {
+                                    const opacity = 1 - Math.min(params.dataIndex * 0.08, 0.7);
+                                    return `rgba(${chartRgba}, ${opacity})`;
+                                  }
+                                },
+                                data: activeBins.map(item => item.requests)
+                              }
+                            ]
+                          }}
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
 
+                {/* ── Heatmap (improved with value labels & color legend) ── */}
                 <div className={`dashboard-card dashboard-card--delay-1 flex-1 ${d.isLoading ? 'dashboard-card--loading' : ''}`}>
                   <h3 className="dashboard-card__title">Пиковые нагрузки (Тепловая карта)</h3>
                   {d.data.peakLoadHeatmap.length === 0 ? (
@@ -726,58 +1076,72 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                       <div className="dashboard-empty__icon">🔥</div>
                       <p className="dashboard-empty__text">Нет данных о потоке сообщений.</p>
                     </div>
-                  ) : (
-                    <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: 'auto repeat(12, 1fr)', gap: '4px', fontSize: '11px', flex: 1 }}>
-                      {/* This is a simple heatmap grid using HTML and CSS grids */}
-                      <div style={{ paddingRight: '12px', textAlign: 'right' }}></div>
-                      {[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22].map((h) => (
-                        <div key={h} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{h}</div>
-                      ))}
+                  ) : (() => {
+                    const maxCount = Math.max(...d.data.peakLoadHeatmap.map(s => s.count), 1);
+                    // Aggregate 2-hour blocks for finding the overall max
+                    let maxCellCount = 1;
+                    for (const dayIdx of [0, 1, 2, 3, 4, 5, 6]) {
+                      for (const hour of HEATMAP_HOURS) {
+                        let cellCount = 0;
+                        for (let h = hour; h < hour + 2; h++) {
+                          const item = d.data.peakLoadHeatmap.find(c => c.dayOfWeek === dayIdx && c.hour === h);
+                          if (item) cellCount += item.count;
+                        }
+                        if (cellCount > maxCellCount) maxCellCount = cellCount;
+                      }
+                    }
 
-                      {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((dayObj, dayIdx) => {
-                        const maxCount = Math.max(...d.data.peakLoadHeatmap.map(s => s.count), 1);
-                        return (
-                          <React.Fragment key={dayIdx}>
-                            <div style={{ paddingRight: '12px', textAlign: 'right', fontWeight: 600, alignSelf: 'center', color: 'var(--text-muted)' }}>{dayObj}</div>
-                            {[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22].map((hour) => {
-                              // Aggregate counts for 2-hour blocks
-                              let cellCount = 0;
-                              for (let h = hour; h < hour + 2; h++) {
-                                const item = d.data.peakLoadHeatmap.find(c => c.dayOfWeek === dayIdx && c.hour === h);
-                                if (item) cellCount += item.count;
-                              }
-                              // Calculate opacity based on max value in 2-hour blocks
-                              const intensity = Math.min(cellCount / maxCount, 1);
-                              const opacity = intensity > 0 ? 0.2 + (0.8 * intensity) : 0;
+                    return (
+                      <>
+                        <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: 'auto repeat(12, 1fr)', gap: '4px', fontSize: '11px', flex: 1 }}>
+                          <div style={{ paddingRight: '12px', textAlign: 'right' }}></div>
+                          {HEATMAP_HOURS.map((h) => (
+                            <div key={h} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{h}</div>
+                          ))}
 
-                              return (
-                                <div
-                                  key={hour}
-                                  style={{
-                                    backgroundColor: cellCount > 0 ? `rgba(40, 167, 69, ${opacity})` : 'rgba(0,0,0,0.03)',
-                                    height: '100%',
-                                    minHeight: '36px',
-                                    borderRadius: '4px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: cellCount > 0 ? 'help' : 'default',
-                                  }}
-                                  title={cellCount > 0 ? `${cellCount} сообщ.` : ''}
-                                >
-                                </div>
-                              );
-                            })}
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {d.data.peakLoadHeatmap.length > 0 && (
-                    <div className="text-muted mt-3" style={{ fontSize: '0.82rem', textAlign: 'center' }}>
-                      Указано местное время (UTC+5), группировка по 2 часа
-                    </div>
-                  )}
+                          {HEATMAP_DAYS.map((dayName, dayIdx) => (
+                            <React.Fragment key={dayIdx}>
+                              <div style={{ paddingRight: '12px', textAlign: 'right', fontWeight: 600, alignSelf: 'center', color: 'var(--text-muted)' }}>{dayName}</div>
+                              {HEATMAP_HOURS.map((hour) => {
+                                let cellCount = 0;
+                                for (let h = hour; h < hour + 2; h++) {
+                                  const item = d.data.peakLoadHeatmap.find(c => c.dayOfWeek === dayIdx && c.hour === h);
+                                  if (item) cellCount += item.count;
+                                }
+                                const intensity = Math.min(cellCount / maxCellCount, 1);
+                                const opacity = intensity > 0 ? 0.2 + (0.8 * intensity) : 0;
+
+                                return (
+                                  <div
+                                    key={hour}
+                                    className="heatmap-cell"
+                                    style={{
+                                      backgroundColor: cellCount > 0 ? `rgba(99, 102, 241, ${opacity})` : 'var(--surface-color)',
+                                      color: intensity > 0.5 ? '#fff' : 'var(--text-muted)',
+                                    }}
+                                    title={cellCount > 0 ? `${cellCount} сообщ.` : ''}
+                                  >
+                                    {cellCount > 0 ? cellCount : ''}
+                                  </div>
+                                );
+                              })}
+                            </React.Fragment>
+                          ))}
+                        </div>
+
+                        {/* Color legend */}
+                        <div className="heatmap-legend">
+                          <span className="text-muted" style={{ fontSize: '0.78rem' }}>Мало</span>
+                          <div className="heatmap-legend__gradient" />
+                          <span className="text-muted" style={{ fontSize: '0.78rem' }}>Много</span>
+                        </div>
+
+                        <div className="text-muted mt-3" style={{ fontSize: '0.82rem', textAlign: 'center' }}>
+                          Указано местное время (UTC+5), группировка по 2 часа
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             )}

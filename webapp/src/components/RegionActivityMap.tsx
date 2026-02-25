@@ -4,7 +4,7 @@ import { scaleLinear } from 'd3';
 import kzMap from '../../kz.json';
 import { OBLASTS, OBLAST_RAYONS, MAIN_VIEWBOX } from '../data/kzMapData';
 import type { RegionStats } from '../hooks/useDialogsData';
-import type { BinDetailed } from '../types';
+import type { BinDetailed, ChatSummary } from '../types';
 
 /** GeoJSON features for Kazakhstan regions — kept for useDialogsData compatibility. */
 export const GEOJSON_FEATURES = kzMap as FeatureCollection<Geometry, { name: string }>;
@@ -422,16 +422,21 @@ function useIsDarkTheme(): boolean {
 
 /* ─── Component ─── */
 
+import EChartsWrapper from './EChartsWrapper';
+
 const RegionActivityMap: React.FC<{
     counts: Record<string, number>;
     rayonCounts?: Record<string, Record<number, number>>;
     regionStats?: Record<string, RegionStats>;
     rayonStats?: Record<string, Record<number, RegionStats>>;
     binDetails?: BinDetailed[];
-}> = React.memo(({ counts, rayonCounts, regionStats, rayonStats, binDetails }) => {
+    chats?: ChatSummary[];
+}> = React.memo(({ counts, rayonCounts, regionStats, rayonStats, binDetails, chats }) => {
     const wrapperRef = useRef<HTMLDivElement | null>(null);
     const [hovered, setHovered] = useState<{ key: string; x: number; y: number } | null>(null);
     const [selectedOblast, setSelectedOblast] = useState<string | null>(null);
+    const [selectedRayon, setSelectedRayon] = useState<number | null>(null);
+    const [binTab, setBinTab] = useState<'all' | 'with_contract' | 'without_contract'>('all');
     const [isFullscreen, setIsFullscreen] = useState(false);
     const isDark = useIsDarkTheme();
     const palette = isDark ? DARK_COLORS : LIGHT_COLORS;
@@ -462,14 +467,24 @@ const RegionActivityMap: React.FC<{
     const handleOblastClick = useCallback((oblastId: string) => {
         if (OBLAST_RAYONS[oblastId]) {
             setSelectedOblast(oblastId);
+            setSelectedRayon(null);
             setHovered(null);
+            setBinTab('all');
         }
     }, []);
 
     const handleBack = useCallback(() => {
-        setSelectedOblast(null);
-        setHovered(null);
-    }, []);
+        if (selectedRayon !== null) {
+            setSelectedRayon(null);
+            setHovered(null);
+            setBinTab('all');
+        } else {
+            setSelectedOblast(null);
+            setSelectedRayon(null);
+            setHovered(null);
+            setBinTab('all');
+        }
+    }, [selectedRayon]);
 
     const toggleFullscreen = useCallback(() => {
         setIsFullscreen((prev) => !prev);
@@ -523,39 +538,115 @@ const RegionActivityMap: React.FC<{
         return result;
     }, [selectedOblastData]);
 
-    // ─── Oblast-level analytics for the right panel ───
-    const oblastAnalytics = useMemo(() => {
+    // ─── Analytics for the right panel (Oblast or selected Rayon) ───
+    const activeAnalytics = useMemo(() => {
         if (!selectedOblast || !selectedRegionKey) return null;
-        const rs = regionStats?.[selectedRegionKey];
-        const oblastBins = (binDetails ?? []).filter((d) => {
-            const rk = detectRegionFromAddress(d.customerLegalAddress);
-            return rk === selectedRegionKey;
-        });
-        const withContract = oblastBins.filter((b) => b.hasContract).length;
-        const withoutContract = oblastBins.length - withContract;
 
-        // Per-rayon breakdown for table — include ALL rayons
-        const rayonBreakdown: { name: string; bins: number; stats: RegionStats | null }[] = [];
-        if (selectedOblastData) {
-            selectedOblastData.rayons.forEach((rayon, idx) => {
-                const bins = currentRayonCounts[idx] ?? 0;
-                const rs2 = rayonStats?.[selectedOblast]?.[idx] ?? null;
-                rayonBreakdown.push({ name: rayon.name || `Район ${idx + 1}`, bins, stats: rs2 });
+        let targetBins = binDetails ?? [];
+        let rStats: RegionStats | null = null;
+        const oData = OBLAST_RAYONS[selectedOblast];
+
+        if (selectedRayon === null) {
+            // Oblast Mode
+            rStats = regionStats?.[selectedRegionKey] ?? null;
+            targetBins = targetBins.filter((d) => detectRegionFromAddress(d.customerLegalAddress) === selectedRegionKey);
+
+            const withContract = targetBins.filter((b) => b.hasContract).length;
+            const withoutContract = targetBins.length - withContract;
+
+            const rayonBreakdown: { name: string; bins: number; stats: RegionStats | null }[] = [];
+            if (oData) {
+                oData.rayons.forEach((rayon, idx) => {
+                    const bins = currentRayonCounts[idx] ?? 0;
+                    const rs2 = rayonStats?.[selectedOblast]?.[idx] ?? null;
+                    rayonBreakdown.push({ name: rayon.name || `Район ${idx + 1}`, bins, stats: rs2 });
+                });
+                rayonBreakdown.sort((a, b) => b.bins - a.bins);
+            }
+
+            return {
+                mode: 'oblast' as const,
+                title: selectedOblastName,
+                totalBins: targetBins.length,
+                totalDialogs: rStats?.totalDialogs ?? 0,
+                openDialogs: rStats?.openDialogs ?? 0,
+                closedDialogs: rStats?.closedDialogs ?? 0,
+                unreadCount: rStats?.unreadCount ?? 0,
+                withContract,
+                withoutContract,
+                breakdownLabel: 'Районы по БИН',
+                breakdownList: rayonBreakdown.map(r => ({ name: r.name, value: r.bins })),
+                rayonBreakdown, // needed for Top 5 charts in oblast mode
+                stats: rStats,
+            };
+        } else {
+            // Rayon Mode
+            const rs = rayonStats?.[selectedOblast]?.[selectedRayon] ?? null;
+            rStats = rs;
+            const rayonName = oData?.rayons[selectedRayon]?.name || `Район ${selectedRayon + 1}`;
+
+            targetBins = targetBins.filter((d) => {
+                const rk = detectRegionFromAddress(d.customerLegalAddress);
+                if (!rk) return false;
+
+                let checkOblast = selectedOblast;
+                // Deal with Shymkent within Turkistan map
+                if (rk === 'Shymkent (city)' && selectedOblast === 'turkistanOblast') {
+                    checkOblast = 'turkistanOblast';
+                } else if (SVG_ID_TO_REGION_KEY[checkOblast] !== rk) {
+                    return false;
+                }
+
+                const idx = detectRayonFromAddress(d.customerLegalAddress, checkOblast);
+                return idx === selectedRayon;
             });
-            rayonBreakdown.sort((a, b) => b.bins - a.bins);
-        }
 
-        return {
-            totalBins: oblastBins.length,
-            withContract,
-            withoutContract,
-            totalDialogs: rs?.totalDialogs ?? 0,
-            openDialogs: rs?.openDialogs ?? 0,
-            closedDialogs: rs?.closedDialogs ?? 0,
-            unreadCount: rs?.unreadCount ?? 0,
-            rayonBreakdown,
-        };
-    }, [selectedOblast, selectedRegionKey, regionStats, binDetails, selectedOblastData, currentRayonCounts, rayonStats]);
+            const withContract = targetBins.filter((b) => b.hasContract).length;
+            const withoutContract = targetBins.length - withContract;
+
+            // Top BINs by dialog count
+            const binCounts: Record<string, number> = {};
+            const targetBinSet = new Set(targetBins.map(b => b.bin));
+
+            if (chats) {
+                chats.forEach(c => {
+                    if (c.bin && targetBinSet.has(c.bin)) {
+                        binCounts[c.bin] = (binCounts[c.bin] || 0) + 1;
+                    }
+                });
+            }
+
+            let filteredBins = targetBins;
+            if (binTab === 'with_contract') filteredBins = targetBins.filter(b => b.hasContract);
+            else if (binTab === 'without_contract') filteredBins = targetBins.filter(b => !b.hasContract);
+
+            const filteredBinSet = new Set(filteredBins.map(b => b.bin));
+
+            const topBinsList = Object.entries(binCounts)
+                .filter(([bin]) => filteredBinSet.has(bin))
+                .map(([bin, count]) => {
+                    return { name: bin, value: count };
+                })
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 5);
+
+            return {
+                mode: 'rayon' as const,
+                title: rayonName,
+                totalBins: targetBins.length,
+                totalDialogs: rStats?.totalDialogs ?? 0,
+                openDialogs: rStats?.openDialogs ?? 0,
+                closedDialogs: rStats?.closedDialogs ?? 0,
+                unreadCount: rStats?.unreadCount ?? 0,
+                withContract,
+                withoutContract,
+                breakdownLabel: 'Топ БИН по обращениям',
+                breakdownList: topBinsList,
+                rayonBreakdown: [],
+                stats: rStats,
+            };
+        }
+    }, [selectedOblast, selectedRegionKey, selectedRayon, regionStats, rayonStats, binDetails, currentRayonCounts, chats, binTab, selectedOblastName]);
 
     const wrapperClass = [
         'kz-map',
@@ -586,9 +677,9 @@ const RegionActivityMap: React.FC<{
                     )}
                     {selectedOblast && (
                         <span className="kz-map__district-title">
-                            {selectedOblastName}
-                            {oblastBinCount > 0 && (
-                                <span className="kz-map__district-count"> — {oblastBinCount} БИН</span>
+                            {activeAnalytics?.title || selectedOblastName}
+                            {activeAnalytics && activeAnalytics.totalBins > 0 && (
+                                <span className="kz-map__district-count"> — {activeAnalytics.totalBins} БИН</span>
                             )}
                         </span>
                     )}
@@ -657,9 +748,10 @@ const RegionActivityMap: React.FC<{
                                 role="img"
                                 aria-label={`Карта районов: ${selectedOblastName}`}
                                 preserveAspectRatio="xMidYMid meet"
+                                onClick={() => setSelectedRayon(null)}
                             >
                                 {selectedOblastData.rayons.map((rayon, index) => {
-                                    const isActive = hovered?.key === `rayon-${index}`;
+                                    const isActive = hovered?.key === `rayon-${index}` || selectedRayon === index;
                                     const rayonValue = currentRayonCounts[index] ?? 0;
                                     const fillColor = rayonValue > 0
                                         ? rayonColorScale(rayonValue)
@@ -674,6 +766,10 @@ const RegionActivityMap: React.FC<{
                                                 onMouseEnter={(e) => handleMouseMove(e, `rayon-${index}`)}
                                                 onMouseMove={(e) => handleMouseMove(e, `rayon-${index}`)}
                                                 onMouseLeave={handleMouseLeave}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedRayon(selectedRayon === index ? null : index);
+                                                }}
                                             />
                                             {rayonValue > 0 && (() => {
                                                 const vbWidth = parseFloat(selectedOblastData.viewBox.split(' ')[2] ?? '900');
@@ -699,175 +795,413 @@ const RegionActivityMap: React.FC<{
                         </div>
 
                         {/* Right: analytics panel */}
-                        {oblastAnalytics && (
+                        {activeAnalytics && (
                             <div className="kz-map__split-right">
                                 {/* Summary stat cards */}
                                 <div className="kz-panel__stats">
                                     <div className="kz-panel__stat">
-                                        <span className="kz-panel__stat-value">{oblastAnalytics.totalBins}</span>
+                                        <span className="kz-panel__stat-value">{activeAnalytics.totalBins}</span>
                                         <span className="kz-panel__stat-label">БИН</span>
                                     </div>
                                     <div className="kz-panel__stat">
-                                        <span className="kz-panel__stat-value">{oblastAnalytics.totalDialogs}</span>
+                                        <span className="kz-panel__stat-value">{activeAnalytics.totalDialogs}</span>
                                         <span className="kz-panel__stat-label">Диалогов</span>
                                     </div>
                                     <div className="kz-panel__stat kz-panel__stat--open">
-                                        <span className="kz-panel__stat-value">{oblastAnalytics.openDialogs}</span>
+                                        <span className="kz-panel__stat-value">{activeAnalytics.openDialogs}</span>
                                         <span className="kz-panel__stat-label">Открытых</span>
                                     </div>
                                     <div className="kz-panel__stat kz-panel__stat--closed">
-                                        <span className="kz-panel__stat-value">{oblastAnalytics.closedDialogs}</span>
+                                        <span className="kz-panel__stat-value">{activeAnalytics.closedDialogs}</span>
                                         <span className="kz-panel__stat-label">Закрытых</span>
                                     </div>
-                                    {oblastAnalytics.unreadCount > 0 && (
+                                    {activeAnalytics.unreadCount > 0 && (
                                         <div className="kz-panel__stat kz-panel__stat--unread">
-                                            <span className="kz-panel__stat-value">{oblastAnalytics.unreadCount}</span>
+                                            <span className="kz-panel__stat-value">{activeAnalytics.unreadCount}</span>
                                             <span className="kz-panel__stat-label">Непрочит.</span>
                                         </div>
                                     )}
                                 </div>
 
                                 {/* Contracts breakdown */}
-                                <details className="kz-panel__section kz-panel__collapsible">
-                                    <summary className="kz-panel__section-title">Контракты</summary>
-                                    <div className="kz-panel__bar-row">
-                                        <div
-                                            className="kz-panel__bar-fill kz-panel__bar-fill--contract"
-                                            style={{ flex: oblastAnalytics.withContract || 0.5 }}
-                                            title={`С контрактом: ${oblastAnalytics.withContract}`}
-                                        />
-                                        <div
-                                            className="kz-panel__bar-fill kz-panel__bar-fill--no-contract"
-                                            style={{ flex: oblastAnalytics.withoutContract || 0.5 }}
-                                            title={`Без контракта: ${oblastAnalytics.withoutContract}`}
+                                <details className="kz-panel__section kz-panel__collapsible" open>
+                                    <summary className="kz-panel__section-title">Договоры</summary>
+                                    <div style={{ height: 16, width: '100%', marginTop: 8, marginBottom: 8, borderRadius: 4, overflow: 'hidden' }}>
+                                        <EChartsWrapper
+                                            option={{
+                                                grid: { top: 0, bottom: 0, left: 0, right: 0 },
+                                                xAxis: { type: 'value', show: false, max: (activeAnalytics.withContract || 0) + (activeAnalytics.withoutContract || 0) || 1 },
+                                                yAxis: { type: 'category', data: [''], show: false },
+                                                tooltip: { show: false },
+                                                series: [
+                                                    {
+                                                        name: 'С контрактом',
+                                                        type: 'bar',
+                                                        stack: 'total',
+                                                        data: [activeAnalytics.withContract || 0],
+                                                        barWidth: '100%',
+                                                        itemStyle: { color: '#10b981', borderRadius: [4, 0, 0, 4] }
+                                                    },
+                                                    {
+                                                        name: 'Без контракта',
+                                                        type: 'bar',
+                                                        stack: 'total',
+                                                        data: [activeAnalytics.withoutContract || 0],
+                                                        barWidth: '100%',
+                                                        itemStyle: { color: '#f43f5e', borderRadius: [0, 4, 4, 0] }
+                                                    }
+                                                ]
+                                            }}
                                         />
                                     </div>
                                     <div className="kz-panel__bar-legend">
                                         <span className="kz-panel__legend-item">
                                             <span className="kz-panel__legend-dot kz-panel__legend-dot--contract" />
-                                            С контрактом: {oblastAnalytics.withContract}
+                                            С контрактом: {activeAnalytics.withContract}
                                         </span>
                                         <span className="kz-panel__legend-item">
                                             <span className="kz-panel__legend-dot kz-panel__legend-dot--no-contract" />
-                                            Без: {oblastAnalytics.withoutContract}
+                                            Без: {activeAnalytics.withoutContract}
                                         </span>
                                     </div>
                                 </details>
 
-                                {/* Rayon bar chart */}
+                                {/* Dynamic Breakdown (Rayons or Top BINs) */}
                                 <details className="kz-panel__section kz-panel__collapsible" open>
-                                    <summary className="kz-panel__section-title">Районы по БИН</summary>
-                                    <div className="kz-panel__rayon-bars">
-                                        {oblastAnalytics.rayonBreakdown.slice(0, 8).map((r) => {
-                                            const maxBins = oblastAnalytics.rayonBreakdown[0].bins || 1;
-                                            const pct = Math.round((r.bins / maxBins) * 100);
+                                    <summary className="kz-panel__section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        Сведения
+                                    </summary>
+                                    <div className="kz-panel__section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: 8 }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted-color)' }}>
+                                            {activeAnalytics.breakdownLabel}
+                                        </div>
+                                        {activeAnalytics.mode === 'rayon' && (
+                                            <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.05)', padding: 2, borderRadius: 6 }} onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => setBinTab('all')}
+                                                    style={{ border: 'none', background: binTab === 'all' ? '#fff' : 'transparent', boxShadow: binTab === 'all' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none', color: binTab === 'all' ? '#1e293b' : 'inherit', borderRadius: 4, padding: '2px 8px', fontSize: '0.65rem', cursor: 'pointer' }}
+                                                >Все</button>
+                                                <button
+                                                    onClick={() => setBinTab('with_contract')}
+                                                    style={{ border: 'none', background: binTab === 'with_contract' ? '#10b981' : 'transparent', color: binTab === 'with_contract' ? '#fff' : 'inherit', borderRadius: 4, padding: '2px 8px', fontSize: '0.65rem', cursor: 'pointer' }}
+                                                >С дог.</button>
+                                                <button
+                                                    onClick={() => setBinTab('without_contract')}
+                                                    style={{ border: 'none', background: binTab === 'without_contract' ? '#f43f5e' : 'transparent', color: binTab === 'without_contract' ? '#fff' : 'inherit', borderRadius: 4, padding: '2px 8px', fontSize: '0.65rem', cursor: 'pointer' }}
+                                                >Без дог.</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="kz-panel__rayon-bars" style={{ marginTop: 8 }}>
+                                        {activeAnalytics.breakdownList.length === 0 && (
+                                            <div className="text-muted" style={{ fontSize: '0.8rem', padding: '8px 0' }}>Нет данных</div>
+                                        )}
+                                        {activeAnalytics.breakdownList.slice(0, 8).map((r) => {
+                                            const maxBins = activeAnalytics.breakdownList[0]?.value || 1;
                                             return (
                                                 <div className="kz-panel__rayon-bar" key={r.name}>
                                                     <span className="kz-panel__rayon-name" title={r.name}>{r.name}</span>
-                                                    <div className="kz-panel__rayon-track">
-                                                        <div
-                                                            className="kz-panel__rayon-fill"
-                                                            style={{ width: `${pct}%` }}
+                                                    <div style={{ height: 10, flex: 1, margin: '0 8px' }}>
+                                                        <EChartsWrapper
+                                                            option={{
+                                                                grid: { top: 0, bottom: 0, left: 0, right: 0 },
+                                                                xAxis: { type: 'value', show: false, max: maxBins },
+                                                                yAxis: { type: 'category', data: [''], show: false },
+                                                                tooltip: { show: false },
+                                                                series: [
+                                                                    {
+                                                                        type: 'bar',
+                                                                        data: [r.value],
+                                                                        barWidth: '100%',
+                                                                        itemStyle: { color: activeAnalytics.mode === 'oblast' ? '#6366f1' : '#14b8a6', borderRadius: 4 },
+                                                                        showBackground: true,
+                                                                        backgroundStyle: { color: '#e2e8f0', borderRadius: 4 }
+                                                                    }
+                                                                ]
+                                                            }}
                                                         />
                                                     </div>
-                                                    <span className="kz-panel__rayon-value">{r.bins}</span>
+                                                    <span className="kz-panel__rayon-value">{r.value}</span>
                                                 </div>
                                             );
                                         })}
                                     </div>
                                 </details>
 
-                                {/* Rayon details table */}
-                                <details className="kz-panel__section kz-panel__collapsible">
-                                    <summary className="kz-panel__section-title">Детали по районам</summary>
-                                    <div className="kz-panel__table-wrap">
-                                        <table className="kz-panel__table">
-                                            <thead>
-                                                <tr>
-                                                    <th>Район</th>
-                                                    <th>БИН</th>
-                                                    <th>Диал.</th>
-                                                    <th>Откр.</th>
-                                                    <th>Закр.</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {oblastAnalytics.rayonBreakdown.map((r) => (
-                                                    <tr key={r.name}>
-                                                        <td>{r.name}</td>
-                                                        <td>{r.bins}</td>
-                                                        <td>{r.stats?.totalDialogs ?? 0}</td>
-                                                        <td>{r.stats?.openDialogs ?? 0}</td>
-                                                        <td>{r.stats?.closedDialogs ?? 0}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </details>
+                                {/* AI Automation - Dashboard Style */}
+                                {(() => {
+                                    const totalForSlaAndAi = activeAnalytics.totalDialogs;
+                                    const aiClosed = activeAnalytics.stats?.aiClosedDialogs ?? 0;
+                                    const opsHandled = totalForSlaAndAi - aiClosed;
+                                    const aiPct = totalForSlaAndAi > 0 ? (aiClosed / totalForSlaAndAi) * 100 : 0;
+
+                                    return (
+                                        <details className="kz-panel__section kz-panel__collapsible" open>
+                                            <summary className="kz-panel__section-title">Автоматизация (AI)</summary>
+                                            <div className="dashboard-ai-bar" style={{ marginTop: 12 }}>
+                                                <div className="dashboard-ai-bar__hero">
+                                                    <span className="dashboard-ai-bar__pct">{totalForSlaAndAi > 0 ? aiPct.toFixed(0) + '%' : '—'}</span>
+                                                    <span className="dashboard-ai-bar__pct-label">решено ботом</span>
+                                                </div>
+
+                                                <div style={{ height: 16, width: '100%', marginTop: 12, marginBottom: 12, borderRadius: 8, overflow: 'hidden' }}>
+                                                    <EChartsWrapper
+                                                        option={{
+                                                            tooltip: {
+                                                                trigger: 'axis',
+                                                                axisPointer: { type: 'none' },
+                                                                backgroundColor: 'var(--surface-color, #ffffff)',
+                                                                borderColor: 'var(--border-color, #e2e8f0)',
+                                                                borderWidth: 1,
+                                                                textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                                                                formatter: (params: any) => {
+                                                                    if (totalForSlaAndAi === 0) return 'Нет данных';
+                                                                    return params.map((p: any) => `${p.seriesName}: <b>${p.value}</b>`).join('<br/>');
+                                                                }
+                                                            },
+                                                            grid: { top: 0, bottom: 0, left: 0, right: 0 },
+                                                            xAxis: { type: 'value', show: false, max: totalForSlaAndAi > 0 ? totalForSlaAndAi : 1 },
+                                                            yAxis: { type: 'category', data: ['AI'], show: false },
+                                                            series: totalForSlaAndAi === 0 ? [
+                                                                { type: 'bar', data: [1], barWidth: 14, itemStyle: { color: '#e2e8f0' }, animation: false }
+                                                            ] : [
+                                                                {
+                                                                    name: 'Решено ботом',
+                                                                    type: 'bar',
+                                                                    stack: 'total',
+                                                                    data: [aiClosed],
+                                                                    barWidth: 14,
+                                                                    itemStyle: { color: '#3b82f6', borderRadius: [8, 0, 0, 8] }
+                                                                },
+                                                                {
+                                                                    name: 'Решено оператором',
+                                                                    type: 'bar',
+                                                                    stack: 'total',
+                                                                    data: [opsHandled],
+                                                                    barWidth: 14,
+                                                                    itemStyle: { color: '#cbd5e1', borderRadius: [0, 8, 8, 0] }
+                                                                }
+                                                            ]
+                                                        }}
+                                                    />
+                                                </div>
+
+                                                <div className="kz-panel__bar-legend" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', fontWeight: 600 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                            <span className="kz-panel__legend-dot" style={{ background: '#3b82f6', width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />
+                                                            <span style={{ color: 'var(--text-color)' }}>Решено ботом</span>
+                                                        </div>
+                                                        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{aiClosed}</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', fontWeight: 600 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                            <span className="kz-panel__legend-dot" style={{ background: '#cbd5e1', width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />
+                                                            <span style={{ color: 'var(--text-color)' }}>Переведено оператору</span>
+                                                        </div>
+                                                        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{opsHandled}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </details>
+                                    );
+                                })()}
+
+                                {/* SLA Section - Conditional Based on Mode */}
+                                {activeAnalytics.mode === 'oblast' ? (
+                                    <details className="kz-panel__section kz-panel__collapsible" open>
+                                        <summary className="kz-panel__section-title">Топ-5 по SLA</summary>
+                                        <div className="kz-panel__rayon-bars" style={{ marginTop: 8 }}>
+                                            {activeAnalytics.rayonBreakdown
+                                                .map(r => {
+                                                    const fast = r.stats?.responseSpeedFast ?? 0;
+                                                    const medium = r.stats?.responseSpeedMedium ?? 0;
+                                                    const slow = r.stats?.responseSpeedSlow ?? 0;
+                                                    const total = fast + medium + slow;
+                                                    const sla = total > 0 ? ((fast + medium) / total) * 100 : null;
+                                                    return { ...r, sla };
+                                                })
+                                                .filter((r): r is typeof r & { sla: number } => r.sla !== null)
+                                                .sort((a, b) => b.sla - a.sla)
+                                                .slice(0, 5)
+                                                .map(r => (
+                                                    <div className="kz-panel__rayon-bar" key={r.name}>
+                                                        <span className="kz-panel__rayon-name" title={r.name}>{r.name}</span>
+                                                        <div style={{ height: 10, flex: 1, margin: '0 8px' }}>
+                                                            <EChartsWrapper
+                                                                option={{
+                                                                    grid: { top: 0, bottom: 0, left: 0, right: 0 },
+                                                                    xAxis: { type: 'value', show: false, max: 100 },
+                                                                    yAxis: { type: 'category', data: [''], show: false },
+                                                                    tooltip: { show: false },
+                                                                    series: [
+                                                                        {
+                                                                            type: 'bar',
+                                                                            data: [r.sla],
+                                                                            barWidth: '100%',
+                                                                            itemStyle: {
+                                                                                color: r.sla >= 80 ? '#22c55e' : (r.sla >= 50 ? '#f59e0b' : '#ef4444'),
+                                                                                borderRadius: 4
+                                                                            },
+                                                                            showBackground: true,
+                                                                            backgroundStyle: { color: '#e2e8f0', borderRadius: 4 }
+                                                                        }
+                                                                    ]
+                                                                }}
+                                                            />
+                                                        </div>
+                                                        <span className="kz-panel__rayon-value">{Math.round(r.sla)}%</span>
+                                                    </div>
+                                                ))
+                                            }
+                                        </div>
+                                    </details>
+                                ) : (
+                                    (() => {
+                                        const stats = activeAnalytics.stats;
+                                        const fast = stats?.responseSpeedFast ?? 0;
+                                        const medium = stats?.responseSpeedMedium ?? 0;
+                                        const slow = stats?.responseSpeedSlow ?? 0;
+                                        const totalResponded = fast + medium + slow;
+                                        const slaPct = totalResponded > 0 ? ((fast + medium) / totalResponded) * 100 : null;
+                                        const gaugeColor = slaPct !== null && slaPct >= 80 ? '#22c55e' : (slaPct !== null && slaPct >= 50 ? '#f59e0b' : '#ef4444');
+                                        const slaViolations = slow;
+
+                                        return (
+                                            <details className="kz-panel__section kz-panel__collapsible" open>
+                                                <summary className="kz-panel__section-title">Качество обслуживания</summary>
+                                                {totalResponded > 0 ? (
+                                                    <div style={{ marginTop: 12 }}>
+                                                        <div className="dashboard-sla-gauge" style={{ position: 'relative', height: 120 }}>
+                                                            <EChartsWrapper
+                                                                option={{
+                                                                    series: [
+                                                                        {
+                                                                            type: 'gauge',
+                                                                            startAngle: 180,
+                                                                            endAngle: 0,
+                                                                            center: ['50%', '70%'],
+                                                                            radius: '100%',
+                                                                            min: 0,
+                                                                            max: 100,
+                                                                            splitNumber: 1,
+                                                                            itemStyle: {
+                                                                                color: gaugeColor
+                                                                            },
+                                                                            progress: {
+                                                                                show: true,
+                                                                                width: 10,
+                                                                                roundCap: true
+                                                                            },
+                                                                            axisLine: {
+                                                                                roundCap: true,
+                                                                                lineStyle: {
+                                                                                    width: 10,
+                                                                                    color: [[1, '#e2e8f0']]
+                                                                                }
+                                                                            },
+                                                                            pointer: { show: false },
+                                                                            axisTick: { show: false },
+                                                                            splitLine: { show: false },
+                                                                            axisLabel: { show: false },
+                                                                            detail: { show: false },
+                                                                            data: [{ value: slaPct ?? 0 }]
+                                                                        }
+                                                                    ]
+                                                                }}
+                                                            />
+                                                            <div className="dashboard-sla-gauge__label" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, marginTop: 0 }}>
+                                                                <span className="dashboard-sla-gauge__value" style={{ color: gaugeColor }}>
+                                                                    {slaPct !== null ? slaPct.toFixed(1) + '%' : '—'}
+                                                                </span>
+                                                                <span className="dashboard-sla-gauge__sub">SLA (ответ до 7 мин)</span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="dashboard-legend" style={{ marginTop: 8 }}>
+                                                            <div className="dashboard-legend-row" style={{ justifyContent: 'center' }}>
+                                                                <div className="dashboard-legend-left" style={{ gap: 6 }}>
+                                                                    <span className="dashboard-legend-dot" style={{ background: '#ef4444' }} />
+                                                                    <span className="dashboard-legend-label">Ответов с задержкой</span>
+                                                                    <span className="dashboard-legend-count" style={{ color: slaViolations > 0 ? 'var(--input-error-color)' : 'inherit', marginLeft: 4 }}>
+                                                                        {slaViolations}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-muted" style={{ fontSize: '0.8rem', padding: '8px 0' }}>Нет данных</div>
+                                                )}
+                                            </details>
+                                        );
+                                    })()
+                                )}
                             </div>
                         )}
-                    </div>
+                    </div >
                 )}
 
                 {/* Tooltip */}
-                {hovered && (
-                    <div
-                        className="kz-map__tooltip"
-                        style={{ left: hovered.x + 12, top: hovered.y + 12 }}
-                    >
-                        {selectedOblastData ? (
-                            (() => {
-                                const idx = parseInt(hovered.key.replace('rayon-', ''), 10);
-                                const rayon = selectedOblastData.rayons[idx];
-                                const rayonValue = currentRayonCounts[idx] ?? 0;
-                                const rs = rayonStats?.[selectedOblast!]?.[idx];
-                                return (
-                                    <>
-                                        <div className="kz-map__tooltip-title">
-                                            {rayon?.name || 'Район'}
-                                        </div>
-                                        <div className="kz-map__tooltip-value">
-                                            {rayonValue} БИН
-                                        </div>
-                                        {rs && (
-                                            <div className="kz-map__tooltip-stats">
-                                                <div>Диалогов: {rs.totalDialogs}</div>
-                                                <div>Открытых: {rs.openDialogs}</div>
-                                                <div>Закрытых: {rs.closedDialogs}</div>
-                                                {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                {
+                    hovered && (
+                        <div
+                            className="kz-map__tooltip"
+                            style={{ left: hovered.x + 12, top: hovered.y + 12 }}
+                        >
+                            {selectedOblastData ? (
+                                (() => {
+                                    const idx = parseInt(hovered.key.replace('rayon-', ''), 10);
+                                    const rayon = selectedOblastData.rayons[idx];
+                                    const rayonValue = currentRayonCounts[idx] ?? 0;
+                                    const rs = rayonStats?.[selectedOblast!]?.[idx];
+                                    return (
+                                        <>
+                                            <div className="kz-map__tooltip-title">
+                                                {rayon?.name || 'Район'}
                                             </div>
-                                        )}
-                                    </>
-                                );
-                            })()
-                        ) : (
-                            (() => {
-                                const regionKey = SVG_ID_TO_REGION_KEY[hovered.key] ?? '';
-                                const rs = regionStats?.[regionKey];
-                                return (
-                                    <>
-                                        <div className="kz-map__tooltip-title">
-                                            {REGION_LABELS[regionKey] ?? hovered.key}
-                                        </div>
-                                        <div className="kz-map__tooltip-value">
-                                            {counts[regionKey] ?? 0} БИН
-                                        </div>
-                                        {rs && (
-                                            <div className="kz-map__tooltip-stats">
-                                                <div>Диалогов: {rs.totalDialogs}</div>
-                                                <div>Открытых: {rs.openDialogs}</div>
-                                                <div>Закрытых: {rs.closedDialogs}</div>
-                                                {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                                            <div className="kz-map__tooltip-value">
+                                                {rayonValue} БИН
                                             </div>
-                                        )}
-                                    </>
-                                );
-                            })()
-                        )}
-                    </div>
-                )}
-            </div>
+                                            {rs && (
+                                                <div className="kz-map__tooltip-stats">
+                                                    <div>Диалогов: {rs.totalDialogs}</div>
+                                                    <div>Открытых: {rs.openDialogs}</div>
+                                                    <div>Закрытых: {rs.closedDialogs}</div>
+                                                    {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()
+                            ) : (
+                                (() => {
+                                    const regionKey = SVG_ID_TO_REGION_KEY[hovered.key] ?? '';
+                                    const rs = regionStats?.[regionKey];
+                                    return (
+                                        <>
+                                            <div className="kz-map__tooltip-title">
+                                                {REGION_LABELS[regionKey] ?? hovered.key}
+                                            </div>
+                                            <div className="kz-map__tooltip-value">
+                                                {counts[regionKey] ?? 0} БИН
+                                            </div>
+                                            {rs && (
+                                                <div className="kz-map__tooltip-stats">
+                                                    <div>Диалогов: {rs.totalDialogs}</div>
+                                                    <div>Открытых: {rs.openDialogs}</div>
+                                                    <div>Закрытых: {rs.closedDialogs}</div>
+                                                    {rs.unreadCount > 0 && <div>Непрочит.: {rs.unreadCount}</div>}
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()
+                            )}
+                        </div>
+                    )
+                }
+            </div >
         </>
     );
 });

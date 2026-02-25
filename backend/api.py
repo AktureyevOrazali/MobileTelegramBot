@@ -336,6 +336,12 @@ class DashboardHeatmapPoint(BaseModel):
     hour: int
     count: int
 
+class DashboardDialogMetric(BaseModel):
+    dialog_id: int
+    bin: str | None
+    is_open: bool
+    is_ai_closed: bool
+    response_time_minutes: float | None
 
 class DashboardSummaryResponse(BaseModel):
     total_dialogs: int
@@ -367,7 +373,9 @@ class DashboardSummaryResponse(BaseModel):
     agent_breakdown: List[DashboardAgentStat] = Field(default_factory=list)
     recent_activity: List[DashboardActivityPoint] = Field(default_factory=list)
     top_bins_without_contract: List[DashboardTopBin] = Field(default_factory=list)
+    top_bins_with_contract: List[DashboardTopBin] = Field(default_factory=list)
     peak_load_heatmap: List[DashboardHeatmapPoint] = Field(default_factory=list)
+    dialog_metrics: List[DashboardDialogMetric] = Field(default_factory=list)
     updated_at: str
 
 
@@ -935,7 +943,9 @@ def get_chat_messages(
         raise HTTPException(status_code=403, detail="Нет доступа к диалогу")
     allowed_sections = None
     if not database.is_admin_like(current_user["role"]):
-        allowed_sections = current_user.get("sections") or []
+        secs = current_user.get("sections")
+        if secs:
+            allowed_sections = secs
     messages = database.get_messages(
         chat_id,
         limit=limit,

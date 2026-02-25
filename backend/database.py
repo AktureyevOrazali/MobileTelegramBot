@@ -976,7 +976,7 @@ def list_chats_for_user(
             return []
         if allowed_sections:
             section_placeholders = ",".join("%s" for _ in allowed_sections)
-            filters.append(f"COALESCE(cd.section, c.section) IN ({section_placeholders})")
+            filters.append(f"(COALESCE(cd.section, c.section) IN ({section_placeholders}) OR COALESCE(cd.section, c.section) IS NULL)")
             params.extend(allowed_sections)
         bin_placeholders = ",".join("%s" for _ in assigned_bins)
         filters.append(f"cd.bin IN ({bin_placeholders})")
@@ -2386,6 +2386,7 @@ def get_dashboard_summary(
             "avg_response_time_minutes": None,
             "avg_response_time_seconds": None,
             "response_time_dialogs": [],
+            "dialog_metrics": [],
             "section_breakdown": [],
             "top_questions": [],
             "questions_by_section": [],
@@ -3148,30 +3149,48 @@ def get_dashboard_summary(
             (start_iso, end_exclusive_iso, *operator_dialog_filter_params)
         ).fetchone()["total"] or 0
 
-        # AI fully-closed dialogs: closed dialogs without any human operator reply
+        operator_requested_clause = """
+            EXISTS (
+                SELECT 1 FROM """ + message_union_sql + """ m
+                WHERE m.dialog_id = cd.id
+                  AND m.direction = 'incoming'
+                  AND m.text IN ('[ЗАПРОС ОПЕРАТОРА]', '[FAQ] Связаться с оператором', 'оператор', '👨‍💼 оператор')
+            )
+        """
+
+        # AI fully-closed dialogs: closed dialogs where client did not request operator
         ai_closed_dialogs = execute(
             """
             SELECT COUNT(*) AS total
             FROM chat_dialogs cd
             WHERE cd.started_at >= %s AND cd.started_at < %s
               AND cd.ended_at IS NOT NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM """ + message_union_sql + """ m
-                  WHERE m.dialog_id = cd.id
-                    AND m.direction = 'outgoing'
-                    AND m.author IS NOT NULL
-                    """ + automation_clause + """
-              )
+              AND NOT """ + operator_requested_clause + """
             """ + operator_dialog_filter_sql + """
             """,
             (
                 start_iso, end_exclusive_iso,
-                *([name.lower() for name in AUTOMATION_AUTHOR_NAMES] if automation_author_placeholders else []),
                 *operator_dialog_filter_params,
             )
         ).fetchone()["total"] or 0
 
         transferred_to_operator_dialogs = max(0, all_period_closed_dialogs - ai_closed_dialogs)
+
+        # Get all dialogs in the period to build dialog_metrics
+        dialog_metrics_rows = execute(
+            """
+            SELECT cd.id, COALESCE(cd.bin, (SELECT c.bin FROM chats c WHERE c.chat_id = cd.chat_id)) as active_bin,
+                   cd.ended_at,
+                   (NOT """ + operator_requested_clause + """) as is_ai_closed
+            FROM chat_dialogs cd
+            WHERE cd.started_at >= %s AND cd.started_at < %s
+            """ + operator_dialog_filter_sql + """
+            """,
+            (
+                start_iso, end_exclusive_iso,
+                *operator_dialog_filter_params,
+            )
+        ).fetchall()
 
         # Avg messages before transfer
         avg_messages_before_transfer_row = execute(
@@ -3238,7 +3257,14 @@ def get_dashboard_summary(
         top_bins_without_contract_raw.sort(key=lambda x: x["requests"], reverse=True)
         top_bins_without_contract = top_bins_without_contract_raw[:10]
 
-        # Recurring requests (within 7 days) — filter by operator's dialogs
+        top_bins_with_contract_raw = [
+            {"bin": row["chat_bin"] or "Неизвестно", "requests": row["dialog_count"]}
+            for row in bin_contract_stats if row["has_contract"] == 1
+        ]
+        top_bins_with_contract_raw.sort(key=lambda x: x["requests"], reverse=True)
+        top_bins_with_contract = top_bins_with_contract_raw[:10]
+
+        # Recurring requests (within filter period) — filter by operator's dialogs
         # Need to re-alias cd -> cd2 for the BIN filter since this query uses cd1/cd2
         _recurring_bin_filter = operator_dialog_filter_sql.replace("cd.", "cd2.")
         recurring_requests_count = execute(
@@ -3248,31 +3274,30 @@ def get_dashboard_summary(
             JOIN chat_dialogs cd2 ON COALESCE(cd1.bin, (SELECT bin FROM chats c WHERE c.chat_id = cd1.chat_id)) = COALESCE(cd2.bin, (SELECT bin FROM chats c WHERE c.chat_id = cd2.chat_id))
             WHERE cd1.ended_at IS NOT NULL
               AND cd2.started_at > cd1.ended_at
-              AND CAST(cd2.started_at AS TIMESTAMP) <= CAST(cd1.ended_at AS TIMESTAMP) + INTERVAL '7 days'
+              AND CAST(cd2.started_at AS TIMESTAMP) <= CAST(cd1.ended_at AS TIMESTAMP) + INTERVAL '%s days'
               AND cd2.started_at >= %s AND cd2.started_at < %s
             """ + _recurring_bin_filter + """
             """,
-            (start_iso, end_exclusive_iso, *operator_dialog_filter_params)
+            (span, start_iso, end_exclusive_iso, *operator_dialog_filter_params)
         ).fetchone()["recurring_count"] or 0
         
         total_period_dialogs = requests_with_contract + requests_without_contract
         if total_period_dialogs > 0:
             recurring_requests_percentage = (recurring_requests_count / total_period_dialogs) * 100
 
-        # Peak load heatmap — filter incoming messages to dialogs where operator answered
+        # Peak load heatmap — aggregate by dialog (request) creation time
         heatmap_rows = execute(
             """
             SELECT 
-                EXTRACT(ISODOW FROM CAST(m.created_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS day_of_week,
-                EXTRACT(HOUR FROM CAST(m.created_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS hour_of_day,
-                COUNT(*) AS count
-            FROM """ + message_union_sql + """ m
-            WHERE m.direction = 'incoming'
-              AND m.created_at >= %s AND m.created_at < %s
-            """ + operator_incoming_dialog_filter_sql + """
+                EXTRACT(ISODOW FROM CAST(cd.started_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS day_of_week,
+                EXTRACT(HOUR FROM CAST(cd.started_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS hour_of_day,
+                COUNT(DISTINCT cd.id) AS count
+            FROM chat_dialogs cd
+            WHERE cd.started_at >= %s AND cd.started_at < %s
+            """ + operator_dialog_filter_sql + """
             GROUP BY day_of_week, hour_of_day
             """,
-            (start_iso, end_exclusive_iso, *operator_incoming_dialog_filter_params)
+            (start_iso, end_exclusive_iso, *operator_dialog_filter_params)
         ).fetchall()
         
         peak_load_heatmap = [
@@ -3305,6 +3330,28 @@ def get_dashboard_summary(
         if first_msg_len_row and first_msg_len_row["avg_len"] is not None:
             average_first_message_length = float(first_msg_len_row["avg_len"])
 
+    dialog_response_times: Dict[int, List[float]] = {}
+    for rt in response_time_dialogs:
+        did = rt["dialog_id"]
+        dialog_response_times.setdefault(did, []).append(rt["response_time_minutes"])
+
+    dialog_metrics = []
+    for row in dialog_metrics_rows:
+        did = row["id"]
+        rt_list = dialog_response_times.get(did)
+        rt_avg = sum(rt_list) / len(rt_list) if rt_list else None
+        
+        is_closed = row["ended_at"] is not None
+        is_ai_closed = is_closed and row["is_ai_closed"]
+
+        dialog_metrics.append({
+            "dialog_id": did,
+            "bin": row["active_bin"],
+            "is_open": not is_closed,
+            "is_ai_closed": is_ai_closed,
+            "response_time_minutes": rt_avg,
+        })
+
     return {
         "total_dialogs": int(total_dialogs),
         "open_dialogs": int(open_dialogs),
@@ -3329,12 +3376,14 @@ def get_dashboard_summary(
         "avg_response_time_minutes": avg_response_time_minutes,
         "avg_response_time_seconds": avg_response_time_seconds,
         "response_time_dialogs": response_time_dialogs,
+        "dialog_metrics": dialog_metrics,
         "section_breakdown": section_breakdown,
         "top_questions": top_questions,
         "questions_by_section": questions_by_section,
         "agent_breakdown": agent_breakdown,
         "recent_activity": recent_activity,
         "top_bins_without_contract": top_bins_without_contract,
+        "top_bins_with_contract": top_bins_with_contract,
         "peak_load_heatmap": peak_load_heatmap,
         "updated_at": now.isoformat(),
     }
@@ -3381,8 +3430,7 @@ def user_can_access_chat(
     allowed = set(get_user_sections(user_id))
     if allowed and section is not None and section not in allowed:
         return False
-    if allowed and section is None:
-        return False
+    # Remove `if allowed and section is None: return False` to allow access to unsectioned chats
     return chat_bin in assigned_bins
 
 

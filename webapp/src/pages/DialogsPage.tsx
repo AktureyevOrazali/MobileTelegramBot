@@ -59,6 +59,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     handleToggleFavorite,
     requestStatusChange,
     renderStatusBadge,
+    dashboardSummary,
   } = useDialogsData(apiClient, session);
 
   const handleOpenChat = (chat: ChatSummary) => {
@@ -86,7 +87,14 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
           </div>
         </div>
         <div className="analytics-banner__body">
-          <RegionActivityMap counts={regionCounts} rayonCounts={rayonCounts} regionStats={regionStats} rayonStats={rayonStats} binDetails={binDetails} />
+          <RegionActivityMap
+            counts={regionCounts}
+            rayonCounts={rayonCounts}
+            regionStats={regionStats}
+            rayonStats={rayonStats}
+            binDetails={binDetails}
+            chats={filteredChats}
+          />
         </div>
       </div>
 

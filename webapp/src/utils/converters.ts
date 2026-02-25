@@ -355,6 +355,15 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
       }))
     : [];
 
+  const topBinsWithContract = Array.isArray(raw.top_bins_with_contract)
+    ? raw.top_bins_with_contract
+      .filter((item): item is DashboardTopBinRaw => Boolean(item))
+      .map((item) => ({
+        bin: item.bin ?? '',
+        requests: safeNumber(item.requests),
+      }))
+    : [];
+
   const peakLoadHeatmap = Array.isArray(raw.peak_load_heatmap)
     ? raw.peak_load_heatmap
       .filter((item): item is DashboardHeatmapPointRaw => Boolean(item))
@@ -362,6 +371,18 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
         dayOfWeek: safeNumber(item.day_of_week),
         hour: safeNumber(item.hour),
         count: safeNumber(item.count),
+      }))
+    : [];
+
+  const dialogMetrics = Array.isArray(raw.dialog_metrics)
+    ? raw.dialog_metrics
+      .filter((item) => Boolean(item))
+      .map((item) => ({
+        dialogId: typeof item.dialog_id === 'number' ? item.dialog_id : 0,
+        bin: typeof item.bin === 'string' ? item.bin : null,
+        isOpen: Boolean(item.is_open),
+        isAiClosed: Boolean(item.is_ai_closed),
+        responseTimeMinutes: typeof item.response_time_minutes === 'number' ? item.response_time_minutes : null,
       }))
     : [];
 
@@ -397,7 +418,9 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
     agentBreakdown,
     recentActivity,
     topBinsWithoutContract,
+    topBinsWithContract,
     peakLoadHeatmap,
+    dialogMetrics,
     updatedAt: raw.updated_at ? new Date(raw.updated_at) : new Date(),
   };
 }

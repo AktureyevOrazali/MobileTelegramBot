@@ -313,7 +313,8 @@ def handle_updates(message: telebot.types.Message) -> None:
             if active_dialog:
                 bot.send_message(
                     chat.id,
-                    "Диалог завершён. AI помощник снова включен. Отправьте новый БИН, чтобы начать консультацию заново.",
+                    "Обращение завершено. 🤖 AI помощник снова включен.\n"
+                    "Чтобы возобновить диалог, выберите или отправьте БИН.",
                     reply_markup=_section_keyboard(),
                 )
             else:
@@ -385,16 +386,19 @@ def handle_updates(message: telebot.types.Message) -> None:
         
         # Create dialog for ALL BINs (with or without contract)
         was_empty_bin = not chat_record or not chat_record.get("bin")
-        dialog_id = database.set_chat_bin(chat.id, normalized_text)
+        dialog_id, is_resumed = database.set_chat_bin(chat.id, normalized_text)
         # Save BIN to client's persistent list (survives dialog deletion)
         database.add_client_bin(chat.id, normalized_text)
         ai_session['ai_enabled'] = True
         ai_session['operator_requested'] = False
         
-        if was_empty_bin:
+        if is_resumed:
+            appeal_num = database.count_appeals(dialog_id)
+            bot.send_message(chat.id, f"Диалог по БИН {normalized_text} возобновлён. Новое обращение №{appeal_num}.")
+        elif was_empty_bin:
             bot.send_message(chat.id, f"Спасибо! БИН {normalized_text} сохранён.")
         else:
-            bot.send_message(chat.id, f"БИН обновлён. Открыт новый диалог для {normalized_text}.")
+            bot.send_message(chat.id, f"БИН обновлён. Открыт диалог для {normalized_text}.")
         
         # Notify about contract status
         if not has_contract:
@@ -412,6 +416,24 @@ def handle_updates(message: telebot.types.Message) -> None:
         )
         _persist_message(message, direction="incoming", section=None, dialog_id=dialog_id)
         return
+
+    # ── Auto-resume: если нет активного диалога, но есть закрытый — возобновляем ──
+    active_dialog = database.get_active_chat_dialog(chat.id)
+    if active_dialog is None:
+        resumed = database.resume_last_closed_dialog(chat.id)
+        if resumed:
+            ai_session['ai_enabled'] = True
+            ai_session['operator_requested'] = False
+            appeal_num = resumed["appeal_num"]
+            resumed_bin = resumed["bin"] or "?"
+            bot.send_message(
+                chat.id,
+                f"📋 Диалог по БИН {resumed_bin} возобновлён. Новое обращение №{appeal_num}.\n"
+                "🤖 AI помощник включен.",
+                reply_markup=_section_keyboard(),
+            )
+            # Re-fetch chat record with updated BIN
+            chat_record = database.get_chat(chat.id)
 
     # Обработка разделов и FAQ
     selected_section = None
@@ -707,19 +729,28 @@ def handle_switch_bin_callback(call: telebot.types.CallbackQuery) -> None:
         return
     chat = call.message.chat
     # Create or activate dialog for this BIN
-    dialog_id = database.set_chat_bin(chat.id, bin_value)
+    dialog_id, is_resumed = database.set_chat_bin(chat.id, bin_value)
     if dialog_id is None:
         bot.answer_callback_query(call.id, "Ошибка активации диалога")
         return
     ai_session = get_ai_session(chat.id)
     ai_session['ai_enabled'] = True
     ai_session['operator_requested'] = False
-    bot.answer_callback_query(call.id, "Диалог активирован")
-    bot.send_message(
-        chat.id,
-        f"Возобновлён диалог по БИН {bin_value}. AI помощник включен.",
-        reply_markup=_section_keyboard(),
-    )
+    if is_resumed:
+        appeal_num = database.count_appeals(dialog_id)
+        bot.answer_callback_query(call.id, "Диалог возобновлён")
+        bot.send_message(
+            chat.id,
+            f"📋 Возобновлён диалог по БИН {bin_value}. Новое обращение №{appeal_num}. AI помощник включен.",
+            reply_markup=_section_keyboard(),
+        )
+    else:
+        bot.answer_callback_query(call.id, "Диалог активирован")
+        bot.send_message(
+            chat.id,
+            f"Активирован диалог по БИН {bin_value}. AI помощник включен.",
+            reply_markup=_section_keyboard(),
+        )
 
 
 bot.set_my_commands(

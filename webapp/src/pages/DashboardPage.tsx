@@ -165,7 +165,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             {/* ══════════════════ Overview tab ══════════════════ */}
             {d.dashboardTab === 'overview' && (
               <>
-                {/* Row 1: Скорость ответа + Диалоги */}
+                {/* Row 1: Скорость ответа + Обращения */}
                 <div className="dashboard-overview-row">
                   {/* ── Response speed donut ── */}
                   <div className="dashboard-card">
@@ -222,7 +222,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                             {d.numberFormatter.format(d.responseSegments.reduce((sum, seg) => sum + seg.count, 0))}
                           </span>
                           <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--text-muted, #64748b)', marginTop: 2 }}>
-                            {d.activeOperatorId === null ? 'операторов' : 'диалогов'}
+                            {d.activeOperatorId === null ? 'операторов' : 'обращений'}
                           </span>
                         </div>
                       </div>
@@ -259,7 +259,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
                   {/* ── Dialogs card (clean key-value) ── */}
                   <div className="dashboard-card dashboard-card--delay-1">
-                    <h3 className="dashboard-card__title">Диалоги</h3>
+                    <h3 className="dashboard-card__title">Обращения</h3>
 
                     <div className="dashboard-kv">
                       <div className="dashboard-kv__row">
@@ -597,10 +597,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                           <thead>
                             <tr>
                               <th>Сотрудник</th>
-                              <th>Диалоги</th>
+                              <th>Обращ.</th>
                               <th style={{ minWidth: 80 }}>Нагрузка</th>
                               <th>Сообщ.</th>
-                              <th>Сообщ./диал.</th>
+                              <th>Сообщ./обр.</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -827,7 +827,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                               const dateStr = params[0].data.fullDate;
                               let html = `${dateStr}<br/>`;
                               params.forEach((p: any) => {
-                                const label = p.seriesName === 'dialogs' ? 'Новых диалогов' : 'Входящих сообщений';
+                                const label = p.seriesName === 'dialogs' ? 'Новых обращений' : 'Входящих сообщений';
                                 html += `<span style="color:${p.color}">${label}</span>: <b>${p.value[1]}</b><br/>`;
                               });
                               return html;
@@ -835,7 +835,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                           },
                           legend: {
                             data: ['dialogs', 'messages'],
-                            formatter: (name: string) => name === 'dialogs' ? 'Новых диалогов' : 'Входящих сообщений',
+                            formatter: (name: string) => name === 'dialogs' ? 'Новых обращений' : 'Входящих сообщений',
                             bottom: 0,
                             textStyle: { fontSize: 13, color: 'var(--text-color, #334155)' }
                           },

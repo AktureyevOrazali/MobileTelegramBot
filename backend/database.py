@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import json
 import threading
 import time
@@ -17,6 +18,8 @@ import psycopg2.pool
 from psycopg2 import sql
 
 from . import require_env
+
+logger = logging.getLogger(__name__)
 
 DB_NAME = require_env("DB_NAME")
 DB_USER = require_env("DB_USER")
@@ -326,18 +329,53 @@ def _init_db() -> None:
         """
         CREATE TABLE IF NOT EXISTS dialog_stats (
             id BIGSERIAL PRIMARY KEY,
-            dialog_id BIGINT NOT NULL,
+            dialog_id BIGINT NOT NULL UNIQUE,
             chat_id BIGINT NOT NULL,
-            user_id BIGINT,
             bin TEXT,
             section TEXT,
             started_at TEXT,
             ended_at TEXT,
             msg_incoming INTEGER DEFAULT 0,
             msg_outgoing INTEGER DEFAULT 0,
-            avg_response_time REAL,
+            msg_total INTEGER DEFAULT 0,
+            avg_response_time_seconds REAL,
+            response_count INTEGER DEFAULT 0,
+            fast_responses INTEGER DEFAULT 0,
+            medium_responses INTEGER DEFAULT 0,
+            slow_responses INTEGER DEFAULT 0,
+            sla_violations INTEGER DEFAULT 0,
+            is_ai_closed BOOLEAN DEFAULT FALSE,
+            operator_requested BOOLEAN DEFAULT FALSE,
+            ai_messages_count INTEGER DEFAULT 0,
+            msgs_before_transfer INTEGER,
+            first_message_text TEXT,
+            first_message_length INTEGER,
+            has_contract BOOLEAN,
             created_at TEXT NOT NULL
         )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_dialog_stats_started
+        ON dialog_stats(started_at)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_dialog_stats_bin
+        ON dialog_stats(bin)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS dialog_operator_stats (
+            id BIGSERIAL PRIMARY KEY,
+            dialog_id BIGINT NOT NULL,
+            operator_name TEXT NOT NULL,
+            messages_sent INTEGER DEFAULT 0,
+            avg_response_seconds REAL,
+            response_count INTEGER DEFAULT 0,
+            started_at TEXT
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_dialog_op_stats_started
+        ON dialog_operator_stats(started_at)
         """,
         """
         CREATE TABLE IF NOT EXISTS stat_questions (
@@ -373,6 +411,25 @@ def _init_db() -> None:
             UNIQUE(chat_id, bin)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS appeals (
+            id BIGSERIAL PRIMARY KEY,
+            dialog_id BIGINT NOT NULL REFERENCES chat_dialogs(id) ON DELETE CASCADE,
+            chat_id BIGINT NOT NULL,
+            section TEXT,
+            started_at TEXT NOT NULL,
+            ended_at TEXT,
+            closed_by TEXT
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_appeals_dialog_id
+        ON appeals(dialog_id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_appeals_chat_id
+        ON appeals(chat_id)
+        """,
     ]
 
     with _lock:
@@ -398,6 +455,58 @@ def _init_db() -> None:
     _ensure_column("users", "is_approved", "INTEGER DEFAULT 1")
     _ensure_column("user_bins", "expires_at", "TEXT")
     _ensure_column("user_bins", "assigned_by", "BIGINT")
+
+    # dialog_stats migration (extend existing table with new metric columns)
+    _ensure_column("dialog_stats", "msg_total", "INTEGER DEFAULT 0")
+    _ensure_column("dialog_stats", "avg_response_time_seconds", "REAL")
+    _ensure_column("dialog_stats", "response_count", "INTEGER DEFAULT 0")
+    _ensure_column("dialog_stats", "fast_responses", "INTEGER DEFAULT 0")
+    _ensure_column("dialog_stats", "medium_responses", "INTEGER DEFAULT 0")
+    _ensure_column("dialog_stats", "slow_responses", "INTEGER DEFAULT 0")
+    _ensure_column("dialog_stats", "sla_violations", "INTEGER DEFAULT 0")
+    _ensure_column("dialog_stats", "is_ai_closed", "BOOLEAN DEFAULT FALSE")
+    _ensure_column("dialog_stats", "operator_requested", "BOOLEAN DEFAULT FALSE")
+    _ensure_column("dialog_stats", "ai_messages_count", "INTEGER DEFAULT 0")
+    _ensure_column("dialog_stats", "msgs_before_transfer", "INTEGER")
+    _ensure_column("dialog_stats", "first_message_text", "TEXT")
+    _ensure_column("dialog_stats", "first_message_length", "INTEGER")
+    _ensure_column("dialog_stats", "has_contract", "BOOLEAN")
+    _ensure_column("dialog_stats", "appeal_id", "BIGINT")
+
+    # Unique constraint on dialog_stats — one row per appeal
+    with _lock:
+        # Drop legacy unique constraint on dialog_id (allows multiple rows per dialog)
+        # and drop old non-unique appeal_id index so we can recreate as unique
+        execute(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_class c
+                    JOIN pg_index i ON i.indexrelid = c.oid
+                    WHERE c.relname = 'idx_dialog_stats_dialog_id'
+                    AND i.indisunique
+                ) THEN
+                    DROP INDEX idx_dialog_stats_dialog_id;
+                END IF;
+
+                IF EXISTS (
+                    SELECT 1 FROM pg_class c
+                    JOIN pg_index i ON i.indexrelid = c.oid
+                    WHERE c.relname = 'idx_dialog_stats_appeal_id'
+                    AND NOT i.indisunique
+                ) THEN
+                    DROP INDEX idx_dialog_stats_appeal_id;
+                END IF;
+            END $$
+            """
+        )
+        execute(
+            "CREATE INDEX IF NOT EXISTS idx_dialog_stats_dialog_id ON dialog_stats (dialog_id)"
+        )
+        execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_dialog_stats_appeal_id ON dialog_stats (appeal_id) WHERE appeal_id IS NOT NULL"
+        )
 
     with _lock:
         execute("UPDATE users SET login = email WHERE login IS NULL OR TRIM(login) = ''")
@@ -435,7 +544,9 @@ def _sync_sequences() -> None:
         "notifications",
         "outbox_onec",
         "dialog_stats",
+        "dialog_operator_stats",
         "stat_questions",
+        "appeals",
     ):
         _sync_sequence(table)
 
@@ -459,12 +570,9 @@ def _ensure_column(table: str, column: str, definition: str) -> None:
     with _lock:
         if _column_exists(table, column):
             return
-        query = sql.SQL("ALTER TABLE {} ADD COLUMN {} {} ").format(
-            sql.Identifier(table),
-            sql.Identifier(column),
-            sql.SQL(definition),
-        )
-        execute(query.as_string(_connection))
+        # Build raw SQL string — execute() handles connection pooling
+        raw_query = f'ALTER TABLE "{table}" ADD COLUMN "{column}" {definition}'
+        execute(raw_query)
 
 
 ROLE_ADMIN = "admin"
@@ -645,6 +753,7 @@ def save_message(
         active_dialog = get_active_chat_dialog(chat_id)
         if active_dialog:
             resolved_dialog_id = active_dialog["id"]
+            
     with _lock:
         cursor = execute(
             """
@@ -781,6 +890,7 @@ def get_chat_dialog(dialog_id: int) -> Optional[Dict[str, object]]:
 
 
 def get_active_chat_dialog(chat_id: int) -> Optional[Dict[str, object]]:
+    """Returns the currently active dialog."""
     with _lock:
         row = execute(
             """
@@ -792,8 +902,10 @@ def get_active_chat_dialog(chat_id: int) -> Optional[Dict[str, object]]:
             """,
             (chat_id,),
         ).fetchone()
+
     if row is None:
         return None
+
     return {
         "id": row["id"],
         "chat_id": row["chat_id"],
@@ -829,6 +941,47 @@ def is_dialog_in_operator_mode(dialog_id: int) -> bool:
     if row is None:
         return False
     return bool(row["operator_mode"])
+
+
+def resume_last_closed_dialog(chat_id: int) -> Optional[Dict[str, object]]:
+    """Resume the most recently closed dialog for a chat.
+
+    Clears ``ended_at``, creates a new appeal, and returns dialog info.
+    Returns ``None`` if no closed dialog exists.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        row = execute(
+            """
+            SELECT id, bin, started_at, last_message_at
+            FROM chat_dialogs
+            WHERE chat_id = %s AND ended_at IS NOT NULL
+            ORDER BY COALESCE(last_message_at, ended_at) DESC
+            LIMIT 1
+            """,
+            (chat_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        dialog_id = int(row["id"])
+        dialog_bin = row["bin"]
+        execute(
+            "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = %s WHERE id = %s",
+            (now, dialog_id),
+        )
+        execute(
+            "UPDATE chats SET bin = %s, updated_at = %s WHERE chat_id = %s",
+            (dialog_bin, now, chat_id),
+        )
+    # Create new appeal
+    appeal_id = create_appeal(dialog_id, chat_id)
+    appeal_num = count_appeals(dialog_id)
+    return {
+        "dialog_id": dialog_id,
+        "bin": dialog_bin,
+        "appeal_id": appeal_id,
+        "appeal_num": appeal_num,
+    }
 
 
 def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optional[Dict[str, object]]:
@@ -880,6 +1033,9 @@ def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optio
         ).fetchone()
     if dialog is None:
         return None
+    # Create a new appeal for this reactivation
+    chat_id_resolved = int(dialog["chat_id"])
+    create_appeal(dialog_id, chat_id_resolved)
     return {
         "id": dialog["id"],
         "chat_id": dialog["chat_id"],
@@ -890,8 +1046,8 @@ def activate_chat_dialog(dialog_id: int, *, chat_id: int | None = None) -> Optio
     }
 
 
-def close_chat_dialog(dialog_id: int) -> Optional[int]:
-    """Закрывает указанный диалог, сохраняя BIN и раздел у чата."""
+def close_chat_dialog(dialog_id: int, *, closed_by: str = "operator") -> Optional[int]:
+    """Закрывает указанный диалог, записывает метрики в dialog_stats."""
 
     now = datetime.now(timezone.utc).isoformat()
     with _lock:
@@ -910,11 +1066,15 @@ def close_chat_dialog(dialog_id: int) -> Optional[int]:
             """,
             (now, now, dialog_id),
         )
+    # Close active appeal and snapshot metrics
+    close_appeal(dialog_id, closed_by)
+    snapshot_dialog_metrics(dialog_id)
     return chat_id
 
 
 def close_active_chat_dialog(chat_id: int) -> None:
     now = datetime.now(timezone.utc).isoformat()
+    closed_dialog_id: Optional[int] = None
     with _lock:
         active = execute(
             """
@@ -926,10 +1086,587 @@ def close_active_chat_dialog(chat_id: int) -> None:
             (chat_id,),
         ).fetchone()
         if active:
+            closed_dialog_id = int(active["id"])
             execute(
                 "UPDATE chat_dialogs SET ended_at = %s, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
-                (now, now, active["id"]),
+                (now, now, closed_dialog_id),
             )
+    if closed_dialog_id is not None:
+        close_appeal(closed_dialog_id, "client")
+        snapshot_dialog_metrics(closed_dialog_id)
+
+
+# ──────────────────── Appeals (обращения) ────────────────────
+
+
+def create_appeal(
+    dialog_id: int, chat_id: int, section: str | None = None
+) -> int:
+    """Create a new appeal (обращение) within a dialog."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        # Close any lingering active appeal for this dialog
+        execute(
+            "UPDATE appeals SET ended_at = %s, closed_by = 'system' WHERE dialog_id = %s AND ended_at IS NULL",
+            (now, dialog_id),
+        )
+        cursor = execute(
+            """
+            INSERT INTO appeals (dialog_id, chat_id, section, started_at)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            (dialog_id, chat_id, section, now),
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError("Failed to create appeal")
+    appeal_id = int(row["id"])
+    logger.info(
+        "Created appeal %s for dialog %s, chat %s", appeal_id, dialog_id, chat_id
+    )
+    return appeal_id
+
+
+def close_appeal(
+    dialog_id: int, closed_by: str = "system"
+) -> Optional[int]:
+    """Close the active appeal for a dialog. Returns appeal_id or None."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        active = execute(
+            """
+            SELECT id, section FROM appeals
+            WHERE dialog_id = %s AND ended_at IS NULL
+            ORDER BY started_at DESC LIMIT 1
+            """,
+            (dialog_id,),
+        ).fetchone()
+        if active is None:
+            return None
+        appeal_id = int(active["id"])
+        execute(
+            "UPDATE appeals SET ended_at = %s, closed_by = %s WHERE id = %s",
+            (now, closed_by, appeal_id),
+        )
+    logger.info(
+        "Closed appeal %s for dialog %s (by %s)", appeal_id, dialog_id, closed_by
+    )
+    return appeal_id
+
+
+def get_active_appeal(dialog_id: int) -> Optional[Dict[str, object]]:
+    """Return the currently active appeal for a dialog, or None."""
+    with _lock:
+        row = execute(
+            """
+            SELECT id, dialog_id, chat_id, section, started_at, ended_at, closed_by
+            FROM appeals
+            WHERE dialog_id = %s AND ended_at IS NULL
+            ORDER BY started_at DESC LIMIT 1
+            """,
+            (dialog_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "dialog_id": int(row["dialog_id"]),
+        "chat_id": int(row["chat_id"]),
+        "section": row["section"],
+        "started_at": row["started_at"],
+        "ended_at": row["ended_at"],
+        "closed_by": row["closed_by"],
+    }
+
+
+def count_appeals(dialog_id: int) -> int:
+    """Count total appeals in a dialog."""
+    with _lock:
+        row = execute(
+            "SELECT COUNT(*) AS cnt FROM appeals WHERE dialog_id = %s",
+            (dialog_id,),
+        ).fetchone()
+    return int(row["cnt"]) if row else 0
+
+def snapshot_dialog_metrics(dialog_id: int) -> None:
+    """Вычисляет и сохраняет метрики обращения в dialog_stats.
+
+    Находит последнее закрытое обращение (appeal) для диалога и считает
+    метрики только по сообщениям в рамках этого обращения.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    automation_set = {name.strip().lower() for name in AUTOMATION_AUTHOR_NAMES}
+
+    with _lock:
+        # ── 0. Find the most recently closed appeal ──
+        appeal_row = execute(
+            """
+            SELECT id, started_at, ended_at, section
+            FROM appeals
+            WHERE dialog_id = %s AND ended_at IS NOT NULL
+            ORDER BY ended_at DESC LIMIT 1
+            """,
+            (dialog_id,),
+        ).fetchone()
+
+        appeal_id: int | None = None
+        appeal_started_at: str | None = None
+        appeal_ended_at: str | None = None
+        appeal_section: str | None = None
+        if appeal_row:
+            appeal_id = int(appeal_row["id"])
+            appeal_started_at = appeal_row["started_at"]
+            appeal_ended_at = appeal_row["ended_at"]
+            appeal_section = appeal_row["section"]
+
+        # ── 1. Dialog metadata ──
+        dialog = execute(
+            """
+            SELECT id, chat_id, bin, section, started_at, ended_at
+            FROM chat_dialogs WHERE id = %s
+            """,
+            (dialog_id,),
+        ).fetchone()
+        if dialog is None:
+            return
+
+        chat_id = int(dialog["chat_id"])
+        dialog_bin = dialog["bin"]
+        section = appeal_section or dialog.get("section")
+        # Use appeal time range if available, else dialog range
+        started_at = appeal_started_at or dialog["started_at"]
+        ended_at = appeal_ended_at or dialog["ended_at"]
+
+        # Resolve BIN from chat if dialog doesn't have one
+        if not dialog_bin:
+            chat_row = execute(
+                "SELECT bin FROM chats WHERE chat_id = %s", (chat_id,)
+            ).fetchone()
+            if chat_row:
+                dialog_bin = chat_row["bin"]
+
+        # Resolve section from chat if dialog doesn't have one
+        if not section:
+            chat_row2 = execute(
+                "SELECT section FROM chats WHERE chat_id = %s", (chat_id,)
+            ).fetchone()
+            if chat_row2:
+                section = chat_row2["section"]
+
+        # ── 2. Messages scoped to this appeal's time range ──
+        if appeal_started_at and appeal_ended_at:
+            messages = execute(
+                """
+                SELECT direction, text, author, created_at
+                FROM messages
+                WHERE dialog_id = %s AND created_at >= %s AND created_at <= %s
+                ORDER BY created_at ASC
+                """,
+                (dialog_id, appeal_started_at, appeal_ended_at),
+            ).fetchall()
+        elif appeal_started_at:
+            messages = execute(
+                """
+                SELECT direction, text, author, created_at
+                FROM messages
+                WHERE dialog_id = %s AND created_at >= %s
+                ORDER BY created_at ASC
+                """,
+                (dialog_id, appeal_started_at),
+            ).fetchall()
+        else:
+            # Legacy fallback: no appeal info, use all messages
+            messages = execute(
+                """
+                SELECT direction, text, author, created_at
+                FROM messages
+                WHERE dialog_id = %s
+                ORDER BY created_at ASC
+                """,
+                (dialog_id,),
+            ).fetchall()
+
+        msg_incoming = 0
+        msg_outgoing = 0
+        ai_messages_count = 0
+        operator_requested = False
+        first_incoming_text: Optional[str] = None
+        first_incoming_length: Optional[int] = None
+        operator_message_counts: Dict[str, int] = {}
+
+        operator_request_keywords = {
+            "[запрос оператора]",
+            "[faq] связаться с оператором",
+            "оператор",
+            "👨‍💼 оператор",
+        }
+
+        for msg in messages:
+            direction = (msg.get("direction") or "").strip()
+            author_raw = (msg.get("author") or "").strip()
+            author_lower = author_raw.lower()
+            text = (msg.get("text") or "").strip()
+
+            if direction == "incoming":
+                msg_incoming += 1
+                if first_incoming_text is None:
+                    first_incoming_text = text
+                    first_incoming_length = len(text)
+                if text.lower() in operator_request_keywords:
+                    operator_requested = True
+            elif direction == "outgoing":
+                msg_outgoing += 1
+                if author_lower in automation_set:
+                    ai_messages_count += 1
+                elif author_raw and author_raw != "System":
+                    # A human operator answered — mark as operator-handled
+                    operator_requested = True
+                    operator_message_counts[author_raw] = (
+                        operator_message_counts.get(author_raw, 0) + 1
+                    )
+
+        msg_total = msg_incoming + msg_outgoing
+        is_ai_closed = (ended_at is not None) and (not operator_requested)
+
+        # ── 3. Response time analysis ──
+        # Find incoming message timestamps that started customer request sequences
+        incoming_times = []
+        for msg in messages:
+            direction = (msg.get("direction") or "").strip()
+            if direction == "incoming":
+                parsed = _parse_datetime(msg.get("created_at"))
+                if parsed:
+                    incoming_times.append(parsed)
+
+        response_deltas: List[float] = []
+        operator_response_deltas: Dict[str, List[float]] = {}
+
+        if incoming_times:
+            # For each incoming message, find the first human operator response
+            request_index = 0
+            pending_request = incoming_times[0]
+            responded = False
+
+            for msg in messages:
+                created = _parse_datetime(msg.get("created_at"))
+                if created is None:
+                    continue
+
+                # Advance to next request if needed
+                while (
+                    request_index + 1 < len(incoming_times)
+                    and created >= incoming_times[request_index + 1]
+                ):
+                    request_index += 1
+                    pending_request = incoming_times[request_index]
+                    responded = False
+
+                direction = (msg.get("direction") or "").strip()
+                if direction != "outgoing":
+                    continue
+
+                author_raw = (msg.get("author") or "").strip()
+                if not author_raw:
+                    continue
+                author_lower = author_raw.lower()
+                if author_lower in automation_set:
+                    continue
+                if responded or created <= pending_request:
+                    continue
+
+                delta_seconds = (created - pending_request).total_seconds()
+                responded = True
+                response_deltas.append(delta_seconds)
+                operator_response_deltas.setdefault(author_raw, []).append(
+                    delta_seconds
+                )
+
+        avg_response_time_seconds: Optional[float] = None
+        response_count = len(response_deltas)
+        fast_responses = 0
+        medium_responses = 0
+        slow_responses = 0
+        sla_violations = 0
+
+        if response_deltas:
+            avg_response_time_seconds = sum(response_deltas) / len(response_deltas)
+            for d in response_deltas:
+                minutes = d / 60.0
+                if minutes <= 5:
+                    fast_responses += 1
+                elif minutes <= 15:
+                    medium_responses += 1
+                else:
+                    slow_responses += 1
+                if d > 300:  # > 5 minutes = SLA violation
+                    sla_violations += 1
+
+        # ── 4. Messages before first human operator reply (for transfer metric) ──
+        msgs_before_transfer: Optional[int] = None
+        if operator_requested and response_deltas:
+            # Count incoming messages before first outgoing human reply
+            first_human_reply_time: Optional[datetime] = None
+            for msg in messages:
+                direction = (msg.get("direction") or "").strip()
+                if direction != "outgoing":
+                    continue
+                author_raw = (msg.get("author") or "").strip()
+                if not author_raw or author_raw.lower() in automation_set:
+                    continue
+                parsed = _parse_datetime(msg.get("created_at"))
+                if parsed:
+                    first_human_reply_time = parsed
+                    break
+
+            if first_human_reply_time:
+                count = 0
+                for msg in messages:
+                    direction = (msg.get("direction") or "").strip()
+                    if direction != "incoming":
+                        continue
+                    parsed = _parse_datetime(msg.get("created_at"))
+                    if parsed and parsed < first_human_reply_time:
+                        count += 1
+                msgs_before_transfer = count
+
+        # ── 5. Check contract ──
+        has_contract: Optional[bool] = None
+        if dialog_bin:
+            owc_row = execute(
+                "SELECT 1 FROM organizations_without_contracts WHERE customer_bin = %s",
+                (dialog_bin,),
+            ).fetchone()
+            has_contract = owc_row is None
+
+        # ── 6. Write dialog_stats (one row per appeal) ──
+        if appeal_id is not None:
+            execute(
+                """
+                INSERT INTO dialog_stats (
+                    dialog_id, appeal_id, chat_id, bin, section, started_at, ended_at,
+                    msg_incoming, msg_outgoing, msg_total,
+                    avg_response_time_seconds, response_count,
+                    fast_responses, medium_responses, slow_responses,
+                    sla_violations, is_ai_closed, operator_requested,
+                    ai_messages_count, msgs_before_transfer,
+                    first_message_text, first_message_length,
+                    has_contract, created_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s,
+                    %s, %s
+                )
+                ON CONFLICT (appeal_id) WHERE appeal_id IS NOT NULL DO UPDATE SET
+                    ended_at = EXCLUDED.ended_at,
+                    msg_incoming = EXCLUDED.msg_incoming,
+                    msg_outgoing = EXCLUDED.msg_outgoing,
+                    msg_total = EXCLUDED.msg_total,
+                    avg_response_time_seconds = EXCLUDED.avg_response_time_seconds,
+                    response_count = EXCLUDED.response_count,
+                    fast_responses = EXCLUDED.fast_responses,
+                    medium_responses = EXCLUDED.medium_responses,
+                    slow_responses = EXCLUDED.slow_responses,
+                    sla_violations = EXCLUDED.sla_violations,
+                    is_ai_closed = EXCLUDED.is_ai_closed,
+                    operator_requested = EXCLUDED.operator_requested,
+                    ai_messages_count = EXCLUDED.ai_messages_count,
+                    msgs_before_transfer = EXCLUDED.msgs_before_transfer,
+                    first_message_text = EXCLUDED.first_message_text,
+                    first_message_length = EXCLUDED.first_message_length,
+                    has_contract = EXCLUDED.has_contract
+                """,
+                (
+                    dialog_id, appeal_id, chat_id, dialog_bin, section, started_at, ended_at,
+                    msg_incoming, msg_outgoing, msg_total,
+                    avg_response_time_seconds, response_count,
+                    fast_responses, medium_responses, slow_responses,
+                    sla_violations, is_ai_closed, operator_requested,
+                    ai_messages_count, msgs_before_transfer,
+                    first_incoming_text, first_incoming_length,
+                    has_contract, now,
+                ),
+            )
+        else:
+            # Legacy path: no appeal, store per-dialog
+            execute(
+                """
+                INSERT INTO dialog_stats (
+                    dialog_id, chat_id, bin, section, started_at, ended_at,
+                    msg_incoming, msg_outgoing, msg_total,
+                    avg_response_time_seconds, response_count,
+                    fast_responses, medium_responses, slow_responses,
+                    sla_violations, is_ai_closed, operator_requested,
+                    ai_messages_count, msgs_before_transfer,
+                    first_message_text, first_message_length,
+                    has_contract, created_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s,
+                    %s, %s
+                )
+                """,
+                (
+                    dialog_id, chat_id, dialog_bin, section, started_at, ended_at,
+                    msg_incoming, msg_outgoing, msg_total,
+                    avg_response_time_seconds, response_count,
+                    fast_responses, medium_responses, slow_responses,
+                    sla_violations, is_ai_closed, operator_requested,
+                    ai_messages_count, msgs_before_transfer,
+                    first_incoming_text, first_incoming_length,
+                    has_contract, now,
+                ),
+            )
+
+        # Ensure idempotency for sub-tables
+        execute("DELETE FROM dialog_operator_stats WHERE dialog_id = %s", (dialog_id,))
+        execute("DELETE FROM stat_questions WHERE dialog_id = %s", (dialog_id,))
+
+        # ── 7. Write dialog_operator_stats ──
+        for op_name, deltas in operator_response_deltas.items():
+            avg_op = sum(deltas) / len(deltas) if deltas else None
+            execute(
+                """
+                INSERT INTO dialog_operator_stats
+                    (dialog_id, operator_name, messages_sent,
+                     avg_response_seconds, response_count, started_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    dialog_id,
+                    op_name,
+                    operator_message_counts.get(op_name, 0),
+                    avg_op,
+                    len(deltas),
+                    started_at,
+                ),
+            )
+        # Also save operators who sent messages but had no response deltas
+        for op_name, msg_count in operator_message_counts.items():
+            if op_name not in operator_response_deltas:
+                execute(
+                    """
+                    INSERT INTO dialog_operator_stats
+                        (dialog_id, operator_name, messages_sent,
+                         avg_response_seconds, response_count, started_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (dialog_id, op_name, msg_count, None, 0, started_at),
+                )
+
+        # ── 8. Write stat_questions (incoming messages for question analytics) ──
+        execute(
+            "DELETE FROM stat_questions WHERE dialog_id = %s",
+            (dialog_id,),
+        )
+        for msg in messages:
+            direction = (msg.get("direction") or "").strip()
+            if direction != "incoming":
+                continue
+            text = (msg.get("text") or "").strip()
+            if not text:
+                continue
+            # Skip operator request keywords
+            if text.lower() in operator_request_keywords:
+                continue
+            msg_created = msg.get("created_at") or now
+            execute(
+                """
+                INSERT INTO stat_questions (dialog_id, text, created_at, section)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (dialog_id, text, msg_created, section),
+            )
+
+
+def cleanup_expired_dialogs(max_age_hours: int = 24) -> int:
+    """Удаляет закрытые диалоги старше max_age_hours часов.
+
+    Удаляет messages, favorites, dialog_reads, outbox_onec записи,
+    и сам chat_dialogs. Метрики в dialog_stats остаются.
+    Returns количество удалённых диалогов.
+    """
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    ).isoformat()
+
+    with _lock:
+        # Find dialogs closed before cutoff
+        expired_rows = execute(
+            """
+            SELECT id, chat_id, bin FROM chat_dialogs
+            WHERE ended_at IS NOT NULL AND ended_at < %s
+            """,
+            (cutoff,),
+        ).fetchall()
+
+        if not expired_rows:
+            return 0
+
+        expired_ids = [int(row["id"]) for row in expired_rows]
+        bins_to_check = {row["bin"] for row in expired_rows if row["bin"]}
+        placeholders = ",".join("%s" for _ in expired_ids)
+
+        # Delete outbox entries linked to those messages (BEFORE deleting messages)
+        execute(
+            f"""
+            DELETE FROM outbox_onec
+            WHERE message_id IN (
+                SELECT id FROM messages WHERE dialog_id IN ({placeholders})
+            )
+            """,
+            expired_ids,
+        )
+
+        # Delete related messages
+        execute(
+            f"DELETE FROM messages WHERE dialog_id IN ({placeholders})",
+            expired_ids,
+        )
+
+        # Delete favorites
+        execute(
+            f"DELETE FROM favorites WHERE dialog_id IN ({placeholders})",
+            expired_ids,
+        )
+
+        # Delete read marks
+        execute(
+            f"DELETE FROM dialog_reads WHERE dialog_id IN ({placeholders})",
+            expired_ids,
+        )
+
+        # Delete appeals
+        execute(
+            f"DELETE FROM appeals WHERE dialog_id IN ({placeholders})",
+            expired_ids,
+        )
+
+        # Delete the dialogs themselves
+        execute(
+            f"DELETE FROM chat_dialogs WHERE id IN ({placeholders})",
+            expired_ids,
+        )
+
+        # Clean orphaned BINs
+        _cleanup_orphaned_bins(bins_to_check)
+
+    logger.info(
+        "Cleanup: removed %d expired dialog(s) closed before %s",
+        len(expired_ids),
+        cutoff,
+    )
+    return len(expired_ids)
 
 
 def list_chats_for_user(
@@ -1079,22 +1816,13 @@ def get_messages(
 
 def set_chat_section(chat_id: int, section: str | None, dialog_id: int | None = None) -> None:
     """Устанавливает раздел для активного диалога (по БИН), а не для чата целиком."""
+    target_dialog_id = dialog_id
+    if target_dialog_id is None:
+        active = get_active_chat_dialog(chat_id)
+        if active:
+            target_dialog_id = active["id"]
+
     with _lock:
-        target_dialog_id = dialog_id
-        if target_dialog_id is None:
-            # Получаем активный диалог
-            active = execute(
-                """
-                SELECT id FROM chat_dialogs
-                WHERE chat_id = %s AND ended_at IS NULL
-                ORDER BY started_at DESC
-                LIMIT 1
-                """,
-                (chat_id,),
-            ).fetchone()
-            if active:
-                target_dialog_id = active["id"]
-        
         if target_dialog_id:
             execute(
                 "UPDATE chat_dialogs SET section = %s WHERE id = %s",
@@ -1109,26 +1837,29 @@ def set_chat_section(chat_id: int, section: str | None, dialog_id: int | None = 
 
 def get_dialog_section(chat_id: int, dialog_id: int | None = None) -> str | None:
     """Получить раздел из активного диалога (по БИН)."""
-    with _lock:
-        if dialog_id:
+    target_dialog_id = dialog_id
+    if target_dialog_id is None:
+        active = get_active_chat_dialog(chat_id)
+        if active:
+            target_dialog_id = active["id"]
+
+    if target_dialog_id:
+        with _lock:
             row = execute(
                 "SELECT section FROM chat_dialogs WHERE id = %s",
-                (dialog_id,),
+                (target_dialog_id,),
             ).fetchone()
-        else:
-            row = execute(
-                """
-                SELECT section FROM chat_dialogs
-                WHERE chat_id = %s AND ended_at IS NULL
-                ORDER BY started_at DESC
-                LIMIT 1
-                """,
-                (chat_id,),
-            ).fetchone()
-    return row["section"] if row else None
+            return row["section"] if row else None
+            
+    return None
 
 
-def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
+def set_chat_bin(chat_id: int, bin_value: str | None) -> tuple[int | None, bool]:
+    """Activate or create a dialog for the given BIN.
+
+    Returns ``(dialog_id, is_resumed)`` where *is_resumed* is True when a
+    previously-closed dialog was re-opened.
+    """
     normalized = (bin_value or "").strip()
     now = datetime.now(timezone.utc).isoformat()
     with _lock:
@@ -1145,7 +1876,7 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
                 "UPDATE chat_dialogs SET ended_at = COALESCE(ended_at, %s) WHERE chat_id = %s AND ended_at IS NULL",
                 (now, chat_id),
             )
-            return None
+            return None, False
 
         # Add BIN to all_bins for persistent storage
         existing = execute(
@@ -1157,19 +1888,73 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
                 (normalized, now),
             )
 
-        execute(
-            "UPDATE chat_dialogs SET ended_at = %s WHERE chat_id = %s AND ended_at IS NULL",
-            (now, chat_id),
-        )
-        cursor = execute(
+        # Check for existing active dialog with same BIN
+        active = execute(
             """
-            INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
-            VALUES (%s, %s, %s, %s, 0)
-            RETURNING id
+            SELECT id, bin FROM chat_dialogs
+            WHERE chat_id = %s AND ended_at IS NULL
+            ORDER BY started_at DESC LIMIT 1
             """,
-            (chat_id, normalized, now, now),
-        )
-        dialog_id_row = cursor.fetchone()
+            (chat_id,),
+        ).fetchone()
+
+        if active and active["bin"] == normalized:
+            # Already have active dialog with this BIN — ensure appeal exists
+            dialog_id = int(active["id"])
+            active_appeal = execute(
+                "SELECT 1 FROM appeals WHERE dialog_id = %s AND ended_at IS NULL LIMIT 1",
+                (dialog_id,),
+            ).fetchone()
+            execute(
+                "UPDATE chats SET bin = %s, updated_at = %s WHERE chat_id = %s",
+                (normalized, now, chat_id),
+            )
+            if not active_appeal:
+                create_appeal(dialog_id, chat_id)
+            return dialog_id, False
+
+        # Close any active dialog with DIFFERENT BIN
+        if active:
+            old_dialog_id = int(active["id"])
+            execute(
+                "UPDATE chat_dialogs SET ended_at = %s, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
+                (now, now, old_dialog_id),
+            )
+
+        # Look for previously closed dialog with this BIN
+        previous = execute(
+            """
+            SELECT id FROM chat_dialogs
+            WHERE chat_id = %s AND bin = %s
+            ORDER BY started_at DESC LIMIT 1
+            """,
+            (chat_id, normalized),
+        ).fetchone()
+
+        is_resumed = False
+        if previous:
+            # Reactivate existing dialog
+            dialog_id = int(previous["id"])
+            execute(
+                "UPDATE chat_dialogs SET ended_at = NULL, last_message_at = %s WHERE id = %s",
+                (now, dialog_id),
+            )
+            is_resumed = True
+        else:
+            # Create brand new dialog
+            cursor = execute(
+                """
+                INSERT INTO chat_dialogs (chat_id, bin, started_at, last_message_at, operator_mode)
+                VALUES (%s, %s, %s, %s, 0)
+                RETURNING id
+                """,
+                (chat_id, normalized, now, now),
+            )
+            dialog_id_row = cursor.fetchone()
+            dialog_id = int(dialog_id_row["id"]) if dialog_id_row else None
+            if dialog_id is None:
+                raise RuntimeError("Failed to create dialog")
+
         execute(
             """
             UPDATE chats
@@ -1178,7 +1963,16 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> int | None:
             """,
             (normalized, now, chat_id),
         )
-    return int(dialog_id_row["id"]) if dialog_id_row else None
+
+    # Close appeal + snapshot for old dialog (if we switched BINs)
+    if active and active["bin"] != normalized:
+        old_dialog_id = int(active["id"])
+        close_appeal(old_dialog_id, "system")
+        snapshot_dialog_metrics(old_dialog_id)
+
+    # Create new appeal for this activation
+    create_appeal(dialog_id, chat_id)
+    return dialog_id, is_resumed
 
 
 def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None = None) -> int:
@@ -1228,6 +2022,13 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
                 "UPDATE chats SET bin = %s, updated_at = %s WHERE chat_id = %s",
                 (normalized, now, chat_id),
             )
+            # Ensure appeal exists for this dialog
+            appeal_exists = execute(
+                "SELECT 1 FROM appeals WHERE dialog_id = %s AND ended_at IS NULL LIMIT 1",
+                (dialog_id,),
+            ).fetchone()
+            if not appeal_exists:
+                create_appeal(dialog_id, chat_id, section)
             return dialog_id
 
         # Закрываем активные диалоги с другим БИН, чтобы исключить дубликаты
@@ -1239,7 +2040,7 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
         # Проверяем, существует ли ранее созданный диалог с тем же БИН
         previous = execute(
             """
-            SELECT id
+            SELECT id, ended_at
             FROM chat_dialogs
             WHERE chat_id = %s AND bin = %s
             ORDER BY started_at DESC
@@ -1265,6 +2066,8 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
                 "UPDATE chats SET bin = %s, section = NULL, updated_at = %s WHERE chat_id = %s",
                 (normalized, now, chat_id),
             )
+            # Create new appeal for reactivated dialog
+            create_appeal(dialog_id, chat_id, section)
             return dialog_id
 
         cursor = execute(
@@ -1287,7 +2090,10 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
 
     if not dialog_id_row:
         raise RuntimeError("Failed to create chat dialog")
-    return int(dialog_id_row["id"])
+    dialog_id = int(dialog_id_row["id"])
+    # Create first appeal for new dialog
+    create_appeal(dialog_id, chat_id, section)
+    return dialog_id
 
 
 def get_chat(chat_id: int) -> Optional[Dict[str, object]]:
@@ -1767,22 +2573,7 @@ def delete_chat(chat_id: int) -> None:
         ).fetchone()
         if existing is None:
             raise ValueError("Chat not found")
-        # Архивируем сообщения перед удалением, чтобы данные дэшборда сохранились
-        archived_at = datetime.now(timezone.utc).isoformat()
-        execute(
-            """
-            INSERT INTO messages_archive (
-                chat_id, direction, text, message_id, author,
-                created_at, section, dialog_id, archived_at
-            )
-            SELECT
-                chat_id, direction, text, message_id, author,
-                created_at, section, dialog_id, %s
-            FROM messages
-            WHERE chat_id = %s
-            """,
-            (archived_at, chat_id),
-        )
+        # Метрики уже записаны в dialog_stats при закрытии диалога — архивация не нужна
         execute("DELETE FROM messages WHERE chat_id = %s", (chat_id,))
         dialog_rows = execute(
             "SELECT id, bin FROM chat_dialogs WHERE chat_id = %s",
@@ -1822,35 +2613,7 @@ def delete_chat_dialog(dialog_id: int) -> None:
                 f"DELETE FROM outbox_onec WHERE message_id IN ({placeholders})",
                 message_ids,
             )
-        archived_at = datetime.now(timezone.utc).isoformat()
-        execute(
-            """
-            INSERT INTO messages_archive (
-                chat_id,
-                direction,
-                text,
-                message_id,
-                author,
-                created_at,
-                section,
-                dialog_id,
-                archived_at
-            )
-            SELECT
-                chat_id,
-                direction,
-                text,
-                message_id,
-                author,
-                created_at,
-                section,
-                dialog_id,
-                %s
-            FROM messages
-            WHERE dialog_id = %s
-            """,
-            (archived_at, dialog_id),
-        )
+        # Метрики уже записаны в dialog_stats при закрытии — архивация не нужна
         execute("DELETE FROM messages WHERE dialog_id = %s", (dialog_id,))
         execute(
             "DELETE FROM favorites WHERE dialog_id = %s",
@@ -2258,6 +3021,11 @@ def get_dashboard_summary(
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> dict:
+    """Dashboard summary reading from pre-aggregated dialog_stats.
+
+    For closed dialogs: reads from dialog_stats, dialog_operator_stats, stat_questions.
+    For open dialogs: computes live metrics from chat_dialogs + messages.
+    """
     now = datetime.now(timezone.utc)
     if start_date is None and end_date is None:
         span = max(days, 1)
@@ -2274,84 +3042,7 @@ def get_dashboard_summary(
     start_iso = start_date.isoformat()
     end_exclusive_iso = (end_date + timedelta(days=1)).isoformat()
 
-    response_deltas: List[float] = []
-    response_by_author: Dict[str, List[float]] = {}
-    response_time_dialogs: List[dict] = []
-
-    # ВАЖНО: дэшборд больше не фильтруется по BIN. Метрики считаются по факту сообщений оператора.
-    assigned_bins: List[str] | None = None
-
-    # Получаем список операторов и модераторов для фильтрации сообщений
-    # (ответы админов НЕ учитываются как "человеческое вмешательство" в AI-метриках)
-    operator_names: set[str] = set()
-    active_user_names: set[str] = set()
-    with _lock:
-        operator_rows = execute(
-            f"SELECT {_user_columns('u')} FROM users u WHERE u.role IN (%s, %s) AND COALESCE(u.is_approved, 1) = 1",
-            (ROLE_OPERATOR, ROLE_MODERATOR),
-        ).fetchall()
-        for row in operator_rows:
-            user = _row_to_user(row)
-            if user:
-                name = (user.get("name") or "").strip()
-                login = (user.get("login") or "").strip()
-                if name:
-                    operator_names.add(name.lower())
-                    active_user_names.add(name.lower())
-                if login:
-                    operator_names.add(login.lower())
-                    active_user_names.add(login.lower())
-        active_rows = execute(
-            "SELECT name, login FROM users WHERE COALESCE(is_approved, 1) = 1",
-        ).fetchall()
-        for row in active_rows:
-            name = (row.get("name") or "").strip()
-            login = (row.get("login") or "").strip()
-            if name:
-                active_user_names.add(name.lower())
-            if login:
-                active_user_names.add(login.lower())
-
-    # Если выбран конкретный сотрудник — фильтруем по нему (name/login) и по его БИНам.
-    operator_assigned_bins: List[str] | None = None
-    if operator_id is not None:
-        target = get_user_by_id(operator_id)
-        if not target:
-            return _empty_summary()
-        selected: set[str] = set()
-        name = (target.get("name") or "").strip().lower()
-        login = (target.get("login") or "").strip().lower()
-        if name:
-            selected.add(name)
-        if login:
-            selected.add(login)
-        if not selected:
-            return _empty_summary()
-        operator_names = selected
-        active_user_names = selected
-        # Load operator's assigned BINs for dialog-level filtering
-        # (AI metrics, contracts, heatmap — the operator's zone of responsibility)
-        operator_assigned_bins = get_user_bins(operator_id)
-
-    message_union_sql = """
-        (
-            SELECT id, chat_id, direction, text, message_id, author, created_at, section, dialog_id
-            FROM messages
-            UNION ALL
-            SELECT id, chat_id, direction, text, message_id, author, created_at, section, dialog_id
-            FROM messages_archive
-        )
-    """
-
-    message_union_sql = """
-        (
-            SELECT id, chat_id, direction, text, message_id, author, created_at, section, dialog_id
-            FROM messages
-            UNION ALL
-            SELECT id, chat_id, direction, text, message_id, author, created_at, section, dialog_id
-            FROM messages_archive
-        )
-    """
+    section_map = {section["id"]: section["title"] for section in SECTIONS}
 
     def _empty_summary() -> dict:
         recent_activity = [
@@ -2393,964 +3084,615 @@ def get_dashboard_summary(
             "agent_breakdown": [],
             "recent_activity": recent_activity,
             "top_bins_without_contract": [],
+            "top_bins_with_contract": [],
             "peak_load_heatmap": [],
             "updated_at": now.isoformat(),
         }
 
-    placeholders = ", ".join("%s" for _ in assigned_bins) if assigned_bins is not None else ""
+    # ── Operator filtering ──
+    operator_assigned_bins: List[str] | None = None
+    operator_bin_filter_sql = ""
+    operator_bin_filter_params: List[str] = []
+
+    if operator_id is not None:
+        target = get_user_by_id(operator_id)
+        if not target:
+            return _empty_summary()
+        operator_assigned_bins = get_user_bins(operator_id)
+        if not operator_assigned_bins:
+            return _empty_summary()
+
+        _bin_placeholders = ", ".join("%s" for _ in operator_assigned_bins)
+        operator_bin_filter_sql = f" AND ds.bin IN ({_bin_placeholders})"
+        operator_bin_filter_params = list(operator_assigned_bins)
 
     with _lock:
-        # Подсчитываем только сообщения от операторов (исключаем ботов и системные сообщения)
-        automation_author_placeholders = ", ".join("%s" for _ in AUTOMATION_AUTHOR_NAMES) if AUTOMATION_AUTHOR_NAMES else ""
-        automation_clause = (
-            f"AND TRIM(LOWER(m.author)) NOT IN ({automation_author_placeholders})"
-            if automation_author_placeholders
-            else ""
+        # ══════════════════════════════════════════════════════
+        # 1. CLOSED DIALOGS — from dialog_stats (pre-aggregated)
+        # ══════════════════════════════════════════════════════
+        agg_row = execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                COALESCE(SUM(msg_incoming), 0) AS incoming,
+                COALESCE(SUM(msg_outgoing), 0) AS outgoing,
+                COALESCE(SUM(msg_total), 0) AS messages,
+                COALESCE(SUM(CASE WHEN is_ai_closed THEN 1 ELSE 0 END), 0) AS ai_closed,
+                COALESCE(SUM(ai_messages_count), 0) AS ai_msgs,
+                COALESCE(SUM(response_count), 0) AS resp_count,
+                COALESCE(SUM(fast_responses), 0) AS fast,
+                COALESCE(SUM(medium_responses), 0) AS medium,
+                COALESCE(SUM(slow_responses), 0) AS slow,
+                COALESCE(SUM(sla_violations), 0) AS sla_v,
+                AVG(msgs_before_transfer) AS avg_before_transfer,
+                AVG(first_message_length) AS avg_first_msg_len,
+                COALESCE(SUM(CASE WHEN has_contract = true THEN 1 ELSE 0 END), 0) AS with_contract,
+                COALESCE(SUM(CASE WHEN has_contract = false THEN 1 ELSE 0 END), 0) AS without_contract
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+            """
+            + operator_bin_filter_sql,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchone()
+
+        closed_dialogs = int(agg_row["total"] or 0)
+        closed_incoming = int(agg_row["incoming"] or 0)
+        closed_outgoing = int(agg_row["outgoing"] or 0)
+        closed_messages = int(agg_row["messages"] or 0)
+        ai_closed_dialogs = int(agg_row["ai_closed"] or 0)
+        ai_messages_count = int(agg_row["ai_msgs"] or 0)
+        total_resp_count = int(agg_row["resp_count"] or 0)
+        fast_responses = int(agg_row["fast"] or 0)
+        medium_responses = int(agg_row["medium"] or 0)
+        slow_responses = int(agg_row["slow"] or 0)
+        sla_violations_count = int(agg_row["sla_v"] or 0)
+        avg_messages_before_transfer = (
+            float(agg_row["avg_before_transfer"])
+            if agg_row["avg_before_transfer"] is not None else None
+        )
+        average_first_message_length = (
+            float(agg_row["avg_first_msg_len"])
+            if agg_row["avg_first_msg_len"] is not None else None
+        )
+        requests_with_contract = int(agg_row["with_contract"] or 0)
+        requests_without_contract = int(agg_row["without_contract"] or 0)
+
+        # Weighted average response time from dialog_stats
+        avg_rt_row = execute(
+            """
+            SELECT SUM(avg_response_time_seconds * response_count) / NULLIF(SUM(response_count), 0) AS weighted_avg
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+              AND avg_response_time_seconds IS NOT NULL
+            """
+            + operator_bin_filter_sql,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchone()
+        avg_response_time_seconds: Optional[float] = (
+            float(avg_rt_row["weighted_avg"])
+            if avg_rt_row and avg_rt_row["weighted_avg"] is not None else None
         )
 
-        # Фильтр по именам операторов (для конкретного оператора или для всех операторов)
-        operator_filter_clause = ""
-        operator_filter_params: List[object] = []
-        if operator_names:
-            operator_placeholders = ", ".join("%s" for _ in operator_names)
-            operator_filter_clause = f"AND TRIM(LOWER(m.author)) IN ({operator_placeholders})"
-            operator_filter_params = [name.lower() for name in operator_names]
+        transferred_to_operator_dialogs = max(0, closed_dialogs - ai_closed_dialogs)
 
+        # ══════════════════════════════════════════════════════
+        # 2. OPEN DIALOGS — live from chat_dialogs + messages
+        # ══════════════════════════════════════════════════════
+        open_filter = operator_bin_filter_sql.replace("ds.", "cd.")
+        open_params = list(operator_bin_filter_params)
 
-        # Диалоги - считаем по факту сообщений операторов (включая архив для удалённых диалогов)
-        total_dialogs = execute(
-            """
-            SELECT COUNT(DISTINCT m.dialog_id) AS total
-            FROM """
-            + message_union_sql
-            + """ m
-            WHERE m.direction = 'outgoing'
-              AND m.dialog_id IS NOT NULL
-              AND m.author IS NOT NULL
-              AND TRIM(m.author) != ''
-              AND m.created_at >= %s
-              AND m.created_at < %s
-            """
-            + operator_filter_clause
-            + automation_clause,
-            (
-                start_iso,
-                end_exclusive_iso,
-                *operator_filter_params,
-                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-            ),
-        ).fetchone()["total"] or 0
-
-        # Открытые диалоги - где оператор писал и диалог ещё не закрыт
-        open_dialogs = execute(
+        open_row = execute(
             """
             SELECT COUNT(*) AS total
             FROM chat_dialogs cd
             WHERE cd.ended_at IS NULL
-              AND cd.id IN (
-                SELECT DISTINCT m.dialog_id
-                FROM """
-            + message_union_sql
-            + """ m
-                WHERE m.direction = 'outgoing'
-                  AND m.dialog_id IS NOT NULL
-                  AND m.author IS NOT NULL
-                  AND TRIM(m.author) != ''
-                  AND m.created_at >= %s
-                  AND m.created_at < %s
+              AND cd.started_at >= %s AND cd.started_at < %s
             """
-            + operator_filter_clause
-            + automation_clause
-            + """
-              )
-            """,
-            (
-                start_iso,
-                end_exclusive_iso,
-                *operator_filter_params,
-                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-            ),
-        ).fetchone()["total"] or 0
+            + open_filter,
+            (start_iso, end_exclusive_iso, *open_params),
+        ).fetchone()
+        open_dialogs = int(open_row["total"] or 0)
 
-        total_incoming = execute(
-            """
-            SELECT COUNT(*) AS total
-            FROM """
-            + message_union_sql
-            + """ m
-            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
-            LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.direction = 'incoming'
-              AND m.created_at >= %s
-              AND m.created_at < %s
-        """
-            + (
-                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            ),
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
-        ).fetchone()["total"] or 0
-        
-        total_outgoing = execute(
-            """
-            SELECT COUNT(*) AS total
-            FROM """
-            + message_union_sql
-            + """ m
-            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
-            LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.direction = 'outgoing'
-              AND m.author IS NOT NULL
-              AND TRIM(m.author) != ''
-              AND m.created_at >= %s
-              AND m.created_at < %s
-        """
-            + automation_clause
-            + (operator_filter_clause if operator_filter_clause else "")
-            + (
-                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            ),
-            (
-                start_iso,
-                end_exclusive_iso,
-                * ([name.lower() for name in AUTOMATION_AUTHOR_NAMES] if automation_author_placeholders else []),
-                * operator_filter_params,
-                * (assigned_bins or []),
-            ),
-        ).fetchone()["total"] or 0
-        # По требованиям: "сообщения" в отчёте — только сообщения операторов.
-        total_messages = total_outgoing
-        
-        # Чаты - считаем по факту сообщений операторов
-        total_chats = execute(
-            """
-            SELECT COUNT(DISTINCT m.chat_id) AS total
-            FROM """
-            + message_union_sql
-            + """ m
-            WHERE m.direction = 'outgoing'
-            AND m.author IS NOT NULL
-            AND TRIM(m.author) != ''
-            AND m.created_at >= %s
-            AND m.created_at < %s
-            """
-            + operator_filter_clause
-            + automation_clause,
-            (
-                start_iso,
-                end_exclusive_iso,
-                *operator_filter_params,
-                *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-            ),
-        ).fetchone()["total"] or 0
-
-        # Фильтр диалогов, в которых сотрудник(и) отвечали (outgoing) в периоде
-        # Для общего дэшборда — любой сотрудник; для конкретного — только он
-        if operator_id is not None and operator_filter_params:
-            _eligible_staff_clause = operator_filter_clause.replace("m.", "m2.")
-            _eligible_staff_params = list(operator_filter_params)
-        elif active_user_names:
-            _elig_placeholders = ", ".join("%s" for _ in active_user_names)
-            _eligible_staff_clause = f"AND TRIM(LOWER(m2.author)) IN ({_elig_placeholders})"
-            _eligible_staff_params = [name.lower() for name in active_user_names]
-        else:
-            _eligible_staff_clause = ""
-            _eligible_staff_params = []
-
-        eligible_dialogs_sql = f"""
-            AND cd.id IN (
-                SELECT DISTINCT m2.dialog_id
-                FROM {message_union_sql} m2
-                WHERE m2.direction = 'outgoing'
-                AND m2.dialog_id IS NOT NULL
-                AND m2.author IS NOT NULL
-                AND TRIM(m2.author) != ''
-                AND m2.created_at >= %s
-                AND m2.created_at < %s
-            {_eligible_staff_clause}{automation_clause.replace("m.", "m2.")}
-            )
-            """
-        eligible_dialogs_params = (
-            start_iso,
-            end_exclusive_iso,
-            *_eligible_staff_params,
-            *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-        )
-
-        section_rows = execute(
-            """
-            SELECT COALESCE(c.section, '') AS section_id, COUNT(*) AS dialog_count
-            FROM chat_dialogs cd
-            LEFT JOIN chats c ON c.chat_id = cd.chat_id
-            WHERE cd.started_at IS NOT NULL AND cd.started_at >= %s AND cd.started_at < %s
-        """
-            + eligible_dialogs_sql
-            + (f" AND cd.bin IN ({placeholders})" if assigned_bins is not None else "")
-            + """
-            GROUP BY COALESCE(c.section, '')
-            ORDER BY dialog_count DESC
-            """,
-            (
-                start_iso,
-                end_exclusive_iso,
-                *eligible_dialogs_params,
-                *(assigned_bins or []),
-            ),
-        ).fetchall()
-        duration_rows = execute(
-            "SELECT started_at, ended_at FROM chat_dialogs"
-            " WHERE started_at IS NOT NULL AND ended_at IS NOT NULL"
-            " AND started_at >= %s AND started_at < %s"
-            + (
-                f" AND bin IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            ),
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
-        ).fetchall()
-        
-        # Подсчет новых диалогов по дням — по дате создания диалога (started_at)
-        # Для конкретного оператора — только диалоги, в которых оператор отвечал
-        # Для общего дэшборда — все созданные диалоги
-        _new_dialog_operator_filter = ""
-        _new_dialog_operator_params: tuple = ()
-        if operator_id is not None and operator_filter_params:
-            _new_dialog_operator_filter = f"""
-            AND cd.id IN (
-                SELECT DISTINCT m2.dialog_id
-                FROM {message_union_sql} m2
-                WHERE m2.direction = 'outgoing'
-                AND m2.dialog_id IS NOT NULL
-                AND m2.author IS NOT NULL
-                AND TRIM(m2.author) != ''
-                {operator_filter_clause.replace("m.", "m2.")}
-            )
-            """
-            _new_dialog_operator_params = tuple(operator_filter_params)
-
-        dialogs_by_day_rows = execute(
-            """
-            SELECT substr(cd.started_at, 1, 10) AS day, COUNT(*) AS cnt
-            FROM chat_dialogs cd
-            WHERE cd.started_at IS NOT NULL
-              AND cd.started_at >= %s
-              AND cd.started_at < %s
-            """
-            + _new_dialog_operator_filter
-            + """
-            GROUP BY substr(cd.started_at, 1, 10)
-            ORDER BY day ASC
-            """,
-            (
-                start_iso,
-                end_exclusive_iso,
-                *_new_dialog_operator_params,
-            ),
-        ).fetchall()
-        # Подсчет входящих сообщений по дням
-        # Для общего дэшборда — считаем входящие в диалогах, где любой сотрудник отвечал
-        # Для конкретного оператора — только в диалогах, где этот оператор отвечал
-        if operator_id is not None and operator_filter_params:
-            # Per-operator: filter by this operator's messages
-            _incoming_staff_clause = operator_filter_clause.replace("m.", "m2.")
-            _incoming_staff_params = list(operator_filter_params)
-        elif active_user_names:
-            # All employees: filter by any staff member
-            _staff_placeholders = ", ".join("%s" for _ in active_user_names)
-            _incoming_staff_clause = f"AND TRIM(LOWER(m2.author)) IN ({_staff_placeholders})"
-            _incoming_staff_params = [name.lower() for name in active_user_names]
-        else:
-            _incoming_staff_clause = ""
-            _incoming_staff_params = []
-
-        incoming_operator_dialog_filter = f"""
-            AND m.dialog_id IN (
-                SELECT DISTINCT m2.dialog_id
-                FROM {message_union_sql} m2
-                WHERE m2.direction = 'outgoing'
-                  AND m2.dialog_id IS NOT NULL
-                  AND m2.author IS NOT NULL
-                  AND TRIM(m2.author) != ''
-                  AND m2.created_at >= %s
-                  AND m2.created_at < %s
-            {_incoming_staff_clause}{automation_clause.replace("m.", "m2.")}
-            )
-        """
-        incoming_operator_dialog_params = [
-            start_iso,
-            end_exclusive_iso,
-            *_incoming_staff_params,
-            *[name.lower() for name in AUTOMATION_AUTHOR_NAMES],
-        ]
-        
-        incoming_by_day_rows = execute(
-            """
-            SELECT substr(m.created_at, 1, 10) AS day, COUNT(*) AS cnt
-            FROM """
-            + message_union_sql
-            + """ m
-            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
-            LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.created_at >= %s AND m.created_at < %s AND m.direction = 'incoming'
-        """
-            + incoming_operator_dialog_filter
-            + (
-                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            )
-            + """
-            GROUP BY substr(m.created_at, 1, 10)
-            ORDER BY day ASC
-            """,
-            (start_iso, end_exclusive_iso, *incoming_operator_dialog_params, *(assigned_bins or [])),
-        ).fetchall()
-        # Подсчет исходящих сообщений от операторов по дням (для статистики сообщений/день)
-        outgoing_by_day_rows = execute(
-            """
-            SELECT substr(m.created_at, 1, 10) AS day, COUNT(*) AS cnt
-            FROM """
-            + message_union_sql
-            + """ m
-            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
-            LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.direction = 'outgoing'
-              AND m.author IS NOT NULL
-              AND TRIM(m.author) != ''
-              AND m.created_at >= %s
-              AND m.created_at < %s
-        """
-            + automation_clause
-            + (operator_filter_clause if operator_filter_clause else "")
-            + (
-                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            )
-            + """
-            GROUP BY substr(m.created_at, 1, 10)
-            ORDER BY day ASC
-            """,
-            (
-                start_iso,
-                end_exclusive_iso,
-                * ([name.lower() for name in AUTOMATION_AUTHOR_NAMES] if automation_author_placeholders else []),
-                * operator_filter_params,
-                * (assigned_bins or []),
-            ),
-        ).fetchall()
-        question_rows = execute(
-            """
-           SELECT m.text, m.created_at, m.section
-            FROM """
-            + message_union_sql
-            + """ m
-            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
-            LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.direction = 'incoming'
-              AND m.text IS NOT NULL
-              AND TRIM(m.text) != ''
-              AND m.created_at >= %s
-              AND m.created_at < %s
-        """
-            + (
-                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            ),
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
-        ).fetchall()
-        # Статистика по операторам (только операторы, исключаем ботов)
-        agent_rows = execute(
+        # Messages in open dialogs
+        open_msg_row = execute(
             """
             SELECT
-                TRIM(COALESCE(m.author, '')) AS author,
-                COUNT(*) AS message_count,
-                COUNT(DISTINCT m.dialog_id) AS dialog_count,
-                MAX(m.created_at) AS last_activity
-            FROM """
-            + message_union_sql
-            + """ m
-            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
-            LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.direction = 'outgoing'
-              AND m.author IS NOT NULL
-              AND TRIM(m.author) != ''
-              AND m.created_at >= %s
-              AND m.created_at < %s
-        """
-            + automation_clause
-            + (operator_filter_clause if operator_filter_clause else "")
-            + (
-                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            )
-            + """
-            GROUP BY TRIM(COALESCE(m.author, ''))
-            ORDER BY message_count DESC
+                COALESCE(SUM(CASE WHEN m.direction = 'incoming' THEN 1 ELSE 0 END), 0) AS incoming,
+                COALESCE(SUM(CASE WHEN m.direction = 'outgoing' THEN 1 ELSE 0 END), 0) AS outgoing
+            FROM messages m
+            JOIN chat_dialogs cd ON cd.id = m.dialog_id
+            WHERE cd.ended_at IS NULL
+              AND cd.started_at >= %s AND cd.started_at < %s
             """
-        ,
-            (
-                start_iso,
-                end_exclusive_iso,
-                * ([name.lower() for name in AUTOMATION_AUTHOR_NAMES] if automation_author_placeholders else []),
-                * operator_filter_params,
-                * (assigned_bins or []),
-            ),
-        ).fetchall()
-
-        operator_request_rows = execute(
-            """
-            SELECT m.id, m.chat_id, m.dialog_id, m.created_at
-            FROM """
-            + message_union_sql
-            + """ m
-            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
-            LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.direction = 'incoming'
-              AND m.text IN ('[ЗАПРОС ОПЕРАТОРА]', '[FAQ] Связаться с оператором')
-              AND m.created_at >= %s
-              AND m.created_at < %s
-        """
-            + (
-                f" AND COALESCE(cd.bin, c.bin) IN ({placeholders})"
-                if assigned_bins is not None
-                else ""
-            )
-            + """
-            ORDER BY m.created_at ASC
-            """
-        ,
-            (start_iso, end_exclusive_iso, * (assigned_bins or [])),
-        ).fetchall()
-
-        if operator_request_rows:
-            # Логика времени ответа:
-            # считаем время от каждого запроса оператора до первого ответа оператора после него.
-            requests_by_dialog: Dict[int, List[datetime]] = {}
-            for row in operator_request_rows:
-                did = row.get("dialog_id")
-                if did is None:
-                    continue
-                created_at = _parse_datetime(row.get("created_at"))
-                if created_at is None:
-                    continue
-                requests_by_dialog.setdefault(int(did), []).append(created_at)
-
-            def _norm(value: str | None) -> str:
-                return (value or "").strip().lower()
-
-            automation_set = {_norm(name) for name in AUTOMATION_AUTHOR_NAMES if _norm(name)}
-
-            def _is_counted_operator(author: str | None) -> bool:
-                key = _norm(author)
-                if not key:
-                    return False
-                if key in automation_set:
-                    return False
-                return key in operator_names
-
-            for dialog_id, request_times in requests_by_dialog.items():
-                request_times = sorted(request_times)
-                if not request_times:
-                    continue
-                first_request = request_times[0]
-                request_start = first_request.isoformat()
-
-                dialog_row = execute(
-                    "SELECT ended_at FROM chat_dialogs WHERE id = %s",
-                    (dialog_id,),
-                ).fetchone()
-                ended_at_raw = (dialog_row or {}).get("ended_at") if dialog_row else None
-                ended_at = _parse_datetime(ended_at_raw) if ended_at_raw else None
-                cutoff_dt = ended_at if ended_at and ended_at > first_request else None
-                cutoff_iso = (cutoff_dt.isoformat() if cutoff_dt else end_exclusive_iso)
-
-                msg_rows = execute(
-                    """
-                    SELECT direction, author, created_at
-                    FROM """
-                    + message_union_sql
-                    + """ m
-                    WHERE m.dialog_id = %s
-                      AND m.created_at >= %s
-                      AND m.created_at < %s
-                    ORDER BY m.created_at ASC
-                    """,
-                    (dialog_id, request_start, cutoff_iso),
-                ).fetchall()
-
-                request_index = 0
-                pending_request = request_times[request_index]
-                responded = False
-                per_author: Dict[str, List[float]] = {}
-
-                for msg in msg_rows:
-                    created = _parse_datetime(msg.get("created_at"))
-                    if created is None:
-                        continue
-                    while request_index + 1 < len(request_times) and created >= request_times[request_index + 1]:
-                        request_index += 1
-                        pending_request = request_times[request_index]
-                        responded = False
-                    direction = (msg.get("direction") or "").strip()
-                    if direction != "outgoing":
-                        continue
-
-                    author_raw = (msg.get("author") or "").strip()
-                    if not author_raw:
-                        continue
-                    if not _is_counted_operator(author_raw):
-                        continue
-                    if responded or created <= pending_request:
-                        continue
-
-                    delta_seconds = (created - pending_request).total_seconds()
-                    responded = True
-                    response_deltas.append(delta_seconds)
-                    response_by_author.setdefault(author_raw, []).append(delta_seconds)
-                    per_author.setdefault(author_raw, []).append(delta_seconds)
-
-                # среднее по диалогу для каждого оператора, который отвечал
-                for author_raw, deltas in per_author.items():
-                    if not deltas:
-                        continue
-                    avg_minutes = (sum(deltas) / len(deltas)) / 60.0
-                    response_time_dialogs.append(
-                        {
-                            "dialog_id": dialog_id,
-                            "author": author_raw,
-                            "response_time_minutes": avg_minutes,
-                        }
-                    )
-
-    closed_dialogs = max(total_dialogs - open_dialogs, 0)
-    average_messages_per_dialog = (
-        total_messages / total_dialogs if total_dialogs else 0.0
-    )
-
-    if response_deltas:
-        avg_response_time_seconds = sum(response_deltas) / len(response_deltas)
-        avg_response_time_minutes: Optional[float] = avg_response_time_seconds / 60.0
-    else:
-        avg_response_time_seconds = None
-        avg_response_time_minutes = None
-
-    durations: List[float] = []
-    for row in duration_rows:
-        started_at = _parse_datetime(row["started_at"])
-        ended_at = _parse_datetime(row["ended_at"])
-        if started_at and ended_at and ended_at > started_at:
-            durations.append((ended_at - started_at).total_seconds())
-    avg_dialog_duration_minutes: Optional[float]
-    if durations:
-        avg_dialog_duration_minutes = sum(durations) / len(durations) / 60.0
-    else:
-        avg_dialog_duration_minutes = None
-
-    section_map = {section["id"]: section["title"] for section in SECTIONS}
-    section_breakdown: List[dict] = []
-    for row in section_rows:
-        section_id = row["section_id"] or None
-        dialogs = row["dialog_count"] or 0
-        if not dialogs:
-            continue
-        title = section_map.get(section_id or "", section_id or "Без раздела")
-        percentage = (dialogs / total_dialogs * 100.0) if total_dialogs else 0.0
-        section_breakdown.append(
-            {
-                "section": section_id,
-                "title": title,
-                "dialogs": dialogs,
-                "percentage": percentage,
-            }
-        )
-
-    dialogs_by_day = {row["day"]: row["cnt"] for row in dialogs_by_day_rows}
-    incoming_by_day = {row["day"]: row["cnt"] for row in incoming_by_day_rows}
-    recent_activity: List[dict] = []
-    for offset in range(span):
-        day = start_date + timedelta(days=offset)
-        day_key = day.isoformat()
-        recent_activity.append(
-            {
-                "date": day_key,
-                "dialogs": int(dialogs_by_day.get(day_key, 0)),
-                "incoming_messages": int(incoming_by_day.get(day_key, 0)),
-            }
-        )
-
-    question_stats: Dict[str, dict] = {}
-    section_question_stats: Dict[Optional[str], Dict[str, dict]] = {}
-    for row in question_rows:
-        text = (row["text"] or "").strip()
-        if not text:
-            continue
-        normalized = text.lower()
-        seen_at = _parse_datetime(row["created_at"])
-        entry = question_stats.get(normalized)
-        if entry is None:
-            entry = {"question": text, "count": 0, "last_seen": seen_at}
-            question_stats[normalized] = entry
-        entry["count"] += 1
-        if seen_at and (entry["last_seen"] is None or seen_at > entry["last_seen"]):
-            entry["last_seen"] = seen_at
-        if len(text) < len(entry["question"]):
-            entry["question"] = text
-
-        section_id = (row["section"] or "").strip() or None
-        section_bucket = section_question_stats.setdefault(section_id, {})
-        section_entry = section_bucket.get(normalized)
-        if section_entry is None:
-            section_entry = {"question": text, "count": 0, "last_seen": seen_at}
-            section_bucket[normalized] = section_entry
-        section_entry["count"] += 1
-        if seen_at and (section_entry["last_seen"] is None or seen_at > section_entry["last_seen"]):
-            section_entry["last_seen"] = seen_at
-        if len(text) < len(section_entry["question"]):
-            section_entry["question"] = text
-
-    sorted_questions = sorted(
-        question_stats.values(),
-        key=lambda item: (-item["count"], item["last_seen"] or datetime.min),
-    )
-    top_questions = [
-        {"question": item["question"], "count": int(item["count"])}
-        for item in sorted_questions[: max(questions_limit, 0)]
-    ]
-
-    questions_by_section: List[dict] = []
-    for section_id, bucket in section_question_stats.items():
-        if not bucket:
-            continue
-        questions_sorted = sorted(
-            bucket.values(),
-            key=lambda item: (-item["count"], item["last_seen"] or datetime.min),
-        )
-        questions_by_section.append(
-            {
-                "section": section_id,
-                "title": section_map.get(section_id or "", section_id or "Без раздела"),
-                "questions": [
-                    {"question": item["question"], "count": int(item["count"])}
-                    for item in questions_sorted[: max(questions_limit, 0)]
-                ],
-            }
-        )
-
-    agent_breakdown: List[dict] = []
-    for row in agent_rows:
-        name = row["author"] or "Без имени"
-        messages_sent = int(row["message_count"] or 0)
-        dialogs_handled = int(row["dialog_count"] or 0)
-        last_activity = _parse_datetime(row["last_activity"])
-        avg_messages = messages_sent / dialogs_handled if dialogs_handled else 0.0
-        response_times = response_by_author.get(name, [])
-        avg_response_time_minutes = (
-            (sum(response_times) / len(response_times)) / 60.0
-            if response_times
-            else None
-        )
-        agent_breakdown.append(
-            {
-                "name": name,
-                "messages": messages_sent,
-                "dialogs": dialogs_handled,
-                "avg_messages_per_dialog": avg_messages,
-                "avg_response_time_minutes": avg_response_time_minutes,
-                "last_activity": last_activity.isoformat() if last_activity else None,
-            }
-        )
-
-    ai_closed_dialogs = 0
-    transferred_to_operator_dialogs = total_dialogs
-    ai_messages_count = 0
-    avg_messages_before_transfer = None
-    recurring_requests_count = 0
-    recurring_requests_percentage = None
-    sla_violations_count = 0
-    sla_compliance_percentage = None
-    peak_load_heatmap = []
-    requests_with_contract = 0
-    requests_without_contract = 0
-    top_bins_without_contract = []
-    average_first_message_length = None
-
-    # Build reusable BIN-based filter for dialog-level metrics.
-    # When an operator is selected, we filter by their assigned BINs (zone of responsibility).
-    # This correctly attributes AI-closed dialogs, contract stats, heatmap, etc.
-    if operator_id is not None and operator_assigned_bins:
-        _bin_placeholders = ", ".join("%s" for _ in operator_assigned_bins)
-        operator_dialog_filter_sql = f"""
-            AND COALESCE(cd.bin, (SELECT c.bin FROM chats c WHERE c.chat_id = cd.chat_id)) IN ({_bin_placeholders})
-        """
-        operator_dialog_filter_params = list(operator_assigned_bins)
-
-        # For incoming messages: filter to dialogs with BINs assigned to this operator
-        operator_incoming_dialog_filter_sql = f"""
-            AND m.dialog_id IN (
-                SELECT cd_bin.id
-                FROM chat_dialogs cd_bin
-                LEFT JOIN chats c_bin ON c_bin.chat_id = cd_bin.chat_id
-                WHERE COALESCE(cd_bin.bin, c_bin.bin) IN ({_bin_placeholders})
-            )
-        """
-        operator_incoming_dialog_filter_params = list(operator_assigned_bins)
-    elif operator_id is not None:
-        # Operator has no assigned BINs — return zeros for dialog-level metrics
-        operator_dialog_filter_sql = "AND 1=0"
-        operator_dialog_filter_params = []
-        operator_incoming_dialog_filter_sql = "AND 1=0"
-        operator_incoming_dialog_filter_params = []
-    else:
-        operator_dialog_filter_sql = ""
-        operator_dialog_filter_params = []
-        operator_incoming_dialog_filter_sql = ""
-        operator_incoming_dialog_filter_params = []
-
-    with _lock:
-        # AI messages count (bot messages) — filtered by operator BINs if selected
-        ai_messages_clause = (
-            f"AND TRIM(LOWER(m.author)) IN ({automation_author_placeholders})"
-            if automation_author_placeholders
-            else "AND 1=0"
-        )
-        ai_params = [name.lower() for name in AUTOMATION_AUTHOR_NAMES] if automation_author_placeholders else []
-
-        ai_messages_count = execute(
-            """
-            SELECT COUNT(*) AS total
-            FROM """ + message_union_sql + """ m
-            LEFT JOIN chat_dialogs cd ON cd.id = m.dialog_id
-            LEFT JOIN chats c ON c.chat_id = m.chat_id
-            WHERE m.direction = 'outgoing'
-              AND m.author IS NOT NULL
-              """ + ai_messages_clause + """
-              AND m.created_at >= %s AND m.created_at < %s
-            """ + operator_incoming_dialog_filter_sql + """
-            """,
-            (*ai_params, start_iso, end_exclusive_iso, *operator_incoming_dialog_filter_params)
-        ).fetchone()["total"] or 0
-
-        # Count ALL closed dialogs in the period (optionally filtered by operator BINs).
-        # This is the denominator for the AI automation percentage.
-        all_period_closed_dialogs = execute(
-            """
-            SELECT COUNT(*) AS total
-            FROM chat_dialogs cd
-            WHERE cd.started_at >= %s AND cd.started_at < %s
-              AND cd.ended_at IS NOT NULL
-            """ + operator_dialog_filter_sql + """
-            """,
-            (start_iso, end_exclusive_iso, *operator_dialog_filter_params)
-        ).fetchone()["total"] or 0
-
-        operator_requested_clause = """
-            EXISTS (
-                SELECT 1 FROM """ + message_union_sql + """ m
-                WHERE m.dialog_id = cd.id
-                  AND m.direction = 'incoming'
-                  AND m.text IN ('[ЗАПРОС ОПЕРАТОРА]', '[FAQ] Связаться с оператором', 'оператор', '👨‍💼 оператор')
-            )
-        """
-
-        # AI fully-closed dialogs: closed dialogs where client did not request operator
-        ai_closed_dialogs = execute(
-            """
-            SELECT COUNT(*) AS total
-            FROM chat_dialogs cd
-            WHERE cd.started_at >= %s AND cd.started_at < %s
-              AND cd.ended_at IS NOT NULL
-              AND NOT """ + operator_requested_clause + """
-            """ + operator_dialog_filter_sql + """
-            """,
-            (
-                start_iso, end_exclusive_iso,
-                *operator_dialog_filter_params,
-            )
-        ).fetchone()["total"] or 0
-
-        transferred_to_operator_dialogs = max(0, all_period_closed_dialogs - ai_closed_dialogs)
-
-        # Get all dialogs in the period to build dialog_metrics
-        dialog_metrics_rows = execute(
-            """
-            SELECT cd.id, COALESCE(cd.bin, (SELECT c.bin FROM chats c WHERE c.chat_id = cd.chat_id)) as active_bin,
-                   cd.ended_at,
-                   (NOT """ + operator_requested_clause + """) as is_ai_closed
-            FROM chat_dialogs cd
-            WHERE cd.started_at >= %s AND cd.started_at < %s
-            """ + operator_dialog_filter_sql + """
-            """,
-            (
-                start_iso, end_exclusive_iso,
-                *operator_dialog_filter_params,
-            )
-        ).fetchall()
-
-        # Avg messages before transfer
-        avg_messages_before_transfer_row = execute(
-            """
-            WITH first_human_reply AS (
-                SELECT dialog_id, MIN(created_at) AS first_reply_at
-                FROM """ + message_union_sql + """ m
-                WHERE m.direction = 'outgoing'
-                  AND m.author IS NOT NULL
-                  """ + automation_clause + """
-                  AND m.created_at >= %s AND m.created_at < %s
-                """ + (operator_filter_clause if operator_filter_clause else "") + """
-                GROUP BY m.dialog_id
-            ),
-            incoming_before AS (
-                SELECT m.dialog_id, COUNT(*) AS msg_count
-                FROM """ + message_union_sql + """ m
-                JOIN first_human_reply fhr ON m.dialog_id = fhr.dialog_id
-                WHERE m.direction = 'incoming'
-                  AND m.created_at < fhr.first_reply_at
-                GROUP BY m.dialog_id
-            )
-            SELECT AVG(msg_count) AS avg_msgs
-            FROM incoming_before
-            """,
-            (
-                *([name.lower() for name in AUTOMATION_AUTHOR_NAMES] if automation_author_placeholders else []),
-                start_iso, end_exclusive_iso,
-                *operator_filter_params,
-            )
+            + open_filter,
+            (start_iso, end_exclusive_iso, *open_params),
         ).fetchone()
-        if avg_messages_before_transfer_row and avg_messages_before_transfer_row["avg_msgs"] is not None:
-            avg_messages_before_transfer = float(avg_messages_before_transfer_row["avg_msgs"])
+        open_incoming = int(open_msg_row["incoming"] or 0)
+        open_outgoing = int(open_msg_row["outgoing"] or 0)
 
-        # SLA Calculations
-        if response_deltas:
-            sla_violations_count = sum(1 for d in response_deltas if d > 300)
-            sla_compliance_percentage = ((len(response_deltas) - sla_violations_count) / len(response_deltas)) * 100
+        # ── Combined totals ──
+        total_dialogs = closed_dialogs + open_dialogs
+        total_incoming = closed_incoming + open_incoming
+        total_outgoing = closed_outgoing + open_outgoing
+        total_messages = closed_messages + open_incoming + open_outgoing
 
-        # Contract analytics — filter by dialogs where selected operator participated
-        bin_contract_stats = execute(
+        # total_chats - from both live and deleted dialogs
+        live_chats_row = execute(
             """
-            SELECT 
-                COALESCE(cd.bin, c.bin) as chat_bin,
-                CASE WHEN owc.customer_bin IS NOT NULL THEN 0 ELSE 1 END as has_contract,
-                COUNT(DISTINCT cd.id) as dialog_count
+            SELECT COUNT(DISTINCT cd.chat_id) AS total FROM chat_dialogs cd
+            WHERE cd.started_at >= %s AND cd.started_at < %s
+            """
+            + open_filter,
+            (start_iso, end_exclusive_iso, *open_params),
+        ).fetchone()
+        stats_chats_row = execute(
+            """
+            SELECT COUNT(DISTINCT ds.chat_id) AS total FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+            """
+            + operator_bin_filter_sql,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchone()
+        total_chats = max(
+            int(live_chats_row["total"] or 0),
+            int(stats_chats_row["total"] or 0),
+        )
+
+        # ══════════════════════════════════════════════════════
+        # 3. DERIVED METRICS
+        # ══════════════════════════════════════════════════════
+        average_messages_per_dialog = (
+            total_messages / total_dialogs if total_dialogs else 0.0
+        )
+        avg_response_time_minutes: Optional[float] = (
+            avg_response_time_seconds / 60.0
+            if avg_response_time_seconds is not None else None
+        )
+        sla_compliance_percentage: Optional[float] = None
+        if total_resp_count > 0:
+            sla_compliance_percentage = (
+                (total_resp_count - sla_violations_count) / total_resp_count
+            ) * 100
+
+        # Dialog duration (from dialog_stats)
+        dur_row = execute(
+            """
+            SELECT AVG(
+                EXTRACT(EPOCH FROM (CAST(ds.ended_at AS TIMESTAMP) - CAST(ds.started_at AS TIMESTAMP)))
+            ) / 60.0 AS avg_min
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+              AND ds.ended_at IS NOT NULL
+            """
+            + operator_bin_filter_sql,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchone()
+        avg_dialog_duration_minutes: Optional[float] = (
+            float(dur_row["avg_min"]) if dur_row and dur_row["avg_min"] is not None else None
+        )
+
+        # Per-operator per-dialog response times (for speed donut chart)
+        if operator_bin_filter_params:
+            rt_dialog_rows = execute(
+                """
+                SELECT dos.dialog_id, dos.operator_name AS author,
+                       dos.avg_response_seconds / 60.0 AS response_time_minutes
+                FROM dialog_operator_stats dos
+                JOIN dialog_stats ds ON ds.dialog_id = dos.dialog_id
+                WHERE dos.started_at >= %s AND dos.started_at < %s
+                  AND dos.avg_response_seconds IS NOT NULL
+                """
+                + operator_bin_filter_sql
+                + """
+                ORDER BY dos.dialog_id
+                """,
+                (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+            ).fetchall()
+        else:
+            rt_dialog_rows = execute(
+                """
+                SELECT dialog_id, operator_name AS author,
+                       avg_response_seconds / 60.0 AS response_time_minutes
+                FROM dialog_operator_stats
+                WHERE started_at >= %s AND started_at < %s
+                  AND avg_response_seconds IS NOT NULL
+                ORDER BY dialog_id
+                """,
+                (start_iso, end_exclusive_iso),
+            ).fetchall()
+
+        response_time_dialogs: List[dict] = [
+            {
+                "dialog_id": int(row["dialog_id"]),
+                "author": row["author"] or "",
+                "response_time_minutes": float(row["response_time_minutes"]),
+            }
+            for row in rt_dialog_rows
+        ]
+
+        # ══════════════════════════════════════════════════════
+        # 4. SECTION BREAKDOWN
+        # ══════════════════════════════════════════════════════
+        section_rows = execute(
+            """
+            SELECT ds.section, COUNT(*) AS dialog_count
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+            """
+            + operator_bin_filter_sql
+            + """
+            GROUP BY ds.section
+            """,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchall()
+
+        open_section_rows = execute(
+            """
+            SELECT COALESCE(cd.section, c.section) AS section,
+                   COUNT(*) AS dialog_count
             FROM chat_dialogs cd
             LEFT JOIN chats c ON c.chat_id = cd.chat_id
-            LEFT JOIN organizations_without_contracts owc ON owc.customer_bin = COALESCE(cd.bin, c.bin)
-            WHERE cd.started_at >= %s AND cd.started_at < %s
-            """ + operator_dialog_filter_sql + """
-            GROUP BY COALESCE(cd.bin, c.bin), has_contract
+            WHERE cd.ended_at IS NULL
+              AND cd.started_at >= %s AND cd.started_at < %s
+            """
+            + open_filter
+            + """
+            GROUP BY COALESCE(cd.section, c.section)
             """,
-            (start_iso, end_exclusive_iso, *operator_dialog_filter_params)
+            (start_iso, end_exclusive_iso, *open_params),
         ).fetchall()
 
-        requests_with_contract = sum(row["dialog_count"] for row in bin_contract_stats if row["has_contract"] == 1)
-        requests_without_contract = sum(row["dialog_count"] for row in bin_contract_stats if row["has_contract"] == 0)
+        section_counts: Dict[Optional[str], int] = {}
+        for row in section_rows:
+            section_counts[row["section"]] = int(row["dialog_count"] or 0)
+        for row in open_section_rows:
+            key = row["section"]
+            section_counts[key] = section_counts.get(key, 0) + int(row["dialog_count"] or 0)
+
+        section_breakdown: List[dict] = []
+        for sec_id, sec_dialogs in section_counts.items():
+            if not sec_dialogs:
+                continue
+            title = section_map.get(sec_id or "", sec_id or "Без раздела")
+            percentage = (sec_dialogs / total_dialogs * 100.0) if total_dialogs else 0.0
+            section_breakdown.append({
+                "section": sec_id,
+                "title": title,
+                "dialogs": sec_dialogs,
+                "percentage": percentage,
+            })
+        section_breakdown.sort(key=lambda s: s["dialogs"], reverse=True)
+
+        # ══════════════════════════════════════════════════════
+        # 5. TOP QUESTIONS (from stat_questions)
+        # ══════════════════════════════════════════════════════
+        sq_bin_filter = ""
+        sq_params: list = [start_iso, end_exclusive_iso]
+        if operator_bin_filter_params:
+            _sq_ph = ", ".join("%s" for _ in operator_bin_filter_params)
+            sq_bin_filter = f"""
+                AND sq.dialog_id IN (
+                    SELECT ds2.dialog_id FROM dialog_stats ds2
+                    WHERE ds2.bin IN ({_sq_ph})
+                )
+            """
+            sq_params.extend(operator_bin_filter_params)
+
+        question_rows = execute(
+            """
+            SELECT sq.text, sq.section, COUNT(*) AS cnt
+            FROM stat_questions sq
+            WHERE sq.created_at >= %s AND sq.created_at < %s
+            """
+            + sq_bin_filter
+            + """
+            GROUP BY sq.text, sq.section
+            ORDER BY cnt DESC
+            """,
+            sq_params,
+        ).fetchall()
+
+        question_stats: Dict[str, dict] = {}
+        section_question_stats: Dict[Optional[str], Dict[str, dict]] = {}
+        for row in question_rows:
+            text = (row["text"] or "").strip()
+            if not text:
+                continue
+            normalized = text.lower()
+            count = int(row["cnt"] or 0)
+            entry = question_stats.get(normalized)
+            if entry is None:
+                entry = {"question": text, "count": 0}
+                question_stats[normalized] = entry
+            entry["count"] += count
+            if len(text) < len(entry["question"]):
+                entry["question"] = text
+
+            section_id = (row["section"] or "").strip() or None
+            section_bucket = section_question_stats.setdefault(section_id, {})
+            section_entry = section_bucket.get(normalized)
+            if section_entry is None:
+                section_entry = {"question": text, "count": 0}
+                section_bucket[normalized] = section_entry
+            section_entry["count"] += count
+            if len(text) < len(section_entry["question"]):
+                section_entry["question"] = text
+
+        sorted_questions = sorted(
+            question_stats.values(), key=lambda item: -item["count"],
+        )
+        top_questions = [
+            {"question": item["question"], "count": int(item["count"])}
+            for item in sorted_questions[:max(questions_limit, 0)]
+        ]
+
+        questions_by_section: List[dict] = []
+        for sec_id, bucket in section_question_stats.items():
+            if not bucket:
+                continue
+            qs = sorted(bucket.values(), key=lambda item: -item["count"])
+            questions_by_section.append({
+                "section": sec_id,
+                "title": section_map.get(sec_id or "", sec_id or "Без раздела"),
+                "questions": [
+                    {"question": item["question"], "count": int(item["count"])}
+                    for item in qs[:max(questions_limit, 0)]
+                ],
+            })
+
+        # ══════════════════════════════════════════════════════
+        # 6. AGENT BREAKDOWN (from dialog_operator_stats)
+        # ══════════════════════════════════════════════════════
+        if operator_bin_filter_params:
+            agent_rows = execute(
+                """
+                SELECT dos.operator_name,
+                       SUM(dos.messages_sent) AS message_count,
+                       COUNT(DISTINCT dos.dialog_id) AS dialog_count,
+                       SUM(dos.avg_response_seconds * dos.response_count) / NULLIF(SUM(dos.response_count), 0) AS avg_response_time
+                FROM dialog_operator_stats dos
+                JOIN dialog_stats ds ON ds.dialog_id = dos.dialog_id
+                WHERE dos.started_at >= %s AND dos.started_at < %s
+                """
+                + operator_bin_filter_sql
+                + """
+                GROUP BY dos.operator_name
+                ORDER BY dialog_count DESC
+                """,
+                (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+            ).fetchall()
+        else:
+            agent_rows = execute(
+                """
+                SELECT operator_name,
+                       SUM(messages_sent) AS message_count,
+                       COUNT(DISTINCT dialog_id) AS dialog_count,
+                       SUM(avg_response_seconds * response_count) / NULLIF(SUM(response_count), 0) AS avg_response_time
+                FROM dialog_operator_stats
+                WHERE started_at >= %s AND started_at < %s
+                GROUP BY operator_name
+                ORDER BY dialog_count DESC
+                """,
+                (start_iso, end_exclusive_iso),
+            ).fetchall()
+
+        agent_breakdown: List[dict] = []
+        for row in agent_rows:
+            agent_name = row["operator_name"] or "Без имени"
+            messages_sent = int(row["message_count"] or 0)
+            dialogs_handled = int(row["dialog_count"] or 0)
+            avg_msgs = messages_sent / dialogs_handled if dialogs_handled else 0.0
+            avg_rt = (
+                float(row["avg_response_time"]) / 60.0
+                if row["avg_response_time"] is not None else None
+            )
+            agent_breakdown.append({
+                "name": agent_name,
+                "messages": messages_sent,
+                "dialogs": dialogs_handled,
+                "avg_messages_per_dialog": avg_msgs,
+                "avg_response_time_minutes": avg_rt,
+                "last_activity": None,
+            })
+
+        # ══════════════════════════════════════════════════════
+        # 7. RECENT ACTIVITY (by day)
+        # ══════════════════════════════════════════════════════
+        activity_rows = execute(
+            """
+            SELECT DATE(started_at) AS day, COUNT(*) AS cnt
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+            """
+            + operator_bin_filter_sql
+            + """
+            GROUP BY day
+            """,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchall()
+
+        open_activity_rows = execute(
+            """
+            SELECT DATE(started_at) AS day, COUNT(*) AS cnt
+            FROM chat_dialogs cd
+            WHERE cd.ended_at IS NULL
+              AND cd.started_at >= %s AND cd.started_at < %s
+            """
+            + open_filter
+            + """
+            GROUP BY day
+            """,
+            (start_iso, end_exclusive_iso, *open_params),
+        ).fetchall()
+
+        incoming_by_day_rows = execute(
+            """
+            SELECT DATE(sq.created_at) AS day, COUNT(*) AS cnt
+            FROM stat_questions sq
+            WHERE sq.created_at >= %s AND sq.created_at < %s
+            """
+            + sq_bin_filter
+            + """
+            GROUP BY day
+            """,
+            sq_params,
+        ).fetchall()
+
+        dialogs_by_day: Dict[str, int] = {}
+        for row in activity_rows:
+            dialogs_by_day[str(row["day"])] = int(row["cnt"] or 0)
+        for row in open_activity_rows:
+            day_key = str(row["day"])
+            dialogs_by_day[day_key] = dialogs_by_day.get(day_key, 0) + int(row["cnt"] or 0)
+
+        incoming_by_day: Dict[str, int] = {}
+        for row in incoming_by_day_rows:
+            incoming_by_day[str(row["day"])] = int(row["cnt"] or 0)
+
+        recent_activity: List[dict] = []
+        for offset in range(span):
+            day = start_date + timedelta(days=offset)
+            day_key = day.isoformat()
+            recent_activity.append({
+                "date": day_key,
+                "dialogs": dialogs_by_day.get(day_key, 0),
+                "incoming_messages": incoming_by_day.get(day_key, 0),
+            })
+
+        # ══════════════════════════════════════════════════════
+        # 8. RECURRING REQUESTS (self-join on dialog_stats by BIN)
+        # ══════════════════════════════════════════════════════
+        recurring_requests_count = 0
+        recurring_requests_percentage: Optional[float] = None
+        _rec_bin_filter = operator_bin_filter_sql.replace("ds.", "ds2.")
+        recurring_row = execute(
+            """
+            SELECT COUNT(DISTINCT ds2.dialog_id) AS recurring_count
+            FROM dialog_stats ds1
+            JOIN dialog_stats ds2 ON ds1.bin = ds2.bin
+            WHERE ds1.ended_at IS NOT NULL
+              AND ds2.started_at > ds1.ended_at
+              AND CAST(ds2.started_at AS TIMESTAMP) <= CAST(ds1.ended_at AS TIMESTAMP) + INTERVAL '%s days'
+              AND ds2.started_at >= %s AND ds2.started_at < %s
+            """
+            + _rec_bin_filter,
+            (span, start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchone()
+        recurring_requests_count = int(recurring_row["recurring_count"] or 0)
+
+        total_period_dialogs = requests_with_contract + requests_without_contract
+        if total_period_dialogs > 0:
+            recurring_requests_percentage = (
+                recurring_requests_count / total_period_dialogs
+            ) * 100
+
+        # ══════════════════════════════════════════════════════
+        # 9. PEAK LOAD HEATMAP
+        # ══════════════════════════════════════════════════════
+        heatmap_rows = execute(
+            """
+            SELECT
+                EXTRACT(ISODOW FROM CAST(ds.started_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS day_of_week,
+                EXTRACT(HOUR FROM CAST(ds.started_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS hour_of_day,
+                COUNT(*) AS count
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+            """
+            + operator_bin_filter_sql
+            + """
+            GROUP BY day_of_week, hour_of_day
+            """,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchall()
+
+        peak_load_heatmap = [
+            {
+                "day_of_week": int(row["day_of_week"]) - 1,
+                "hour": int(row["hour_of_day"]),
+                "count": int(row["count"]),
+            }
+            for row in heatmap_rows
+        ]
+
+        # ══════════════════════════════════════════════════════
+        # 10. CONTRACT ANALYTICS (top BINs)
+        # ══════════════════════════════════════════════════════
+        contract_rows = execute(
+            """
+            SELECT ds.bin, ds.has_contract, COUNT(*) AS dialog_count
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+              AND ds.bin IS NOT NULL
+            """
+            + operator_bin_filter_sql
+            + """
+            GROUP BY ds.bin, ds.has_contract
+            """,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchall()
 
         top_bins_without_contract_raw = [
-            {"bin": row["chat_bin"] or "Неизвестно", "requests": row["dialog_count"]}
-            for row in bin_contract_stats if row["has_contract"] == 0
+            {"bin": row["bin"] or "Неизвестно", "requests": int(row["dialog_count"])}
+            for row in contract_rows if row["has_contract"] is False
         ]
         top_bins_without_contract_raw.sort(key=lambda x: x["requests"], reverse=True)
         top_bins_without_contract = top_bins_without_contract_raw[:10]
 
         top_bins_with_contract_raw = [
-            {"bin": row["chat_bin"] or "Неизвестно", "requests": row["dialog_count"]}
-            for row in bin_contract_stats if row["has_contract"] == 1
+            {"bin": row["bin"] or "Неизвестно", "requests": int(row["dialog_count"])}
+            for row in contract_rows if row["has_contract"] is True
         ]
         top_bins_with_contract_raw.sort(key=lambda x: x["requests"], reverse=True)
         top_bins_with_contract = top_bins_with_contract_raw[:10]
 
-        # Recurring requests (within filter period) — filter by operator's dialogs
-        # Need to re-alias cd -> cd2 for the BIN filter since this query uses cd1/cd2
-        _recurring_bin_filter = operator_dialog_filter_sql.replace("cd.", "cd2.")
-        recurring_requests_count = execute(
+        # ══════════════════════════════════════════════════════
+        # 11. DIALOG METRICS (for region map)
+        # ══════════════════════════════════════════════════════
+        dm_rows = execute(
             """
-            SELECT COUNT(DISTINCT cd2.id) AS recurring_count
-            FROM chat_dialogs cd1
-            JOIN chat_dialogs cd2 ON COALESCE(cd1.bin, (SELECT bin FROM chats c WHERE c.chat_id = cd1.chat_id)) = COALESCE(cd2.bin, (SELECT bin FROM chats c WHERE c.chat_id = cd2.chat_id))
-            WHERE cd1.ended_at IS NOT NULL
-              AND cd2.started_at > cd1.ended_at
-              AND CAST(cd2.started_at AS TIMESTAMP) <= CAST(cd1.ended_at AS TIMESTAMP) + INTERVAL '%s days'
-              AND cd2.started_at >= %s AND cd2.started_at < %s
-            """ + _recurring_bin_filter + """
-            """,
-            (span, start_iso, end_exclusive_iso, *operator_dialog_filter_params)
-        ).fetchone()["recurring_count"] or 0
-        
-        total_period_dialogs = requests_with_contract + requests_without_contract
-        if total_period_dialogs > 0:
-            recurring_requests_percentage = (recurring_requests_count / total_period_dialogs) * 100
-
-        # Peak load heatmap — aggregate by dialog (request) creation time
-        heatmap_rows = execute(
+            SELECT dialog_id, bin, is_ai_closed, avg_response_time_seconds
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
             """
-            SELECT 
-                EXTRACT(ISODOW FROM CAST(cd.started_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS day_of_week,
-                EXTRACT(HOUR FROM CAST(cd.started_at AS TIMESTAMP WITH TIME ZONE) AT TIME ZONE 'Asia/Almaty') AS hour_of_day,
-                COUNT(DISTINCT cd.id) AS count
-            FROM chat_dialogs cd
-            WHERE cd.started_at >= %s AND cd.started_at < %s
-            """ + operator_dialog_filter_sql + """
-            GROUP BY day_of_week, hour_of_day
-            """,
-            (start_iso, end_exclusive_iso, *operator_dialog_filter_params)
+            + operator_bin_filter_sql,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
         ).fetchall()
-        
-        peak_load_heatmap = [
-            {
-                "day_of_week": int(row["day_of_week"]) - 1,
-                "hour": int(row["hour_of_day"]),
-                "count": int(row["count"])
-            }
-            for row in heatmap_rows
-        ]
 
-        # Average First Message Length — filter by operator's dialogs
-        first_msg_len_row = execute(
-            """
-            WITH first_incoming AS (
-                SELECT m.dialog_id, MIN(m.created_at) AS first_msg_at
-                FROM """ + message_union_sql + """ m
-                WHERE m.direction = 'incoming'
-                  AND m.created_at >= %s AND m.created_at < %s
-                """ + operator_incoming_dialog_filter_sql + """
-                GROUP BY m.dialog_id
+        dialog_metrics: List[dict] = []
+        for row in dm_rows:
+            rt_min = (
+                float(row["avg_response_time_seconds"]) / 60.0
+                if row["avg_response_time_seconds"] is not None else None
             )
-            SELECT AVG(LENGTH(m.text)) AS avg_len
-            FROM """ + message_union_sql + """ m
-            JOIN first_incoming fi ON m.dialog_id = fi.dialog_id AND m.created_at = fi.first_msg_at
-            WHERE m.direction = 'incoming'
-            """,
-            (start_iso, end_exclusive_iso, *operator_incoming_dialog_filter_params)
-        ).fetchone()
-        if first_msg_len_row and first_msg_len_row["avg_len"] is not None:
-            average_first_message_length = float(first_msg_len_row["avg_len"])
+            dialog_metrics.append({
+                "dialog_id": int(row["dialog_id"]),
+                "bin": row["bin"],
+                "is_open": False,
+                "is_ai_closed": bool(row["is_ai_closed"]),
+                "response_time_minutes": rt_min,
+            })
 
-    dialog_response_times: Dict[int, List[float]] = {}
-    for rt in response_time_dialogs:
-        did = rt["dialog_id"]
-        dialog_response_times.setdefault(did, []).append(rt["response_time_minutes"])
-
-    dialog_metrics = []
-    for row in dialog_metrics_rows:
-        did = row["id"]
-        rt_list = dialog_response_times.get(did)
-        rt_avg = sum(rt_list) / len(rt_list) if rt_list else None
-        
-        is_closed = row["ended_at"] is not None
-        is_ai_closed = is_closed and row["is_ai_closed"]
-
-        dialog_metrics.append({
-            "dialog_id": did,
-            "bin": row["active_bin"],
-            "is_open": not is_closed,
-            "is_ai_closed": is_ai_closed,
-            "response_time_minutes": rt_avg,
-        })
+        # Add open dialogs to dialog_metrics
+        open_dm_rows = execute(
+            """
+            SELECT cd.id AS dialog_id,
+                   COALESCE(cd.bin, c.bin) AS bin
+            FROM chat_dialogs cd
+            LEFT JOIN chats c ON c.chat_id = cd.chat_id
+            WHERE cd.ended_at IS NULL
+              AND cd.started_at >= %s AND cd.started_at < %s
+            """
+            + open_filter,
+            (start_iso, end_exclusive_iso, *open_params),
+        ).fetchall()
+        for row in open_dm_rows:
+            dialog_metrics.append({
+                "dialog_id": int(row["dialog_id"]),
+                "bin": row["bin"],
+                "is_open": True,
+                "is_ai_closed": False,
+                "response_time_minutes": None,
+            })
 
     return {
         "total_dialogs": int(total_dialogs),
@@ -3387,6 +3729,7 @@ def get_dashboard_summary(
         "peak_load_heatmap": peak_load_heatmap,
         "updated_at": now.isoformat(),
     }
+
 
 
 def user_can_access_chat(

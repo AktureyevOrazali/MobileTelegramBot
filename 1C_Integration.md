@@ -72,12 +72,16 @@
         Возврат;
     КонецЕсли;
 
-    // 2. Перехват клика по кнопке "Отправить"
+    // 2. Перехват клика по кнопкам (Отправить, Завершить обращение)
     Если ДанныеСобытия.Anchor <> Неопределено Тогда
         Для Каждого Атрибут Из ДанныеСобытия.Anchor.attributes Цикл
             Если Атрибут.name = "data-button-id" И Атрибут.value = "Exchange" Тогда
                 СтандартнаяОбработка = Ложь;
                 ВыполнитьОтправкуИзHTML();
+                Прервать;
+            ИначеЕсли Атрибут.name = "data-button-id" И Атрибут.value = "CloseDialog" Тогда
+                СтандартнаяОбработка = Ложь;
+                ЗавершитьОбращение();
                 Прервать;
             КонецЕсли;
         КонецЦикла;
@@ -283,6 +287,35 @@
         Если НРег(П.Представление) = НРег(Section) Тогда Section = П.Значение; Возврат; КонецЕсли;
     КонецЦикла;
 КонецПроцедуры
+
+&НаКлиенте
+Процедура ЗавершитьОбращение()
+    Если ПустаяСтрока(ExternalChatId) Тогда
+        Сообщить("Невозможно завершить: нет идентификатора чата.");
+        Возврат;
+    КонецЕсли;
+    
+    Попытка
+        Результат = ЗавершитьОбращениеНаСервере(ExternalChatId, ChatId);
+        Если Результат <> Неопределено И Результат.Свойство("status") Тогда
+            Если Результат.status = "ok" Тогда
+                Сообщить("Обращение завершено.");
+            ИначеЕсли Результат.status = "no_active_dialog" Тогда
+                Сообщить("Нет активного обращения для завершения.");
+            Иначе
+                Сообщить("Ответ: " + Результат.status);
+            КонецЕсли;
+        КонецЕсли;
+        ОбновитьИсторию(Неопределено, Ложь);
+    Исключение
+        Сообщить("Ошибка при завершении: " + ОписаниеОшибки());
+    КонецПопытки;
+КонецПроцедуры
+
+&НаСервере
+Функция ЗавершитьОбращениеНаСервере(P1, P2)
+    Возврат РеквизитФормыВЗначение("Объект").ЗавершитьОбращениеMobileBot(P1, P2);
+КонецФункции
 
 Код модуля объекта внешней формы
 
@@ -599,6 +632,28 @@
     КонецПопытки;
 КонецФункции
 
+Функция ЗавершитьОбращениеMobileBot(ExternalChatId, ChatId=Неопределено) Экспорт
+    Заголовки = Новый Соответствие;
+    ВставитьЗаголовок(Заголовки, "Content-Type", "application/json");
+    ВставитьЗаголовок(Заголовки, "X-Integration-Token", ТокенИнтеграцииMobileBot());
+    
+    Д = Новый Структура;
+    Д.Вставить("external_chat_id", ExternalChatId);
+    Если ЗначениеЗаполнено(ChatId) Тогда
+        Д.Вставить("chat_id", ChatId);
+    КонецЕсли;
+    
+    ТелоJSON = ToJSON(Д);
+    Ответ = ВыполнитьPOST("/integrations/1c/close", Заголовки, ТелоJSON);
+    
+    Если Ответ.КодСостояния <> 200 Тогда
+        ТекстОшибки = Ответ.ПолучитьТелоКакСтроку();
+        ВызватьИсключение СтрШаблон("Ошибка HTTP %1: %2", Ответ.КодСостояния, ТекстОшибки);
+    КонецЕсли;
+    
+    Возврат FromJSON(Ответ.ПолучитьТелоКакСтроку());
+КонецФункции
+
 #КонецОбласти
 
 #Область СервисныеФункции
@@ -704,6 +759,36 @@ body.theme-light .top-bar-title {
 .top-bar-right {
   float: right;
   margin-top: 9px;
+}
+
+/* Кнопка "Завершить обращение" в шапке */
+.close-dialog-button {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+  border: none;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+body.theme-dark .close-dialog-button {
+  background: #4a3030;
+  color: #f5a5a5;
+}
+body.theme-dark .close-dialog-button:hover {
+  background: #6b3a3a;
+}
+body.theme-light .close-dialog-button {
+  background: #fdecea;
+  color: #c62828;
+}
+body.theme-light .close-dialog-button:hover {
+  background: #f5c6c6;
 }
 
 /* ===== ОБЛАСТЬ СООБЩЕНИЙ ===== */
@@ -1212,6 +1297,10 @@ window.onload = function() {
     <div class="top-bar-inner">
       <span class="top-bar-title">Чат поддержки</span>
       <span class="top-bar-right">
+        <a href="#"
+           class="close-dialog-button"
+           data-button-id="CloseDialog"
+           onclick="return false;">Завершить</a>
         <button type="button"
                 id="themeToggle"
                 class="theme-toggle-button"

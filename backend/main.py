@@ -13,6 +13,7 @@ from urllib3.exceptions import ReadTimeoutError
 
 from . import require_env
 from .api import app
+from . import database
 from .telegram_bot import bot
 
 
@@ -64,6 +65,31 @@ class BotPollingThread(threading.Thread):
         return self._exception
 
 
+class CleanupThread(threading.Thread):
+    """Фоновый поток: каждый час удаляет закрытые диалоги старше 24 часов."""
+
+    INTERVAL_SECONDS = 3600  # 1 hour
+
+    def __init__(self) -> None:
+        super().__init__(daemon=True)
+        self._stopping = threading.Event()
+
+    def run(self) -> None:
+        logger.info("CleanupThread started (interval=%ds)", self.INTERVAL_SECONDS)
+        while not self._stopping.is_set():
+            try:
+                removed = database.cleanup_expired_dialogs(max_age_hours=24)
+                if removed:
+                    logger.info("CleanupThread: removed %d expired dialog(s)", removed)
+            except Exception:
+                logger.exception("CleanupThread: error during cleanup")
+            self._stopping.wait(timeout=self.INTERVAL_SECONDS)
+        logger.info("CleanupThread stopped")
+
+    def stop(self) -> None:
+        self._stopping.set()
+
+
 def main() -> None:
     host = require_env("HOST")
     log_level = require_env("LOG_LEVEL")
@@ -74,6 +100,9 @@ def main() -> None:
 
     bot_thread = BotPollingThread()
     bot_thread.start()
+
+    cleanup_thread = CleanupThread()
+    cleanup_thread.start()
 
     # Конфигурируем uvicorn как управляемый сервер, чтобы перехватывать сигналы и завершаться корректно
     config = uvicorn.Config(
@@ -105,6 +134,13 @@ def main() -> None:
         except Exception:
             pass
         bot_thread.join(timeout=10)
+
+        # Останов фонового очистителя
+        try:
+            cleanup_thread.stop()
+        except Exception:
+            pass
+        cleanup_thread.join(timeout=5)
 
         # Если в потоке бота была ошибка — пробрасываем её наверх
         if bot_thread.exception:

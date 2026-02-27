@@ -1319,7 +1319,8 @@ def close_dialog(
     chat_title = chat.get("title") if chat else None
     chat_type = chat.get("type") if chat else None
     notification_text = (
-        "Диалог закрыт. 🤖 AI снова включён. Напишите новое сообщение, чтобы открыть его заново."
+        "Обращение закрыто оператором. "
+        "🤖 AI снова включён. Напишите новое сообщение, чтобы возобновить диалог."
     )
 
     closed_at = datetime.now(timezone.utc).isoformat()
@@ -1689,6 +1690,8 @@ def _onec_history_core(
         normalized_bin = (bin_value or "").strip() or None
         if normalized_bin is not None:
             try:
+                # Убеждаемся, что чат существует, перед созданием диалога
+                database.upsert_chat(resolved_chat_id, "External User", None, "onec", external_chat_id=normalized_external)
                 resolved_dialog_id = database.ensure_active_chat_dialog(
                     resolved_chat_id, normalized_bin
                 )
@@ -1850,6 +1853,48 @@ def onec_ack(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"status": "ok"}
+
+
+class OneCCloseRequest(BaseModel):
+    external_chat_id: str = Field(min_length=1, max_length=128)
+    chat_id: int | None = None
+    bin: str | None = None
+
+
+@router.post("/integrations/1c/close")
+def onec_close_dialog(
+    body: OneCCloseRequest,
+    _: None = Depends(require_onec_token),
+):
+    """1С закрывает активный диалог (обращение) клиента."""
+    external_chat_id = body.external_chat_id.strip()
+    if not external_chat_id:
+        raise HTTPException(status_code=400, detail="external_chat_id обязателен")
+
+    chat_id = _resolve_onec_chat_id(external_chat_id, body.chat_id)
+    active = database.get_active_chat_dialog(chat_id)
+    if active is None:
+        return {"status": "no_active_dialog", "message": "Нет активного диалога для закрытия"}
+
+    dialog_id = int(active["id"])
+    database.close_chat_dialog(dialog_id, closed_by="client")
+
+    # Notify Telegram client if applicable
+    try:
+        from backend.telegram_bot import bot as tg_bot
+        tg_bot.send_message(
+            chat_id,
+            "Обращение завершено клиентом из 1С. 🤖 AI снова включён.\n"
+            "Напишите новое сообщение, чтобы возобновить диалог.",
+        )
+    except Exception:
+        pass  # Telegram notification is best-effort
+
+    logger.info(
+        "1C client closed dialog: ext_id=%s, chat_id=%s, dialog_id=%s",
+        external_chat_id, chat_id, dialog_id,
+    )
+    return {"status": "ok", "dialog_id": dialog_id}
 
 
 @router.post("/dialogs/{dialog_id}/favorite")

@@ -346,6 +346,18 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
         };
     }, [loadSectionsAndChats]);
 
+    // SSE Stream for real-time updates
+    useEffect(() => {
+        const cleanup = apiClient.connectToStream({
+            onMessage: (messageRaw) => {
+                // When a new message arrives, we trigger a silent reload
+                // of the current chats to ensure UI is instantly updated
+                loadSectionsAndChats(false);
+            }
+        });
+        return cleanup;
+    }, [apiClient, loadSectionsAndChats]);
+
     /* ---- Filter options ---- */
     const sectionOptions = useMemo(
         () => [{ value: "", label: "Все разделы" }, ...sections.map(s => ({ value: String(s.id), label: s.title }))],

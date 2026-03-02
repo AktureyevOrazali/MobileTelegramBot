@@ -351,6 +351,7 @@ def _init_db() -> None:
             first_message_text TEXT,
             first_message_length INTEGER,
             has_contract BOOLEAN,
+            csat_rating INTEGER,
             created_at TEXT NOT NULL
         )
         """,
@@ -430,6 +431,17 @@ def _init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_appeals_chat_id
         ON appeals(chat_id)
         """,
+        """
+        CREATE TABLE IF NOT EXISTS reply_templates (
+            id BIGSERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            text TEXT NOT NULL,
+            section TEXT,
+            sort_order INTEGER DEFAULT 0,
+            created_by BIGINT,
+            created_at TEXT NOT NULL
+        )
+        """,
     ]
 
     with _lock:
@@ -472,6 +484,7 @@ def _init_db() -> None:
     _ensure_column("dialog_stats", "first_message_length", "INTEGER")
     _ensure_column("dialog_stats", "has_contract", "BOOLEAN")
     _ensure_column("dialog_stats", "appeal_id", "BIGINT")
+    _ensure_column("dialog_stats", "csat_rating", "INTEGER")
 
     # Unique constraint on dialog_stats — one row per appeal
     with _lock:
@@ -518,6 +531,27 @@ def _init_db() -> None:
         execute(
             "UPDATE chat_dialogs SET operator_mode = 0 WHERE operator_mode IS NULL"
         )
+
+    # Seed default reply templates (only if the table is empty)
+    with _lock:
+        count = execute("SELECT COUNT(*) AS cnt FROM reply_templates").fetchone()
+        if count and int(count["cnt"]) == 0:
+            now = datetime.now(timezone.utc).isoformat()
+            default_templates = [
+                ("Приветствие", "Здравствуйте! Чем могу помочь?", 0),
+                ("Уточнение", "Уточните, пожалуйста, ваш вопрос подробнее.", 1),
+                ("Ожидание", "Пожалуйста, подождите, я уточню информацию.", 2),
+                ("Благодарность", "Спасибо за обращение! Если будут ещё вопросы — пишите.", 3),
+                ("Перевод на специалиста", "Перевожу ваш вопрос на профильного специалиста. Ожидайте, пожалуйста.", 4),
+            ]
+            for title, text, sort_order in default_templates:
+                execute(
+                    """
+                    INSERT INTO reply_templates (title, text, sort_order, created_at)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (title, text, sort_order, now),
+                )
 
 
 def _sync_sequence(table: str, column: str = "id") -> None:
@@ -1153,6 +1187,47 @@ def close_appeal(
         "Closed appeal %s for dialog %s (by %s)", appeal_id, dialog_id, closed_by
     )
     return appeal_id
+
+
+def save_csat_rating(dialog_id: int, rating: int) -> bool:
+    """Save a CSAT rating (1-5) for a closed dialog.
+
+    Updates the csat_rating column in dialog_stats.
+    Returns True if the rating was saved, False if no dialog_stats row exists.
+    """
+    if rating < 1 or rating > 5:
+        logger.warning("Invalid CSAT rating %s for dialog %s", rating, dialog_id)
+        return False
+    with _lock:
+        cursor = execute(
+            """
+            UPDATE dialog_stats 
+            SET csat_rating = %s 
+            WHERE dialog_id = %s 
+              AND created_at = (
+                  SELECT MAX(created_at) FROM dialog_stats WHERE dialog_id = %s
+              )
+            """,
+            (rating, dialog_id, dialog_id),
+        )
+        updated = cursor.rowcount > 0
+    if updated:
+        logger.info("Saved CSAT rating %s for dialog %s", rating, dialog_id)
+    else:
+        logger.warning("No dialog_stats row found for dialog %s to save CSAT", dialog_id)
+    return updated
+
+
+def get_csat_for_dialog(dialog_id: int) -> Optional[int]:
+    """Return the CSAT rating for a dialog, or None if not rated."""
+    with _lock:
+        row = execute(
+            "SELECT csat_rating FROM dialog_stats WHERE dialog_id = %s ORDER BY created_at DESC LIMIT 1",
+            (dialog_id,),
+        ).fetchone()
+    if row and row["csat_rating"] is not None:
+        return int(row["csat_rating"])
+    return None
 
 
 def get_active_appeal(dialog_id: int) -> Optional[Dict[str, object]]:
@@ -2573,6 +2648,12 @@ def delete_chat(chat_id: int) -> None:
         ).fetchone()
         if existing is None:
             raise ValueError("Chat not found")
+        
+        # Snapshot metrics for any active dialog before deleting
+        active = get_active_chat_dialog(chat_id)
+        if active:
+            close_chat_dialog(int(active["id"]), closed_by="system")
+
         # Метрики уже записаны в dialog_stats при закрытии диалога — архивация не нужна
         execute("DELETE FROM messages WHERE chat_id = %s", (chat_id,))
         dialog_rows = execute(
@@ -2595,11 +2676,16 @@ def delete_chat(chat_id: int) -> None:
 def delete_chat_dialog(dialog_id: int) -> None:
     with _lock:
         dialog_row = execute(
-            "SELECT id, chat_id, bin FROM chat_dialogs WHERE id = %s",
+            "SELECT id, chat_id, bin, ended_at FROM chat_dialogs WHERE id = %s",
             (dialog_id,),
         ).fetchone()
         if dialog_row is None:
             raise ValueError("Диалог не найден")
+
+        # Snapshot metrics if the dialog is still open
+        if dialog_row["ended_at"] is None:
+            close_chat_dialog(dialog_id, closed_by="system")
+
         chat_id = dialog_row["chat_id"]
         dialog_bin = dialog_row["bin"]
         message_rows = execute(
@@ -2658,8 +2744,14 @@ def _cleanup_orphaned_bins(bins: Iterable[str]) -> None:
         return
     placeholders = ",".join("%s" for _ in cleaned)
     existing_rows = execute(
-        f"SELECT DISTINCT bin FROM chat_dialogs WHERE bin IN ({placeholders})",
-        tuple(cleaned),
+        f"""
+        SELECT DISTINCT bin FROM (
+            SELECT bin FROM chat_dialogs WHERE bin IN ({placeholders})
+            UNION
+            SELECT bin FROM dialog_stats WHERE bin IN ({placeholders})
+        ) as combined_bins
+        """,
+        (*cleaned, *cleaned),
     ).fetchall()
     existing_bins = {row["bin"] for row in existing_rows}
     orphaned = cleaned - existing_bins
@@ -3142,9 +3234,6 @@ def get_dashboard_summary(
         ai_closed_dialogs = int(agg_row["ai_closed"] or 0)
         ai_messages_count = int(agg_row["ai_msgs"] or 0)
         total_resp_count = int(agg_row["resp_count"] or 0)
-        fast_responses = int(agg_row["fast"] or 0)
-        medium_responses = int(agg_row["medium"] or 0)
-        slow_responses = int(agg_row["slow"] or 0)
         sla_violations_count = int(agg_row["sla_v"] or 0)
         avg_messages_before_transfer = (
             float(agg_row["avg_before_transfer"])
@@ -3156,6 +3245,49 @@ def get_dashboard_summary(
         )
         requests_with_contract = int(agg_row["with_contract"] or 0)
         requests_without_contract = int(agg_row["without_contract"] or 0)
+
+        # ══════════════════════════════════════════════════════
+        # 1.5 CSAT METRICS (Separated for precise operator mapping)
+        # ══════════════════════════════════════════════════════
+        csat_op_cond = ""
+        csat_op_params: List[str] = []
+        if operator_id is not None and target:
+            csat_op_cond = """
+              AND EXISTS (
+                  SELECT 1 FROM dialog_operator_stats dos 
+                  WHERE dos.dialog_id = ds.dialog_id 
+                    AND dos.operator_name = %s
+              )
+            """
+            csat_op_params.append(target["name"])
+
+        csat_row = execute(
+            """
+            SELECT
+                AVG(ds.csat_rating) AS csat_avg,
+                COUNT(ds.csat_rating) AS csat_count,
+                COALESCE(SUM(CASE WHEN ds.csat_rating = 1 THEN 1 ELSE 0 END), 0) AS csat_1,
+                COALESCE(SUM(CASE WHEN ds.csat_rating = 2 THEN 1 ELSE 0 END), 0) AS csat_2,
+                COALESCE(SUM(CASE WHEN ds.csat_rating = 3 THEN 1 ELSE 0 END), 0) AS csat_3,
+                COALESCE(SUM(CASE WHEN ds.csat_rating = 4 THEN 1 ELSE 0 END), 0) AS csat_4,
+                COALESCE(SUM(CASE WHEN ds.csat_rating = 5 THEN 1 ELSE 0 END), 0) AS csat_5
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+            """
+            + operator_bin_filter_sql
+            + csat_op_cond,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params, *csat_op_params),
+        ).fetchone()
+
+        csat_average = (
+            round(float(csat_row["csat_avg"]), 2)
+            if csat_row["csat_avg"] is not None else None
+        )
+        csat_count = int(csat_row["csat_count"] or 0)
+        csat_distribution = [
+            {"rating": i, "count": int(csat_row[f"csat_{i}"] or 0)}
+            for i in range(1, 6)
+        ]
 
         # Weighted average response time from dialog_stats
         avg_rt_row = execute(
@@ -3449,7 +3581,8 @@ def get_dashboard_summary(
                 SELECT dos.operator_name,
                        SUM(dos.messages_sent) AS message_count,
                        COUNT(DISTINCT dos.dialog_id) AS dialog_count,
-                       SUM(dos.avg_response_seconds * dos.response_count) / NULLIF(SUM(dos.response_count), 0) AS avg_response_time
+                       SUM(dos.avg_response_seconds * dos.response_count) / NULLIF(SUM(dos.response_count), 0) AS avg_response_time,
+                       AVG(ds.csat_rating) AS avg_csat
                 FROM dialog_operator_stats dos
                 JOIN dialog_stats ds ON ds.dialog_id = dos.dialog_id
                 WHERE dos.started_at >= %s AND dos.started_at < %s
@@ -3464,13 +3597,15 @@ def get_dashboard_summary(
         else:
             agent_rows = execute(
                 """
-                SELECT operator_name,
-                       SUM(messages_sent) AS message_count,
-                       COUNT(DISTINCT dialog_id) AS dialog_count,
-                       SUM(avg_response_seconds * response_count) / NULLIF(SUM(response_count), 0) AS avg_response_time
-                FROM dialog_operator_stats
-                WHERE started_at >= %s AND started_at < %s
-                GROUP BY operator_name
+                SELECT dos.operator_name,
+                       SUM(dos.messages_sent) AS message_count,
+                       COUNT(DISTINCT dos.dialog_id) AS dialog_count,
+                       SUM(dos.avg_response_seconds * dos.response_count) / NULLIF(SUM(dos.response_count), 0) AS avg_response_time,
+                       AVG(ds.csat_rating) AS avg_csat
+                FROM dialog_operator_stats dos
+                JOIN dialog_stats ds ON ds.dialog_id = dos.dialog_id
+                WHERE dos.started_at >= %s AND dos.started_at < %s
+                GROUP BY dos.operator_name
                 ORDER BY dialog_count DESC
                 """,
                 (start_iso, end_exclusive_iso),
@@ -3486,6 +3621,9 @@ def get_dashboard_summary(
                 float(row["avg_response_time"]) / 60.0
                 if row["avg_response_time"] is not None else None
             )
+            avg_csat = (
+                float(row["avg_csat"]) if row["avg_csat"] is not None else None
+            )
             agent_breakdown.append({
                 "name": agent_name,
                 "messages": messages_sent,
@@ -3493,6 +3631,7 @@ def get_dashboard_summary(
                 "avg_messages_per_dialog": avg_msgs,
                 "avg_response_time_minutes": avg_rt,
                 "last_activity": None,
+                "avg_csat": avg_csat,
             })
 
         # ══════════════════════════════════════════════════════
@@ -3727,6 +3866,9 @@ def get_dashboard_summary(
         "top_bins_without_contract": top_bins_without_contract,
         "top_bins_with_contract": top_bins_with_contract,
         "peak_load_heatmap": peak_load_heatmap,
+        "csat_average": csat_average,
+        "csat_count": csat_count,
+        "csat_distribution": csat_distribution,
         "updated_at": now.isoformat(),
     }
 
@@ -4072,3 +4214,117 @@ def sync_bins_with_contracts() -> Dict[str, Any]:
         "total_bins": len(all_bins),
         "bins_with_contracts": len(bins_with_contracts),
     }
+
+
+# ============================================================================
+# Reply Templates (Шаблоны быстрых ответов)
+# ============================================================================
+
+
+def list_reply_templates(section: str | None = None) -> List[dict]:
+    """Returns all reply templates, optionally filtered by section."""
+    with _lock:
+        if section:
+            rows = execute(
+                """
+                SELECT id, title, text, section, sort_order, created_by, created_at
+                FROM reply_templates
+                WHERE section = %s OR section IS NULL
+                ORDER BY sort_order ASC, id ASC
+                """,
+                (section,),
+            ).fetchall()
+        else:
+            rows = execute(
+                """
+                SELECT id, title, text, section, sort_order, created_by, created_at
+                FROM reply_templates
+                ORDER BY sort_order ASC, id ASC
+                """
+            ).fetchall()
+    return [
+        {
+            "id": int(row["id"]),
+            "title": row["title"],
+            "text": row["text"],
+            "section": row["section"],
+            "sort_order": int(row["sort_order"] or 0),
+            "created_by": int(row["created_by"]) if row["created_by"] else None,
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def create_reply_template(
+    *,
+    title: str,
+    text: str,
+    section: str | None = None,
+    sort_order: int = 0,
+    created_by: int | None = None,
+) -> dict:
+    """Creates a new reply template and returns it."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        row = execute(
+            """
+            INSERT INTO reply_templates (title, text, section, sort_order, created_by, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, title, text, section, sort_order, created_by, created_at
+            """,
+            (title, text, section, sort_order, created_by, now),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Failed to create reply template")
+    return {
+        "id": int(row["id"]),
+        "title": row["title"],
+        "text": row["text"],
+        "section": row["section"],
+        "sort_order": int(row["sort_order"] or 0),
+        "created_by": int(row["created_by"]) if row["created_by"] else None,
+        "created_at": row["created_at"],
+    }
+
+
+def update_reply_template(
+    template_id: int,
+    *,
+    title: str,
+    text: str,
+    section: str | None = None,
+    sort_order: int = 0,
+) -> dict:
+    """Updates an existing reply template and returns it."""
+    with _lock:
+        row = execute(
+            """
+            UPDATE reply_templates
+            SET title = %s, text = %s, section = %s, sort_order = %s
+            WHERE id = %s
+            RETURNING id, title, text, section, sort_order, created_by, created_at
+            """,
+            (title, text, section, sort_order, template_id),
+        ).fetchone()
+    if row is None:
+        raise ValueError("Шаблон не найден")
+    return {
+        "id": int(row["id"]),
+        "title": row["title"],
+        "text": row["text"],
+        "section": row["section"],
+        "sort_order": int(row["sort_order"] or 0),
+        "created_by": int(row["created_by"]) if row["created_by"] else None,
+        "created_at": row["created_at"],
+    }
+
+
+def delete_reply_template(template_id: int) -> bool:
+    """Deletes a reply template. Returns True if deleted, False if not found."""
+    with _lock:
+        cursor = execute(
+            "DELETE FROM reply_templates WHERE id = %s",
+            (template_id,),
+        )
+    return cursor.rowcount > 0

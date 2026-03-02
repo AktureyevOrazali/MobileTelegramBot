@@ -13,6 +13,7 @@ class ChatDetailScreen extends StatefulWidget {
 class _ChatDetailScreenState extends State<ChatDetailScreen> {
   late ChatSummary _chat;
   late Timer _timer;
+  StreamSubscription<Map<String, dynamic>>? _sseSub;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   List<Message> _messages = [];
@@ -25,6 +26,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   bool _updatingStatus = false;
   int? _lastMessageId;
   bool _showScrollFab = false;
+  List<ReplyTemplate> _templates = [];
 
   void _dismissKeyboard() {
     FocusManager.instance.primaryFocus?.unfocus();
@@ -39,13 +41,23 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       'dialogId': _chat.dialogId,
     });
     _fetchMessages();
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _fetchMessages());
+    // Fallback timer
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _fetchMessages());
     _isFavorite = _chat.isFavorite;
     _scrollController.addListener(_onScroll);
+    _loadTemplates();
+
+    widget.apiClient.connectToStream();
+    _sseSub = widget.apiClient.sseStream.listen((data) {
+      if (data['chat_id'] == _chat.chatId) {
+        if (mounted) _fetchMessages();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _sseSub?.cancel();
     _dismissKeyboard();
     UiLogger.page('Chat detail', state: 'closed', details: {
       'chat': _chat.title,
@@ -85,7 +97,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
       // Автоскроллим только если пришли новые сообщения
       // и пользователь не читает историю (не отскроллил вверх).
-      if (newLastId != null && newLastId != previousLastId && _shouldAutoScroll()) {
+      if (previousLastId != null && newLastId != null && newLastId != previousLastId) {
         _scrollToBottom(animated: true);
       }
     } catch (error) {
@@ -97,6 +109,78 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       });
       UiLogger.action('MESSAGES', 'fetch failed', details: {'reason': error.toString()});
     }
+  }
+
+  Future<void> _loadTemplates() async {
+    try {
+      final templates = await widget.apiClient.fetchReplyTemplates(
+        section: _chat.section,
+      );
+      if (!mounted) return;
+      setState(() {
+        _templates = templates;
+      });
+    } catch (_) {
+      // шаблоны не критичны — тихо игнорируем ошибку
+    }
+  }
+
+  void _showTemplatesPicker() {
+    if (_templates.isEmpty) return;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.flash_on_rounded, color: colorScheme.primary, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Быстрые ответы',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _templates.length,
+                  itemBuilder: (context, index) {
+                    final template = _templates[index];
+                    return ListTile(
+                      title: Text(template.title),
+                      subtitle: Text(
+                        template.text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _messageController.text = template.text;
+                        _messageController.selection = TextSelection.fromPosition(
+                          TextPosition(offset: template.text.length),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   bool _shouldAutoScroll() {
@@ -927,6 +1011,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                                   onTap: () => _scrollToBottom(animated: true),
                                 ),
                               ),
+                              if (_templates.isNotEmpty)
+                                IconButton(
+                                  onPressed: canSend && !_deleting ? _showTemplatesPicker : null,
+                                  icon: const Icon(Icons.flash_on_rounded),
+                                  color: colorScheme.primary,
+                                  tooltip: 'Быстрые ответы',
+                                  iconSize: 20,
+                                ),
                               const SizedBox(width: 4),
                               DecoratedBox(
                                 decoration: BoxDecoration(

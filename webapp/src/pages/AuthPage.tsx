@@ -62,8 +62,18 @@ const AuthPage: React.FC<AuthPageProps> = ({ apiClient, onAuthenticated }) => {
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <div className="auth-brand">
+          <div className="auth-brand__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          </div>
+          <span className="auth-brand__name">MobileBot</span>
+          <span className="auth-brand__tagline">Платформа для управления диалогами</span>
+        </div>
+
         <h2 className="auth-card__title">
-          {isLogin ? 'Вход' : 'Регистрация'}
+          {isLogin ? 'Вход в аккаунт' : 'Создание аккаунта'}
         </h2>
 
         <form onSubmit={handleSubmit} className="auth-form">

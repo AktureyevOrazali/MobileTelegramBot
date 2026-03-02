@@ -1,6 +1,8 @@
+import 'package:fl_chart/fl_chart.dart';
+
 part of '../main.dart';
 
-enum _DashboardTab { overview, operators, sections, activity }
+enum _DashboardTab { overview, operators, sections, activity, commercial }
 enum _TimePreset { today, yesterday, last7, last30, last90, custom }
 enum _TopMetric { avgResponse, messages, dialogs }
 
@@ -835,6 +837,55 @@ class _DashboardViewState extends State<DashboardView> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 6),
+                  SizedBox(
+                    height: 32,
+                    child: PopupMenuButton<String>(
+                      onSelected: (fmt) async {
+                        final range = _activeDateRange();
+                        try {
+                          final path = await widget.apiClient.downloadDashboardExport(
+                            operatorId: _activeOperatorId,
+                            startDate: _toApiDate(range.start),
+                            endDate: _toApiDate(range.end),
+                            format: fmt,
+                          );
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Отчёт сохранён: $path')),
+                          );
+                        } catch (error) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Ошибка: $error')),
+                          );
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'xlsx', child: Text('📥 Excel')),
+                        PopupMenuItem(value: 'pdf', child: Text('📄 PDF')),
+                      ],
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.download_rounded, size: 14, color: Colors.green.shade700),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Экспорт',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.green.shade700),
+                            ),
+                            Icon(Icons.arrow_drop_down, size: 16, color: Colors.green.shade700),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1010,6 +1061,11 @@ class _DashboardViewState extends State<DashboardView> {
                           selected: _dashboardTab == _DashboardTab.activity,
                           onTap: () => _setDashboardTab(_DashboardTab.activity),
                         ),
+                        _DashboardMiniChip(
+                          label: 'Аналитика',
+                          selected: _dashboardTab == _DashboardTab.commercial,
+                          onTap: () => _setDashboardTab(_DashboardTab.commercial),
+                        ),
                       ],
                     ),
                   ),
@@ -1060,51 +1116,83 @@ class _DashboardViewState extends State<DashboardView> {
                   ),
                 )
               else
-                Column(
-                  children: data.sectionBreakdown.map((section) {
-                    final progress = (section.percentage / 100).clamp(0, 1);
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(child: Text(section.title, style: theme.textTheme.bodyMedium)),
-                              const SizedBox(width: 12),
-                              Text(
-                                '${numberFormatter.format(section.dialogs)} · ${section.percentage.toStringAsFixed(1)}%',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: Container(
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: colorScheme.outlineVariant.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: FractionallySizedBox(
-                                alignment: Alignment.centerLeft,
-                                widthFactor: progress.toDouble(),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    gradient: AppGradients.primaryAction(colorScheme),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                ),
+                Builder(
+                  builder: (context) {
+                    final colors = const [
+                      Color(0xFF6366F1),
+                      Color(0xFF3B82F6),
+                      Color(0xFF06B6D4),
+                      Color(0xFF10B981),
+                      Color(0xFFF59E0B),
+                      Color(0xFFEF4444),
+                      Color(0xFF8B5CF6),
+                      Color(0xFFEC4899),
+                    ];
+                    return Column(
+                      children: [
+                        SizedBox(
+                          height: 160,
+                          child: PieChart(
+                            PieChartData(
+                              sectionsSpace: 2,
+                              centerSpaceRadius: 40,
+                              sections: List.generate(
+                                data.sectionBreakdown.length,
+                                (i) {
+                                  final section = data.sectionBreakdown[i];
+                                  return PieChartSectionData(
+                                    color: colors[i % colors.length],
+                                    value: section.percentage,
+                                    title: '${section.percentage.toStringAsFixed(0)}%',
+                                    radius: 20,
+                                    titleStyle: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 16),
+                        ...List.generate(data.sectionBreakdown.length, (i) {
+                          final section = data.sectionBreakdown[i];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: colors[i % colors.length],
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    section.title,
+                                    style: theme.textTheme.bodyMedium,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Text(
+                                  numberFormatter.format(section.dialogs),
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
                     );
-                  }).toList(),
+                  },
                 ),
             ],
           ),
@@ -1514,6 +1602,371 @@ class _DashboardViewState extends State<DashboardView> {
       ),
     );
 
+    final aiCard = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.smart_toy_rounded, size: 18, color: Color(0xFF8B5CF6)),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'AI Ассистент',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _DashboardKvRow(
+                    label: 'Решено ботом',
+                    value: numberFormatter.format(data.aiClosedDialogs),
+                    valueColor: const Color(0xFF3B82F6),
+                  ),
+                  _DashboardKvRow(
+                    label: 'Переведено оператору',
+                    value: numberFormatter.format(data.transferredToOperatorDialogs),
+                  ),
+                  const SizedBox(height: 6),
+                  Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
+                  const SizedBox(height: 8),
+                  _DashboardKvRow(
+                    label: 'Сообщений от бота',
+                    value: numberFormatter.format(data.aiMessagesCount),
+                  ),
+                  _DashboardKvRow(
+                    label: 'Ср. до перевода',
+                    value: data.avgMessagesBeforeTransfer != null
+                        ? data.avgMessagesBeforeTransfer!.toStringAsFixed(1)
+                        : '—',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final slaCard = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.health_and_safety_rounded, size: 18, color: colorScheme.primary),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Качество обслуживания',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Builder(
+                    builder: (context) {
+                      final slaValue = data.slaCompliancePercentage ?? 0.0;
+                      final gaugeColor = slaValue >= 80 ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
+                      return Column(
+                        children: [
+                          Stack(
+                            alignment: Alignment.bottomCenter,
+                            children: [
+                              SizedBox(
+                                height: 110,
+                                width: 220,
+                                child: PieChart(
+                                  PieChartData(
+                                    startDegreeOffset: 180,
+                                    sectionsSpace: 0,
+                                    centerSpaceRadius: double.infinity,
+                                    sections: [
+                                      PieChartSectionData(
+                                        value: slaValue,
+                                        color: gaugeColor,
+                                        showTitle: false,
+                                        radius: 12,
+                                      ),
+                                      PieChartSectionData(
+                                        value: 100 - slaValue,
+                                        color: theme.colorScheme.outlineVariant.withOpacity(0.3),
+                                        showTitle: false,
+                                        radius: 12,
+                                      ),
+                                      PieChartSectionData(
+                                        value: 100,
+                                        color: Colors.transparent,
+                                        showTitle: false,
+                                        radius: 12,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      data.slaCompliancePercentage != null
+                                          ? '${data.slaCompliancePercentage!.toStringAsFixed(1)}%'
+                                          : '—',
+                                      style: theme.textTheme.headlineLarge?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        color: gaugeColor,
+                                      ),
+                                    ),
+                                    Text(
+                                      'SLA (ответ до 5 мин)',
+                                      style: theme.textTheme.labelMedium?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          _DashboardKvRow(
+                            label: 'Ответов с задержкой',
+                            value: numberFormatter.format(data.slaViolationsCount),
+                            valueColor: data.slaViolationsCount > 0 ? const Color(0xFFEF4444) : null,
+                          ),
+                          const SizedBox(height: 6),
+                          Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
+                          const SizedBox(height: 8),
+                          _DashboardKvRow(
+                            label: 'Повторные обращения',
+                            value: numberFormatter.format(data.recurringRequestsCount),
+                          ),
+                          _DashboardKvRow(
+                            label: 'Доля повторных',
+                            value: data.recurringRequestsPercentage != null
+                                ? '${data.recurringRequestsPercentage!.toStringAsFixed(1)}%'
+                                : '—',
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final csatCard = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            _cardAccentStrip(colorScheme),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEAB308).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.star_rounded, size: 18, color: Color(0xFFEAB308)),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Удовлетворенность (CSAT)',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (data.csatCount == 0)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        child: Column(
+                          children: [
+                            Icon(Icons.star_outline_rounded, size: 32, color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Пока нет оценок.',
+                              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                data.csatAverage?.toStringAsFixed(1) ?? '—',
+                                style: theme.textTheme.displayMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: colorScheme.primary,
+                                  height: 1.1,
+                                ),
+                              ),
+                              Text(
+                                'Средняя оценка',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${numberFormatter.format(data.csatCount)} отзывов',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          flex: 3,
+                          child: SizedBox(
+                            height: 120,
+                            child: BarChart(
+                              BarChartData(
+                                alignment: BarChartAlignment.spaceAround,
+                                maxY: data.csatDistribution.isEmpty
+                                    ? 10
+                                    : data.csatDistribution.map((e) => e.count.toDouble()).reduce(math.max) * 1.2,
+                                barTouchData: BarTouchData(
+                                  enabled: true,
+                                  touchTooltipData: BarTouchTooltipData(
+                                    getTooltipColor: (_) => theme.colorScheme.surfaceContainerHighest,
+                                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                                      final rating = 5 - group.x;
+                                      return BarTooltipItem(
+                                        '$rating Звезд\n${numberFormatter.format(rod.toY)}',
+                                        theme.textTheme.labelMedium!.copyWith(
+                                          color: theme.colorScheme.onSurface,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                  titlesData: FlTitlesData(
+                                    show: true,
+                                    bottomTitles: AxisTitles(
+                                      sideTitles: SideTitles(
+                                        showTitles: true,
+                                        getTitlesWidget: (value, meta) {
+                                          final rating = value.toInt() + 1;
+                                          return Padding(
+                                            padding: const EdgeInsets.only(top: 6),
+                                            child: Text(
+                                              rating.toString(),
+                                              style: theme.textTheme.labelSmall?.copyWith(
+                                                color: theme.colorScheme.onSurfaceVariant,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        reservedSize: 24,
+                                      ),
+                                    ),
+                                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                  ),
+                                  gridData: const FlGridData(show: false),
+                                  borderData: FlBorderData(show: false),
+                                  barGroups: List.generate(
+                                    5,
+                                    (index) {
+                                      final rating = index + 1;
+                                      final match = data.csatDistribution.firstWhere(
+                                        (e) => e.rating == rating,
+                                        orElse: () => CsatDistributionEntry(rating: rating, count: 0),
+                                      );
+                                      
+                                      Color barColor = const Color(0xFFEF4444); // 1, 2
+                                      if (rating == 3) barColor = const Color(0xFFF59E0B);
+                                      if (rating >= 4) barColor = const Color(0xFF22C55E);
+
+                                      return BarChartGroupData(
+                                        x: index,
+                                        barRods: [
+                                          BarChartRodData(
+                                            toY: match.count.toDouble(),
+                                            color: barColor,
+                                            width: 16,
+                                            borderRadius: const BorderRadius.only(
+                                              topLeft: Radius.circular(4),
+                                              topRight: Radius.circular(4),
+                                            ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ),
+                              swapAnimationDuration: Duration.zero,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
     final responseCard = Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Card(
@@ -1691,97 +2144,109 @@ class _DashboardViewState extends State<DashboardView> {
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 )
               else
-                Column(
-                  children: List.generate(topOperators.length, (index) {
-                    final item = topOperators[index];
-                    final metricTitle = switch (_topMetric) {
-                      _TopMetric.avgResponse => 'Среднее время ответа',
-                      _TopMetric.messages => 'Всего сообщений',
-                      _TopMetric.dialogs => 'Всего диалогов',
-                    };
-                    final metricLabel = switch (_topMetric) {
-                      _TopMetric.avgResponse => _formatResponseTime(item.avgResponseTimeMinutes),
-                      _TopMetric.messages => numberFormatter.format(item.messages),
-                      _TopMetric.dialogs => numberFormatter.format(item.dialogs),
-                    };
-                    return Container(
-                      margin: const EdgeInsets.symmetric(vertical: 2),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: index.isEven
-                            ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.15)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(10),
-                        border: index < 3
-                            ? Border(
-                                left: BorderSide(
-                                  color: colorScheme.primary.withValues(alpha: 0.6),
-                                  width: 3,
+                SizedBox(
+                  height: 300,
+                  child: RotatedBox(
+                    quarterTurns: 1,
+                    child: BarChart(
+                      BarChartData(
+                        alignment: BarChartAlignment.spaceAround,
+                        maxY: topOperators.isEmpty
+                            ? 10
+                            : topOperators.map((e) {
+                                switch (_topMetric) {
+                                  case _TopMetric.avgResponse:
+                                    return e.avgResponseTimeMinutes ?? 0.0;
+                                  case _TopMetric.messages:
+                                    return e.messages.toDouble();
+                                  case _TopMetric.dialogs:
+                                    return e.dialogs.toDouble();
+                                }
+                              }).reduce(math.max) * 1.2,
+                        barTouchData: BarTouchData(
+                          enabled: true,
+                          touchTooltipData: BarTouchTooltipData(
+                            getTooltipColor: (_) => theme.colorScheme.surfaceContainerHighest,
+                            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                              final item = topOperators[group.x];
+                              final metricLabel = switch (_topMetric) {
+                                _TopMetric.avgResponse => _formatResponseTime(item.avgResponseTimeMinutes),
+                                _TopMetric.messages => numberFormatter.format(item.messages),
+                                _TopMetric.dialogs => numberFormatter.format(item.dialogs),
+                              };
+                              return BarTooltipItem(
+                                '${item.name}\n$metricLabel',
+                                theme.textTheme.labelMedium!.copyWith(
+                                  color: theme.colorScheme.onSurface,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                              )
-                            : null,
+                              );
+                            },
+                          ),
+                        ),
+                        titlesData: FlTitlesData(
+                          show: true,
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (value, meta) {
+                                if (value < 0 || value >= topOperators.length) return const SizedBox();
+                                final name = topOperators[value.toInt()].name;
+                                return RotatedBox(
+                                  quarterTurns: -1,
+                                  child: Container(
+                                    width: 80,
+                                    padding: const EdgeInsets.only(right: 8),
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                              reservedSize: 80,
+                            ),
+                          ),
+                          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        ),
+                        gridData: const FlGridData(show: false),
+                        borderData: FlBorderData(show: false),
+                        barGroups: List.generate(
+                          topOperators.length,
+                          (index) {
+                            final item = topOperators[index];
+                            final value = switch (_topMetric) {
+                              _TopMetric.avgResponse => item.avgResponseTimeMinutes ?? 0.0,
+                              _TopMetric.messages => item.messages.toDouble(),
+                              _TopMetric.dialogs => item.dialogs.toDouble(),
+                            };
+                            return BarChartGroupData(
+                              x: index,
+                              barRods: [
+                                BarChartRodData(
+                                  toY: value,
+                                  color: colorScheme.primary,
+                                  width: 16,
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(4),
+                                    topRight: Radius.circular(4),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 22,
-                            height: 22,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              gradient: index < 3 ? AppGradients.primaryAction(colorScheme) : null,
-                              color: index >= 3 ? colorScheme.surfaceContainerHighest : null,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              '${index + 1}',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: index < 3 ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          CircleAvatar(
-                            radius: 14,
-                            backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
-                            child: Text(
-                              item.name.isNotEmpty ? item.name[0].toUpperCase() : '?',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: colorScheme.primary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              item.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: colorScheme.primary.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              metricLabel,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -1897,6 +2362,7 @@ class _DashboardViewState extends State<DashboardView> {
       _DashboardTab.operators => <Widget>[topOperatorsCard, agentsCard],
       _DashboardTab.sections => <Widget>[sectionCard, questionsCard],
       _DashboardTab.activity => <Widget>[activityCard],
+      _DashboardTab.commercial => <Widget>[aiCard, slaCard, csatCard],
     };
 
     final listChildren = <Widget>[headerCard, ...tabChildren, const SizedBox(height: 24)];
@@ -1929,10 +2395,11 @@ class _DashboardViewState extends State<DashboardView> {
 }
 
 class _DashboardKvRow extends StatelessWidget {
-  const _DashboardKvRow({required this.label, required this.value});
+  const _DashboardKvRow({required this.label, required this.value, this.valueColor});
 
   final String label;
   final String value;
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1952,7 +2419,7 @@ class _DashboardKvRow extends StatelessWidget {
             value,
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w800,
-              color: colorScheme.primary,
+              color: valueColor ?? colorScheme.primary,
             ),
           ),
         ],
@@ -2017,7 +2484,7 @@ class _DonutSegment {
   }
 }
 
-class _DashboardDonut extends StatelessWidget {
+class _DashboardDonut extends StatefulWidget {
   const _DashboardDonut({
     required this.segments,
     required this.centerValue,
@@ -2029,27 +2496,59 @@ class _DashboardDonut extends StatelessWidget {
   final String centerLabel;
 
   @override
+  State<_DashboardDonut> createState() => _DashboardDonutState();
+}
+
+class _DashboardDonutState extends State<_DashboardDonut> {
+  int touchedIndex = -1;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Stack(
       alignment: Alignment.center,
       children: [
-        CustomPaint(
-          size: const Size.square(124),
-          painter: _DonutPainter(
-            segments: segments,
-            trackColor: theme.colorScheme.outlineVariant.withOpacity(0.35),
+        PieChart(
+          PieChartData(
+            pieTouchData: PieTouchData(
+              touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                setState(() {
+                  if (!event.isInterestedForInteractions ||
+                      pieTouchResponse == null ||
+                      pieTouchResponse.touchedSection == null) {
+                    touchedIndex = -1;
+                    return;
+                  }
+                  touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                });
+              },
+            ),
+            startDegreeOffset: -90,
+            borderData: FlBorderData(show: false),
+            sectionsSpace: 2,
+            centerSpaceRadius: double.infinity,
+            sections: widget.segments.asMap().entries.map((entry) {
+              final isTouched = entry.key == touchedIndex;
+              final radius = isTouched ? 16.0 : 12.0;
+
+              return PieChartSectionData(
+                color: entry.value.color(),
+                value: entry.value.percentage,
+                title: '',
+                radius: radius,
+              );
+            }).toList(),
           ),
         ),
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              centerValue,
+              widget.centerValue,
               style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             Text(
-              centerLabel,
+              widget.centerLabel,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 fontSize: 9,
@@ -2059,47 +2558,6 @@ class _DashboardDonut extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-class _DonutPainter extends CustomPainter {
-  const _DonutPainter({required this.segments, required this.trackColor});
-
-  final List<_DonutSegment> segments;
-  final Color trackColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = size.width * 0.16;
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width - stroke) / 2;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-
-    final trackPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = stroke
-      ..color = trackColor;
-    canvas.drawCircle(center, radius, trackPaint);
-
-    final arcPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = stroke;
-
-    var start = -math.pi / 2;
-    for (final segment in segments) {
-      final sweep = (segment.percentage.clamp(0, 100) / 100) * math.pi * 2;
-      if (sweep <= 0) continue;
-      arcPaint.color = segment.color();
-      canvas.drawArc(rect, start, sweep, false, arcPaint);
-      start += sweep;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DonutPainter oldDelegate) {
-    return oldDelegate.segments != segments || oldDelegate.trackColor != trackColor;
   }
 }
 
@@ -2113,8 +2571,6 @@ class _DashboardLineChart extends StatefulWidget {
 }
 
 class _DashboardLineChartState extends State<_DashboardLineChart> {
-  static const double _padL = 12;
-  static const double _padR = 12;
   int? _selectedIndex;
 
   @override
@@ -2135,231 +2591,181 @@ class _DashboardLineChartState extends State<_DashboardLineChart> {
     }
   }
 
-  void _selectFromPosition(double dx, double width) {
-    if (widget.items.isEmpty) return;
-    final plotW = (width - _padL - _padR).clamp(1.0, double.infinity);
-    final clampedDx = dx.clamp(_padL, width - _padR);
-    final ratio = (clampedDx - _padL) / plotW;
-    final raw = ratio * (widget.items.length - 1);
-    final index = raw.round().clamp(0, widget.items.length - 1);
-    if (index != _selectedIndex) {
-      setState(() {
-        _selectedIndex = index;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (widget.items.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final numberFormatter = NumberFormat.decimalPattern('ru');
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final labels = widget.items
-            .map((e) => DateFormat('dd.MM').format(e.date.toLocal()))
-            .toList();
-        final showLabelAt = (int index) {
-          if (labels.length <= 4) return true;
-          if (index == 0 || index == labels.length - 1) return true;
-          final step = (labels.length / 4).ceil();
-          return index % step == 0;
-        };
-        final selectedIndex = _selectedIndex;
-        final selected = selectedIndex != null ? widget.items[selectedIndex] : null;
+    final labels = widget.items
+        .map((e) => DateFormat('dd.MM').format(e.date.toLocal()))
+        .toList();
+    final selectedIndex = _selectedIndex;
+    final selected = selectedIndex != null ? widget.items[selectedIndex] : null;
 
-        return Column(
-          children: [
-            if (selected != null)
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      DateFormat('dd.MM').format(selected.date.toLocal()),
-                      style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const Spacer(),
-                    Text(
-                      'Диалоги: ${numberFormatter.format(selected.dialogs)}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Входящие: ${numberFormatter.format(selected.incomingMessages)}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown: (details) =>
-                    _selectFromPosition(details.localPosition.dx, width),
-                onHorizontalDragStart: (details) =>
-                    _selectFromPosition(details.localPosition.dx, width),
-                onHorizontalDragUpdate: (details) =>
-                    _selectFromPosition(details.localPosition.dx, width),
-                child: CustomPaint(
-                  size: Size(width, 180),
-                  painter: _LineChartPainter(
-                    items: widget.items,
-                    gridColor: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
-                    selectedIndex: selectedIndex,
-                  ),
-                ),
+    final maxDialogs = widget.items.isEmpty ? 0 : widget.items.map((e) => e.dialogs).reduce(math.max);
+    final maxIncoming = widget.items.isEmpty ? 0 : widget.items.map((e) => e.incomingMessages).reduce(math.max);
+    final maxY = math.max(maxDialogs, maxIncoming).toDouble() * 1.2;
+
+    return Column(
+      children: [
+        if (selected != null)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
               ),
             ),
-            const SizedBox(height: 4),
-            Row(
-                children: labels
-                  .asMap()
-                  .entries
-                  .map(
-                    (entry) => Expanded(
-                      child: Text(
-                        showLabelAt(entry.key) ? entry.value : '',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: entry.key == selectedIndex
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurfaceVariant,
-                          fontWeight: entry.key == selectedIndex
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
+            child: Row(
+              children: [
+                Text(
+                  DateFormat('dd.MM').format(selected.date.toLocal()),
+                  style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                Text(
+                  'Диалоги: ${numberFormatter.format(selected.dialogs)}',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Входящие: ${numberFormatter.format(selected.incomingMessages)}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: LineChart(
+            LineChartData(
+              maxY: maxY == 0 ? 10 : maxY,
+              minY: 0,
+              lineTouchData: LineTouchData(
+                enabled: true,
+                touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
+                  if (touchResponse?.lineBarSpots == null || touchResponse!.lineBarSpots!.isEmpty) {
+                    return;
+                  }
+                  final index = touchResponse.lineBarSpots!.first.spotIndex;
+                  if (_selectedIndex != index) {
+                    setState(() => _selectedIndex = index);
+                  }
+                },
+                getTouchedSpotIndicator: (LineChartBarData barData, List<int> spotIndexes) {
+                  return spotIndexes.map((spotIndex) {
+                    return TouchedSpotIndicatorData(
+                      FlLine(color: theme.colorScheme.outlineVariant, strokeWidth: 1.5),
+                      FlDotData(
+                        getDotPainter: (spot, percent, barData, index) {
+                          return FlDotCirclePainter(
+                            radius: 4.5,
+                            color: barData.color ?? theme.colorScheme.primary,
+                            strokeWidth: 2,
+                            strokeColor: Colors.white,
+                          );
+                        },
                       ),
-                    ),
-                  )
-                  .toList(),
+                    );
+                  }).toList();
+                },
+                touchTooltipData: LineTouchTooltipData(
+                  getTooltipColor: (_) => Colors.transparent,
+                  getTooltipItems: (touchedSpots) => touchedSpots.map((_) => null).toList(),
+                ),
+              ),
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: maxY > 0 ? maxY / 3 : 1,
+                getDrawingHorizontalLine: (value) {
+                  return FlLine(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+                    strokeWidth: 1,
+                  );
+                },
+              ),
+              titlesData: FlTitlesData(
+                show: true,
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 22,
+                    interval: 1,
+                    getTitlesWidget: (value, meta) {
+                      final index = value.toInt();
+                      if (index < 0 || index >= labels.length) return const SizedBox();
+                      if (labels.length > 4 && index % (labels.length / 4).ceil() != 0 && index != labels.length - 1 && index != 0) {
+                        return const SizedBox();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          labels[index],
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: index == _selectedIndex
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                            fontWeight: index == _selectedIndex ? FontWeight.w700 : FontWeight.w500,
+                            fontSize: 10,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              borderData: FlBorderData(show: false),
+              lineBarsData: [
+                LineChartBarData(
+                  spots: widget.items.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.dialogs.toDouble())).toList(),
+                  isCurved: true,
+                  color: const Color(0xFF5A7AB8),
+                  barWidth: 2.5,
+                  isStrokeCapRound: true,
+                  dotData: FlDotData(
+                    show: true,
+                    getDotPainter: (spot, percent, barData, index) {
+                      return FlDotCirclePainter(
+                        radius: 3.5,
+                        color: const Color(0xFF5A7AB8),
+                        strokeWidth: 0,
+                      );
+                    },
+                  ),
+                  belowBarData: BarAreaData(show: false),
+                ),
+                LineChartBarData(
+                  spots: widget.items.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.incomingMessages.toDouble())).toList(),
+                  isCurved: true,
+                  color: const Color(0xFF22C55E),
+                  barWidth: 2.5,
+                  isStrokeCapRound: true,
+                  dotData: FlDotData(
+                    show: true,
+                    getDotPainter: (spot, percent, barData, index) {
+                      return FlDotCirclePainter(
+                        radius: 3.5,
+                        color: const Color(0xFF22C55E),
+                        strokeWidth: 0,
+                      );
+                    },
+                  ),
+                  belowBarData: BarAreaData(show: false),
+                ),
+              ],
             ),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
     );
-  }
-}
-
-class _LineChartPainter extends CustomPainter {
-  const _LineChartPainter({
-    required this.items,
-    required this.gridColor,
-    this.selectedIndex,
-  });
-
-  final List<DashboardActivityPoint> items;
-  final Color gridColor;
-  final int? selectedIndex;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (items.isEmpty) return;
-
-    final maxValue = items
-        .map((e) => math.max(e.dialogs, e.incomingMessages))
-        .fold<int>(1, (acc, value) => math.max(acc, value));
-
-    const padL = 12.0;
-    const padR = 12.0;
-    const padT = 8.0;
-    const padB = 10.0;
-    final plotW = size.width - padL - padR;
-    final plotH = size.height - padT - padB;
-    final stepX = items.length > 1 ? plotW / (items.length - 1) : 0.0;
-
-    double toX(int i) => padL + (items.length > 1 ? i * stepX : plotW / 2);
-    double toY(int value) => padT + plotH - (value / maxValue) * plotH;
-
-    final gridPaint = Paint()
-      ..color = gridColor
-      ..strokeWidth = 1;
-    for (var i = 0; i < 4; i++) {
-      final y = padT + (plotH / 3) * i;
-      canvas.drawLine(Offset(padL, y), Offset(size.width - padR, y), gridPaint);
-    }
-
-    final dialogsPaint = Paint()
-      ..color = const Color(0xFF5A7AB8)
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final incomingPaint = Paint()
-      ..color = const Color(0xFF22C55E)
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final dialogsPath = Path();
-    final incomingPath = Path();
-    for (var i = 0; i < items.length; i++) {
-      final x = toX(i);
-      final dialogsY = toY(items[i].dialogs);
-      final incomingY = toY(items[i].incomingMessages);
-      if (i == 0) {
-        dialogsPath.moveTo(x, dialogsY);
-        incomingPath.moveTo(x, incomingY);
-      } else {
-        dialogsPath.lineTo(x, dialogsY);
-        incomingPath.lineTo(x, incomingY);
-      }
-    }
-    canvas.drawPath(dialogsPath, dialogsPaint);
-    canvas.drawPath(incomingPath, incomingPaint);
-
-    final pointPaintDialogs = Paint()..color = const Color(0xFF5A7AB8);
-    final pointPaintIncoming = Paint()..color = const Color(0xFF22C55E);
-    for (var i = 0; i < items.length; i++) {
-      final x = toX(i);
-      canvas.drawCircle(Offset(x, toY(items[i].dialogs)), 3.5, pointPaintDialogs);
-      canvas.drawCircle(Offset(x, toY(items[i].incomingMessages)), 3.5, pointPaintIncoming);
-    }
-
-    if (selectedIndex != null &&
-        selectedIndex! >= 0 &&
-        selectedIndex! < items.length) {
-      final x = toX(selectedIndex!);
-      final selectedDialogsY = toY(items[selectedIndex!].dialogs);
-      final selectedIncomingY = toY(items[selectedIndex!].incomingMessages);
-
-      final indicatorPaint = Paint()
-        ..color = gridColor.withValues(alpha: 0.9)
-        ..strokeWidth = 1.2;
-      canvas.drawLine(
-        Offset(x, padT),
-        Offset(x, size.height - padB),
-        indicatorPaint,
-      );
-
-      final selectedDialogsPoint = Paint()..color = const Color(0xFF5A7AB8);
-      final selectedIncomingPoint = Paint()..color = const Color(0xFF22C55E);
-      final haloPaint = Paint()..color = Colors.white;
-
-      canvas.drawCircle(Offset(x, selectedDialogsY), 6.2, haloPaint);
-      canvas.drawCircle(Offset(x, selectedDialogsY), 4.4, selectedDialogsPoint);
-      canvas.drawCircle(Offset(x, selectedIncomingY), 6.2, haloPaint);
-      canvas.drawCircle(Offset(x, selectedIncomingY), 4.4, selectedIncomingPoint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _LineChartPainter oldDelegate) {
-    return oldDelegate.items != items ||
-        oldDelegate.gridColor != gridColor ||
-        oldDelegate.selectedIndex != selectedIndex;
   }
 }
 

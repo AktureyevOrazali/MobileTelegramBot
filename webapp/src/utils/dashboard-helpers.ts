@@ -46,6 +46,9 @@ export const EMPTY_SUMMARY: DashboardSummary = {
     peakLoadHeatmap: [],
     dialogMetrics: [],
     updatedAt: new Date(0),
+    csatAverage: null as number | null,
+    csatCount: 0,
+    csatDistribution: [] as any[],
 };
 
 // ── Derived types ──

@@ -17,6 +17,50 @@ const SECTION_COLORS = ['#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '
 const HEATMAP_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const HEATMAP_HOURS = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
 
+const ExportButton: React.FC<{
+  apiClient: ApiClient;
+  filters: { operatorId?: number | null; startDate?: string | null; endDate?: string | null };
+}> = ({ apiClient, filters }) => {
+  const [exporting, setExporting] = React.useState<'xlsx' | 'pdf' | null>(null);
+
+  const handleExport = async (fmt: 'xlsx' | 'pdf') => {
+    setExporting(fmt);
+    try {
+      await apiClient.downloadDashboardExport({
+        operatorId: filters.operatorId,
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        format: fmt,
+      });
+    } catch {
+      alert('Не удалось скачать отчёт.');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  return (
+    <>
+      <button
+        className="dashboard-hero__refresh"
+        type="button"
+        onClick={() => handleExport('xlsx')}
+        disabled={exporting !== null}
+      >
+        {exporting === 'xlsx' ? '⏳…' : '📥 Excel'}
+      </button>
+      <button
+        className="dashboard-hero__refresh"
+        type="button"
+        onClick={() => handleExport('pdf')}
+        disabled={exporting !== null}
+      >
+        {exporting === 'pdf' ? '⏳…' : '📄 PDF'}
+      </button>
+    </>
+  );
+};
+
 const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   const d = useDashboardData(apiClient);
   const [topBinFilter, setTopBinFilter] = React.useState<'without_contract' | 'with_contract'>('without_contract');
@@ -76,6 +120,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             >
               {d.refreshing ? 'Обновляем…' : '↻ Пересчитать'}
             </button>
+            <ExportButton apiClient={apiClient} filters={d.activeFilters} />
           </div>
         </div>
 
@@ -495,6 +540,86 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Row 3: CSAT */}
+                <div className="dashboard-overview-row" style={{ marginTop: '1.25rem' }}>
+                  <div className="dashboard-card dashboard-card--delay-3" style={{ flex: 1 }}>
+                    <h3 className="dashboard-card__title">Удовлетворенность (CSAT)</h3>
+                    {d.data.csatCount === 0 ? (
+                      <div className="dashboard-empty" style={{ minHeight: 140 }}>
+                        <div className="dashboard-empty__icon">⭐</div>
+                        <p className="dashboard-empty__text">Пока нет оценок.</p>
+                      </div>
+                    ) : (
+                      <div className="dashboard-columns" style={{ gap: '2rem', alignItems: 'center' }}>
+                        <div style={{ flex: '0 0 160px', textAlign: 'center' }}>
+                          <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--primary-color, #4f46e5)', lineHeight: 1 }}>
+                            {d.data.csatAverage?.toFixed(1) || '—'}
+                          </div>
+                          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted, #64748b)', marginTop: '0.5rem', fontWeight: 500 }}>
+                            Средняя оценка
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted, #64748b)', marginTop: '0.25rem' }}>
+                            {d.numberFormatter.format(d.data.csatCount)} отзывов
+                          </div>
+                        </div>
+
+                        <div style={{ flex: 1, minHeight: 160, position: 'relative' }}>
+                          <EChartsWrapper
+                            option={{
+                              tooltip: {
+                                trigger: 'axis',
+                                axisPointer: { type: 'none' },
+                                backgroundColor: 'var(--surface-color, #ffffff)',
+                                borderColor: 'var(--border-color, #e2e8f0)',
+                                borderWidth: 1,
+                                textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                                formatter: '{b} Звезд: <b>{c}</b>'
+                              },
+                              grid: { top: 10, right: 20, bottom: 20, left: 20, containLabel: true },
+                              xAxis: {
+                                type: 'category',
+                                data: ['1', '2', '3', '4', '5'],
+                                axisLine: { show: false },
+                                axisTick: { show: false },
+                                axisLabel: { fontSize: 12, color: 'var(--text-color, #334155)', margin: 12 }
+                              },
+                              yAxis: {
+                                type: 'value',
+                                show: false
+                              },
+                              series: [
+                                {
+                                  type: 'bar',
+                                  barWidth: 24,
+                                  data: [1, 2, 3, 4, 5].map(rating => {
+                                    const match = d.data.csatDistribution?.find(x => x.rating === rating);
+                                    return match ? match.count : 0;
+                                  }),
+                                  itemStyle: {
+                                    borderRadius: [4, 4, 0, 0],
+                                    color: (params: any) => {
+                                      const val = params.name;
+                                      if (val === '5' || val === '4') return '#22c55e'; // Green
+                                      if (val === '3') return '#f59e0b'; // Yellow
+                                      return '#ef4444'; // Red
+                                    }
+                                  },
+                                  label: {
+                                    show: true,
+                                    position: 'top',
+                                    color: 'var(--text-color, #334155)',
+                                    fontWeight: 'bold'
+                                  }
+                                }
+                              ]
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </>

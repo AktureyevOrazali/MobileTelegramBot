@@ -20,7 +20,7 @@ import {
 export type LoadMode = 'initial' | 'refresh';
 export type TimePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'last90' | 'custom';
 export type DashboardTab = 'overview' | 'operators' | 'sections' | 'activity' | 'commercial';
-export type OperatorMetricKey = 'avgResponse' | 'messages' | 'dialogs';
+export type OperatorMetricKey = 'avgResponse' | 'messages' | 'dialogs' | 'csatAverage';
 
 /**
  * Encapsulates all data state, API fetching, filters, and derived metrics
@@ -352,6 +352,12 @@ export function useDashboardData(apiClient: ApiClient) {
                 label: 'Всего диалогов',
                 getValue: (agent: DashboardSummary['agentBreakdown'][number]) => agent.dialogs,
                 format: (value: number | null) => numberFormatter.format(value ?? 0),
+                sortDirection: 'desc' as const,
+            },
+            csatAverage: {
+                label: 'Оценка CSAT',
+                getValue: (agent: DashboardSummary['agentBreakdown'][number]) => agent.avgCsat,
+                format: (value: number | null) => (value !== null ? value.toFixed(1) + ' ★' : '—'),
                 sortDirection: 'desc' as const,
             },
         }),

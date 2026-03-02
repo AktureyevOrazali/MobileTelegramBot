@@ -10,7 +10,9 @@
 /* ── Gradient hero header ── */
 
 .dashboard-hero {
-  background: linear-gradient(135deg, #3b5998 0%, #5a7ab8 50%, #7c9fd6 100%);
+  background: linear-gradient(135deg, #3b5998 0%, #5a7ab8 25%, #7c9fd6 50%, #5a7ab8 75%, #3b5998 100%);
+  background-size: 300% 300%;
+  animation: dashboard-hero-gradient 8s ease infinite;
   border-radius: 20px;
   padding: 14px 20px;
   color: #f8fafc;
@@ -20,6 +22,20 @@
   gap: 10px;
   position: relative;
   overflow: hidden;
+}
+
+@keyframes dashboard-hero-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 .dashboard-hero::before {

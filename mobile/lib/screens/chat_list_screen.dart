@@ -59,6 +59,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   int? _aiTogglingDialogId;
   int? _statusUpdatingDialogId;
   Timer? _updatesTimer;
+  StreamSubscription<Map<String, dynamic>>? _sseSub;
   DateTime? _lastUpdateCursor;
   final GlobalKey<_OperatorProfileViewState> _profileKey =
       GlobalKey<_OperatorProfileViewState>();
@@ -77,14 +78,26 @@ class _ChatListScreenState extends State<ChatListScreen> {
     UiLogger.page('Chat list');
     _loadData();
     _loadAvailableBins();
+    
+    // Background polling (fallback, every 30s instead of 5s)
     _updatesTimer = Timer.periodic(
-      const Duration(seconds: 5),
+      const Duration(seconds: 30),
       (_) => _pollUpdates(),
     );
+
+    // Real-time SSE stream
+    widget.apiClient.connectToStream();
+    _sseSub = widget.apiClient.sseStream.listen((data) {
+      if (mounted) {
+        _loadData(showLoading: false);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _sseSub?.cancel();
+    widget.apiClient.disconnectStream();
     _updatesTimer?.cancel();
     super.dispose();
   }

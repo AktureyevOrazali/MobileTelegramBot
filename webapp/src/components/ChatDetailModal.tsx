@@ -1,14 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiClient } from '../api/ApiClient';
-import { ChatSummary, Message } from '../types';
+import { ChatSummary, Message, ReplyTemplate } from '../types';
 import { formatDateTime } from '../utils/date';
 import { extractErrorMessage } from '../utils/errors';
 import Modal from './Modal';
-
-const PRESET_MESSAGES = [
-    'Здравствуйте! Чем я могу вам помочь?',
-    'Спасибо за обращение! Готовы помочь в любое время!',
-];
 
 interface ChatDetailModalProps {
     apiClient: ApiClient;
@@ -28,6 +23,7 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
     const [error, setError] = useState<string | null>(null);
     const [input, setInput] = useState('');
     const [sending, setSending] = useState(false);
+    const [templates, setTemplates] = useState<ReplyTemplate[]>([]);
 
     // ВАЖНО: реф именно на прокручиваемый контейнер (modal__scroll), а не на внутренний список
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -83,6 +79,14 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
 
     useEffect(() => { loadMessages(); }, [loadMessages]);
 
+    // загрузка шаблонов быстрых ответов
+    useEffect(() => {
+        if (!canReply) return;
+        apiClient.fetchReplyTemplates(chat.section).then(setTemplates).catch(() => {
+            // тихо игнорируем — шаблоны не критичны
+        });
+    }, [apiClient, chat.section, canReply]);
+
     // каждый раз при изменении массива сообщений — опускаем вниз (плавно)
     useEffect(() => {
         // небольшой кадр для корректной высоты после рендера
@@ -90,21 +94,17 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
         return () => cancelAnimationFrame(id);
     }, [messages, scrollToBottom]);
 
-    // фоновая подтяжка новых сообщений
+    // фоновая подтяжка новых сообщений (через SSE)
     useEffect(() => {
-        let cancelled = false;
-        const id = window.setInterval(async () => {
-            try {
-                const data = await apiClient.fetchMessages(chat.chatId, 200, chat.dialogId);
-                if (!cancelled && data.length !== lastCountRef.current) {
-                    setMessages(data);
-                    lastCountRef.current = data.length;
-                    // прокрутка произойдёт через useEffect([messages])
+        const cleanup = apiClient.connectToStream({
+            onMessage: (messageRaw: any) => {
+                if (messageRaw.chat_id === chat.chatId) {
+                    loadMessages();
                 }
-            } catch { /* ignore */ }
-        }, 1500);
-        return () => { cancelled = true; window.clearInterval(id); };
-    }, [apiClient, chat.chatId, chat.dialogId]);
+            }
+        });
+        return cleanup;
+    }, [apiClient, chat.chatId, loadMessages]);
 
     useEffect(() => {
         if (taRef.current) autosize(taRef.current);
@@ -191,17 +191,18 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
 
                 <div className="separator" />
 
-                {/* Composer */}
-                {canReply && (
+                {/* Шаблоны быстрых ответов */}
+                {canReply && templates.length > 0 && (
                     <div className="preset-replies">
-                        {PRESET_MESSAGES.map((preset) => (
+                        {templates.map((tpl) => (
                             <button
-                                key={preset}
+                                key={tpl.id}
                                 type="button"
                                 className="preset-reply"
-                                onClick={() => handlePresetClick(preset)}
+                                onClick={() => handlePresetClick(tpl.text)}
+                                title={tpl.text}
                             >
-                                {preset}
+                                {tpl.title}
                             </button>
                         ))}
                     </div>

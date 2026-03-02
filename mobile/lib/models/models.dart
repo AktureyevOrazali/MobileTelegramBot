@@ -19,6 +19,18 @@ class DashboardSummary {
     required this.agentBreakdown,
     required this.recentActivity,
     required this.updatedAt,
+    // Analytics (Commercial Tab) metrics
+    required this.aiClosedDialogs,
+    required this.transferredToOperatorDialogs,
+    required this.aiMessagesCount,
+    required this.avgMessagesBeforeTransfer,
+    required this.slaCompliancePercentage,
+    required this.slaViolationsCount,
+    required this.recurringRequestsCount,
+    required this.recurringRequestsPercentage,
+    required this.csatAverage,
+    required this.csatCount,
+    required this.csatDistribution,
   });
 
   final int totalDialogs;
@@ -38,6 +50,19 @@ class DashboardSummary {
   final List<DashboardAgentStat> agentBreakdown;
   final List<DashboardActivityPoint> recentActivity;
   final DateTime updatedAt;
+
+  // Analytics (Commercial)
+  final int aiClosedDialogs;
+  final int transferredToOperatorDialogs;
+  final int aiMessagesCount;
+  final double? avgMessagesBeforeTransfer;
+  final double? slaCompliancePercentage;
+  final int slaViolationsCount;
+  final int recurringRequestsCount;
+  final double? recurringRequestsPercentage;
+  final double? csatAverage;
+  final int csatCount;
+  final List<CsatDistributionEntry> csatDistribution;
 
   factory DashboardSummary.empty() {
     final now = DateTime.now();
@@ -59,6 +84,17 @@ class DashboardSummary {
       agentBreakdown: const [],
       recentActivity: const [],
       updatedAt: now,
+      aiClosedDialogs: 0,
+      transferredToOperatorDialogs: 0,
+      aiMessagesCount: 0,
+      avgMessagesBeforeTransfer: null,
+      slaCompliancePercentage: null,
+      slaViolationsCount: 0,
+      recurringRequestsCount: 0,
+      recurringRequestsPercentage: null,
+      csatAverage: null,
+      csatCount: 0,
+      csatDistribution: const [],
     );
   }
 
@@ -140,6 +176,20 @@ class DashboardSummary {
       agentBreakdown: agentBreakdown,
       recentActivity: recentActivity,
       updatedAt: updatedAt,
+      aiClosedDialogs: parseInt(json['ai_closed_dialogs']),
+      transferredToOperatorDialogs: parseInt(json['transferred_to_operator_dialogs']),
+      aiMessagesCount: parseInt(json['ai_messages_count']),
+      avgMessagesBeforeTransfer: parseDoubleNullable(json['avg_messages_before_transfer']),
+      slaCompliancePercentage: parseDoubleNullable(json['sla_compliance_percentage']),
+      slaViolationsCount: parseInt(json['sla_violations_count']),
+      recurringRequestsCount: parseInt(json['recurring_requests_count']),
+      recurringRequestsPercentage: parseDoubleNullable(json['recurring_requests_percentage']),
+      csatAverage: parseDoubleNullable(json['csat_average']),
+      csatCount: parseInt(json['csat_count']),
+      csatDistribution: (json['csat_distribution'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map((e) => CsatDistributionEntry.fromJson(e))
+          .toList(),
     );
   }
 }
@@ -205,6 +255,20 @@ class DashboardSectionTopQuestions {
   }
 }
 
+class CsatDistributionEntry {
+  CsatDistributionEntry({required this.rating, required this.count});
+
+  final int rating;
+  final int count;
+
+  factory CsatDistributionEntry.fromJson(Map<String, dynamic> json) {
+    return CsatDistributionEntry(
+      rating: _parseIntValue(json['rating']) ?? 0,
+      count: _parseIntValue(json['count']) ?? 0,
+    );
+  }
+}
+
 class DashboardAgentStat {
   DashboardAgentStat({
     required this.name,
@@ -213,6 +277,7 @@ class DashboardAgentStat {
     required this.avgMessagesPerDialog,
     required this.avgResponseTimeMinutes,
     required this.lastActivity,
+    required this.avgCsat,
   });
 
   final String name;
@@ -221,6 +286,7 @@ class DashboardAgentStat {
   final double avgMessagesPerDialog;
   final double? avgResponseTimeMinutes;
   final DateTime? lastActivity;
+  final double? avgCsat;
 
   factory DashboardAgentStat.fromJson(Map<String, dynamic> json) {
     final dialogs = _parseIntValue(json['dialogs']) ?? 0;
@@ -239,6 +305,10 @@ class DashboardAgentStat {
         return value != null && value.isFinite ? value : null;
       }(),
       lastActivity: _parseDateTime(json['last_activity']),
+      avgCsat: () {
+        final value = _parseDoubleValue(json['avg_csat']);
+        return value != null && value.isFinite ? value : null;
+      }(),
     );
   }
 }
@@ -929,5 +999,37 @@ class AuthSession {
       'token': token,
       'user': user.toJson(),
     };
+  }
+}
+
+class ReplyTemplate {
+  const ReplyTemplate({
+    required this.id,
+    required this.title,
+    required this.text,
+    required this.section,
+    required this.sectionTitle,
+    required this.sortOrder,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String title;
+  final String text;
+  final String? section;
+  final String? sectionTitle;
+  final int sortOrder;
+  final DateTime createdAt;
+
+  factory ReplyTemplate.fromJson(Map<String, dynamic> json) {
+    return ReplyTemplate(
+      id: _parseIntValue(json['id']) ?? 0,
+      title: (json['title'] as String? ?? '').trim(),
+      text: (json['text'] as String? ?? '').trim(),
+      section: json['section'] as String?,
+      sectionTitle: json['section_title'] as String?,
+      sortOrder: _parseIntValue(json['sort_order']) ?? 0,
+      createdAt: _parseDateTime(json['created_at']) ?? DateTime.now(),
+    );
   }
 }

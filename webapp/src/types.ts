@@ -246,6 +246,7 @@ export interface DashboardAgentStatRaw {
   avg_messages_per_dialog: number;
   avg_response_time_minutes?: number | null;
   last_activity: string | null;
+  avg_csat?: number | null;
 }
 
 export interface DashboardActivityPointRaw {
@@ -313,6 +314,9 @@ export interface DashboardSummaryRaw {
   top_bins_with_contract?: DashboardTopBinRaw[];
   peak_load_heatmap?: DashboardHeatmapPointRaw[];
   dialog_metrics?: DashboardDialogMetricRaw[];
+  csat_average?: number | null;
+  csat_count?: number;
+  csat_distribution?: { rating: number; count: number }[];
   updated_at?: string;
 }
 
@@ -341,6 +345,7 @@ export interface DashboardAgentStat {
   avgMessagesPerDialog: number;
   avgResponseTimeMinutes: number | null;
   lastActivity: Date | null;
+  avgCsat: number | null;
 }
 
 export interface DashboardActivityPoint {
@@ -407,5 +412,30 @@ export interface DashboardSummary {
   topBinsWithContract: DashboardTopBin[];
   peakLoadHeatmap: DashboardHeatmapPoint[];
   dialogMetrics: DashboardDialogMetric[];
+  csatAverage: number | null;
+  csatCount: number;
+  csatDistribution: { rating: number; count: number }[];
   updatedAt: Date;
+}
+
+export interface ReplyTemplateRaw {
+  id: number;
+  title: string;
+  text: string;
+  section?: string | null;
+  section_title?: string | null;
+  sort_order: number;
+  created_by?: number | null;
+  created_at: string;
+}
+
+export interface ReplyTemplate {
+  id: number;
+  title: string;
+  text: string;
+  section?: string | null;
+  sectionTitle?: string | null;
+  sortOrder: number;
+  createdBy?: number | null;
+  createdAt: Date;
 }

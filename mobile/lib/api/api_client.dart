@@ -29,7 +29,11 @@ class ApiClient {
 
   Uri _buildUri(String path, [Map<String, dynamic>? queryParameters]) {
     final normalizedBase = baseUrl.endsWith('/') ? baseUrl : '$baseUrl/';
-    final normalizedPath = path.startsWith('/') ? path.substring(1) : path;
+    // Ensure all mobile API calls go through the /api/ prefix
+    var normalizedPath = path.startsWith('/') ? path.substring(1) : path;
+    if (!normalizedPath.startsWith('api/')) {
+      normalizedPath = 'api/$normalizedPath';
+    }
     final resolved = Uri.parse(normalizedBase).resolve(normalizedPath);
     if (queryParameters == null || queryParameters.isEmpty) {
       return resolved;
@@ -546,6 +550,50 @@ class ApiClient {
     );
   }
 
+  Future<List<ReplyTemplate>> fetchReplyTemplates({String? section}) async {
+    final queryParams = (section != null && section.trim().isNotEmpty)
+        ? <String, dynamic>{'section': section.trim()}
+        : null;
+    final uri = _buildUri('reply-templates', queryParams);
+    final response = await _sendRequest(
+      () => http.get(uri, headers: _headers),
+      'Не удалось загрузить шаблоны ответов.',
+    );
+    final decoded = jsonDecode(_decodeBody(response)) as List<dynamic>;
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(ReplyTemplate.fromJson)
+        .toList();
+  }
+
+  Future<String> downloadDashboardExport({
+    int? operatorId,
+    String? startDate,
+    String? endDate,
+    String format = 'xlsx',
+  }) async {
+    final queryParams = <String, dynamic>{
+      'format': format,
+    };
+    if (operatorId != null) queryParams['operator_id'] = operatorId.toString();
+    if (startDate != null && startDate.isNotEmpty) queryParams['start_date'] = startDate;
+    if (endDate != null && endDate.isNotEmpty) queryParams['end_date'] = endDate;
+
+    final uri = _buildUri('analytics/export', queryParams);
+    final response = await http.get(uri, headers: _headers);
+    if (response.statusCode != 200) {
+      throw ApiException('Не удалось скачать отчёт (${response.statusCode}).');
+    }
+
+    final dir = await Directory.systemTemp.createTemp('report_');
+    final now = DateTime.now();
+    final ext = format == 'pdf' ? 'pdf' : 'xlsx';
+    final filename = 'report_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}.$ext';
+    final file = File('${dir.path}/$filename');
+    await file.writeAsBytes(response.bodyBytes);
+    return file.path;
+  }
+
   Future<List<MessageNotification>> fetchUpdates(DateTime? since) async {
     final query = since != null
         ? <String, dynamic>{
@@ -774,6 +822,53 @@ class ApiClient {
         return '«${raw.replaceAll('_', ' ')}»';
     }
   }
+
+  // ---------- SSE (Server-Sent Events) ----------
+
+  StreamSubscription<String>? _sseSubscription;
+  final StreamController<Map<String, dynamic>> _sseController = StreamController<Map<String, dynamic>>.broadcast();
+
+  Stream<Map<String, dynamic>> get sseStream => _sseController.stream;
+
+  void connectToStream() async {
+    if (_sessionToken == null || _sseSubscription != null) return;
+
+    final uri = _buildUri('stream', {
+      'api_token': apiToken,
+      'session_token': _sessionToken!,
+    });
+
+    try {
+      final request = http.Request('GET', uri);
+      final response = await http.Client().send(request);
+
+      _sseSubscription = response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+        if (line.startsWith('data: ')) {
+          final dataStr = line.substring(6);
+          if (dataStr.trim().isEmpty) return;
+          try {
+            final payload = jsonDecode(dataStr) as Map<String, dynamic>;
+            if (payload['type'] == 'new_message') {
+              _sseController.add(payload['data'] as Map<String, dynamic>);
+            }
+          } catch (e) {
+            debugPrint('SSE parse error: $e');
+          }
+        }
+      }, onError: (Object error) {
+        debugPrint('SSE error: $error');
+        // Optionally try reconnecting after a delay
+      }, cancelOnError: false);
+    } catch (e) {
+      debugPrint('SSE connection failed: $e');
+    }
+  }
+
+  void disconnectStream() {
+    _sseSubscription?.cancel();
+    _sseSubscription = null;
+  }
 }
-
-

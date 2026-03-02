@@ -4,19 +4,24 @@ from __future__ import annotations
 import logging
 import hashlib
 import hmac
+import io
 import json
 import os
 import re
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
+import asyncio
+from collections import defaultdict
 
-from fastapi import APIRouter, Body, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPBearer
 from pydantic import AliasChoices, BaseModel, EmailStr, Field, validator
 
 from . import database
 from .ai_manager import ai_manager
-from .telegram_bot import bot, enable_ai_session
+from .telegram_bot import bot, enable_ai_session, send_csat_request
 from . import contract_checker
 
 # ------------------------ Temporary import for Aziret's employee cabinet ------------------
@@ -41,11 +46,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-router = APIRouter()
-
-
 logger = logging.getLogger(__name__)
 
+router = APIRouter(prefix="/api")
+security = HTTPBearer()
+
+# ── SSE Event Bus ──
+class EventBus:
+    def __init__(self):
+        # Maps user_id -> list of queues
+        self.connections: dict[int, list[asyncio.Queue]] = defaultdict(list)
+        self.loop: asyncio.AbstractEventLoop | None = None
+
+    async def publish(self, user_id: int, event_type: str, data: dict):
+        if user_id in self.connections:
+            message = {"type": event_type, "data": data}
+            for q in self.connections[user_id]:
+                await q.put(message)
+
+    async def publish_all(self, event_type: str, data: dict):
+        message = {"type": event_type, "data": data}
+        for qs in self.connections.values():
+            for q in qs:
+                await q.put(message)
+
+event_bus = EventBus()
 
 ROLE_LABELS: Dict[str, str] = {
     database.ROLE_ADMIN: "Администратор",
@@ -311,6 +336,7 @@ class DashboardAgentStat(BaseModel):
     avg_messages_per_dialog: float
     avg_response_time_minutes: float | None = None
     last_activity: Optional[str] = None
+    avg_csat: float | None = None
 
 
 class DashboardActivityPoint(BaseModel):
@@ -342,6 +368,11 @@ class DashboardDialogMetric(BaseModel):
     is_open: bool
     is_ai_closed: bool
     response_time_minutes: float | None
+
+class CsatDistributionEntry(BaseModel):
+    rating: int
+    count: int
+
 
 class DashboardSummaryResponse(BaseModel):
     total_dialogs: int
@@ -376,13 +407,20 @@ class DashboardSummaryResponse(BaseModel):
     top_bins_with_contract: List[DashboardTopBin] = Field(default_factory=list)
     peak_load_heatmap: List[DashboardHeatmapPoint] = Field(default_factory=list)
     dialog_metrics: List[DashboardDialogMetric] = Field(default_factory=list)
+    csat_average: float | None = None
+    csat_count: int = 0
+    csat_distribution: List[CsatDistributionEntry] = Field(default_factory=list)
     updated_at: str
 
 
-def require_api_token(x_api_token: str | None = Header(default=None, alias="X-Api-Token")) -> None:
+def require_api_token(
+    x_api_token: str | None = Header(default=None, alias="X-Api-Token"),
+    api_token: str | None = Query(default=None, alias="api_token"),
+) -> None:
     if not API_TOKEN:
         raise HTTPException(status_code=503, detail="API token is not configured")
-    if x_api_token != API_TOKEN:
+    token_to_check = x_api_token or api_token
+    if token_to_check != API_TOKEN:
         raise HTTPException(status_code=403, detail="Invalid API token")
 
 
@@ -398,13 +436,45 @@ def require_onec_token(
 def get_current_user(
     _: None = Depends(require_api_token),
     x_session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    session_token: str | None = Query(default=None, alias="session_token"),
 ) -> Dict[str, object]:
-    if not x_session_token:
+    token_to_check = x_session_token or session_token
+    if not token_to_check:
         raise HTTPException(status_code=401, detail="Session token required")
-    user = database.get_user_by_session(x_session_token)
+    user = database.get_user_by_session(token_to_check)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid session token")
     return _sanitize_user(user)
+
+
+@router.get("/stream")
+async def sse_endpoint(request: Request, current_user: Dict[str, object] = Depends(get_current_user)):
+    user_id = current_user["id"]
+    queue = asyncio.Queue()
+    event_bus.connections[user_id].append(queue)
+    logger.info("SSE client connected: user_id=%s", user_id)
+
+    async def event_generator():
+        try:
+            while True:
+                # If client closes connection, request.is_disconnected() will be true 
+                # but run in next tick, so asyncio.wait allows us to detect it
+                if await request.is_disconnected():
+                    break
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    yield f"data: {json.dumps(message, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    # Keep-alive heartbeat
+                    yield ": keepalive\n\n"
+        finally:
+            logger.info("SSE client disconnected: user_id=%s", user_id)
+            if queue in event_bus.connections[user_id]:
+                event_bus.connections[user_id].remove(queue)
+            if not event_bus.connections[user_id]:
+                del event_bus.connections[user_id]
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 def require_admin_or_moderator(
@@ -862,6 +932,98 @@ def list_faq(_: Dict[str, object] = Depends(get_current_user)):
     return database.list_faq()
 
 
+# ------------------ Reply Templates (Шаблоны быстрых ответов) ------------------
+
+
+class ReplyTemplateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
+    text: str = Field(min_length=1, max_length=2000)
+    section: str | None = None
+    sort_order: int = 0
+
+
+class ReplyTemplateResponse(BaseModel):
+    id: int
+    title: str
+    text: str
+    section: str | None = None
+    section_title: str | None = None
+    sort_order: int = 0
+    created_by: int | None = None
+    created_at: str
+
+
+def _enrich_template(template: dict) -> dict:
+    """Add section_title from SECTIONS list."""
+    section_id = template.get("section")
+    section_title = None
+    if section_id:
+        section = next((s for s in database.SECTIONS if s["id"] == section_id), None)
+        if section:
+            section_title = section["title"]
+    return {**template, "section_title": section_title}
+
+
+@router.get("/reply-templates", response_model=List[ReplyTemplateResponse])
+def list_reply_templates(
+    section: str | None = None,
+    _: Dict[str, object] = Depends(get_current_user),
+):
+    templates = database.list_reply_templates(section=section)
+    return [ReplyTemplateResponse(**_enrich_template(t)) for t in templates]
+
+
+@router.post("/reply-templates", response_model=ReplyTemplateResponse)
+def create_reply_template(
+    request: ReplyTemplateRequest,
+    current_user: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    template = database.create_reply_template(
+        title=request.title,
+        text=request.text,
+        section=request.section,
+        sort_order=request.sort_order,
+        created_by=current_user["id"],
+    )
+    logger.info(
+        "Reply template created: id=%s, title=%s, by user_id=%s",
+        template["id"], template["title"], current_user["id"],
+    )
+    return ReplyTemplateResponse(**_enrich_template(template))
+
+
+@router.put("/reply-templates/{template_id}", response_model=ReplyTemplateResponse)
+def update_reply_template(
+    template_id: int,
+    request: ReplyTemplateRequest,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    try:
+        template = database.update_reply_template(
+            template_id,
+            title=request.title,
+            text=request.text,
+            section=request.section,
+            sort_order=request.sort_order,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    logger.info("Reply template updated: id=%s", template_id)
+    return ReplyTemplateResponse(**_enrich_template(template))
+
+
+@router.delete("/reply-templates/{template_id}")
+def delete_reply_template(
+    template_id: int,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    deleted = database.delete_reply_template(template_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+    logger.info("Reply template deleted: id=%s", template_id)
+    return {"status": "ok"}
+
+
 @router.get("/analytics/dashboard", response_model=DashboardSummaryResponse)
 def dashboard_summary(
     operator_id: int | None = Query(default=None),
@@ -876,6 +1038,417 @@ def dashboard_summary(
     )
     return DashboardSummaryResponse(**summary)
 
+
+@router.get("/analytics/export")
+def export_dashboard(
+    operator_id: int | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    format: str = Query(default="xlsx"),
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    """Generate an Excel or PDF report from dashboard data."""
+    summary = database.get_dashboard_summary(
+        operator_id=operator_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    def _fmt(value, suffix=""):
+        if value is None:
+            return "—"
+        if isinstance(value, float):
+            return f"{value:.1f}{suffix}"
+        return f"{value}{suffix}"
+
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    if format == "pdf":
+        return _build_pdf_report(summary, _fmt, now_str)
+
+    return _build_xlsx_report(summary, _fmt, now_str)
+
+
+def _build_xlsx_report(summary: dict, _fmt, now_str: str):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.worksheet.table import Table, TableStyleInfo
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="6366F1", end_color="6366F1", fill_type="solid")
+    header_align = Alignment(horizontal="center", vertical="center")
+    thin_border = Border(
+        left=Side(style="thin", color="E2E8F0"),
+        right=Side(style="thin", color="E2E8F0"),
+        top=Side(style="thin", color="E2E8F0"),
+        bottom=Side(style="thin", color="E2E8F0"),
+    )
+
+    def _style_header(ws, headers: list[str]):
+        for col_idx, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_align
+            cell.border = thin_border
+
+    def _auto_width(ws):
+        for column_cells in ws.columns:
+            max_len = 0
+            col_letter = column_cells[0].column_letter
+            for cell in column_cells:
+                try:
+                    if cell.value:
+                        max_len = max(max_len, len(str(cell.value)))
+                except Exception:
+                    pass
+            ws.column_dimensions[col_letter].width = min(max_len + 5, 60)
+
+    def _add_table(ws, display_name: str, num_rows: int, num_cols: int):
+        if num_rows <= 1:
+            return
+        ref = f"A1:{get_column_letter(num_cols)}{num_rows}"
+        tab = Table(displayName=display_name.replace(" ", "_").replace("(", "").replace(")", ""), ref=ref)
+        style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
+                               showLastColumn=False, showRowStripes=True, showColumnStripes=False)
+        tab.tableStyleInfo = style
+        ws.add_table(tab)
+
+    # ── Sheet 1: Обзор ──
+    ws = wb.active
+    ws.title = "Обзор"
+    headers1 = ["Метрика", "Значение"]
+    _style_header(ws, headers1)
+    overview_rows = [
+        ("Всего диалогов", summary.get("total_dialogs", 0)),
+        ("Открытых", summary.get("open_dialogs", 0)),
+        ("Закрытых", summary.get("closed_dialogs", 0)),
+        ("Всего чатов", summary.get("total_chats", 0)),
+        ("Всего сообщений", summary.get("total_messages", 0)),
+        ("Входящих", summary.get("total_incoming_messages", 0)),
+        ("Исходящих", summary.get("total_outgoing_messages", 0)),
+        ("Ср. сообщений/диалог", _fmt(summary.get("average_messages_per_dialog"))),
+        ("Ср. время ответа (мин)", _fmt(summary.get("avg_response_time_minutes"), " мин")),
+        ("Ср. длительность диалога (мин)", _fmt(summary.get("avg_dialog_duration_minutes"), " мин")),
+        ("Решено ботом (AI)", summary.get("ai_closed_dialogs", 0)),
+        ("Переведено оператору", summary.get("transferred_to_operator_dialogs", 0)),
+        ("Сообщений от AI", summary.get("ai_messages_count", 0)),
+        ("Нарушений SLA", summary.get("sla_violations_count", 0)),
+        ("SLA (% соблюдения)", _fmt(summary.get("sla_compliance_percentage"), "%")),
+        ("Повторных обращений", summary.get("recurring_requests_count", 0)),
+        ("% повторных", _fmt(summary.get("recurring_requests_percentage"), "%")),
+        ("С договором", summary.get("requests_with_contract", 0)),
+        ("Без договора", summary.get("requests_without_contract", 0)),
+    ]
+    for row_idx, (metric, value) in enumerate(overview_rows, 2):
+        ws.cell(row=row_idx, column=1, value=metric).border = thin_border
+        ws.cell(row=row_idx, column=2, value=value).border = thin_border
+    _add_table(ws, "OverviewTable", len(overview_rows)+1, 2)
+    _auto_width(ws)
+
+    # ── Sheet 2: Операторы ──
+    ws2 = wb.create_sheet("Операторы")
+    headers2 = ["Сотрудник", "Обращений", "Сообщений", "Ср. сообщ./обр.", "Ср. время ответа (мин)", "Последняя активность"]
+    _style_header(ws2, headers2)
+    agents = summary.get("agent_breakdown", [])
+    for row_idx, agent in enumerate(agents, 2):
+        ws2.cell(row=row_idx, column=1, value=agent.get("name", "")).border = thin_border
+        ws2.cell(row=row_idx, column=2, value=agent.get("dialogs", 0)).border = thin_border
+        ws2.cell(row=row_idx, column=3, value=agent.get("messages", 0)).border = thin_border
+        ws2.cell(row=row_idx, column=4, value=_fmt(agent.get("avg_messages_per_dialog"))).border = thin_border
+        ws2.cell(row=row_idx, column=5, value=_fmt(agent.get("avg_response_time_minutes"))).border = thin_border
+        ws2.cell(row=row_idx, column=6, value=agent.get("last_activity", "—")).border = thin_border
+    _add_table(ws2, "AgentsTable", len(agents)+1, 6)
+    _auto_width(ws2)
+
+    # ── Sheet 3: Разделы ──
+    ws3 = wb.create_sheet("Разделы")
+    headers3 = ["Раздел", "Диалогов", "Доля (%)"]
+    _style_header(ws3, headers3)
+    sections = summary.get("section_breakdown", [])
+    for row_idx, section in enumerate(sections, 2):
+        ws3.cell(row=row_idx, column=1, value=section.get("title", "")).border = thin_border
+        ws3.cell(row=row_idx, column=2, value=section.get("dialogs", 0)).border = thin_border
+        ws3.cell(row=row_idx, column=3, value=_fmt(section.get("percentage"), "%")).border = thin_border
+    _add_table(ws3, "SectionsTable", len(sections)+1, 3)
+    _auto_width(ws3)
+
+    # ── Sheet 4: Активность ──
+    ws4 = wb.create_sheet("Активность")
+    headers4 = ["Дата", "Диалогов", "Входящих сообщений"]
+    _style_header(ws4, headers4)
+    activity = summary.get("recent_activity", [])
+    for row_idx, point in enumerate(activity, 2):
+        ws4.cell(row=row_idx, column=1, value=point.get("date", "")).border = thin_border
+        ws4.cell(row=row_idx, column=2, value=point.get("dialogs", 0)).border = thin_border
+        ws4.cell(row=row_idx, column=3, value=point.get("incoming_messages", 0)).border = thin_border
+    _add_table(ws4, "ActivityTable", len(activity)+1, 3)
+    _auto_width(ws4)
+
+    # ── Sheet 5: БИНы (с договорами) ──
+    ws5 = wb.create_sheet("БИНы (с договорами)")
+    headers5 = ["БИН", "Обращений"]
+    _style_header(ws5, headers5)
+    bins_with = summary.get("top_bins_with_contract", [])
+    for row_idx, bin_row in enumerate(bins_with, 2):
+        ws5.cell(row=row_idx, column=1, value=bin_row.get("bin", "")).border = thin_border
+        ws5.cell(row=row_idx, column=2, value=bin_row.get("requests", 0)).border = thin_border
+    _add_table(ws5, "BinsWithContract", len(bins_with)+1, 2)
+    _auto_width(ws5)
+
+    # ── Sheet 6: БИНы (без договоров) ──
+    ws6 = wb.create_sheet("БИНы (без договоров)")
+    headers6 = ["БИН", "Обращений"]
+    _style_header(ws6, headers6)
+    bins_without = summary.get("top_bins_without_contract", [])
+    for row_idx, bin_row in enumerate(bins_without, 2):
+        ws6.cell(row=row_idx, column=1, value=bin_row.get("bin", "")).border = thin_border
+        ws6.cell(row=row_idx, column=2, value=bin_row.get("requests", 0)).border = thin_border
+    _add_table(ws6, "BinsWithoutContract", len(bins_without)+1, 2)
+    _auto_width(ws6)
+
+    # ── Sheet 7: Нагрузка по часам ──
+    ws7 = wb.create_sheet("Нагрузка по часам")
+    headers7 = ["День", "Час", "Кол-во обращений"]
+    day_names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+    _style_header(ws7, headers7)
+    heatmap = [e for e in summary.get("peak_load_heatmap", []) if e.get("count", 0) > 0]
+    for row_idx, entry in enumerate(heatmap, 2):
+        day_idx = entry.get("day", 0)
+        ws7.cell(row=row_idx, column=1, value=day_names[day_idx] if 0 <= day_idx < 7 else str(day_idx)).border = thin_border
+        ws7.cell(row=row_idx, column=2, value=f"{entry.get('hour', 0)}:00").border = thin_border
+        ws7.cell(row=row_idx, column=3, value=entry.get("count", 0)).border = thin_border
+    _add_table(ws7, "HeatmapTable", len(heatmap)+1, 3)
+    _auto_width(ws7)
+
+    # ── Save to buffer and return ──
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"report_{now_str}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+
+def _build_pdf_report(summary: dict, _fmt, now_str: str):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+    )
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    import matplotlib
+    from pathlib import Path
+
+    # Load DejaVuSans from matplotlib to support Cyrillic
+    mpl_data_dir = Path(matplotlib.get_data_path())
+    font_path = mpl_data_dir / "fonts" / "ttf" / "DejaVuSans.ttf"
+    if font_path.exists():
+        pdfmetrics.registerFont(TTFont("DejaVu", str(font_path)))
+        font_name = "DejaVu"
+    else:
+        font_name = "Helvetica" # Fallback, though Cyrillic will fail
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=15 * mm, bottomMargin=15 * mm)
+    styles = getSampleStyleSheet()
+
+    # ── Colours ──
+    brand = colors.HexColor("#6366F1")
+    header_text_color = colors.white
+    row_alt = colors.HexColor("#F8FAFC")
+    border_color = colors.HexColor("#E2E8F0")
+
+    title_style = ParagraphStyle(
+        "PDFTitle", parent=styles["Title"], fontName=font_name, fontSize=18,
+        textColor=brand, spaceAfter=4,
+    )
+    section_style = ParagraphStyle(
+        "PDFSection", parent=styles["Heading2"], fontName=font_name, fontSize=13,
+        textColor=brand, spaceBefore=14, spaceAfter=6,
+    )
+    normal = styles["Normal"]
+    normal.fontName = font_name
+
+    day_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+    def _pdf_table(headers: list[str], rows: list[list], col_widths=None):
+        data = [headers] + rows
+        t = Table(data, colWidths=col_widths, repeatRows=1)
+        style_cmds = [
+            ("BACKGROUND", (0, 0), (-1, 0), brand),
+            ("TEXTCOLOR", (0, 0), (-1, 0), header_text_color),
+            ("FONTNAME", (0, 0), (-1, -1), font_name),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("FONTSIZE", (0, 1), (-1, -1), 8),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("GRID", (0, 0), (-1, -1), 0.4, border_color),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ]
+        for i in range(1, len(data)):
+            if i % 2 == 0:
+                style_cmds.append(("BACKGROUND", (0, i), (-1, i), row_alt))
+        t.setStyle(TableStyle(style_cmds))
+        return t
+
+    def _create_pie_chart(sections):
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            if not sections: return None
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            
+            sorted_sec = sorted(sections, key=lambda x: x.get("dialogs", 0), reverse=True)
+            top_sec = sorted_sec[:8]
+            other_sum = sum(s.get("dialogs", 0) for s in sorted_sec[8:])
+            labels = [s.get("title", "Unknown")[:20] for s in top_sec]
+            sizes = [s.get("dialogs", 0) for s in top_sec]
+            if other_sum > 0:
+                labels.append("Остальные")
+                sizes.append(other_sum)
+            
+            if sum(sizes) == 0: return None
+            
+            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=plt.cm.Pastel1.colors)
+            ax.axis('equal')
+            plt.title("Разделы (доля обращений)")
+            
+            img_buf = io.BytesIO()
+            plt.savefig(img_buf, format='png', bbox_inches='tight', dpi=150)
+            plt.close(fig)
+            img_buf.seek(0)
+            return img_buf
+        except Exception as e:
+            print("Matplotlib error:", e)
+            return None
+
+    elements = []
+
+    # ── Title ──
+    elements.append(Paragraph(f"Аналитический отчёт — {now_str}", title_style))
+    elements.append(Spacer(1, 6))
+
+    # ── 1. Обзор ──
+    elements.append(Paragraph("Обзор", section_style))
+    overview_rows = [
+        ["Всего диалогов", str(summary.get("total_dialogs", 0))],
+        ["Открытых", str(summary.get("open_dialogs", 0))],
+        ["Закрытых", str(summary.get("closed_dialogs", 0))],
+        ["Всего сообщений", str(summary.get("total_messages", 0))],
+        ["Входящих", str(summary.get("total_incoming_messages", 0))],
+        ["Исходящих", str(summary.get("total_outgoing_messages", 0))],
+        ["Ср. время ответа", _fmt(summary.get("avg_response_time_minutes"), " мин")],
+        ["Решено ботом (AI)", str(summary.get("ai_closed_dialogs", 0))],
+        ["Переведено оператору", str(summary.get("transferred_to_operator_dialogs", 0))],
+        ["SLA (%)", _fmt(summary.get("sla_compliance_percentage"), "%")],
+        ["Нарушений SLA", str(summary.get("sla_violations_count", 0))],
+        ["С договором", str(summary.get("requests_with_contract", 0))],
+        ["Без договора", str(summary.get("requests_without_contract", 0))],
+    ]
+    elements.append(_pdf_table(["Метрика", "Значение"], overview_rows, col_widths=[120 * mm, 50 * mm]))
+
+    # ── 2. Операторы ──
+    agents = summary.get("agent_breakdown", [])
+    if agents:
+        elements.append(Paragraph("Операторы", section_style))
+        agent_rows = [
+            [
+                a.get("name", ""),
+                str(a.get("dialogs", 0)),
+                str(a.get("messages", 0)),
+                _fmt(a.get("avg_response_time_minutes")),
+            ]
+            for a in agents
+        ]
+        elements.append(_pdf_table(
+            ["Сотрудник", "Обращ.", "Сообщ.", "Ср. ответ"],
+            agent_rows,
+        ))
+
+    # ── 3. Разделы ──
+    sections = summary.get("section_breakdown", [])
+    if sections:
+        elements.append(Paragraph("Разделы", section_style))
+        chart_buf = _create_pie_chart(sections)
+        if chart_buf:
+            elements.append(Image(chart_buf, width=100*mm, height=70*mm))
+            elements.append(Spacer(1, 6))
+            
+        section_rows = [
+            [s.get("title", ""), str(s.get("dialogs", 0)), _fmt(s.get("percentage"), "%")]
+            for s in sections
+        ]
+        elements.append(_pdf_table(["Раздел", "Диалогов", "Доля"], section_rows))
+
+    # ── 4. Активность ──
+    activity = summary.get("recent_activity", [])
+    if activity:
+        elements.append(Paragraph("Активность по дням", section_style))
+        act_rows = [
+            [p.get("date", ""), str(p.get("dialogs", 0)), str(p.get("incoming_messages", 0))]
+            for p in activity
+        ]
+        elements.append(_pdf_table(["Дата", "Диалогов", "Входящих"], act_rows))
+
+    # ── 5. БИНы (с договорами) ──
+    bins_with = summary.get("top_bins_with_contract", [])
+    if bins_with:
+        elements.append(Paragraph("БИНы (с договорами)", section_style))
+        bin_rows = [
+            [b.get("bin", "—"), str(b.get("requests", 0))]
+            for b in bins_with
+        ]
+        elements.append(_pdf_table(["БИН", "Обращений"], bin_rows))
+
+    # ── 6. БИНы (без договоров) ──
+    bins_without = summary.get("top_bins_without_contract", [])
+    if bins_without:
+        elements.append(Paragraph("БИНы (без договоров)", section_style))
+        bin_rows2 = [
+            [b.get("bin", "—"), str(b.get("requests", 0))]
+            for b in bins_without
+        ]
+        elements.append(_pdf_table(["БИН", "Обращений"], bin_rows2))
+
+    # ── 7. Нагрузка по часам ──
+    heatmap = summary.get("peak_load_heatmap", [])
+    heat_mapped = [e for e in heatmap if e.get("count", 0) > 0]
+    if heat_mapped:
+        elements.append(Paragraph("Нагрузка по часам", section_style))
+        heat_rows = [
+            [
+                day_names[e.get("day", 0)] if 0 <= e.get("day", 0) < 7 else str(e.get("day", 0)),
+                f"{e.get('hour', 0)}:00",
+                str(e.get("count", 0)),
+            ]
+            for e in heat_mapped
+        ]
+        elements.append(_pdf_table(["День", "Час", "Обращений"], heat_rows))
+
+    doc.build(elements)
+    buf.seek(0)
+
+    filename = f"report_{now_str}.pdf"
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 @router.get("/chats", response_model=List[ChatResponse])
 def list_chats(
@@ -1083,6 +1656,20 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
             section=section,
         )
 
+        # ── Notify SSE clients ──
+        if event_bus.loop:
+            asyncio.run_coroutine_threadsafe(
+                event_bus.publish_all("new_message", {
+                    "chat_id": request.chat_id,
+                    "dialog_id": resolved_dialog_id,
+                    "message_id": inserted_id,
+                    "text": request.text,
+                    "direction": "outgoing",
+                    "author": current_user["name"],
+                }),
+                event_bus.loop
+            )
+
         return {
             "status": "ok",
             "message_id": inserted_id,
@@ -1112,6 +1699,21 @@ def send_message(request: ReplyRequest, current_user: Dict[str, object] = Depend
         section=section,
         dialog_id=resolved_dialog_id,
     )
+
+    # ── Notify SSE clients ──
+    if event_bus.loop:
+        asyncio.run_coroutine_threadsafe(
+            event_bus.publish_all("new_message", {
+                "chat_id": request.chat_id,
+                "dialog_id": resolved_dialog_id,
+                "message_id": sent_message.message_id,
+                "text": request.text,
+                "direction": "outgoing",
+                "author": current_user["name"],
+            }),
+            event_bus.loop
+        )
+
     return {
         "status": "ok",
         "message_id": sent_message.message_id,
@@ -1379,6 +1981,12 @@ def close_dialog(
         dialog_id=dialog_id,
     )
 
+    # Send CSAT rating request to the client
+    try:
+        send_csat_request(chat_id, dialog_id)
+    except Exception:
+        logger.warning("Failed to send CSAT request for dialog %s", dialog_id, exc_info=True)
+
     return DialogStatusResponse(
         chat_id=chat_id,
         dialog_id=dialog_id,
@@ -1495,6 +2103,19 @@ def create_onec_message(
     logger.info(
         "1C incoming message saved: ext_id=%s, chat_id=%s, dialog_id=%s, message_id=%s, author=%s",
         external_chat_id, chat_id, dialog_id, message_id, author,
+    )
+
+    # ── Notify SSE clients ──
+    asyncio.run_coroutine_threadsafe(
+        event_bus.publish_all("new_message", {
+            "chat_id": chat_id,
+            "dialog_id": dialog_id,
+            "message_id": message_id,
+            "text": stored_text,
+            "direction": "incoming",
+            "author": author,
+        }),
+        asyncio.get_event_loop()
     )
 
     if section_id:

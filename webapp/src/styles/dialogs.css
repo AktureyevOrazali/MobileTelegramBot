@@ -5,6 +5,7 @@
   flex-direction: column;
   gap: 20px;
   padding-bottom: 48px;
+  overflow-x: clip;
 }
 
 /* ── Banner (notification) ── */
@@ -53,12 +54,28 @@
 
 .dialogs-state-card {
   text-align: center;
-  padding: 40px 24px;
+  padding: 48px 32px;
   border-radius: 20px;
   border: 1px solid var(--border-color);
   background: var(--surface-color);
   box-shadow: 0 2px 8px rgba(20, 33, 61, 0.04);
   animation: dialogs-card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dialogs-state-card__icon {
+  animation: state-icon-float 3s ease-in-out infinite;
+}
+
+@keyframes state-icon-float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 .dialogs-state-card__icon {
@@ -107,20 +124,30 @@
 .dialog-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   border: 1px solid var(--border-color);
+  border-left: 3px solid var(--brand-color);
   border-radius: 20px;
   background: var(--surface-color);
-  padding: 20px 22px;
+  padding: 18px 20px;
   box-shadow: 0 1px 4px rgba(20, 33, 61, 0.04);
   transition:
     background-color 0.3s ease,
-    box-shadow 0.25s ease,
-    transform 0.2s ease,
+    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
     border-color 0.25s ease;
-  cursor: default;
   animation: dialogs-card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: calc(var(--card-index, 0) * 0.04s);
+  position: relative;
+  overflow: visible;
+}
+
+.dialog-card--clickable {
+  cursor: pointer;
+}
+
+.dialog-card--menu-open {
+  z-index: 50;
 }
 
 @keyframes dialogs-card-in {
@@ -136,37 +163,39 @@
 }
 
 .dialog-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(37, 50, 99, 0.10), 0 2px 8px rgba(37, 50, 99, 0.06);
+  transform: translateY(-3px);
+  box-shadow:
+    0 12px 28px rgba(37, 50, 99, 0.10),
+    0 4px 10px rgba(37, 50, 99, 0.06),
+    0 0 0 1px rgba(62, 90, 168, 0.08);
   border-color: var(--border-strong);
 }
 
 [data-theme='dark'] .dialog-card:hover {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.3),
+    0 4px 10px rgba(0, 0, 0, 0.18),
+    0 0 0 1px rgba(129, 140, 248, 0.12);
 }
 
-.dialog-card__header {
+/* ── Top row: name + badges + controls ── */
+
+.dialog-card__top {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
   gap: 12px;
 }
 
-.dialog-card__info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.dialog-card__title-row {
+.dialog-card__identity {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
   flex-wrap: wrap;
 }
 
-.dialog-card__title-row h3 {
+.dialog-card__name {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
@@ -174,14 +203,41 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 340px;
+  max-width: 280px;
+}
+
+.dialog-card__controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ── Inline AI badge (compact) ── */
+
+.dialog-card__chip--inline {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid;
+  line-height: 1.3;
+}
+
+/* ── Meta row: username + date ── */
+
+.dialog-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .dialog-card__chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
 }
 
 .dialog-card__chip {
@@ -198,42 +254,32 @@
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.dialog-card__chip--ai-on {
+.dialog-card__chip--ai-on,
+.dialog-card__chip--inline.dialog-card__chip--ai-on {
   background: rgba(46, 164, 79, 0.10);
   border-color: rgba(46, 164, 79, 0.25);
   color: #1b7f2b;
 }
 
-[data-theme='dark'] .dialog-card__chip--ai-on {
+[data-theme='dark'] .dialog-card__chip--ai-on,
+[data-theme='dark'] .dialog-card__chip--inline.dialog-card__chip--ai-on {
   background: rgba(46, 164, 79, 0.15);
   color: #86efac;
   border-color: rgba(46, 164, 79, 0.30);
 }
 
-.dialog-card__chip--ai-off {
+.dialog-card__chip--ai-off,
+.dialog-card__chip--inline.dialog-card__chip--ai-off {
   background: rgba(220, 53, 69, 0.08);
   border-color: rgba(220, 53, 69, 0.20);
   color: #b42318;
 }
 
-[data-theme='dark'] .dialog-card__chip--ai-off {
+[data-theme='dark'] .dialog-card__chip--ai-off,
+[data-theme='dark'] .dialog-card__chip--inline.dialog-card__chip--ai-off {
   background: rgba(220, 53, 69, 0.12);
   color: #fca5a5;
   border-color: rgba(220, 53, 69, 0.25);
-}
-
-.dialog-card__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.dialog-card__actions .button {
-  padding: 8px 14px;
-  font-size: 0.86rem;
-  border-radius: 10px;
 }
 
 .dialog-card__date {
@@ -242,18 +288,133 @@
   white-space: nowrap;
 }
 
+/* ── Kebab menu (3-dot) ── */
+
+.dialog-card__kebab-wrap {
+  position: relative;
+}
+
+.dialog-card__kebab {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dialog-card__kebab:hover {
+  background: var(--surface-soft-color);
+  color: var(--text-heading);
+  border-color: var(--border-strong);
+}
+
+.dialog-card__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 100;
+  min-width: 200px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: var(--popover-shadow);
+  padding: 6px;
+  animation: card-menu-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Prevent menu from causing page overflow */
+  white-space: nowrap;
+}
+
+.dialog-card__menu--up {
+  top: auto;
+  bottom: calc(100% + 6px);
+  animation: card-menu-enter-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes card-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes card-menu-enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.dialog-card__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 0.88rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  text-align: left;
+}
+
+.dialog-card__menu-item:hover {
+  background: var(--surface-soft-color);
+}
+
+.dialog-card__menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dialog-card__menu-item--danger {
+  color: var(--badge-error-text);
+}
+
+.dialog-card__menu-item--danger:hover {
+  background: var(--badge-error-bg);
+}
+
+.dialog-card__menu-icon {
+  font-size: 1rem;
+  line-height: 1;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ── Responsive ── */
+
 @media (max-width: 680px) {
-  .dialog-card__header {
-    flex-direction: column;
+  .dialog-card__top {
+    flex-wrap: wrap;
   }
 
-  .dialog-card__actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
-
-  .dialog-card__title-row h3 {
+  .dialog-card__name {
     max-width: 100%;
+  }
+
+  .dialog-card__identity {
+    width: 100%;
   }
 }
 

@@ -313,6 +313,10 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
           typeof agent.avg_response_time_minutes === 'number' && Number.isFinite(agent.avg_response_time_minutes)
             ? agent.avg_response_time_minutes
             : null;
+        const avgCsat =
+          typeof agent.avg_csat === 'number' && Number.isFinite(agent.avg_csat)
+            ? agent.avg_csat
+            : null;
 
         return {
           name: agent.name ?? '',
@@ -321,6 +325,7 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
           avgMessagesPerDialog,
           avgResponseTimeMinutes,
           lastActivity: agent.last_activity ? new Date(agent.last_activity) : null,
+          avgCsat,
         };
       })
     : [];
@@ -421,6 +426,14 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
     topBinsWithContract,
     peakLoadHeatmap,
     dialogMetrics,
+    csatAverage: typeof raw.csat_average === 'number' ? raw.csat_average : null,
+    csatCount: safeNumber(raw.csat_count),
+    csatDistribution: Array.isArray(raw.csat_distribution)
+      ? raw.csat_distribution.map((item: { rating: number; count: number }) => ({
+        rating: safeNumber(item.rating),
+        count: safeNumber(item.count),
+      }))
+      : [],
     updatedAt: raw.updated_at ? new Date(raw.updated_at) : new Date(),
   };
 }

@@ -167,3 +167,83 @@ select {
   padding: 24px;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
+
+/* ── Custom scrollbars ── */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(62, 90, 168, 0.18) transparent;
+}
+
+[data-theme='dark'] * {
+  scrollbar-color: rgba(129, 140, 248, 0.2) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(62, 90, 168, 0.18);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(62, 90, 168, 0.3);
+}
+
+[data-theme='dark'] *::-webkit-scrollbar-thumb {
+  background: rgba(129, 140, 248, 0.2);
+}
+
+[data-theme='dark'] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(129, 140, 248, 0.35);
+}
+
+/* ── Selection highlight ── */
+
+::selection {
+  background: rgba(62, 90, 168, 0.2);
+  color: var(--text-heading);
+}
+
+[data-theme='dark'] ::selection {
+  background: rgba(129, 140, 248, 0.25);
+  color: #f8fafc;
+}
+
+/* ── Focus-visible accessibility ring ── */
+
+:focus-visible {
+  outline: 2px solid var(--brand-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--brand-color);
+  outline-offset: 2px;
+}
+
+/* ── Smooth scroll ── */
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* ── Text rendering ── */
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}

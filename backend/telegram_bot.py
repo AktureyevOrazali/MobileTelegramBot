@@ -12,6 +12,7 @@ from telebot import types
 from . import database
 from .ai_manager import ai_manager
 from . import contract_checker
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -526,7 +527,7 @@ def _persist_message(
     if not message_author and message.from_user:
         message_author = message.from_user.username or message.from_user.full_name
         
-    database.save_message(
+    message_id = database.save_message(
         chat_id=chat.id,
         direction=direction,
         text=text,
@@ -539,6 +540,23 @@ def _persist_message(
         dialog_id=dialog_id,
     )
     logger.info("Stored %s message from chat %s", direction, chat.id)
+    
+    # ── Notify SSE clients ──
+    try:
+        from .api import event_bus
+        asyncio.run_coroutine_threadsafe(
+            event_bus.publish_all("new_message", {
+                "chat_id": chat.id,
+                "dialog_id": dialog_id,
+                "message_id": message_id,
+                "text": text,
+                "direction": direction,
+                "author": message_author,
+            }),
+            asyncio.get_event_loop()
+        )
+    except Exception as e:
+        logger.error("Failed to publish SSE event: %s", e)
 
 
 def _select_section(chat_id: int, section_id: str) -> None:
@@ -751,6 +769,80 @@ def handle_switch_bin_callback(call: telebot.types.CallbackQuery) -> None:
             f"Активирован диалог по БИН {bin_value}. AI помощник включен.",
             reply_markup=_section_keyboard(),
         )
+
+
+# ═══════════════════════════════════════════
+# CSAT — Customer Satisfaction Rating
+# ═══════════════════════════════════════════
+
+CSAT_PREFIX = "csat_"
+
+
+def send_csat_request(chat_id: int, dialog_id: int) -> None:
+    """Send an inline keyboard with 1–5 star buttons for CSAT rating."""
+    markup = types.InlineKeyboardMarkup(row_width=5)
+    buttons = [
+        types.InlineKeyboardButton(
+            text=f"{'⭐' * i}",
+            callback_data=f"{CSAT_PREFIX}{dialog_id}_{i}",
+        )
+        for i in range(1, 6)
+    ]
+    markup.add(*buttons)
+    bot.send_message(
+        chat_id,
+        "📊 Пожалуйста, оцените качество обслуживания:",
+        reply_markup=markup,
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data and call.data.startswith(CSAT_PREFIX))
+def csat_callback_handler(call: types.CallbackQuery) -> None:
+    """Handle CSAT rating callback from inline buttons."""
+    try:
+        # Parse callback_data: csat_{dialog_id}_{rating}
+        parts = call.data[len(CSAT_PREFIX):].split("_")
+        if len(parts) != 2:
+            bot.answer_callback_query(call.id, "Ошибка данных")
+            return
+
+        dialog_id = int(parts[0])
+        rating = int(parts[1])
+
+        if rating < 1 or rating > 5:
+            bot.answer_callback_query(call.id, "Некорректная оценка")
+            return
+
+        # Check if already rated
+        existing = database.get_csat_for_dialog(dialog_id)
+        if existing is not None:
+            bot.answer_callback_query(call.id, f"Вы уже оценили: {'⭐' * existing}")
+            return
+
+        # Save the rating
+        saved = database.save_csat_rating(dialog_id, rating)
+        if not saved:
+            bot.answer_callback_query(call.id, "Не удалось сохранить оценку")
+            return
+
+        # Acknowledge and update the message
+        bot.answer_callback_query(call.id, f"Спасибо за оценку! {'⭐' * rating}")
+        try:
+            bot.edit_message_text(
+                f"📊 Спасибо за вашу оценку: {'⭐' * rating}\nМы ценим ваш отзыв!",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=None,
+            )
+        except Exception:
+            pass  # Best-effort message update
+
+    except (ValueError, IndexError):
+        logger.warning("Invalid CSAT callback data: %s", call.data, exc_info=True)
+        bot.answer_callback_query(call.id, "Ошибка обработки")
+    except Exception:
+        logger.error("CSAT callback error", exc_info=True)
+        bot.answer_callback_query(call.id, "Произошла ошибка")
 
 
 bot.set_my_commands(

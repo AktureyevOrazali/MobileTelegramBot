@@ -17,6 +17,8 @@ import {
   OrganizationWithoutContractRaw,
   PendingRegistration,
   PendingRegistrationRaw,
+  ReplyTemplate,
+  ReplyTemplateRaw,
   RoleInfo,
   RegisterStatus,
   Section,
@@ -399,6 +401,49 @@ export class ApiClient {
     return mapDashboardSummary(response);
   }
 
+  async downloadDashboardExport(options?: {
+    operatorId?: number | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    format?: 'xlsx' | 'pdf';
+  }): Promise<void> {
+    const query: Record<string, string | number | undefined> = {};
+    if (options?.operatorId) query.operator_id = options.operatorId;
+    if (options?.startDate) query.start_date = options.startDate;
+    if (options?.endDate) query.end_date = options.endDate;
+    if (options?.format) query.format = options.format;
+
+    const url = this.buildUrl('analytics/export', query);
+    const response = await fetch(url, {
+      headers: {
+        'X-Api-Token': this.apiToken,
+        ...(this.session?.token ? { 'X-Session-Token': this.session.token } : {}),
+      },
+    });
+    if (!response.ok) {
+      throw new ApiError('Не удалось скачать отчёт.', response.status);
+    }
+
+    const blob = await response.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = options?.format === 'pdf' ? 'report.pdf' : 'report.xlsx';
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?([^"]+)"?/);
+      if (match && match[1]) {
+        filename = match[1];
+      }
+    }
+
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+
   async sendMessage(chatId: number, text: string, dialogId?: number): Promise<void> {
     await this.request('messages/send', {
       method: 'POST',
@@ -565,7 +610,112 @@ export class ApiClient {
     return response.map(mapNotification);
   }
 
+  // ---------- Reply Templates ----------
 
+  async fetchReplyTemplates(section?: string | null): Promise<ReplyTemplate[]> {
+    const response = await this.request<ReplyTemplateRaw[]>('reply-templates', {
+      method: 'GET',
+      query: section ? { section } : undefined,
+    });
+    return response.map((t) => ({
+      id: t.id,
+      title: t.title,
+      text: t.text,
+      section: t.section,
+      sectionTitle: t.section_title ?? null,
+      sortOrder: t.sort_order,
+      createdBy: t.created_by ?? null,
+      createdAt: new Date(t.created_at),
+    }));
+  }
 
+  async createReplyTemplate(data: { title: string; text: string; section?: string | null; sortOrder?: number }): Promise<ReplyTemplate> {
+    const response = await this.request<ReplyTemplateRaw>('reply-templates', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: data.title,
+        text: data.text,
+        section: data.section ?? null,
+        sort_order: data.sortOrder ?? 0,
+      }),
+    });
+    return {
+      id: response.id,
+      title: response.title,
+      text: response.text,
+      section: response.section,
+      sectionTitle: response.section_title ?? null,
+      sortOrder: response.sort_order,
+      createdBy: response.created_by ?? null,
+      createdAt: new Date(response.created_at),
+    };
+  }
 
+  async updateReplyTemplate(id: number, data: { title: string; text: string; section?: string | null; sortOrder?: number }): Promise<ReplyTemplate> {
+    const response = await this.request<ReplyTemplateRaw>(`reply-templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        title: data.title,
+        text: data.text,
+        section: data.section ?? null,
+        sort_order: data.sortOrder ?? 0,
+      }),
+    });
+    return {
+      id: response.id,
+      title: response.title,
+      text: response.text,
+      section: response.section,
+      sectionTitle: response.section_title ?? null,
+      sortOrder: response.sort_order,
+      createdBy: response.created_by ?? null,
+      createdAt: new Date(response.created_at),
+    };
+  }
+
+  async deleteReplyTemplate(id: number): Promise<void> {
+    await this.request(`reply-templates/${id}`, {
+      method: 'DELETE',
+      expectJson: false,
+    });
+  }
+
+  // ---------- SSE (Server-Sent Events) ----------
+
+  connectToStream(callbacks: {
+    onMessage?: (data: MessageRaw) => void;
+  }): () => void {
+    if (!this.sessionToken) {
+      console.warn('Cannot connect to stream without a session token');
+      return () => { };
+    }
+
+    const url = this.buildUrl('stream', {
+      api_token: this.apiToken,
+      session_token: this.sessionToken,
+    });
+
+    const es = new EventSource(url, {
+      withCredentials: true,
+    });
+
+    es.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'new_message' && callbacks.onMessage) {
+          callbacks.onMessage(payload.data);
+        }
+      } catch (e) {
+        console.error('Failed to parse SSE event', e);
+      }
+    };
+
+    es.onerror = (err) => {
+      console.error('SSE Error', err);
+    };
+
+    return () => {
+      es.close();
+    };
+  }
 }

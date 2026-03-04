@@ -1537,3 +1537,88 @@ body,
   background: linear-gradient(135deg, #2d2a5e 0%, #3d3a8f 50%, #5a56b8 100%);
   box-shadow: 0 6px 24px rgba(99, 102, 241, 0.2);
 }
+
+/* ===== UI Polish overrides (normalized layer) ===== */
+.admin-page {
+  gap: 18px;
+  padding-bottom: 36px;
+}
+
+.admin-page .card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 20px rgba(20, 33, 61, 0.06);
+}
+
+.admin-page .card:hover {
+  box-shadow: var(--card-shadow-hover);
+  border-color: var(--border-strong);
+}
+
+.admin-hero {
+  border-radius: var(--radius-xl);
+}
+
+.admin-hero__top {
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.admin-hero__title {
+  font-size: clamp(1.2rem, 2.2vw, 1.5rem);
+}
+
+.admin-hero__search-input {
+  border-radius: var(--radius-sm);
+}
+
+.admin-stat-pill {
+  border-radius: var(--radius-md);
+}
+
+.admin-user-card,
+.pending-registration-card,
+.admin-modal {
+  border-radius: var(--radius-md);
+}
+
+.admin-user-card__name {
+  letter-spacing: -0.01em;
+}
+
+.admin-user-card__footer {
+  border-top-color: var(--border-color);
+}
+
+.admin-user-card__footer .button {
+  border-radius: var(--radius-sm);
+}
+
+.admin-modal__header h3 {
+  letter-spacing: -0.01em;
+}
+
+.admin-assign-grid,
+.admin-modal__list-container {
+  border-radius: var(--radius-md);
+}
+
+.bin-chip--compact,
+.bin-chip--detailed,
+.section-chip--detailed {
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 640px) {
+  .admin-page {
+    gap: 14px;
+  }
+
+  .admin-hero__sub {
+    font-size: 0.8rem;
+  }
+
+  .admin-user-card__actions-grid {
+    grid-template-columns: 1fr;
+  }
+}

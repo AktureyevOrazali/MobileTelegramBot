@@ -3,6 +3,10 @@
 ///////////////////////////////////////////////////////////////////////////////
 // СОЗДАНИЕ ФОРМЫ И ЖИЗНЕННЫЙ ЦИКЛ
 
+Перем PendingRatingTarget;
+Перем PendingRatingAppealId;
+Перем PendingRatingDialogId;
+
 &НаСервере
 Процедура ПриСозданииНаСервере(Отказ, СтандартнаяОбработка)
     BIN    = "111111111112";
@@ -23,10 +27,31 @@
         СписокРазделов.Добавить("Финансы", "finance");
     КонецПопытки;
 
+    // Динамические реквизиты формы для хранения состояния оценки
+    // (Перем не работает в тонком клиенте между &НаКлиенте/&НаСервере)
+    ДобавляемыеРеквизиты = Новый Массив;
+    ДобавляемыеРеквизиты.Добавить(Новый РеквизитФормы("ОценкаЗапрошена", Новый ОписаниеТипов("Булево")));
+    ДобавляемыеРеквизиты.Добавить(Новый РеквизитФормы("ОценкаTarget",    Новый ОписаниеТипов("Строка",,Новый КвалификаторыСтроки(100))));
+    ДобавляемыеРеквизиты.Добавить(Новый РеквизитФормы("ОценкаAppealId",  Новый ОписаниеТипов("Строка",,Новый КвалификаторыСтроки(200))));
+    ДобавляемыеРеквизиты.Добавить(Новый РеквизитФормы("ОценкаDialogId",  Новый ОписаниеТипов("Строка",,Новый КвалификаторыСтроки(200))));
+    Попытка
+        ИзменитьРеквизиты(ДобавляемыеРеквизиты);
+    Исключение
+        // Реквизиты уже существуют — пропускаем
+    КонецПопытки;
+
     Попытка
         ExternalChatId = ПолучитьExternalChatIDТекущегоПользователя();
     Исключение
     КонецПопытки;
+
+    PendingRatingTarget = "operator";
+    PendingRatingAppealId = Неопределено;
+    PendingRatingDialogId = Неопределено;
+    ЭтаФорма["ОценкаЗапрошена"] = Ложь;
+    ЭтаФорма["ОценкаTarget"] = "operator";
+    ЭтаФорма["ОценкаAppealId"] = "";
+    ЭтаФорма["ОценкаDialogId"] = "";
 КонецПроцедуры
 
 &НаКлиенте
@@ -82,6 +107,14 @@
             ИначеЕсли Атрибут.name = "data-button-id" И Атрибут.value = "CloseDialog" Тогда
                 СтандартнаяОбработка = Ложь;
                 ЗавершитьОбращение();
+                Прервать;
+            ИначеЕсли Атрибут.name = "data-button-id" И Найти(Атрибут.value, "QuickCmd_") = 1 Тогда
+                СтандартнаяОбработка = Ложь;
+                НажатаБыстраяКоманда(Сред(Строка(Атрибут.value), 10));
+                Прервать;
+            ИначеЕсли Атрибут.name = "data-button-id" И Найти(Атрибут.value, "Rate_") = 1 Тогда
+                СтандартнаяОбработка = Ложь;
+                НажатаОценка(Число(Сред(Строка(Атрибут.value), 6)));
                 Прервать;
             КонецЕсли;
         КонецЦикла;
@@ -183,8 +216,38 @@
     Попытка
         Результат = ПолучитьИсториюНаСервере(ExternalChatId, BIN, ChatId, DialogId);
         Если Результат.Свойство("messages") Тогда
+            // Мемоизация: проверяем кол-во элементов, чтобы не мерцать без повода
+            НовоеКоличество = 0;
+            Попытка НовоеКоличество = Результат.messages.Количество(); Исключение КонецПопытки;
+
+            ТекущееКоличество = ИсторияСообщений.Количество();
+            
+            // Если ничего не изменилось и мы в тихом режиме - не обновляем DOM
+            Если Тихо И НовоеКоличество = ТекущееКоличество Тогда
+                Возврат;
+            КонецЕсли;
+
             ЗаполнитьТаблицуИстории(Результат.messages);
-            ОбновитьHTMLИстории();
+            
+            // Если сообщений стало больше - нужно вызвать fade effect
+            НужнаАнимация = (ТекущееКоличество > 0 И НовоеКоличество > ТекущееКоличество);
+            // Если мы отправили сообщение (Тихо=Ложь), анимация не нужна - мгновенное отображение
+            Если Не Тихо Тогда НужнаАнимация = Ложь; КонецЕсли;
+
+            // Триггер рейтинга
+            // Если последнее сообщение говорит, что обращение закрыто - показываем оценку оператору
+            Если Не ЭтаФорма["ОценкаЗапрошена"] И ИсторияСообщений.Количество() > 0 Тогда
+                ПоследняяСтр = ИсторияСообщений[0]; // Индекс 0 - самое новое сообщение API
+                ТекстПосл = НРег(Строка(ПоследняяСтр.Текст));
+                Если Найти(ТекстПосл, "закрыто оператором") > 0 Или Найти(ТекстПосл, "completed by operator") > 0 Тогда
+                    ЭтаФорма["ОценкаTarget"] = "operator";
+                    ЭтаФорма["ОценкаAppealId"] = "";
+                    ЭтаФорма["ОценкаDialogId"] = ?(ЗначениеЗаполнено(DialogId), Строка(DialogId), "");
+                    ЭтаФорма["ОценкаЗапрошена"] = Истина;
+                КонецЕсли;
+            КонецЕсли;
+
+            ОбновитьHTMLИстории(НужнаАнимация);
         КонецЕсли;
     Исключение
     КонецПопытки;
@@ -216,19 +279,22 @@
 // ФОРМИРОВАНИЕ HTML
 
 &НаСервере
-Функция СформироватьHTMLЧатаНаСервере() Экспорт
+Функция СформироватьHTMLЧатаНаСервере(АнимироватьНовые = Ложь) Экспорт
     ЛокТема = ?(ПустаяСтрока(Theme), "dark", Theme);
     Шаблон = РеквизитФормыВЗначение("Объект").ПолучитьМакет("ChatTemplate").ПолучитьТекст();
     
     СообщенияHTML = "";
-    // API возвращает сообщения от новых к старым, итерируем в обратном порядке
-    // чтобы старые были сверху, новые снизу
     Индекс = ИсторияСообщений.Количество() - 1;
     Пока Индекс >= 0 Цикл
         Стр = ИсторияСообщений[Индекс];
         Класс = ?(Стр.Направление = "Клиент", "right", "left");
         
-        Текст = СтрЗаменить(Стр.Текст, "<", "&lt;"); // Простейший escape
+        // Для новых сообщений добавляем класс анимации
+        Если АнимироватьНовые И Индекс = 0 Тогда // Индекс 0 = самое новое
+             Класс = Класс + " msg-new";
+        КонецЕсли;
+        
+        Текст = СтрЗаменить(Стр.Текст, "<", "&lt;"); // escape
         
         СообщенияHTML = СообщенияHTML + 
             "<div class='msg " + Класс + "'>" +
@@ -239,16 +305,46 @@
         Индекс = Индекс - 1;
     КонецЦикла;
 
+    // Inline-кнопки (кнопки команд)
+    СообщенияHTML = СообщенияHTML +
+        "<div class='msg-buttons clearfix'>" +
+        "<a href='#' class='qa-btn' data-button-id='QuickCmd_Status' onclick='return false;'>Статус заявки</a>" +
+        "<a href='#' class='qa-btn' data-button-id='QuickCmd_Docs' onclick='return false;'>Документы</a>" +
+        "<a href='#' class='qa-btn' data-button-id='QuickCmd_Operator' onclick='return false;'>Позвать оператора</a>" +
+        "</div>";
+
+    // Оценка как сообщение в чате (вместо калькулятора ВвестиЧисло)
+    Если ЭтаФорма["ОценкаЗапрошена"] Тогда
+        ТекстЦели = ?(НРег(Строка(ЭтаФорма["ОценкаTarget"])) = "ai", "работу AI", "работу оператора");
+        КлассОценки = ?(АнимироватьНовые, "msg msg-new left", "msg left");
+        СообщенияHTML = СообщенияHTML +
+            "<div class='" + КлассОценки + "'>" +
+            "<div class='author'>Система</div>" +
+            "<div>Оцените " + ТекстЦели + ":</div>" +
+            "<div class='msg-buttons'>" +
+            "<a href='#' class='qa-rate' data-button-id='Rate_1' onclick='return false;'>1</a>" +
+            "<a href='#' class='qa-rate' data-button-id='Rate_2' onclick='return false;'>2</a>" +
+            "<a href='#' class='qa-rate' data-button-id='Rate_3' onclick='return false;'>3</a>" +
+            "<a href='#' class='qa-rate' data-button-id='Rate_4' onclick='return false;'>4</a>" +
+            "<a href='#' class='qa-rate' data-button-id='Rate_5' onclick='return false;'>5</a>" +
+            "</div>" +
+            "<div class='meta'>Сейчас</div>" +
+            "</div>";
+    КонецЕсли;
+
     ПолныйHTML = СтрЗаменить(Шаблон, "{{MESSAGES}}", СообщенияHTML);
     ПолныйHTML = СтрЗаменить(ПолныйHTML, "{{THEME}}", ЛокТема);
     Возврат ПолныйHTML;
 КонецФункции
 
 &НаКлиенте
-Процедура ОбновитьHTMLИстории() Экспорт
-    ChatHTML = СформироватьHTMLЧатаНаСервере();
+Процедура ОбновитьHTMLИстории(Анимировать = Ложь) Экспорт
+    ChatHTML = СформироватьHTMLЧатаНаСервере(Анимировать);
     Попытка
         Элементы.ChatHTML.ВыполнитьКоманду("scrollChatToBottom();");
+        Если Анимировать Тогда
+            Элементы.ChatHTML.ВыполнитьКоманду("fadeInMessages();");
+        КонецЕсли;
     Исключение
     КонецПопытки;
 КонецПроцедуры
@@ -300,6 +396,7 @@
         Если Результат <> Неопределено И Результат.Свойство("status") Тогда
             Если Результат.status = "ok" Тогда
                 Сообщить("Обращение завершено.");
+                ЗапроситьОценкуПослеЗакрытия(Результат);
             ИначеЕсли Результат.status = "no_active_dialog" Тогда
                 Сообщить("Нет активного обращения для завершения.");
             Иначе
@@ -315,6 +412,83 @@
 &НаСервере
 Функция ЗавершитьОбращениеНаСервере(P1, P2)
     Возврат РеквизитФормыВЗначение("Объект").ЗавершитьОбращениеMobileBot(P1, P2);
+КонецФункции
+
+&НаКлиенте
+Процедура НажатаБыстраяКоманда(КодКоманды)
+    Код = НРег(СокрЛП(Строка(КодКоманды)));
+    Если Код = "status" Тогда
+        MessageText = "Проверьте, пожалуйста, статус моей заявки.";
+    ИначеЕсли Код = "docs" Тогда
+        MessageText = "Какие документы нужны для оформления?";
+    ИначеЕсли Код = "operator" Тогда
+        MessageText = "Позовите, пожалуйста, оператора.";
+    Иначе
+        Возврат;
+    КонецЕсли;
+
+    КомандаОтправить(Неопределено);
+КонецПроцедуры
+
+&НаКлиенте
+Процедура ЗапроситьОценкуПослеЗакрытия(РезультатЗакрытия)
+    Если РезультатЗакрытия = Неопределено Тогда
+        Возврат;
+    КонецЕсли;
+    Если (Не РезультатЗакрытия.Свойство("rating_required")) Или (Не РезультатЗакрытия.rating_required) Тогда
+        Возврат;
+    КонецЕсли;
+
+    // Сохраняем параметры оценки в реквизиты формы — покажем как сообщение в чате
+    ЭтаФорма["ОценкаTarget"] = "operator";
+    ЭтаФорма["ОценкаAppealId"] = "";
+    ЭтаФорма["ОценкаDialogId"] = ?(ЗначениеЗаполнено(DialogId), Строка(DialogId), "");
+
+    Если РезультатЗакрытия.Свойство("rating_target") И ЗначениеЗаполнено(РезультатЗакрытия.rating_target) Тогда
+        ЭтаФорма["ОценкаTarget"] = Строка(РезультатЗакрытия.rating_target);
+    КонецЕсли;
+
+    Если РезультатЗакрытия.Свойство("appeal_id") И ЗначениеЗаполнено(РезультатЗакрытия.appeal_id) Тогда
+        ЭтаФорма["ОценкаAppealId"] = Строка(РезультатЗакрытия.appeal_id);
+    КонецЕсли;
+
+    Если РезультатЗакрытия.Свойство("dialog_id") И ЗначениеЗаполнено(РезультатЗакрытия.dialog_id) Тогда
+        ЭтаФорма["ОценкаDialogId"] = Строка(РезультатЗакрытия.dialog_id);
+    КонецЕсли;
+
+    // Показываем оценку как сообщение в чате (вместо калькулятора ВвестиЧисло)
+    ЭтаФорма["ОценкаЗапрошена"] = Истина;
+    ОбновитьHTMLИстории();
+КонецПроцедуры
+
+&НаКлиенте
+Процедура НажатаОценка(Рейтинг, Target = "operator", AppealId = Неопределено, DialogIdОценки = Неопределено)
+    Если Рейтинг < 1 Или Рейтинг > 5 Тогда
+        Возврат;
+    КонецЕсли;
+
+    // Берём параметры из реквизитов формы (установлены при запросе оценки)
+    ЛокTarget = ?(ЗначениеЗаполнено(ЭтаФорма["ОценкаTarget"]), ЭтаФорма["ОценкаTarget"], "operator");
+    ЛокAppealId = ?(ЗначениеЗаполнено(ЭтаФорма["ОценкаAppealId"]), ЭтаФорма["ОценкаAppealId"], Неопределено);
+    ЛокDialogId = ?(ЗначениеЗаполнено(ЭтаФорма["ОценкаDialogId"]), ЭтаФорма["ОценкаDialogId"], DialogId);
+
+    Попытка
+        Ответ = ОтправитьОценкуНаСервере(ExternalChatId, ЛокDialogId, ЛокAppealId, Рейтинг, ЛокTarget);
+        Если Ответ <> Неопределено И Ответ.Свойство("status") И Ответ.status = "ok" Тогда
+            Сообщить("Оценка сохранена.");
+        КонецЕсли;
+    Исключение
+        Сообщить("Ошибка отправки оценки: " + ОписаниеОшибки());
+    КонецПопытки;
+
+    // Убираем сообщение с оценкой из чата
+    ЭтаФорма["ОценкаЗапрошена"] = Ложь;
+    ОбновитьHTMLИстории();
+КонецПроцедуры
+
+&НаСервере
+Функция ОтправитьОценкуНаСервере(P1, P2, P3, P4, P5)
+    Возврат РеквизитФормыВЗначение("Объект").ОтправитьОценкуMobileBot(P1, P2, P3, P4, P5);
 КонецФункции
 
 Код модуля объекта внешней формы
@@ -654,6 +828,29 @@
     Возврат FromJSON(Ответ.ПолучитьТелоКакСтроку());
 КонецФункции
 
+Функция ОтправитьОценкуMobileBot(ExternalChatId, DialogId=Неопределено, AppealId=Неопределено, Rating=0, Target="operator") Экспорт
+    Заголовки = Новый Соответствие;
+    ВставитьЗаголовок(Заголовки, "Content-Type", "application/json");
+    ВставитьЗаголовок(Заголовки, "X-Integration-Token", ТокенИнтеграцииMobileBot());
+
+    Д = Новый Структура;
+    Д.Вставить("external_chat_id", ExternalChatId);
+    Если ЗначениеЗаполнено(DialogId) Тогда Д.Вставить("dialog_id", DialogId); КонецЕсли;
+    Если ЗначениеЗаполнено(AppealId) Тогда Д.Вставить("appeal_id", AppealId); КонецЕсли;
+    Д.Вставить("rating", Rating);
+    Д.Вставить("target", Target); // operator | ai
+
+    ТелоJSON = ToJSON(Д);
+    Ответ = ВыполнитьPOST("/integrations/1c/rating", Заголовки, ТелоJSON);
+
+    Если Ответ.КодСостояния <> 200 Тогда
+        ТекстОшибки = Ответ.ПолучитьТелоКакСтроку();
+        ВызватьИсключение СтрШаблон("Ошибка HTTP %1: %2", Ответ.КодСостояния, ТекстОшибки);
+    КонецЕсли;
+
+    Возврат FromJSON(Ответ.ПолучитьТелоКакСтроку());
+КонецФункции
+
 #КонецОбласти
 
 #Область СервисныеФункции
@@ -734,6 +931,7 @@ body.theme-light {
   height: 50px;
   padding: 0 12px;
   line-height: 50px;
+  overflow: hidden;
 }
 /* Dark theme header */
 body.theme-dark .top-bar-inner {
@@ -749,6 +947,7 @@ body.theme-light .top-bar-inner {
   font-size: 16px;
   font-weight: 600;
   display: inline-block;
+  float: left;
 }
 body.theme-dark .top-bar-title {
   color: #e9edef;
@@ -764,7 +963,7 @@ body.theme-light .top-bar-title {
 /* Кнопка "Завершить обращение" в шапке */
 .close-dialog-button {
   display: inline-block;
-  padding: 5px 12px;
+  padding: 7px 12px;
   border-radius: 6px;
   cursor: pointer;
   font-family: inherit;
@@ -773,7 +972,7 @@ body.theme-light .top-bar-title {
   text-decoration: none;
   text-align: center;
   border: none;
-  margin-right: 8px;
+  margin-right: 6px;
   vertical-align: middle;
 }
 body.theme-dark .close-dialog-button {
@@ -818,6 +1017,24 @@ body.theme-light .chat {
   background: #efeae2;
 }
 
+/* ===== INLINE-КНОПКИ ПОД СООБЩЕНИЯМИ (Telegram-стиль) ===== */
+.msg-buttons {
+  margin-top: 8px;
+  padding: 0 4px;
+  clear: both;
+  text-align: left;
+}
+.msg-buttons .qa-btn,
+.msg-buttons .qa-rate {
+  margin-bottom: 6px;
+}
+
+/* ===== АНИМАЦИЯ ПОЯВЛЕНИЯ (IE7-совместимо через JS) ===== */
+.msg-new {
+  visibility: hidden;
+  top: 8px;
+}
+
 /* ===== НИЖНЯЯ ПАНЕЛЬ (FOOTER) ===== */
 .input-row-outer {
   position: absolute;
@@ -848,16 +1065,15 @@ body.theme-light .input-container {
 
 /* ===== ПОЛЕ ВВОДА + КНОПКА ===== */
 .input-row {
-  display: table;
+  overflow: hidden;
   width: 100%;
 }
 .input-cell {
-  display: table-cell;
-  vertical-align: middle;
+  overflow: hidden;
+  zoom: 1;
 }
 .button-cell {
-  display: table-cell;
-  vertical-align: middle;
+  float: right;
   width: 90px;
   padding-left: 8px;
 }
@@ -918,6 +1134,61 @@ body.theme-light .send-button:hover {
   background: #017561;
 }
 
+/* Быстрые кнопки (IE-совместимо) */
+.qa-btn {
+  display: inline-block;
+  padding: 6px 12px;
+  margin: 0 5px 4px 0;
+  border: 1px solid #b7c3d0;
+  background: #eef3f8;
+  color: #2a3d5f;
+  text-decoration: none;
+  border-radius: 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.qa-btn-danger {
+  border-color: #d7a7a7;
+  background: #f8eeee;
+  color: #7b2d2d;
+}
+.qa-rate {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  margin: 0 4px 4px 0;
+  border: 1px solid #c9d3df;
+  border-radius: 14px;
+  background: #fff;
+  color: #2a3d5f;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+body.theme-dark .qa-btn {
+  border-color: #345064;
+  background: #233847;
+  color: #cfe2f0;
+}
+body.theme-dark .qa-btn-danger {
+  border-color: #704646;
+  background: #3d2a2a;
+  color: #f4c0c0;
+}
+body.theme-dark .qa-rate {
+  border-color: #3d5667;
+  background: #213847;
+  color: #d6e8f7;
+}
+body.theme-light .qa-rate {
+  border-color: #b8c5d4;
+  background: #ffffff;
+  color: #2a3d5f;
+}
+
 /* ===== СООБЩЕНИЯ ===== */
 .msg {
   max-width: 80%;
@@ -931,7 +1202,7 @@ body.theme-light .send-button:hover {
 }
 .msg:after {
   content: "";
-  display: table;
+  display: block;
   clear: both;
 }
 
@@ -1007,7 +1278,7 @@ body.theme-light .right .author {
 /* Утилиты */
 .clearfix:after {
   content: "";
-  display: table;
+  display: block;
   clear: both;
 }
 
@@ -1040,8 +1311,7 @@ body.theme-dark .theme-toggle-button:hover {
 
 /* ===== EMOJI PICKER ===== */
 .emoji-button-cell {
-  display: table-cell;
-  vertical-align: middle;
+  float: left;
   width: 40px;
   padding-right: 8px;
 }
@@ -1270,6 +1540,61 @@ function handleKeyPress(e) {
   return true;
 }
 
+/* анимация появления элементов - IE7-совместимо (filter:alpha) */
+function fadeInMessages() {
+  try {
+    var chat = document.getElementById('chatMessages');
+    if (!chat) return;
+    var items = chat.getElementsByTagName('div');
+    var targets = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].className && items[i].className.indexOf('msg-new') >= 0) {
+        targets.push(items[i]);
+      }
+    }
+    if (targets.length === 0) return;
+
+    function animateOne(el, delay) {
+      window.setTimeout(function() {
+        var s = 0;
+        el.style.visibility = 'visible';
+        el.style.position = 'relative';
+        el.style.top = '8px';
+        if (el.style.filter !== undefined) {
+          el.style.filter = 'alpha(opacity=0)';
+        }
+        if (el.style.opacity !== undefined) {
+          el.style.opacity = '0';
+        }
+
+        var interval = window.setInterval(function() {
+          s += 20;
+          if (s > 100) s = 100;
+
+          if (el.style.filter !== undefined) {
+            el.style.filter = 'alpha(opacity=' + s + ')';
+          }
+          if (el.style.opacity !== undefined) {
+            el.style.opacity = (s / 100);
+          }
+          el.style.top = (8 - Math.floor((s * 8) / 100)) + 'px';
+
+          if (s >= 100) {
+            window.clearInterval(interval);
+            el.style.top = '0px';
+            el.className = el.className.replace(/\s*msg-new\s*/g, ' ');
+          }
+        }, 30);
+      }, delay);
+    }
+
+    // По очереди: каждое новое сообщение появляется с небольшой задержкой
+    for (var j = 0; j < targets.length; j++) {
+      animateOne(targets[j], j * 70);
+    }
+  } catch (e) {}
+}
+
 /* onload */
 window.onload = function() {
   // На старте класс body уже theme-{{THEME}} из 1С
@@ -1281,6 +1606,7 @@ window.onload = function() {
 
   applyTheme(currentTheme);
   scrollChatToBottom();
+  fadeInMessages();
 
   var messageInput = document.getElementById('messageInput');
   if (messageInput) {
@@ -1314,6 +1640,8 @@ window.onload = function() {
       {{MESSAGES}}
     </div>
   </div>
+
+
   
   <div class="input-row-outer">
     <div class="input-container">

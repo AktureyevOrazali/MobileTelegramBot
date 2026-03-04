@@ -1,4 +1,8 @@
-﻿/* ===== Modern glassmorphism app header ===== */
+
+.app-shell {
+  min-height: 100vh;
+}
+
 
 .app-header {
   position: sticky;
@@ -10,7 +14,7 @@
   border-bottom: 1px solid var(--header-border);
   box-shadow: var(--header-shadow);
   padding: 0;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 
@@ -18,7 +22,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
+  height: 58px;
   gap: 20px;
 }
 
@@ -48,7 +52,7 @@
   background-clip: text;
 }
 
-/* ─── Pill-shaped nav track ─── */
+/* --- Pill-shaped nav track --- */
 .app-header__nav {
   display: flex;
   align-items: center;
@@ -100,7 +104,7 @@
   opacity: 1;
 }
 
-/* ─── Right-side controls ─── */
+/* --- Right-side controls --- */
 .app-header__right {
   display: flex;
   align-items: center;
@@ -155,7 +159,7 @@
   }
 }
 
-/* ─── Profile button ─── */
+/* --- Profile button --- */
 .profile-button {
   display: flex;
   align-items: center;
@@ -213,7 +217,7 @@
   color: var(--profile-role-color);
 }
 
-/* ─── Theme toggle ─── */
+/* --- Theme toggle --- */
 .theme-toggle {
   width: 34px;
   height: 34px;
@@ -257,7 +261,7 @@
   padding-bottom: 48px;
 }
 
-/* ── Gradient hero ── */
+/* -- Gradient hero -- */
 
 .profile-hero {
   background: linear-gradient(135deg, #3b5998 0%, #5a7ab8 25%, #7c9fd6 50%, #5a7ab8 75%, #3b5998 100%);
@@ -361,7 +365,7 @@
   opacity: 0.5;
 }
 
-/* ── Profile card ── */
+/* -- Profile card -- */
 
 .profile-card {
   display: flex;
@@ -382,7 +386,7 @@
   flex-wrap: wrap;
 }
 
-/* ── Form fields ── */
+/* -- Form fields -- */
 
 .profile-field {
   display: flex;
@@ -425,7 +429,7 @@
   }
 }
 
-/* ── Chips ── */
+/* -- Chips -- */
 
 .profile-chips {
   display: flex;
@@ -469,7 +473,7 @@
   font-size: 0.9rem;
 }
 
-/* ── Banner / Error ── */
+/* -- Banner / Error -- */
 
 .profile-banner {
   padding: 10px 16px;
@@ -914,7 +918,7 @@
   }
 }
 
-/* ─── Dark theme overrides for profile hero ─── */
+/* --- Dark theme overrides for profile hero --- */
 [data-theme='dark'] .profile-hero {
   background: linear-gradient(135deg, #2d2a5e 0%, #3d3a8f 50%, #5a56b8 100%);
   box-shadow: 0 6px 24px rgba(99, 102, 241, 0.2);

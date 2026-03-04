@@ -352,6 +352,7 @@ def _init_db() -> None:
             first_message_length INTEGER,
             has_contract BOOLEAN,
             csat_rating INTEGER,
+            ai_csat_rating INTEGER,
             created_at TEXT NOT NULL
         )
         """,
@@ -367,6 +368,7 @@ def _init_db() -> None:
         CREATE TABLE IF NOT EXISTS dialog_operator_stats (
             id BIGSERIAL PRIMARY KEY,
             dialog_id BIGINT NOT NULL,
+            appeal_id BIGINT,
             operator_name TEXT NOT NULL,
             messages_sent INTEGER DEFAULT 0,
             avg_response_seconds REAL,
@@ -382,6 +384,7 @@ def _init_db() -> None:
         CREATE TABLE IF NOT EXISTS stat_questions (
             id BIGSERIAL PRIMARY KEY,
             dialog_id BIGINT,
+            appeal_id BIGINT,
             text TEXT NOT NULL,
             created_at TEXT NOT NULL,
             section TEXT
@@ -485,6 +488,9 @@ def _init_db() -> None:
     _ensure_column("dialog_stats", "has_contract", "BOOLEAN")
     _ensure_column("dialog_stats", "appeal_id", "BIGINT")
     _ensure_column("dialog_stats", "csat_rating", "INTEGER")
+    _ensure_column("dialog_stats", "ai_csat_rating", "INTEGER")
+    _ensure_column("dialog_operator_stats", "appeal_id", "BIGINT")
+    _ensure_column("stat_questions", "appeal_id", "BIGINT")
 
     # Unique constraint on dialog_stats — one row per appeal
     with _lock:
@@ -519,6 +525,12 @@ def _init_db() -> None:
         )
         execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_dialog_stats_appeal_id ON dialog_stats (appeal_id) WHERE appeal_id IS NOT NULL"
+        )
+        execute(
+            "CREATE INDEX IF NOT EXISTS idx_dialog_op_stats_appeal_id ON dialog_operator_stats (appeal_id)"
+        )
+        execute(
+            "CREATE INDEX IF NOT EXISTS idx_stat_questions_appeal_id ON stat_questions (appeal_id)"
         )
 
     with _lock:
@@ -1189,7 +1201,7 @@ def close_appeal(
     return appeal_id
 
 
-def save_csat_rating(dialog_id: int, rating: int) -> bool:
+def save_csat_rating(dialog_id: int, rating: int, appeal_id: int | None = None) -> bool:
     """Save a CSAT rating (1-5) for a closed dialog.
 
     Updates the csat_rating column in dialog_stats.
@@ -1199,22 +1211,71 @@ def save_csat_rating(dialog_id: int, rating: int) -> bool:
         logger.warning("Invalid CSAT rating %s for dialog %s", rating, dialog_id)
         return False
     with _lock:
-        cursor = execute(
-            """
-            UPDATE dialog_stats 
-            SET csat_rating = %s 
-            WHERE dialog_id = %s 
-              AND created_at = (
-                  SELECT MAX(created_at) FROM dialog_stats WHERE dialog_id = %s
-              )
-            """,
-            (rating, dialog_id, dialog_id),
-        )
+        if appeal_id is not None:
+            cursor = execute(
+                """
+                UPDATE dialog_stats
+                SET csat_rating = %s
+                WHERE appeal_id = %s
+                """,
+                (rating, appeal_id),
+            )
+        else:
+            cursor = execute(
+                """
+                UPDATE dialog_stats
+                SET csat_rating = %s
+                WHERE dialog_id = %s
+                  AND created_at = (
+                      SELECT MAX(created_at) FROM dialog_stats WHERE dialog_id = %s
+                  )
+                """,
+                (rating, dialog_id, dialog_id),
+            )
         updated = cursor.rowcount > 0
     if updated:
         logger.info("Saved CSAT rating %s for dialog %s", rating, dialog_id)
     else:
         logger.warning("No dialog_stats row found for dialog %s to save CSAT", dialog_id)
+    return updated
+
+
+def save_ai_csat_rating(
+    dialog_id: int, rating: int, appeal_id: int | None = None
+) -> bool:
+    """Save AI CSAT rating (1-5) for a closed dialog/appeal."""
+    if rating < 1 or rating > 5:
+        logger.warning("Invalid AI CSAT rating %s for dialog %s", rating, dialog_id)
+        return False
+    with _lock:
+        if appeal_id is not None:
+            cursor = execute(
+                """
+                UPDATE dialog_stats
+                SET ai_csat_rating = %s
+                WHERE appeal_id = %s
+                """,
+                (rating, appeal_id),
+            )
+        else:
+            cursor = execute(
+                """
+                UPDATE dialog_stats
+                SET ai_csat_rating = %s
+                WHERE dialog_id = %s
+                  AND created_at = (
+                      SELECT MAX(created_at) FROM dialog_stats WHERE dialog_id = %s
+                  )
+                """,
+                (rating, dialog_id, dialog_id),
+            )
+        updated = cursor.rowcount > 0
+    if updated:
+        logger.info("Saved AI CSAT rating %s for dialog %s", rating, dialog_id)
+    else:
+        logger.warning(
+            "No dialog_stats row found for dialog %s to save AI CSAT", dialog_id
+        )
     return updated
 
 
@@ -1228,6 +1289,94 @@ def get_csat_for_dialog(dialog_id: int) -> Optional[int]:
     if row and row["csat_rating"] is not None:
         return int(row["csat_rating"])
     return None
+
+
+def get_ai_csat_for_dialog(dialog_id: int) -> Optional[int]:
+    """Return the AI CSAT rating for a dialog, or None if not rated."""
+    with _lock:
+        row = execute(
+            "SELECT ai_csat_rating FROM dialog_stats WHERE dialog_id = %s ORDER BY created_at DESC LIMIT 1",
+            (dialog_id,),
+        ).fetchone()
+    if row and row["ai_csat_rating"] is not None:
+        return int(row["ai_csat_rating"])
+    return None
+
+
+def get_csat_for_appeal(appeal_id: int) -> Optional[int]:
+    """Return the CSAT rating for a specific appeal, or None if not rated."""
+    with _lock:
+        row = execute(
+            "SELECT csat_rating FROM dialog_stats WHERE appeal_id = %s LIMIT 1",
+            (appeal_id,),
+        ).fetchone()
+    if row and row["csat_rating"] is not None:
+        return int(row["csat_rating"])
+    return None
+
+
+def get_ai_csat_for_appeal(appeal_id: int) -> Optional[int]:
+    """Return AI CSAT rating for a specific appeal, or None if not rated."""
+    with _lock:
+        row = execute(
+            "SELECT ai_csat_rating FROM dialog_stats WHERE appeal_id = %s LIMIT 1",
+            (appeal_id,),
+        ).fetchone()
+    if row and row["ai_csat_rating"] is not None:
+        return int(row["ai_csat_rating"])
+    return None
+
+
+def get_latest_closed_appeal_id(dialog_id: int) -> Optional[int]:
+    """Return latest closed appeal id for a dialog, or None."""
+    with _lock:
+        row = execute(
+            """
+            SELECT id
+            FROM appeals
+            WHERE dialog_id = %s AND ended_at IS NOT NULL
+            ORDER BY ended_at DESC
+            LIMIT 1
+            """,
+            (dialog_id,),
+        ).fetchone()
+    return int(row["id"]) if row else None
+
+
+def get_dialog_id_for_appeal(appeal_id: int) -> Optional[int]:
+    """Return dialog_id for given appeal id, or None."""
+    with _lock:
+        row = execute(
+            "SELECT dialog_id FROM appeals WHERE id = %s LIMIT 1",
+            (appeal_id,),
+        ).fetchone()
+    return int(row["dialog_id"]) if row and row["dialog_id"] is not None else None
+
+
+def get_latest_dialog_stats(dialog_id: int) -> Optional[Dict[str, object]]:
+    """Return latest dialog_stats row for a dialog."""
+    with _lock:
+        row = execute(
+            """
+            SELECT id, dialog_id, appeal_id, is_ai_closed, csat_rating, ai_csat_rating, created_at
+            FROM dialog_stats
+            WHERE dialog_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (dialog_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "dialog_id": int(row["dialog_id"]),
+        "appeal_id": int(row["appeal_id"]) if row["appeal_id"] is not None else None,
+        "is_ai_closed": bool(row["is_ai_closed"]),
+        "csat_rating": int(row["csat_rating"]) if row["csat_rating"] is not None else None,
+        "ai_csat_rating": int(row["ai_csat_rating"]) if row["ai_csat_rating"] is not None else None,
+        "created_at": row["created_at"],
+    }
 
 
 def get_active_appeal(dialog_id: int) -> Optional[Dict[str, object]]:
@@ -1604,8 +1753,12 @@ def snapshot_dialog_metrics(dialog_id: int) -> None:
             )
 
         # Ensure idempotency for sub-tables
-        execute("DELETE FROM dialog_operator_stats WHERE dialog_id = %s", (dialog_id,))
-        execute("DELETE FROM stat_questions WHERE dialog_id = %s", (dialog_id,))
+        if appeal_id is not None:
+            execute("DELETE FROM dialog_operator_stats WHERE appeal_id = %s", (appeal_id,))
+            execute("DELETE FROM stat_questions WHERE appeal_id = %s", (appeal_id,))
+        else:
+            execute("DELETE FROM dialog_operator_stats WHERE dialog_id = %s", (dialog_id,))
+            execute("DELETE FROM stat_questions WHERE dialog_id = %s", (dialog_id,))
 
         # ── 7. Write dialog_operator_stats ──
         for op_name, deltas in operator_response_deltas.items():
@@ -1613,12 +1766,13 @@ def snapshot_dialog_metrics(dialog_id: int) -> None:
             execute(
                 """
                 INSERT INTO dialog_operator_stats
-                    (dialog_id, operator_name, messages_sent,
+                    (dialog_id, appeal_id, operator_name, messages_sent,
                      avg_response_seconds, response_count, started_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     dialog_id,
+                    appeal_id,
                     op_name,
                     operator_message_counts.get(op_name, 0),
                     avg_op,
@@ -1632,18 +1786,14 @@ def snapshot_dialog_metrics(dialog_id: int) -> None:
                 execute(
                     """
                     INSERT INTO dialog_operator_stats
-                        (dialog_id, operator_name, messages_sent,
+                        (dialog_id, appeal_id, operator_name, messages_sent,
                          avg_response_seconds, response_count, started_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (dialog_id, op_name, msg_count, None, 0, started_at),
+                    (dialog_id, appeal_id, op_name, msg_count, None, 0, started_at),
                 )
 
         # ── 8. Write stat_questions (incoming messages for question analytics) ──
-        execute(
-            "DELETE FROM stat_questions WHERE dialog_id = %s",
-            (dialog_id,),
-        )
         for msg in messages:
             direction = (msg.get("direction") or "").strip()
             if direction != "incoming":
@@ -1657,10 +1807,10 @@ def snapshot_dialog_metrics(dialog_id: int) -> None:
             msg_created = msg.get("created_at") or now
             execute(
                 """
-                INSERT INTO stat_questions (dialog_id, text, created_at, section)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO stat_questions (dialog_id, appeal_id, text, created_at, section)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                (dialog_id, text, msg_created, section),
+                (dialog_id, appeal_id, text, msg_created, section),
             )
 
 
@@ -3178,11 +3328,18 @@ def get_dashboard_summary(
             "top_bins_without_contract": [],
             "top_bins_with_contract": [],
             "peak_load_heatmap": [],
+            "csat_average": None,
+            "csat_count": 0,
+            "csat_distribution": [],
+            "ai_csat_average": None,
+            "ai_csat_count": 0,
+            "ai_csat_distribution": [],
             "updated_at": now.isoformat(),
         }
 
     # ── Operator filtering ──
     operator_assigned_bins: List[str] | None = None
+    target_operator_name: str | None = None
     operator_bin_filter_sql = ""
     operator_bin_filter_params: List[str] = []
 
@@ -3190,6 +3347,9 @@ def get_dashboard_summary(
         target = get_user_by_id(operator_id)
         if not target:
             return _empty_summary()
+        target_operator_name = str(target.get("name") or "").strip()
+        if not target_operator_name:
+            target_operator_name = str(target.get("login") or "").strip()
         operator_assigned_bins = get_user_bins(operator_id)
         if not operator_assigned_bins:
             return _empty_summary()
@@ -3273,6 +3433,7 @@ def get_dashboard_summary(
                 COALESCE(SUM(CASE WHEN ds.csat_rating = 5 THEN 1 ELSE 0 END), 0) AS csat_5
             FROM dialog_stats ds
             WHERE ds.started_at >= %s AND ds.started_at < %s
+              AND COALESCE(ds.is_ai_closed, FALSE) = FALSE
             """
             + operator_bin_filter_sql
             + csat_op_cond,
@@ -3286,6 +3447,34 @@ def get_dashboard_summary(
         csat_count = int(csat_row["csat_count"] or 0)
         csat_distribution = [
             {"rating": i, "count": int(csat_row[f"csat_{i}"] or 0)}
+            for i in range(1, 6)
+        ]
+
+        ai_csat_row = execute(
+            """
+            SELECT
+                AVG(ds.ai_csat_rating) AS ai_csat_avg,
+                COUNT(ds.ai_csat_rating) AS ai_csat_count,
+                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 1 THEN 1 ELSE 0 END), 0) AS ai_csat_1,
+                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 2 THEN 1 ELSE 0 END), 0) AS ai_csat_2,
+                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 3 THEN 1 ELSE 0 END), 0) AS ai_csat_3,
+                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 4 THEN 1 ELSE 0 END), 0) AS ai_csat_4,
+                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 5 THEN 1 ELSE 0 END), 0) AS ai_csat_5
+            FROM dialog_stats ds
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+              AND COALESCE(ds.is_ai_closed, FALSE) = TRUE
+            """
+            + operator_bin_filter_sql,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchone()
+
+        ai_csat_average = (
+            round(float(ai_csat_row["ai_csat_avg"]), 2)
+            if ai_csat_row["ai_csat_avg"] is not None else None
+        )
+        ai_csat_count = int(ai_csat_row["ai_csat_count"] or 0)
+        ai_csat_distribution = [
+            {"rating": i, "count": int(ai_csat_row[f"ai_csat_{i}"] or 0)}
             for i in range(1, 6)
         ]
 
@@ -3405,16 +3594,25 @@ def get_dashboard_summary(
 
         # Per-operator per-dialog response times (for speed donut chart)
         if operator_bin_filter_params:
+            dos_bin_exists_filter = (
+                " AND EXISTS ("
+                " SELECT 1 FROM dialog_stats ds"
+                " WHERE ds.bin IN (" + ", ".join("%s" for _ in operator_bin_filter_params) + ")"
+                "   AND ("
+                "       (dos.appeal_id IS NOT NULL AND ds.appeal_id = dos.appeal_id)"
+                "       OR (dos.appeal_id IS NULL AND ds.dialog_id = dos.dialog_id)"
+                "   )"
+                " )"
+            )
             rt_dialog_rows = execute(
                 """
                 SELECT dos.dialog_id, dos.operator_name AS author,
                        dos.avg_response_seconds / 60.0 AS response_time_minutes
                 FROM dialog_operator_stats dos
-                JOIN dialog_stats ds ON ds.dialog_id = dos.dialog_id
                 WHERE dos.started_at >= %s AND dos.started_at < %s
                   AND dos.avg_response_seconds IS NOT NULL
                 """
-                + operator_bin_filter_sql
+                + dos_bin_exists_filter
                 + """
                 ORDER BY dos.dialog_id
                 """,
@@ -3509,6 +3707,20 @@ def get_dashboard_summary(
                 )
             """
             sq_params.extend(operator_bin_filter_params)
+        if target_operator_name:
+            sq_bin_filter += """
+                AND EXISTS (
+                    SELECT 1
+                    FROM dialog_operator_stats dos2
+                    WHERE dos2.operator_name = %s
+                      AND (
+                          (sq.appeal_id IS NOT NULL AND dos2.appeal_id = sq.appeal_id)
+                          OR
+                          (sq.appeal_id IS NULL AND dos2.dialog_id = sq.dialog_id)
+                      )
+                )
+            """
+            sq_params.append(target_operator_name)
 
         question_rows = execute(
             """
@@ -3869,6 +4081,9 @@ def get_dashboard_summary(
         "csat_average": csat_average,
         "csat_count": csat_count,
         "csat_distribution": csat_distribution,
+        "ai_csat_average": ai_csat_average,
+        "ai_csat_count": ai_csat_count,
+        "ai_csat_distribution": ai_csat_distribution,
         "updated_at": now.isoformat(),
     }
 

@@ -318,6 +318,24 @@ def handle_updates(message: telebot.types.Message) -> None:
                     "Чтобы возобновить диалог, выберите или отправьте БИН.",
                     reply_markup=_section_keyboard(),
                 )
+                try:
+                    latest_stats = database.get_latest_dialog_stats(int(active_dialog["id"]))
+                    latest_appeal_id = (
+                        int(latest_stats["appeal_id"])
+                        if latest_stats and latest_stats.get("appeal_id") is not None
+                        else database.get_latest_closed_appeal_id(int(active_dialog["id"]))
+                    )
+                    if latest_appeal_id is not None:
+                        if latest_stats and bool(latest_stats.get("is_ai_closed")):
+                            send_ai_csat_request(chat.id, int(active_dialog["id"]), latest_appeal_id)
+                        else:
+                            send_csat_request(chat.id, int(active_dialog["id"]), latest_appeal_id)
+                except Exception:
+                    logger.warning(
+                        "Failed to send rating request after FINISH for dialog %s",
+                        active_dialog.get("id"),
+                        exc_info=True,
+                    )
             else:
                 bot.send_message(
                     chat.id,
@@ -776,23 +794,52 @@ def handle_switch_bin_callback(call: telebot.types.CallbackQuery) -> None:
 # ═══════════════════════════════════════════
 
 CSAT_PREFIX = "csat_"
+AI_CSAT_PREFIX = "ai_csat_"
 
 
-def send_csat_request(chat_id: int, dialog_id: int) -> None:
-    """Send an inline keyboard with 1–5 star buttons for CSAT rating."""
+def _send_rating_request(
+    chat_id: int,
+    dialog_id: int,
+    *,
+    appeal_id: int | None,
+    prefix: str,
+    prompt: str,
+) -> None:
+    """Send rating request (1-5) with callback payload bound to dialog/appeal."""
     markup = types.InlineKeyboardMarkup(row_width=5)
+    callback_prefix = f"{prefix}{dialog_id}_"
+    if appeal_id is not None:
+        callback_prefix = f"{prefix}{dialog_id}_{appeal_id}_"
     buttons = [
         types.InlineKeyboardButton(
             text=f"{'⭐' * i}",
-            callback_data=f"{CSAT_PREFIX}{dialog_id}_{i}",
+            callback_data=f"{callback_prefix}{i}",
         )
         for i in range(1, 6)
     ]
     markup.add(*buttons)
-    bot.send_message(
+    bot.send_message(chat_id, prompt, reply_markup=markup)
+
+
+def send_csat_request(chat_id: int, dialog_id: int, appeal_id: int | None = None) -> None:
+    """Send operator CSAT request."""
+    _send_rating_request(
         chat_id,
-        "📊 Пожалуйста, оцените качество обслуживания:",
-        reply_markup=markup,
+        dialog_id,
+        appeal_id=appeal_id,
+        prefix=CSAT_PREFIX,
+        prompt="📊 Пожалуйста, оцените качество обслуживания:",
+    )
+
+
+def send_ai_csat_request(chat_id: int, dialog_id: int, appeal_id: int | None = None) -> None:
+    """Send AI CSAT request for AI-resolved appeals."""
+    _send_rating_request(
+        chat_id,
+        dialog_id,
+        appeal_id=appeal_id,
+        prefix=AI_CSAT_PREFIX,
+        prompt="🤖 Пожалуйста, оцените качество ответа AI:",
     )
 
 
@@ -800,27 +847,37 @@ def send_csat_request(chat_id: int, dialog_id: int) -> None:
 def csat_callback_handler(call: types.CallbackQuery) -> None:
     """Handle CSAT rating callback from inline buttons."""
     try:
-        # Parse callback_data: csat_{dialog_id}_{rating}
+        # Parse callback_data:
+        # - csat_{dialog_id}_{rating} (legacy)
+        # - csat_{dialog_id}_{appeal_id}_{rating} (current)
         parts = call.data[len(CSAT_PREFIX):].split("_")
-        if len(parts) != 2:
+        if len(parts) not in (2, 3):
             bot.answer_callback_query(call.id, "Ошибка данных")
             return
 
         dialog_id = int(parts[0])
-        rating = int(parts[1])
+        appeal_id: int | None = None
+        if len(parts) == 3:
+            appeal_id = int(parts[1])
+            rating = int(parts[2])
+        else:
+            rating = int(parts[1])
 
         if rating < 1 or rating > 5:
             bot.answer_callback_query(call.id, "Некорректная оценка")
             return
 
         # Check if already rated
-        existing = database.get_csat_for_dialog(dialog_id)
+        if appeal_id is not None:
+            existing = database.get_csat_for_appeal(appeal_id)
+        else:
+            existing = database.get_csat_for_dialog(dialog_id)
         if existing is not None:
             bot.answer_callback_query(call.id, f"Вы уже оценили: {'⭐' * existing}")
             return
 
         # Save the rating
-        saved = database.save_csat_rating(dialog_id, rating)
+        saved = database.save_csat_rating(dialog_id, rating, appeal_id=appeal_id)
         if not saved:
             bot.answer_callback_query(call.id, "Не удалось сохранить оценку")
             return
@@ -842,6 +899,61 @@ def csat_callback_handler(call: types.CallbackQuery) -> None:
         bot.answer_callback_query(call.id, "Ошибка обработки")
     except Exception:
         logger.error("CSAT callback error", exc_info=True)
+        bot.answer_callback_query(call.id, "Произошла ошибка")
+
+
+@bot.callback_query_handler(func=lambda call: call.data and call.data.startswith(AI_CSAT_PREFIX))
+def ai_csat_callback_handler(call: types.CallbackQuery) -> None:
+    """Handle AI CSAT callback from inline buttons."""
+    try:
+        # Parse callback_data:
+        # - ai_csat_{dialog_id}_{rating} (legacy)
+        # - ai_csat_{dialog_id}_{appeal_id}_{rating} (current)
+        parts = call.data[len(AI_CSAT_PREFIX):].split("_")
+        if len(parts) not in (2, 3):
+            bot.answer_callback_query(call.id, "Ошибка данных")
+            return
+
+        dialog_id = int(parts[0])
+        appeal_id: int | None = None
+        if len(parts) == 3:
+            appeal_id = int(parts[1])
+            rating = int(parts[2])
+        else:
+            rating = int(parts[1])
+
+        if rating < 1 or rating > 5:
+            bot.answer_callback_query(call.id, "Некорректная оценка")
+            return
+
+        if appeal_id is not None:
+            existing = database.get_ai_csat_for_appeal(appeal_id)
+        else:
+            existing = database.get_ai_csat_for_dialog(dialog_id)
+        if existing is not None:
+            bot.answer_callback_query(call.id, f"Вы уже оценили AI: {'⭐' * existing}")
+            return
+
+        saved = database.save_ai_csat_rating(dialog_id, rating, appeal_id=appeal_id)
+        if not saved:
+            bot.answer_callback_query(call.id, "Не удалось сохранить оценку AI")
+            return
+
+        bot.answer_callback_query(call.id, f"Спасибо за оценку AI! {'⭐' * rating}")
+        try:
+            bot.edit_message_text(
+                f"🤖 Спасибо за оценку AI: {'⭐' * rating}\nМы улучшаем ответы на основе вашей обратной связи.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+    except (ValueError, IndexError):
+        logger.warning("Invalid AI CSAT callback data: %s", call.data, exc_info=True)
+        bot.answer_callback_query(call.id, "Ошибка обработки")
+    except Exception:
+        logger.error("AI CSAT callback error", exc_info=True)
         bot.answer_callback_query(call.id, "Произошла ошибка")
 
 

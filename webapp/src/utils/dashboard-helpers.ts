@@ -49,6 +49,9 @@ export const EMPTY_SUMMARY: DashboardSummary = {
     csatAverage: null as number | null,
     csatCount: 0,
     csatDistribution: [] as any[],
+    aiCsatAverage: null as number | null,
+    aiCsatCount: 0,
+    aiCsatDistribution: [] as any[],
 };
 
 // ── Derived types ──

@@ -67,6 +67,99 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 
   const lastUpdated = d.hasData ? formatDateTime(d.data.updatedAt) : '';
 
+  const renderRatingCard = (
+    title: string,
+    average: number | null,
+    count: number,
+    distribution: { rating: number; count: number }[],
+    emptyText: string,
+  ) => {
+    const ratingCounts = [1, 2, 3, 4, 5].map((rating) => {
+      const found = distribution.find((x) => x.rating === rating);
+      return found ? found.count : 0;
+    });
+    const yMax = Math.max(1, ...ratingCounts);
+    const axisMax = yMax <= 1 ? 1.15 : yMax + Math.max(0.25, yMax * 0.1);
+
+    return (
+      <div className="dashboard-card dashboard-card--delay-3 dashboard-card--rating">
+        <h3 className="dashboard-card__title">{title}</h3>
+        {count === 0 ? (
+          <div className="dashboard-empty" style={{ minHeight: 160 }}>
+            <div className="dashboard-empty__icon">⭐</div>
+            <p className="dashboard-empty__text">{emptyText}</p>
+          </div>
+        ) : (
+          <div className="dashboard-rating">
+            <div className="dashboard-rating__summary">
+              <div className="dashboard-rating__score">
+                {average !== null ? average.toFixed(1) : '—'}
+              </div>
+              <div className="dashboard-rating__caption">Средняя оценка</div>
+              <div className="dashboard-rating__count">
+                {d.numberFormatter.format(count)} отзывов
+              </div>
+            </div>
+            <div className="dashboard-rating__chart">
+              <EChartsWrapper
+                option={{
+                  tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'none' },
+                    backgroundColor: 'var(--surface-color, #ffffff)',
+                    borderColor: 'var(--border-color, #e2e8f0)',
+                    borderWidth: 1,
+                    textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                    formatter: '{b} ★: <b>{c}</b>',
+                  },
+                  grid: { top: 8, right: 8, bottom: 4, left: 8, containLabel: true },
+                  xAxis: {
+                    type: 'category',
+                    data: ['1', '2', '3', '4', '5'],
+                    axisLine: { show: false },
+                    axisTick: { show: false },
+                    axisLabel: { fontSize: 13, color: 'var(--text-color, #334155)', margin: 12 },
+                  },
+                  yAxis: {
+                    type: 'value',
+                    show: false,
+                    min: 0,
+                    max: axisMax,
+                  },
+                  series: [
+                    {
+                      type: 'bar',
+                      barWidth: 30,
+                      barMinHeight: 2,
+                      data: ratingCounts,
+                      itemStyle: {
+                        borderRadius: [6, 6, 0, 0],
+                        color: (params: any) => {
+                          const rating = Number(params.name);
+                          if (rating <= 2) return '#ef4444';
+                          if (rating === 3) return '#f59e0b';
+                          return '#22c55e';
+                        },
+                      },
+                       label: {
+                         show: true,
+                         position: 'top',
+                         color: 'var(--text-muted, #64748b)',
+                         fontSize: 12,
+                         fontWeight: 700,
+                         formatter: (params: any) => `${Number(params?.value ?? 0)}`,
+                       },
+                     },
+                   ],
+                 }}
+               />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="dashboard-page">
       {/* ── Gradient hero header ── */}
@@ -543,84 +636,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                   </div>
                 </div>
 
-                {/* Row 3: CSAT */}
-                <div className="dashboard-overview-row" style={{ marginTop: '1.25rem' }}>
-                  <div className="dashboard-card dashboard-card--delay-3" style={{ flex: 1 }}>
-                    <h3 className="dashboard-card__title">Удовлетворенность (CSAT)</h3>
-                    {d.data.csatCount === 0 ? (
-                      <div className="dashboard-empty" style={{ minHeight: 140 }}>
-                        <div className="dashboard-empty__icon">⭐</div>
-                        <p className="dashboard-empty__text">Пока нет оценок.</p>
-                      </div>
-                    ) : (
-                      <div className="dashboard-columns" style={{ gap: '2rem', alignItems: 'center' }}>
-                        <div style={{ flex: '0 0 160px', textAlign: 'center' }}>
-                          <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--primary-color, #4f46e5)', lineHeight: 1 }}>
-                            {d.data.csatAverage?.toFixed(1) || '—'}
-                          </div>
-                          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted, #64748b)', marginTop: '0.5rem', fontWeight: 500 }}>
-                            Средняя оценка
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted, #64748b)', marginTop: '0.25rem' }}>
-                            {d.numberFormatter.format(d.data.csatCount)} отзывов
-                          </div>
-                        </div>
-
-                        <div style={{ flex: 1, minHeight: 160, position: 'relative' }}>
-                          <EChartsWrapper
-                            option={{
-                              tooltip: {
-                                trigger: 'axis',
-                                axisPointer: { type: 'none' },
-                                backgroundColor: 'var(--surface-color, #ffffff)',
-                                borderColor: 'var(--border-color, #e2e8f0)',
-                                borderWidth: 1,
-                                textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
-                                formatter: '{b} Звезд: <b>{c}</b>'
-                              },
-                              grid: { top: 10, right: 20, bottom: 20, left: 20, containLabel: true },
-                              xAxis: {
-                                type: 'category',
-                                data: ['1', '2', '3', '4', '5'],
-                                axisLine: { show: false },
-                                axisTick: { show: false },
-                                axisLabel: { fontSize: 12, color: 'var(--text-color, #334155)', margin: 12 }
-                              },
-                              yAxis: {
-                                type: 'value',
-                                show: false
-                              },
-                              series: [
-                                {
-                                  type: 'bar',
-                                  barWidth: 24,
-                                  data: [1, 2, 3, 4, 5].map(rating => {
-                                    const match = d.data.csatDistribution?.find(x => x.rating === rating);
-                                    return match ? match.count : 0;
-                                  }),
-                                  itemStyle: {
-                                    borderRadius: [4, 4, 0, 0],
-                                    color: (params: any) => {
-                                      const val = params.name;
-                                      if (val === '5' || val === '4') return '#22c55e'; // Green
-                                      if (val === '3') return '#f59e0b'; // Yellow
-                                      return '#ef4444'; // Red
-                                    }
-                                  },
-                                  label: {
-                                    show: true,
-                                    position: 'top',
-                                    color: 'var(--text-color, #334155)',
-                                    fontWeight: 'bold'
-                                  }
-                                }
-                              ]
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                {/* Row 3: ratings */}
+                <div className="dashboard-overview-row">
+                  {renderRatingCard(
+                    'Удовлетворенность (CSAT)',
+                    d.data.csatAverage,
+                    d.data.csatCount,
+                    d.data.csatDistribution,
+                    'Пока нет оценок операторов.',
+                  )}
+                  {renderRatingCard(
+                    'Оценка работы AI',
+                    d.data.aiCsatAverage,
+                    d.data.aiCsatCount,
+                    d.data.aiCsatDistribution,
+                    'Пока нет оценок AI.',
+                  )}
                 </div>
               </>
             )}

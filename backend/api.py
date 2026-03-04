@@ -9,7 +9,7 @@ import json
 import os
 import re
 from datetime import date, datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 import asyncio
 from collections import defaultdict
 
@@ -21,7 +21,7 @@ from pydantic import AliasChoices, BaseModel, EmailStr, Field, validator
 
 from . import database
 from .ai_manager import ai_manager
-from .telegram_bot import bot, enable_ai_session, send_csat_request
+from .telegram_bot import bot, enable_ai_session, send_ai_csat_request, send_csat_request
 from . import contract_checker
 
 # ------------------------ Temporary import for Aziret's employee cabinet ------------------
@@ -410,6 +410,9 @@ class DashboardSummaryResponse(BaseModel):
     csat_average: float | None = None
     csat_count: int = 0
     csat_distribution: List[CsatDistributionEntry] = Field(default_factory=list)
+    ai_csat_average: float | None = None
+    ai_csat_count: int = 0
+    ai_csat_distribution: List[CsatDistributionEntry] = Field(default_factory=list)
     updated_at: str
 
 
@@ -1983,7 +1986,8 @@ def close_dialog(
 
     # Send CSAT rating request to the client
     try:
-        send_csat_request(chat_id, dialog_id)
+        latest_appeal_id = database.get_latest_closed_appeal_id(dialog_id)
+        send_csat_request(chat_id, dialog_id, latest_appeal_id)
     except Exception:
         logger.warning("Failed to send CSAT request for dialog %s", dialog_id, exc_info=True)
 
@@ -2022,6 +2026,7 @@ def open_dialog(
         ai_enabled=not database.is_dialog_in_operator_mode(dialog_id),
     )
 
+@app.post("/integrations/1c/messages")
 @router.post("/integrations/1c/messages")
 def create_onec_message(
     request: OneCIncomingMessageRequest,
@@ -2106,17 +2111,18 @@ def create_onec_message(
     )
 
     # ── Notify SSE clients ──
-    asyncio.run_coroutine_threadsafe(
-        event_bus.publish_all("new_message", {
-            "chat_id": chat_id,
-            "dialog_id": dialog_id,
-            "message_id": message_id,
-            "text": stored_text,
-            "direction": "incoming",
-            "author": author,
-        }),
-        asyncio.get_event_loop()
-    )
+    if event_bus.loop:
+        asyncio.run_coroutine_threadsafe(
+            event_bus.publish_all("new_message", {
+                "chat_id": chat_id,
+                "dialog_id": dialog_id,
+                "message_id": message_id,
+                "text": stored_text,
+                "direction": "incoming",
+                "author": author,
+            }),
+            event_bus.loop,
+        )
 
     if section_id:
         database.set_chat_section(chat_id, section_id, dialog_id=dialog_id)
@@ -2375,6 +2381,10 @@ def _onec_history_core(
 
 
 
+@app.get(
+    "/integrations/1c/messages",
+    response_model=OneCMessagesResponse,
+)
 @router.get(
     "/integrations/1c/messages",
     response_model=OneCMessagesResponse,
@@ -2409,6 +2419,7 @@ class OneCHistoryPostRequest(BaseModel):
 
 
 
+@app.post("/integrations/1c/messages/history", response_model=OneCMessagesResponse)
 @router.post("/integrations/1c/messages/history", response_model=OneCMessagesResponse)
 def list_onec_messages_post(
     body: OneCHistoryPostRequest,
@@ -2444,6 +2455,7 @@ class OneCAckRequest(BaseModel):
     failed_ids: List[Dict[str, object]] = Field(default_factory=list)  # [{"id": 1, "error": "text"}]
 
 
+@app.get("/integrations/1c/outbox", response_model=OneCOutboxResponse)
 @router.get("/integrations/1c/outbox", response_model=OneCOutboxResponse)
 def onec_outbox(
     external_chat_id: str = Query(min_length=1, max_length=128),
@@ -2460,6 +2472,7 @@ def onec_outbox(
     return OneCOutboxResponse(items=items)
 
 
+@app.post("/integrations/1c/ack")
 @router.post("/integrations/1c/ack")
 def onec_ack(
     body: OneCAckRequest,
@@ -2482,6 +2495,15 @@ class OneCCloseRequest(BaseModel):
     bin: str | None = None
 
 
+class OneCRatingRequest(BaseModel):
+    external_chat_id: str = Field(min_length=1, max_length=128)
+    dialog_id: int | None = None
+    appeal_id: int | None = None
+    rating: int = Field(ge=1, le=5)
+    target: Literal["operator", "ai"] = "operator"
+
+
+@app.post("/integrations/1c/close")
 @router.post("/integrations/1c/close")
 def onec_close_dialog(
     body: OneCCloseRequest,
@@ -2499,6 +2521,14 @@ def onec_close_dialog(
 
     dialog_id = int(active["id"])
     database.close_chat_dialog(dialog_id, closed_by="client")
+    latest_stats = database.get_latest_dialog_stats(dialog_id)
+    latest_appeal_id = (
+        int(latest_stats["appeal_id"])
+        if latest_stats and latest_stats.get("appeal_id") is not None
+        else database.get_latest_closed_appeal_id(dialog_id)
+    )
+    rating_target = "ai" if latest_stats and latest_stats.get("is_ai_closed") else "operator"
+    rating_required = latest_appeal_id is not None
 
     # Notify Telegram client if applicable
     try:
@@ -2508,6 +2538,11 @@ def onec_close_dialog(
             "Обращение завершено клиентом из 1С. 🤖 AI снова включён.\n"
             "Напишите новое сообщение, чтобы возобновить диалог.",
         )
+        if rating_required and latest_appeal_id is not None:
+            if rating_target == "ai":
+                send_ai_csat_request(chat_id, dialog_id, latest_appeal_id)
+            else:
+                send_csat_request(chat_id, dialog_id, latest_appeal_id)
     except Exception:
         pass  # Telegram notification is best-effort
 
@@ -2515,7 +2550,63 @@ def onec_close_dialog(
         "1C client closed dialog: ext_id=%s, chat_id=%s, dialog_id=%s",
         external_chat_id, chat_id, dialog_id,
     )
-    return {"status": "ok", "dialog_id": dialog_id}
+    return {
+        "status": "ok",
+        "dialog_id": dialog_id,
+        "appeal_id": latest_appeal_id,
+        "rating_required": bool(rating_required),
+        "rating_target": rating_target,
+    }
+
+
+@app.post("/integrations/1c/rating")
+@router.post("/integrations/1c/rating")
+def onec_submit_rating(
+    body: OneCRatingRequest,
+    _: None = Depends(require_onec_token),
+):
+    """1С сохраняет оценку качества обслуживания (оператор или AI)."""
+    external_chat_id = body.external_chat_id.strip()
+    if not external_chat_id:
+        raise HTTPException(status_code=400, detail="external_chat_id обязателен")
+
+    appeal_id = body.appeal_id
+    dialog_id = body.dialog_id
+    if appeal_id is not None and dialog_id is None:
+        dialog_id = database.get_dialog_id_for_appeal(appeal_id)
+
+    if dialog_id is None:
+        raise HTTPException(status_code=400, detail="dialog_id или appeal_id обязателен")
+
+    chat_id = _resolve_onec_chat_id(external_chat_id, None)
+
+    if appeal_id is None:
+        appeal_id = database.get_latest_closed_appeal_id(dialog_id)
+
+    if body.target == "ai":
+        saved = database.save_ai_csat_rating(dialog_id, body.rating, appeal_id=appeal_id)
+    else:
+        saved = database.save_csat_rating(dialog_id, body.rating, appeal_id=appeal_id)
+
+    if not saved:
+        raise HTTPException(status_code=404, detail="Не удалось сохранить оценку")
+
+    logger.info(
+        "1C rating saved: ext_id=%s chat_id=%s dialog_id=%s appeal_id=%s target=%s rating=%s",
+        external_chat_id,
+        chat_id,
+        dialog_id,
+        appeal_id,
+        body.target,
+        body.rating,
+    )
+    return {
+        "status": "ok",
+        "dialog_id": dialog_id,
+        "appeal_id": appeal_id,
+        "target": body.target,
+        "rating": body.rating,
+    }
 
 
 @router.post("/dialogs/{dialog_id}/favorite")

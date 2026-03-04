@@ -5,12 +5,19 @@
   font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   background-color: #f6f7fb;
   color: #1b1d29;
+  --bg-primary: #f6f7fb;
+  --bg-secondary: #edf1fa;
+  --bg-tertiary: #e4eaf7;
   --background-color: #f6f7fb;
   --background-gradient-start: rgba(62, 90, 168, 0.08);
   --background-gradient-end: rgba(62, 90, 168, 0);
   --surface-color: #ffffff;
   --surface-soft-color: rgba(62, 90, 168, 0.06);
   --surface-strong-color: rgba(62, 90, 168, 0.08);
+  --surface-raised-color: #ffffff;
+  --text-primary: #1b1d29;
+  --text-secondary: #4a5578;
+  --text-secondary-color: #4a5578;
   --text-color: #1b1d29;
   --text-muted: #636b8a;
   --text-heading: #253263;
@@ -38,7 +45,15 @@
   --modal-overlay: rgba(15, 23, 42, 0.45);
   --modal-surface: #ffffff;
   --card-shadow: 0 16px 32px rgba(20, 33, 61, 0.08);
+  --card-shadow-hover: 0 22px 44px rgba(20, 33, 61, 0.14);
   --popover-shadow: 0 12px 28px rgba(25, 39, 85, 0.12);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --motion-fast: 0.15s;
+  --motion-base: 0.25s;
+  --motion-slow: 0.4s;
   --profile-role-color: #6b7399;
   --profile-button-bg: #ffffff;
   --profile-button-border: #dfe4ff;
@@ -62,12 +77,19 @@
 
 [data-theme='dark'] {
   color-scheme: dark;
+  --bg-primary: #0f172a;
+  --bg-secondary: #111b30;
+  --bg-tertiary: #16233f;
   --background-color: #0f172a;
   --background-gradient-start: rgba(30, 64, 175, 0.22);
   --background-gradient-end: rgba(15, 23, 42, 0.8);
   --surface-color: #1f2937;
   --surface-soft-color: rgba(99, 102, 241, 0.16);
   --surface-strong-color: rgba(99, 102, 241, 0.22);
+  --surface-raised-color: #253246;
+  --text-primary: #f8fafc;
+  --text-secondary: #c7d2fe;
+  --text-secondary-color: #c7d2fe;
   --text-color: #f8fafc;
   --text-muted: #94a3b8;
   --text-heading: #f8fafc;
@@ -95,6 +117,7 @@
   --modal-overlay: rgba(2, 6, 23, 0.78);
   --modal-surface: #111827;
   --card-shadow: 0 24px 50px rgba(2, 6, 23, 0.65);
+  --card-shadow-hover: 0 30px 56px rgba(2, 6, 23, 0.75);
   --popover-shadow: 0 18px 40px rgba(2, 6, 23, 0.7);
   --profile-role-color: #c7d2fe;
   --profile-button-bg: rgba(30, 41, 59, 0.85);

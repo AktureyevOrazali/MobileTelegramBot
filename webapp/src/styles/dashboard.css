@@ -3,7 +3,7 @@
 .dashboard-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   padding-bottom: 32px;
 }
 
@@ -13,8 +13,8 @@
   background: linear-gradient(135deg, #3b5998 0%, #5a7ab8 25%, #7c9fd6 50%, #5a7ab8 75%, #3b5998 100%);
   background-size: 300% 300%;
   animation: dashboard-hero-gradient 8s ease infinite;
-  border-radius: 20px;
-  padding: 14px 20px;
+  border-radius: var(--radius-xl);
+  padding: 16px 20px;
   color: #f8fafc;
   box-shadow: 0 12px 40px rgba(61, 90, 143, 0.18);
   display: flex;
@@ -181,7 +181,7 @@
 .dashboard-tab {
   flex: 1;
   min-width: max-content;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid rgba(255, 255, 255, 0.35);
   background: rgba(255, 255, 255, 0.15);
   color: #fff;
@@ -190,7 +190,7 @@
   font-weight: 600;
   cursor: pointer;
   text-align: center;
-  transition: all 0.2s ease;
+  transition: background var(--motion-base) ease, border-color var(--motion-base) ease, color var(--motion-base) ease, transform var(--motion-fast) ease, box-shadow var(--motion-base) ease;
 }
 
 .dashboard-tab:hover {
@@ -216,14 +216,20 @@
 .dashboard-card {
   background: var(--surface-color);
   border: 1px solid var(--border-color);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 2px 12px rgba(20, 33, 61, 0.04);
+  box-shadow: 0 8px 20px rgba(20, 33, 61, 0.06);
   position: relative;
   animation: dash-card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dashboard-card:hover {
+  box-shadow: var(--card-shadow-hover);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
 }
 
 .dashboard-card--delay-1 {
@@ -236,6 +242,10 @@
 
 .dashboard-card--delay-3 {
   animation-delay: 0.18s;
+}
+
+.dashboard-card--rating {
+  min-height: 300px;
 }
 
 .dashboard-card__title {
@@ -485,6 +495,56 @@
   height: 100%;
 }
 
+/* ── Rating cards (CSAT / AI CSAT) ── */
+
+.dashboard-rating {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) 1fr;
+  gap: 12px;
+  align-items: stretch;
+  min-height: 0;
+  flex: 1;
+  height: 100%;
+}
+
+.dashboard-rating__summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 4px;
+}
+
+.dashboard-rating__score {
+  font-size: clamp(2.2rem, 2.4vw, 3rem);
+  line-height: 1;
+  font-weight: 800;
+  color: var(--brand-color, #3d5a8f);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-rating__caption {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dashboard-rating__count {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dashboard-rating__chart {
+  height: 100%;
+  min-height: 0;
+}
+
+[data-theme='dark'] .dashboard-rating__score {
+  color: #93c5fd;
+}
+
 /* ── Top list ── */
 
 .dashboard-top-list {
@@ -595,6 +655,10 @@
 
 .dashboard-table tbody tr:hover {
   background: var(--surface-soft-color);
+}
+
+.dashboard-table td:first-child {
+  font-weight: 600;
 }
 
 /* ── Sections progress ── */
@@ -830,16 +894,30 @@
 @media (max-width: 640px) {
   .dashboard-hero {
     padding: 16px;
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
   }
 
   .dashboard-card {
     padding: 16px;
-    border-radius: 14px;
+    border-radius: var(--radius-md);
   }
 
   .dashboard-columns {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-rating {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    gap: 8px;
+  }
+
+  .dashboard-rating__chart {
+    min-height: 160px;
+  }
+
+  .dashboard-card--rating {
+    min-height: 260px;
   }
 }
 

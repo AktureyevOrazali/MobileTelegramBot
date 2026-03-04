@@ -434,6 +434,14 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
         count: safeNumber(item.count),
       }))
       : [],
+    aiCsatAverage: typeof raw.ai_csat_average === 'number' ? raw.ai_csat_average : null,
+    aiCsatCount: safeNumber(raw.ai_csat_count),
+    aiCsatDistribution: Array.isArray(raw.ai_csat_distribution)
+      ? raw.ai_csat_distribution.map((item: { rating: number; count: number }) => ({
+        rating: safeNumber(item.rating),
+        count: safeNumber(item.count),
+      }))
+      : [],
     updatedAt: raw.updated_at ? new Date(raw.updated_at) : new Date(),
   };
 }

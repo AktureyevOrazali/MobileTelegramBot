@@ -54,12 +54,24 @@
   min-width: 260px;
   background: var(--surface-color);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   box-shadow: var(--popover-shadow);
-  padding: 6px;
+  padding: 8px;
   top: calc(100% + 4px);
   left: 0;
   color: var(--text-color);
+  animation: menu-in var(--motion-fast) ease both;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .menu input[type="text"] {
@@ -145,7 +157,7 @@
 .modal {
   width: min(90vw, 520px);
   background: var(--modal-surface);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--card-shadow);
   padding: 22px;
   display: flex;
@@ -274,7 +286,7 @@
 .icon-btn {
   width: 36px;
   height: 36px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   background: var(--surface-color);
   display: grid;
@@ -324,7 +336,17 @@
 
 /* main content area */
 .app-main {
-  margin-top: 12px;
+  margin-top: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
 }
 
 /* СЃРµС‚РєРё Рё РїСЂРѕС‡РµРµ */

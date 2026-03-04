@@ -3,7 +3,7 @@
 .dialogs-page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
   padding-bottom: 48px;
   overflow-x: clip;
 }
@@ -41,13 +41,14 @@
 
 .dialogs-filters {
   position: sticky;
-  top: 0;
+  top: 8px;
   z-index: 20;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
-  background: var(--surface-color);
+  background: color-mix(in srgb, var(--surface-color) 90%, transparent);
+  backdrop-filter: blur(10px);
   padding: 14px 18px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 24px rgba(20, 33, 61, 0.08);
 }
 
 /* ── Loading / Error / Empty ── */
@@ -127,10 +128,10 @@
   gap: 10px;
   border: 1px solid var(--border-color);
   border-left: 3px solid var(--brand-color);
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   background: var(--surface-color);
   padding: 18px 20px;
-  box-shadow: 0 1px 4px rgba(20, 33, 61, 0.04);
+  box-shadow: 0 6px 16px rgba(20, 33, 61, 0.06);
   transition:
     background-color 0.3s ease,
     box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
@@ -165,8 +166,8 @@
 .dialog-card:hover {
   transform: translateY(-3px);
   box-shadow:
-    0 12px 28px rgba(37, 50, 99, 0.10),
-    0 4px 10px rgba(37, 50, 99, 0.06),
+    0 14px 32px rgba(37, 50, 99, 0.12),
+    0 5px 12px rgba(37, 50, 99, 0.07),
     0 0 0 1px rgba(62, 90, 168, 0.08);
   border-color: var(--border-strong);
 }
@@ -203,7 +204,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 280px;
+  max-width: min(42vw, 360px);
 }
 
 .dialog-card__controls {
@@ -439,7 +440,7 @@
 .textarea {
   width: 100%;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--input-border);
   background-color: var(--input-bg);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.3s ease;
@@ -456,7 +457,7 @@
 
 .button {
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   padding: 12px 18px;
   background-color: var(--brand-color);
   color: var(--text-on-brand);
@@ -466,7 +467,8 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: background-color 0.2s ease, transform 0.2s ease, color 0.2s ease;
+  transition: background-color var(--motion-base) ease, transform var(--motion-fast) ease, color var(--motion-base) ease, box-shadow var(--motion-base) ease;
+  box-shadow: 0 6px 16px rgba(62, 90, 168, 0.2);
 }
 
 .button:disabled {
@@ -477,12 +479,18 @@
 .button:hover:not(:disabled) {
   background-color: var(--brand-hover);
   transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(62, 90, 168, 0.26);
 }
 
 .button.secondary {
   background-color: transparent;
   color: var(--secondary-text);
   border: 1px solid var(--secondary-border);
+  box-shadow: none;
+}
+
+.button.secondary:hover:not(:disabled) {
+  background: var(--surface-soft-color);
 }
 
 .chip {

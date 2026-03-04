@@ -317,6 +317,9 @@ export interface DashboardSummaryRaw {
   csat_average?: number | null;
   csat_count?: number;
   csat_distribution?: { rating: number; count: number }[];
+  ai_csat_average?: number | null;
+  ai_csat_count?: number;
+  ai_csat_distribution?: { rating: number; count: number }[];
   updated_at?: string;
 }
 
@@ -415,6 +418,9 @@ export interface DashboardSummary {
   csatAverage: number | null;
   csatCount: number;
   csatDistribution: { rating: number; count: number }[];
+  aiCsatAverage: number | null;
+  aiCsatCount: number;
+  aiCsatDistribution: { rating: number; count: number }[];
   updatedAt: Date;
 }
 

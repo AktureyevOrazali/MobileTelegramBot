@@ -648,6 +648,102 @@ const RegionActivityMap: React.FC<{
         }
     }, [selectedOblast, selectedRegionKey, selectedRayon, regionStats, rayonStats, binDetails, currentRayonCounts, chats, binTab, selectedOblastName]);
 
+    const renderRatingCard = (
+        title: string,
+        average: number | null,
+        count: number,
+        distribution: number[],
+        emptyText: string,
+    ) => {
+        const ratingCounts = [1, 2, 3, 4, 5].map((rating) => distribution[rating - 1] ?? 0);
+        const yMax = Math.max(1, ...ratingCounts);
+        const axisMax = yMax <= 1 ? 1.15 : yMax + Math.max(0.25, yMax * 0.1);
+
+        return (
+            <div className="dashboard-card dashboard-card--rating" style={{ margin: 0 }}>
+                <h3 className="dashboard-card__title">{title}</h3>
+                {count === 0 ? (
+                    <div className="dashboard-empty kz-rating-empty" style={{ minHeight: 220 }}>
+                        <div className="kz-rating-empty__visual" aria-hidden="true">
+                            <span className="kz-rating-empty__bar kz-rating-empty__bar--1" />
+                            <span className="kz-rating-empty__bar kz-rating-empty__bar--2" />
+                            <span className="kz-rating-empty__bar kz-rating-empty__bar--3" />
+                            <span className="kz-rating-empty__bar kz-rating-empty__bar--4" />
+                            <span className="kz-rating-empty__bar kz-rating-empty__bar--5" />
+                        </div>
+                        <p className="dashboard-empty__text kz-rating-empty__text">{emptyText}</p>
+                    </div>
+                ) : (
+                    <div className="dashboard-rating">
+                        <div className="dashboard-rating__summary">
+                            <div className="dashboard-rating__score">
+                                {average !== null ? average.toFixed(1) : '—'}
+                            </div>
+                            <div className="dashboard-rating__caption">Средняя оценка</div>
+                            <div className="dashboard-rating__count">
+                                {count} отзывов
+                            </div>
+                        </div>
+                        <div className="dashboard-rating__chart">
+                            <EChartsWrapper
+                                option={{
+                                    tooltip: {
+                                        trigger: 'axis',
+                                        axisPointer: { type: 'none' },
+                                        backgroundColor: 'var(--surface-color, #ffffff)',
+                                        borderColor: 'var(--border-color, #e2e8f0)',
+                                        borderWidth: 1,
+                                        textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                                        formatter: '{b} ★: <b>{c}</b>',
+                                    },
+                                    grid: { top: 8, right: 8, bottom: 4, left: 8, containLabel: true },
+                                    xAxis: {
+                                        type: 'category',
+                                        data: ['1', '2', '3', '4', '5'],
+                                        axisLine: { show: false },
+                                        axisTick: { show: false },
+                                        axisLabel: { fontSize: 13, color: 'var(--text-color, #334155)', margin: 12 },
+                                    },
+                                    yAxis: {
+                                        type: 'value',
+                                        show: false,
+                                        min: 0,
+                                        max: axisMax,
+                                    },
+                                    series: [
+                                        {
+                                            type: 'bar',
+                                            barWidth: 30,
+                                            barMinHeight: 2,
+                                            data: ratingCounts,
+                                            itemStyle: {
+                                                borderRadius: [6, 6, 0, 0],
+                                                color: (params: any) => {
+                                                    const rating = Number(params.name);
+                                                    if (rating <= 2) return '#ef4444';
+                                                    if (rating === 3) return '#f59e0b';
+                                                    return '#22c55e';
+                                                },
+                                            },
+                                            label: {
+                                                show: true,
+                                                position: 'top',
+                                                color: 'var(--text-muted, #64748b)',
+                                                fontSize: 12,
+                                                fontWeight: 700,
+                                                formatter: (params: any) => `${Number(params?.value ?? 0)}`,
+                                            },
+                                        },
+                                    ],
+                                }}
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const wrapperClass = [
         'kz-map',
         isFullscreen ? 'kz-map--fullscreen' : '',
@@ -930,9 +1026,9 @@ const RegionActivityMap: React.FC<{
 
                                 {/* AI Automation - Dashboard Style */}
                                 {(() => {
-                                    const totalForSlaAndAi = activeAnalytics.totalDialogs;
+                                    const totalForSlaAndAi = activeAnalytics.closedDialogs;
                                     const aiClosed = activeAnalytics.stats?.aiClosedDialogs ?? 0;
-                                    const opsHandled = totalForSlaAndAi - aiClosed;
+                                    const opsHandled = Math.max(0, totalForSlaAndAi - aiClosed);
                                     const aiPct = totalForSlaAndAi > 0 ? (aiClosed / totalForSlaAndAi) * 100 : 0;
 
                                     return (
@@ -1018,7 +1114,7 @@ const RegionActivityMap: React.FC<{
                                                     const medium = r.stats?.responseSpeedMedium ?? 0;
                                                     const slow = r.stats?.responseSpeedSlow ?? 0;
                                                     const total = fast + medium + slow;
-                                                    const sla = total > 0 ? ((fast + medium) / total) * 100 : null;
+                                                    const sla = total > 0 ? (fast / total) * 100 : null;
                                                     return { ...r, sla };
                                                 })
                                                 .filter((r): r is typeof r & { sla: number } => r.sla !== null)
@@ -1063,9 +1159,9 @@ const RegionActivityMap: React.FC<{
                                         const medium = stats?.responseSpeedMedium ?? 0;
                                         const slow = stats?.responseSpeedSlow ?? 0;
                                         const totalResponded = fast + medium + slow;
-                                        const slaPct = totalResponded > 0 ? ((fast + medium) / totalResponded) * 100 : null;
+                                        const slaPct = totalResponded > 0 ? (fast / totalResponded) * 100 : null;
                                         const gaugeColor = slaPct !== null && slaPct >= 80 ? '#22c55e' : (slaPct !== null && slaPct >= 50 ? '#f59e0b' : '#ef4444');
-                                        const slaViolations = slow;
+                                        const slaViolations = medium + slow;
 
                                         return (
                                             <details className="kz-panel__section kz-panel__collapsible" open>
@@ -1114,7 +1210,7 @@ const RegionActivityMap: React.FC<{
                                                                 <span className="dashboard-sla-gauge__value" style={{ color: gaugeColor }}>
                                                                     {slaPct !== null ? slaPct.toFixed(1) + '%' : '—'}
                                                                 </span>
-                                                                <span className="dashboard-sla-gauge__sub">SLA (ответ до 7 мин)</span>
+                                                                <span className="dashboard-sla-gauge__sub">SLA (ответ до 5 мин)</span>
                                                             </div>
                                                         </div>
 
@@ -1137,6 +1233,36 @@ const RegionActivityMap: React.FC<{
                                         );
                                     })()
                                 )}
+
+                                {/* Average customer rating (SCAT + AI) */}
+                                {(() => {
+                                    const stats = activeAnalytics.stats;
+                                    const csatAvg = stats && stats.csatCount > 0 ? stats.csatSum / stats.csatCount : null;
+                                    const aiCsatAvg = stats && stats.aiCsatCount > 0 ? stats.aiCsatSum / stats.aiCsatCount : null;
+                                    const csatDistribution = stats?.csatDistribution ?? [0, 0, 0, 0, 0];
+                                    const aiCsatDistribution = stats?.aiCsatDistribution ?? [0, 0, 0, 0, 0];
+                                    return (
+                                        <details className="kz-panel__section kz-panel__collapsible" open>
+                                            <summary className="kz-panel__section-title">Средняя оценка клиентов</summary>
+                                            <div style={{ display: 'grid', gap: 12, marginTop: 10 }}>
+                                                {renderRatingCard(
+                                                    'Удовлетворенность (SCAT)',
+                                                    csatAvg,
+                                                    stats?.csatCount ?? 0,
+                                                    csatDistribution,
+                                                    'Пока нет оценок операторов.',
+                                                )}
+                                                {renderRatingCard(
+                                                    'Оценка работы AI',
+                                                    aiCsatAvg,
+                                                    stats?.aiCsatCount ?? 0,
+                                                    aiCsatDistribution,
+                                                    'Пока нет оценок AI.',
+                                                )}
+                                            </div>
+                                        </details>
+                                    );
+                                })()}
                             </div>
                         )}
                     </div >

@@ -388,6 +388,8 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
         isOpen: Boolean(item.is_open),
         isAiClosed: Boolean(item.is_ai_closed),
         responseTimeMinutes: typeof item.response_time_minutes === 'number' ? item.response_time_minutes : null,
+        csatRating: typeof item.csat_rating === 'number' ? item.csat_rating : null,
+        aiCsatRating: typeof item.ai_csat_rating === 'number' ? item.ai_csat_rating : null,
       }))
     : [];
 

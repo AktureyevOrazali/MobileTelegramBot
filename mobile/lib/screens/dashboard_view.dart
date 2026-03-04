@@ -1,6 +1,4 @@
-import 'package:fl_chart/fl_chart.dart';
-
-part of '../main.dart';
+﻿part of '../main.dart';
 
 enum _DashboardTab { overview, operators, sections, activity, commercial }
 enum _TimePreset { today, yesterday, last7, last30, last90, custom }
@@ -31,8 +29,7 @@ class _DashboardViewState extends State<DashboardView> {
   DateTime? _customEndDate;
   _TopMetric _topMetric = _TopMetric.avgResponse;
 
-  int? get _activeOperatorId =>
-      _dashboardTab == _DashboardTab.operators ? null : _selectedOperatorId;
+  int? get _activeOperatorId => _selectedOperatorId;
 
   @override
   void initState() {
@@ -987,20 +984,9 @@ class _DashboardViewState extends State<DashboardView> {
                       ),
                       style: theme.textTheme.bodySmall,
                       items: operatorItems,
-                      onChanged: _operatorsLoading || _dashboardTab == _DashboardTab.operators
-                          ? null
-                          : _handleOperatorChanged,
+                      onChanged: _operatorsLoading ? null : _handleOperatorChanged,
                     ),
                   ),
-                  if (_dashboardTab == _DashboardTab.operators) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'На вкладке "Сотрудники" показывается агрегированная статистика по всем.',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
                   if (_operatorsLoading) ...[
                     const SizedBox(height: 6),
                     ClipRRect(
@@ -1031,44 +1017,7 @@ class _DashboardViewState extends State<DashboardView> {
                       style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  // ── Tab navigation (segmented style) ──
-                  Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      children: [
-                        _TabSegment(
-                          label: 'Обзор',
-                          selected: _dashboardTab == _DashboardTab.overview,
-                          onTap: () => _setDashboardTab(_DashboardTab.overview),
-                        ),
-                        _TabSegment(
-                          label: 'Сотрудники',
-                          selected: _dashboardTab == _DashboardTab.operators,
-                          onTap: () => _setDashboardTab(_DashboardTab.operators),
-                        ),
-                        _TabSegment(
-                          label: 'Разделы',
-                          selected: _dashboardTab == _DashboardTab.sections,
-                          onTap: () => _setDashboardTab(_DashboardTab.sections),
-                        ),
-                        _TabSegment(
-                          label: 'Активность',
-                          selected: _dashboardTab == _DashboardTab.activity,
-                          onTap: () => _setDashboardTab(_DashboardTab.activity),
-                        ),
-                        _DashboardMiniChip(
-                          label: 'Аналитика',
-                          selected: _dashboardTab == _DashboardTab.commercial,
-                          onTap: () => _setDashboardTab(_DashboardTab.commercial),
-                        ),
-                      ],
-                    ),
-                  ),
+                  const SizedBox(height: 4),
                 ],
               ),
             ),
@@ -1788,6 +1737,166 @@ class _DashboardViewState extends State<DashboardView> {
       ),
     );
 
+    Widget buildCompactRatingCard({
+      required String title,
+      required IconData icon,
+      required Color iconColor,
+      required double? average,
+      required int count,
+      required List<CsatDistributionEntry> distribution,
+      required String emptyText,
+    }) {
+      final maxCount = distribution.isEmpty
+          ? 1.0
+          : math.max(
+              1.0,
+              distribution.map((e) => e.count.toDouble()).reduce(math.max) * 1.2,
+            );
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: Card(
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: iconColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(icon, size: 18, color: iconColor),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (count == 0)
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      child: Text(
+                        emptyText,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 96,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              average?.toStringAsFixed(1) ?? '—',
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            Text(
+                              'Средняя',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${numberFormatter.format(count)} отзыв.',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SizedBox(
+                          height: 118,
+                          child: BarChart(
+                            BarChartData(
+                              alignment: BarChartAlignment.spaceAround,
+                              maxY: maxCount,
+                              gridData: const FlGridData(show: false),
+                              borderData: FlBorderData(show: false),
+                              titlesData: FlTitlesData(
+                                show: true,
+                                leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                bottomTitles: AxisTitles(
+                                  sideTitles: SideTitles(
+                                    showTitles: true,
+                                    reservedSize: 22,
+                                    getTitlesWidget: (value, meta) {
+                                      final rating = value.toInt() + 1;
+                                      return Padding(
+                                        padding: const EdgeInsets.only(top: 6),
+                                        child: Text(
+                                          rating.toString(),
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: theme.colorScheme.onSurfaceVariant,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              barGroups: List.generate(5, (index) {
+                                final rating = index + 1;
+                                final match = distribution.firstWhere(
+                                  (e) => e.rating == rating,
+                                  orElse: () => CsatDistributionEntry(rating: rating, count: 0),
+                                );
+                                Color barColor = const Color(0xFFEF4444);
+                                if (rating == 3) barColor = const Color(0xFFF59E0B);
+                                if (rating >= 4) barColor = const Color(0xFF22C55E);
+                                return BarChartGroupData(
+                                  x: index,
+                                  barRods: [
+                                    BarChartRodData(
+                                      toY: match.count.toDouble(),
+                                      color: barColor,
+                                      width: 14,
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(4),
+                                        topRight: Radius.circular(4),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }),
+                            ),
+                            swapAnimationDuration: Duration.zero,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final csatCard = Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Card(
@@ -1963,6 +2072,197 @@ class _DashboardViewState extends State<DashboardView> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+
+    final aiCsatCard = buildCompactRatingCard(
+      title: 'Оценка работы AI',
+      icon: Icons.auto_awesome_rounded,
+      iconColor: const Color(0xFF8B5CF6),
+      average: data.aiCsatAverage,
+      count: data.aiCsatCount,
+      distribution: data.aiCsatDistribution,
+      emptyText: 'Пока нет оценок AI.',
+    );
+
+    final compactTopBins = [
+      ('Без договора', data.topBinsWithoutContract),
+      ('С договором', data.topBinsWithContract),
+    ];
+
+    final topBinsCard = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.badge_rounded, size: 18, color: colorScheme.primary),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Топ БИН',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...compactTopBins.map((entry) {
+                final title = entry.$1;
+                final items = entry.$2.take(3).toList();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      if (items.isEmpty)
+                        Text(
+                          'Нет данных',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        )
+                      else
+                        ...items.map(
+                          (binItem) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    binItem.bin.isEmpty ? '—' : binItem.bin,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  numberFormatter.format(binItem.requests),
+                                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final heatmapCard = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF06B6D4).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.grid_view_rounded, size: 18, color: Color(0xFF0891B2)),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Пиковые нагрузки',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (data.peakLoadHeatmap.isEmpty)
+                Text(
+                  'Нет данных',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                )
+              else
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final hours = const [0, 6, 12, 18];
+                    final days = const ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                    final maxCount = data.peakLoadHeatmap.map((e) => e.count).fold<int>(1, (m, c) => c > m ? c : m);
+                    final cellW = ((constraints.maxWidth - 60) / hours.length).clamp(26.0, 50.0);
+
+                    int countFor(int day, int hour) {
+                      for (final p in data.peakLoadHeatmap) {
+                        if (p.dayOfWeek == day && p.hour == hour) return p.count;
+                      }
+                      return 0;
+                    }
+
+                    Color colorFor(int count) {
+                      final intensity = (count / maxCount).clamp(0.0, 1.0);
+                      return Color.lerp(
+                            colorScheme.surfaceContainerHighest.withValues(alpha: 0.25),
+                            const Color(0xFF0891B2),
+                            intensity,
+                          ) ??
+                          const Color(0xFF0891B2);
+                    }
+
+                    return Column(
+                      children: List.generate(days.length, (dayIdx) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 30,
+                                child: Text(
+                                  days[dayIdx],
+                                  style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                              ),
+                              ...hours.map((h) {
+                                final c = countFor(dayIdx + 1, h);
+                                return Container(
+                                  width: cellW,
+                                  height: 14,
+                                  margin: const EdgeInsets.only(left: 4),
+                                  decoration: BoxDecoration(
+                                    color: colorFor(c),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        );
+                      }),
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2357,13 +2657,171 @@ class _DashboardViewState extends State<DashboardView> {
       ),
     );
 
-    final tabChildren = switch (_dashboardTab) {
-      _DashboardTab.overview => <Widget>[responseCard, dialogsCard],
-      _DashboardTab.operators => <Widget>[topOperatorsCard, agentsCard],
-      _DashboardTab.sections => <Widget>[sectionCard, questionsCard],
-      _DashboardTab.activity => <Widget>[activityCard],
-      _DashboardTab.commercial => <Widget>[aiCard, slaCard, csatCard],
-    };
+    void openDashboardModal(String title, Widget content) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) {
+          final size = MediaQuery.of(dialogContext).size;
+          final maxWidth = math.min(size.width - 20, 560.0);
+          final maxHeight = size.height * 0.9;
+
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 12, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                          tooltip: 'Close',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.only(top: 10, bottom: 18),
+                      child: content,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    Widget launcherPanel(String title, List<Widget> launchers) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: Card(
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: launchers,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final tabChildren = <Widget>[
+      launcherPanel(
+        'Операционные',
+        [
+          _DashboardLauncherButton(
+            icon: Icons.speed_rounded,
+            label: 'Скорость ответа',
+            onTap: () => openDashboardModal('Скорость ответа', responseCard),
+          ),
+          _DashboardLauncherButton(
+            icon: Icons.chat_bubble_outline_rounded,
+            label: 'Диалоги',
+            onTap: () => openDashboardModal('Диалоги', dialogsCard),
+          ),
+          _DashboardLauncherButton(
+            icon: Icons.smart_toy_rounded,
+            label: 'AI автоматизация',
+            onTap: () => openDashboardModal('AI автоматизация', aiCard),
+          ),
+        ],
+      ),
+      launcherPanel(
+        'Качество сервиса',
+        [
+          _DashboardLauncherButton(
+            icon: Icons.health_and_safety_rounded,
+            label: 'SLA',
+            onTap: () => openDashboardModal('Качество обслуживания (SLA)', slaCard),
+          ),
+          _DashboardLauncherButton(
+            icon: Icons.star_rounded,
+            label: 'CSAT',
+            onTap: () => openDashboardModal('Удовлетворенность (CSAT)', csatCard),
+          ),
+          _DashboardLauncherButton(
+            icon: Icons.auto_awesome_rounded,
+            label: 'Оценка AI',
+            onTap: () => openDashboardModal('Оценка работы AI', aiCsatCard),
+          ),
+        ],
+      ),
+      launcherPanel(
+        'Команда и контент',
+        [
+          _DashboardLauncherButton(
+            icon: Icons.emoji_events_rounded,
+            label: 'TOP-10',
+            onTap: () => openDashboardModal('TOP-10', topOperatorsCard),
+          ),
+          _DashboardLauncherButton(
+            icon: Icons.groups_rounded,
+            label: 'Сотрудники',
+            onTap: () => openDashboardModal('Сотрудники', agentsCard),
+          ),
+          _DashboardLauncherButton(
+            icon: Icons.pie_chart_outline_rounded,
+            label: 'Разделы',
+            onTap: () => openDashboardModal('Обращения по разделам', sectionCard),
+          ),
+          _DashboardLauncherButton(
+            icon: Icons.question_answer_outlined,
+            label: 'Частые вопросы',
+            onTap: () => openDashboardModal('Частые вопросы', questionsCard),
+          ),
+        ],
+      ),
+      launcherPanel(
+        'Нагрузка и БИН',
+        [
+          _DashboardLauncherButton(
+            icon: Icons.show_chart_rounded,
+            label: 'Активность',
+            onTap: () => openDashboardModal('Активность по дням', activityCard),
+          ),
+          _DashboardLauncherButton(
+            icon: Icons.grid_view_rounded,
+            label: 'Пиковые нагрузки',
+            onTap: () => openDashboardModal('Пиковые нагрузки', heatmapCard),
+          ),
+          _DashboardLauncherButton(
+            icon: Icons.badge_rounded,
+            label: 'Топ БИН',
+            onTap: () => openDashboardModal('Топ БИН', topBinsCard),
+          ),
+        ],
+      ),
+    ];
 
     final listChildren = <Widget>[headerCard, ...tabChildren, const SizedBox(height: 24)];
 
@@ -2950,6 +3408,63 @@ class _DashboardMiniChip extends StatelessWidget {
 }
 
 // ── Quick stat in the header hero row ──
+class _DashboardLauncherButton extends StatelessWidget {
+  const _DashboardLauncherButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return SizedBox(
+      width: 158,
+      child: Material(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 16, color: colorScheme.primary),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _QuickStat extends StatelessWidget {
   const _QuickStat({
     required this.label,
@@ -3055,6 +3570,7 @@ class _TabSegment extends StatelessWidget {
 Widget _cardAccentStrip(ColorScheme colorScheme) {
   return const SizedBox.shrink();
 }
+
 
 
 

@@ -279,6 +279,8 @@ export interface DashboardDialogMetricRaw {
   is_open: boolean;
   is_ai_closed: boolean;
   response_time_minutes: number | null;
+  csat_rating?: number | null;
+  ai_csat_rating?: number | null;
 }
 
 export interface DashboardSummaryRaw {
@@ -381,6 +383,8 @@ export interface DashboardDialogMetric {
   isOpen: boolean;
   isAiClosed: boolean;
   responseTimeMinutes: number | null;
+  csatRating: number | null;
+  aiCsatRating: number | null;
 }
 
 export interface DashboardSummary {

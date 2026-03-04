@@ -368,6 +368,8 @@ class DashboardDialogMetric(BaseModel):
     is_open: bool
     is_ai_closed: bool
     response_time_minutes: float | None
+    csat_rating: int | None = None
+    ai_csat_rating: int | None = None
 
 class CsatDistributionEntry(BaseModel):
     rating: int

@@ -21,6 +21,12 @@ export interface RegionStats {
     responseSpeedFast: number;
     responseSpeedMedium: number;
     responseSpeedSlow: number;
+    csatSum: number;
+    csatCount: number;
+    aiCsatSum: number;
+    aiCsatCount: number;
+    csatDistribution: number[];
+    aiCsatDistribution: number[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -467,6 +473,12 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
                     responseSpeedFast: 0,
                     responseSpeedMedium: 0,
                     responseSpeedSlow: 0,
+                    csatSum: 0,
+                    csatCount: 0,
+                    aiCsatSum: 0,
+                    aiCsatCount: 0,
+                    csatDistribution: [0, 0, 0, 0, 0],
+                    aiCsatDistribution: [0, 0, 0, 0, 0],
                 };
             }
         };
@@ -493,9 +505,24 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
                 }
 
                 if (metric.responseTimeMinutes !== null) {
-                    if (metric.responseTimeMinutes < 2) stats[rk].responseSpeedFast++;
-                    else if (metric.responseTimeMinutes <= 7) stats[rk].responseSpeedMedium++;
+                    if (metric.responseTimeMinutes <= 5) stats[rk].responseSpeedFast++;
+                    else if (metric.responseTimeMinutes <= 15) stats[rk].responseSpeedMedium++;
                     else stats[rk].responseSpeedSlow++;
+                }
+
+                if (metric.csatRating !== null) {
+                    stats[rk].csatSum += metric.csatRating;
+                    stats[rk].csatCount++;
+                    if (metric.csatRating >= 1 && metric.csatRating <= 5) {
+                        stats[rk].csatDistribution[metric.csatRating - 1]++;
+                    }
+                }
+                if (metric.aiCsatRating !== null) {
+                    stats[rk].aiCsatSum += metric.aiCsatRating;
+                    stats[rk].aiCsatCount++;
+                    if (metric.aiCsatRating >= 1 && metric.aiCsatRating <= 5) {
+                        stats[rk].aiCsatDistribution[metric.aiCsatRating - 1]++;
+                    }
                 }
             });
         }
@@ -546,6 +573,12 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
                     responseSpeedFast: 0,
                     responseSpeedMedium: 0,
                     responseSpeedSlow: 0,
+                    csatSum: 0,
+                    csatCount: 0,
+                    aiCsatSum: 0,
+                    aiCsatCount: 0,
+                    csatDistribution: [0, 0, 0, 0, 0],
+                    aiCsatDistribution: [0, 0, 0, 0, 0],
                 };
             }
             return result[oblastId][rayonIdx];
@@ -578,9 +611,24 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
                     }
 
                     if (metric.responseTimeMinutes !== null) {
-                        if (metric.responseTimeMinutes < 2) s.responseSpeedFast++;
-                        else if (metric.responseTimeMinutes <= 7) s.responseSpeedMedium++;
+                        if (metric.responseTimeMinutes <= 5) s.responseSpeedFast++;
+                        else if (metric.responseTimeMinutes <= 15) s.responseSpeedMedium++;
                         else s.responseSpeedSlow++;
+                    }
+
+                    if (metric.csatRating !== null) {
+                        s.csatSum += metric.csatRating;
+                        s.csatCount++;
+                        if (metric.csatRating >= 1 && metric.csatRating <= 5) {
+                            s.csatDistribution[metric.csatRating - 1]++;
+                        }
+                    }
+                    if (metric.aiCsatRating !== null) {
+                        s.aiCsatSum += metric.aiCsatRating;
+                        s.aiCsatCount++;
+                        if (metric.aiCsatRating >= 1 && metric.aiCsatRating <= 5) {
+                            s.aiCsatDistribution[metric.aiCsatRating - 1]++;
+                        }
                     }
                 }
             });

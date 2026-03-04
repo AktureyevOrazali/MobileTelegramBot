@@ -31,6 +31,12 @@ class DashboardSummary {
     required this.csatAverage,
     required this.csatCount,
     required this.csatDistribution,
+    required this.aiCsatAverage,
+    required this.aiCsatCount,
+    required this.aiCsatDistribution,
+    required this.topBinsWithoutContract,
+    required this.topBinsWithContract,
+    required this.peakLoadHeatmap,
   });
 
   final int totalDialogs;
@@ -63,6 +69,12 @@ class DashboardSummary {
   final double? csatAverage;
   final int csatCount;
   final List<CsatDistributionEntry> csatDistribution;
+  final double? aiCsatAverage;
+  final int aiCsatCount;
+  final List<CsatDistributionEntry> aiCsatDistribution;
+  final List<DashboardTopBin> topBinsWithoutContract;
+  final List<DashboardTopBin> topBinsWithContract;
+  final List<DashboardHeatmapPoint> peakLoadHeatmap;
 
   factory DashboardSummary.empty() {
     final now = DateTime.now();
@@ -95,6 +107,12 @@ class DashboardSummary {
       csatAverage: null,
       csatCount: 0,
       csatDistribution: const [],
+      aiCsatAverage: null,
+      aiCsatCount: 0,
+      aiCsatDistribution: const [],
+      topBinsWithoutContract: const [],
+      topBinsWithContract: const [],
+      peakLoadHeatmap: const [],
     );
   }
 
@@ -149,6 +167,18 @@ class DashboardSummary {
         .whereType<Map<String, dynamic>>()
         .map(DashboardResponseTimeDialog.fromJson)
         .toList();
+    final topBinsWithoutContract = (json['top_bins_without_contract'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardTopBin.fromJson)
+        .toList();
+    final topBinsWithContract = (json['top_bins_with_contract'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardTopBin.fromJson)
+        .toList();
+    final peakLoadHeatmap = (json['peak_load_heatmap'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(DashboardHeatmapPoint.fromJson)
+        .toList();
 
     final avgDialogDuration = parseDoubleNullable(json['avg_dialog_duration_minutes']);
     final avgResponseMinutes = parseResponseMinutes(
@@ -190,6 +220,15 @@ class DashboardSummary {
           .whereType<Map<String, dynamic>>()
           .map((e) => CsatDistributionEntry.fromJson(e))
           .toList(),
+      aiCsatAverage: parseDoubleNullable(json['ai_csat_average']),
+      aiCsatCount: parseInt(json['ai_csat_count']),
+      aiCsatDistribution: (json['ai_csat_distribution'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map((e) => CsatDistributionEntry.fromJson(e))
+          .toList(),
+      topBinsWithoutContract: topBinsWithoutContract,
+      topBinsWithContract: topBinsWithContract,
+      peakLoadHeatmap: peakLoadHeatmap,
     );
   }
 }
@@ -354,6 +393,40 @@ class DashboardActivityPoint {
       date: parsedDate,
       dialogs: _parseIntValue(json['dialogs']) ?? 0,
       incomingMessages: _parseIntValue(json['incoming_messages']) ?? 0,
+    );
+  }
+}
+
+class DashboardTopBin {
+  DashboardTopBin({required this.bin, required this.requests});
+
+  final String bin;
+  final int requests;
+
+  factory DashboardTopBin.fromJson(Map<String, dynamic> json) {
+    return DashboardTopBin(
+      bin: (json['bin'] as String?)?.trim() ?? '',
+      requests: _parseIntValue(json['requests']) ?? 0,
+    );
+  }
+}
+
+class DashboardHeatmapPoint {
+  DashboardHeatmapPoint({
+    required this.dayOfWeek,
+    required this.hour,
+    required this.count,
+  });
+
+  final int dayOfWeek;
+  final int hour;
+  final int count;
+
+  factory DashboardHeatmapPoint.fromJson(Map<String, dynamic> json) {
+    return DashboardHeatmapPoint(
+      dayOfWeek: _parseIntValue(json['day_of_week']) ?? 0,
+      hour: _parseIntValue(json['hour']) ?? 0,
+      count: _parseIntValue(json['count']) ?? 0,
     );
   }
 }

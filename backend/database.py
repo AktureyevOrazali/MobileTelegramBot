@@ -4001,7 +4001,7 @@ def get_dashboard_summary(
         # ══════════════════════════════════════════════════════
         dm_rows = execute(
             """
-            SELECT dialog_id, bin, is_ai_closed, avg_response_time_seconds
+            SELECT dialog_id, bin, is_ai_closed, avg_response_time_seconds, csat_rating, ai_csat_rating
             FROM dialog_stats ds
             WHERE ds.started_at >= %s AND ds.started_at < %s
             """
@@ -4021,6 +4021,8 @@ def get_dashboard_summary(
                 "is_open": False,
                 "is_ai_closed": bool(row["is_ai_closed"]),
                 "response_time_minutes": rt_min,
+                "csat_rating": int(row["csat_rating"]) if row["csat_rating"] is not None else None,
+                "ai_csat_rating": int(row["ai_csat_rating"]) if row["ai_csat_rating"] is not None else None,
             })
 
         # Add open dialogs to dialog_metrics
@@ -4043,6 +4045,8 @@ def get_dashboard_summary(
                 "is_open": True,
                 "is_ai_closed": False,
                 "response_time_minutes": None,
+                "csat_rating": None,
+                "ai_csat_rating": None,
             })
 
     return {

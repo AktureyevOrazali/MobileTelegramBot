@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 const Color brandPrimaryGreen = Color(0xFF22C55E);
 const Color brandTeal = Color(0xFF1A9B8A);
@@ -6,9 +6,88 @@ const Color brandScaffoldBackground = Color(0xFFF7F8FA);
 const Color brandPrimaryText = Color(0xFF1A1A1A);
 const Color brandError = Color(0xFFDC2626);
 const Color brandAccentMint = Color(0xFF6EE7B7);
+const Color brandAccentSky = Color(0xFF6B9EEB);
+const Color brandAccentIris = Color(0xFF8A8FD8);
+const Color brandAccentWarm = Color(0xFFE3A85A);
+const Color brandAccentAlert = Color(0xFFE07D76);
 
+class AppRadii {
+  const AppRadii._();
+
+  static const double card = 22;
+  static const double field = 16;
+  static const double control = 14;
+  static const double chip = 999;
+}
+
+class AppSurfaces {
+  const AppSurfaces._();
+
+  static LinearGradient dashboardBg(ColorScheme colorScheme) {
+    final isDark = colorScheme.brightness == Brightness.dark;
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: isDark
+          ? [
+              const Color(0xFF142A24),
+              const Color(0xFF0F172A),
+            ]
+          : [
+              const Color(0xFFF2F8F5),
+              const Color(0xFFDBEEE8),
+            ],
+    );
+  }
+
+  static Color dashboardScaffold(ColorScheme colorScheme) {
+    return colorScheme.brightness == Brightness.dark
+        ? const Color(0xFF0F172A)
+        : const Color(0xFFDBEEE8);
+  }
+
+  static Color dashboardCard(ColorScheme colorScheme) {
+    return colorScheme.brightness == Brightness.dark
+        ? Color.alphaBlend(
+            colorScheme.primary.withValues(alpha: 0.08),
+            colorScheme.surfaceContainerHigh,
+          )
+        : Colors.white;
+  }
+
+  static Color dashboardCardBorder(ColorScheme colorScheme) {
+    return colorScheme.brightness == Brightness.dark
+        ? colorScheme.outlineVariant.withValues(alpha: 0.72)
+        : colorScheme.outlineVariant.withValues(alpha: 0.35);
+  }
+
+  static Color dashboardCardShadow(ColorScheme colorScheme) {
+    return colorScheme.brightness == Brightness.dark
+        ? colorScheme.shadow.withValues(alpha: 0.22)
+        : colorScheme.shadow.withValues(alpha: 0.03);
+  }
+}
 class AppGradients {
   const AppGradients._();
+
+  static LinearGradient pageBackground(ColorScheme colorScheme) {
+    final isDark = colorScheme.brightness == Brightness.dark;
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: isDark
+          ? [
+              colorScheme.primary.withValues(alpha: 0.08),
+              colorScheme.surface,
+              colorScheme.surface,
+            ]
+          : [
+              colorScheme.primary.withValues(alpha: 0.05),
+              colorScheme.secondary.withValues(alpha: 0.02),
+              brandScaffoldBackground,
+            ],
+    );
+  }
 
   static LinearGradient authBackground(ColorScheme colorScheme) {
     return LinearGradient(
@@ -47,9 +126,9 @@ class AppGradients {
               const Color(0xFF0F172A),
             ]
           : [
-              const Color(0xFFC8E6C9).withValues(alpha: 0.45),
-              const Color(0xFFE8F5E9).withValues(alpha: 0.25),
-              const Color(0xFFFAFDFA),
+              colorScheme.primary.withValues(alpha: 0.08),
+              colorScheme.surface.withValues(alpha: 0.94),
+              colorScheme.surface,
             ],
     );
   }
@@ -428,3 +507,6 @@ final ColorScheme brandDarkColorScheme = ColorScheme(
   onInverseSurface: const Color(0xFF0F172A),
   inversePrimary: brandPrimaryGreen,
 );
+
+
+

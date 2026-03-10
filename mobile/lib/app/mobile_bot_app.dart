@@ -152,7 +152,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
 
   ThemeData _buildTheme(ColorScheme colorScheme, AppColors appColors) {
     final outlineBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(AppRadii.field),
       borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.25)),
     );
 
@@ -193,7 +193,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
         color: isLight ? Colors.white : colorScheme.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(AppRadii.card),
           side: BorderSide(
             color: colorScheme.outlineVariant.withOpacity(0.3),
           ),
@@ -220,6 +220,30 @@ class _MobileBotModuleState extends State<MobileBotModule> {
         backgroundColor: colorScheme.inverseSurface,
         contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: isLight ? colorScheme.surface : colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.35)),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: isLight ? colorScheme.surface : colorScheme.surface,
+        modalBackgroundColor: isLight ? colorScheme.surface : colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppRadii.card),
+          ),
+          side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.35)),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.field),
+          side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.35)),
+        ),
+      ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: isLight ? Colors.white : colorScheme.surface,
         indicatorColor: colorScheme.secondary,
@@ -242,7 +266,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
       ),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadii.control),
         ),
         side: BorderSide(
           color: colorScheme.outlineVariant.withOpacity(0.4),
@@ -256,7 +280,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
           minimumSize: const Size(0, 48),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppRadii.field),
           ),
         ),
       ),
@@ -267,7 +291,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
           minimumSize: const Size(0, 48),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppRadii.field),
           ),
         ),
       ),
@@ -278,7 +302,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
           minimumSize: const Size(0, 48),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppRadii.field),
           ),
         ),
       ),
@@ -286,7 +310,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
         style: TextButton.styleFrom(
           foregroundColor: colorScheme.primary,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
         ),
       ),

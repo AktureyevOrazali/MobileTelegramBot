@@ -119,7 +119,7 @@ class _AuthScreenState extends State<AuthScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: background,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadii.field),
         ),
         child: Text(
           text,
@@ -253,7 +253,7 @@ class _AuthScreenState extends State<AuthScreen> {
                               Container(
                                 decoration: BoxDecoration(
                                   color: colorScheme.surface.withOpacity(0.85),
-                                  borderRadius: BorderRadius.circular(24),
+                                  borderRadius: BorderRadius.circular(AppRadii.card),
                                   border: Border.all(
                                       color: colorScheme.outlineVariant
                                           .withOpacity(0.4)),
@@ -383,7 +383,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                         DecoratedBox(
                                           decoration: BoxDecoration(
                                             borderRadius:
-                                                BorderRadius.circular(16),
+                                                BorderRadius.circular(AppRadii.field),
                                             gradient:
                                                 AppGradients.primaryAction(
                                                     colorScheme),

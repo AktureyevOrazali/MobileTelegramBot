@@ -34,13 +34,13 @@ class _RoleDropdownPill extends StatelessWidget {
     final Color badgeBg = disabled
         ? theme.colorScheme.surfaceVariant.withOpacity(0.55)
         : (user.isAdmin
-            ? theme.colorScheme.error
+            ? brandAccentIris.withOpacity(0.18)
             : (user.canReply ? theme.colorScheme.primaryContainer : theme.colorScheme.surfaceVariant.withOpacity(0.6)));
 
     final Color badgeFg = disabled
         ? theme.colorScheme.onSurfaceVariant.withOpacity(0.75)
         : (user.isAdmin
-            ? theme.colorScheme.onError
+            ? theme.colorScheme.onSurface
             : (user.canReply ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant));
 
     return SizedBox(
@@ -50,7 +50,7 @@ class _RoleDropdownPill extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           color: badgeBg,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.55)),
         ),
         alignment: Alignment.center,
@@ -103,13 +103,13 @@ class _AdminStatTile extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadii.field),
         onTap: enabled ? onTap : null,
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerHighest.withValues(alpha: enabled ? 0.18 : 0.08),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadii.field),
           ),
           child: Row(
             children: [
@@ -117,7 +117,7 @@ class _AdminStatTile extends StatelessWidget {
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   color: colorScheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Icon(icon, size: 16, color: colorScheme.primary),
               ),
@@ -330,7 +330,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(AppRadii.field),
                             border: Border.all(
                               color: theme.colorScheme.outlineVariant.withOpacity(0.55),
                             ),
@@ -469,7 +469,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(AppRadii.field),
                             border: Border.all(
                               color: theme.colorScheme.outlineVariant.withOpacity(0.55),
                             ),
@@ -766,7 +766,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         margin: const EdgeInsets.only(bottom: 10),
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(AppRadii.field),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -789,9 +789,9 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              selectedInfo!.hasContract ? '✓ Есть договор' : '⚠ Без договора',
+                              selectedInfo!.hasContract ? '? Есть договор' : '? Без договора',
                               style: theme.textTheme.bodyMedium?.copyWith(
-                                color: selectedInfo!.hasContract ? Colors.green : theme.colorScheme.error,
+                                color: selectedInfo!.hasContract ? brandPrimaryGreen : theme.colorScheme.error,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -824,7 +824,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                 final item = filtered[index];
                                 return ListTile(
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.field)),
                                   tileColor: theme.colorScheme.surfaceVariant.withOpacity(0.25),
                                   title: Text(item.bin),
                                   subtitle: Text(item.hasContract ? 'договор' : 'без договора'),
@@ -942,7 +942,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surfaceVariant
                               .withOpacity(0.35),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(AppRadii.field),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -967,7 +967,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              '⚠ Без договора',
+                              '? Без договора',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: theme.colorScheme.error,
                                 fontWeight: FontWeight.w600,
@@ -1014,7 +1014,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                           horizontal: 8),
                                   shape: RoundedRectangleBorder(
                                       borderRadius:
-                                          BorderRadius.circular(12)),
+                                          BorderRadius.circular(AppRadii.field)),
                                   tileColor: theme
                                       .colorScheme.surfaceVariant
                                       .withOpacity(0.25),
@@ -1125,7 +1125,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surfaceVariant
                               .withOpacity(0.35),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(AppRadii.field),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1151,9 +1151,9 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              '✓ Есть договор',
+                              '? Есть договор',
                               style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Colors.green,
+                                color: brandPrimaryGreen,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -1198,7 +1198,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                           horizontal: 8),
                                   shape: RoundedRectangleBorder(
                                       borderRadius:
-                                          BorderRadius.circular(12)),
+                                          BorderRadius.circular(AppRadii.field)),
                                   tileColor: theme
                                       .colorScheme.surfaceVariant
                                       .withOpacity(0.25),
@@ -1307,7 +1307,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                           horizontal: 8),
                                   shape: RoundedRectangleBorder(
                                       borderRadius:
-                                          BorderRadius.circular(12)),
+                                          BorderRadius.circular(AppRadii.field)),
                                   tileColor: theme
                                       .colorScheme.surfaceVariant
                                       .withOpacity(0.25),
@@ -1330,7 +1330,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                             vertical: 2),
                                         decoration: BoxDecoration(
                                           color: entry.hasContract
-                                              ? Colors.green
+                                              ? brandPrimaryGreen
                                                   .withOpacity(0.1)
                                               : theme.colorScheme.error
                                                   .withOpacity(0.1),
@@ -1343,7 +1343,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                               .textTheme.labelSmall
                                               ?.copyWith(
                                             color: entry.hasContract
-                                                ? Colors.green
+                                                ? brandPrimaryGreen
                                                 : theme.colorScheme.error,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -1468,7 +1468,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surfaceVariant
                             .withOpacity(0.35),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(AppRadii.field),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1486,14 +1486,14 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: unassignedBin.hasContract
-                                      ? Colors.green.withOpacity(0.1)
+                                      ? brandPrimaryGreen.withOpacity(0.1)
                                       : theme.colorScheme.error.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
                                   unassignedBin.hasContract ? 'С договором' : 'Без договора',
                                   style: theme.textTheme.labelSmall?.copyWith(
-                                    color: unassignedBin.hasContract ? Colors.green : theme.colorScheme.error,
+                                    color: unassignedBin.hasContract ? brandPrimaryGreen : theme.colorScheme.error,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -1560,7 +1560,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                             contentPadding:
                                 const EdgeInsets.symmetric(horizontal: 12),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
+                                borderRadius: BorderRadius.circular(AppRadii.field)),
                             tileColor: theme.colorScheme.surfaceVariant
                                 .withOpacity(0.25),
                             leading: CircleAvatar(
@@ -1761,7 +1761,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadii.field),
                     ),
                     child: Text(
                       bin,
@@ -2117,7 +2117,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(AppRadii.field),
                         border: Border.all(
                           color: theme.colorScheme.outlineVariant.withOpacity(0.55),
                         ),
@@ -2411,10 +2411,10 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
     final colorScheme = baseTheme.colorScheme;
     final theme = baseTheme.copyWith(
       cardTheme: baseTheme.cardTheme.copyWith(
-        elevation: 2,
+        elevation: 1,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppRadii.card),
         ),
         shadowColor: colorScheme.shadow.withValues(alpha: 0.08),
         color: colorScheme.surface.withValues(alpha: 0.97),
@@ -2524,7 +2524,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
         child: Card(
           margin: EdgeInsets.zero,
           child: InkWell(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppRadii.card),
             onTap: _unassignedBins.isNotEmpty
                 ? _logButtonPress('open unassigned bins sheet', () => _openUnassignedBinsSheet(theme))
                 : null,
@@ -2536,7 +2536,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
                       color: colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(AppRadii.control),
                     ),
                     child: Icon(Icons.link_off_rounded, size: 18, color: colorScheme.primary),
                   ),
@@ -2611,7 +2611,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadii.field),
                 ),
                 child: Row(
                   children: [
@@ -2750,7 +2750,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                 style: OutlinedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 10),
                                   visualDensity: VisualDensity.compact,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.control)),
                                 ),
                                 onPressed: (isUpdating || isDeleting)
                                     ? null
@@ -2777,7 +2777,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                                 style: OutlinedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 10),
                                   visualDensity: VisualDensity.compact,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.control)),
                                 ),
                                 onPressed: (isUpdating || isDeleting)
                                     ? null
@@ -2839,7 +2839,7 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                  Text(_error!, style: const TextStyle(color: brandAccentAlert)),
                   TextButton(
                     onPressed: _logButtonPress('retry load admin data', () => refreshAdminData()),
                     child: const Text('Повторить загрузку'),
@@ -3191,97 +3191,105 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   Widget _buildProfileHeader(ThemeData theme) {
     final jobTitle = _jobTitleController.text.trim();
     final avatar = _buildProfileImageProvider();
-    final isDark = theme.brightness == Brightness.dark;
-    final baseColor = isDark
-        ? theme.colorScheme.surface
-        : theme.extension<AppColors>()!.appBarColor;
+    final colorScheme = theme.colorScheme;
 
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            baseColor,
-            baseColor.withOpacity(0.85),
-            theme.colorScheme.surface,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: AppSurfaces.dashboardCard(colorScheme),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: AppSurfaces.dashboardCardBorder(colorScheme)),
+          boxShadow: [
+            BoxShadow(
+              color: AppSurfaces.dashboardCardShadow(colorScheme),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
           ],
-          stops: const [0.0, 0.7, 1.0],
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              colorScheme.primary.withValues(alpha: 0.06),
+              AppSurfaces.dashboardCard(colorScheme),
+            ],
+          ),
         ),
-      ),
-      padding: const EdgeInsets.only(top: 32, bottom: 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: _pickProfileImage,
-            child: Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.3),
-                      width: 3,
+        padding: const EdgeInsets.only(top: 24, bottom: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            GestureDetector(
+              onTap: _pickProfileImage,
+              child: Stack(
+                alignment: Alignment.bottomRight,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: colorScheme.outlineVariant.withValues(alpha: 0.45),
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorScheme.shadow.withValues(alpha: 0.12),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+                    child: CircleAvatar(
+                      radius: 52,
+                      backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                      backgroundImage: avatar,
+                      child: avatar == null
+                          ? const Icon(Icons.person, size: 48, color: brandPrimaryGreen)
+                          : null,
+                    ),
                   ),
-                  child: CircleAvatar(
-                    radius: 52,
-                    backgroundColor: Colors.white.withOpacity(0.15),
-                    backgroundImage: avatar,
-                    child: avatar == null
-                        ? const Icon(Icons.person, size: 48, color: brandPrimaryGreen)
-                        : null,
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: brandPrimaryGreen,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppSurfaces.dashboardCard(colorScheme), width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: brandPrimaryGreen.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.camera_alt_rounded, size: 16, color: Colors.white),
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: brandPrimaryGreen,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: brandPrimaryGreen.withOpacity(0.3),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.camera_alt_rounded, size: 16, color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            _displayName.isEmpty ? 'Профиль' : _displayName,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleLarge?.copyWith(
-              color: theme.colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
-            ),
-          ),
-          if (jobTitle.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                jobTitle,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                ],
               ),
             ),
-        ],
+            const SizedBox(height: 14),
+            Text(
+              _displayName.isEmpty ? 'Профиль' : _displayName,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleLarge?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
+            ),
+            if (jobTitle.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  jobTitle,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -3303,16 +3311,18 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     return _FocusableFieldCard(
       readOnly: readOnly,
       child: (isFocused) => Container(
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: isFocused ? brandPrimaryGreen.withOpacity(0.04) : null,
+          borderRadius: BorderRadius.circular(AppRadii.field),
+          color: isFocused
+              ? brandPrimaryGreen.withValues(alpha: 0.08)
+              : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.24),
           border: Border.all(
             color: isFocused
-                ? brandPrimaryGreen.withOpacity(0.5)
-                : Colors.transparent,
-            width: 1.2,
+                ? brandPrimaryGreen.withValues(alpha: 0.55)
+                : theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+            width: isFocused ? 1.2 : 1.0,
           ),
         ),
         child: TextFormField(
@@ -3335,7 +3345,11 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
               size: 22,
             ),
             suffixIcon: readOnly
-                ? Icon(Icons.lock_outline, size: 16, color: theme.colorScheme.onSurfaceVariant.withOpacity(0.4))
+                ? Icon(
+                    Icons.lock_outline,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  )
                 : null,
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
@@ -3354,13 +3368,13 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
   }) {
     final theme = Theme.of(context);
     return Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: theme.colorScheme.outlineVariant.withOpacity(0.3),
-          ),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(AppRadii.field),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
         ),
       ),
       child: Row(
@@ -3399,244 +3413,278 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
     final profile = _profile;
     final isAdmin = profile?.isAdmin ?? false;
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return RefreshIndicator(
       onRefresh: () => refreshProfile(showLoading: false),
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildProfileHeader(theme),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildTextFieldCard(
-                      controller: _nameController,
-                      label: 'ФИО',
-                      icon: Icons.badge,
-                      validator: (value) {
-                        final trimmed = value?.trim() ?? '';
-                        if (trimmed.runes.length < 2) return 'Введите имя длиной не менее 2 символов';
-                        return null;
-                      },
-                    ),
-                    _buildTextFieldCard(
-                      controller: _emailController,
-                      label: 'E-mail',
-                      icon: Icons.alternate_email,
-                      readOnly: true,
-                    ),
-                    _buildTextFieldCard(
-                      controller: _loginController,
-                      label: 'Логин',
-                      icon: Icons.lock_person_outlined,
-                      readOnly: true,
-                    ),
-                    _buildTextFieldCard(
-                      controller: _jobTitleController,
-                      label: 'Должность',
-                      icon: Icons.assignment_ind_outlined,
-                      textCapitalization: TextCapitalization.sentences,
-                    ),
-                    _buildTextFieldCard(
-                      controller: _phoneController,
-                      label: 'Телефон',
-                      icon: Icons.phone_iphone,
-                      keyboardType: TextInputType.phone,
-                    ),
-                    _buildTextFieldCard(
-                      controller: _bioController,
-                      label: 'О себе',
-                      icon: Icons.description_outlined,
-                      minLines: 1,
-                      maxLines: 5,
-                      keyboardType: TextInputType.multiline,
-                      textCapitalization: TextCapitalization.sentences,
-                    ),
-                    if (profile != null) ...[
-                      const SizedBox(height: 8),
-                      _buildInfoTile(
-                        icon: Icons.calendar_month_outlined,
-                        label: 'Аккаунт создан',
-                        value: DateFormat('dd.MM.yyyy HH:mm').format(profile.createdAt.toLocal()),
+      child: DecoratedBox(
+        decoration: BoxDecoration(gradient: AppSurfaces.dashboardBg(colorScheme)),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildProfileHeader(theme),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppSurfaces.dashboardCard(colorScheme),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppSurfaces.dashboardCardBorder(colorScheme)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppSurfaces.dashboardCardShadow(colorScheme),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
                       ),
-                      _buildInfoTile(
-                        icon: Icons.verified_user_outlined,
-                        label: 'Роль',
-                        value: profile.roleLabel,
-                      ),
-                      if (!isAdmin) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(16),
+                    ],
+                  ),
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildTextFieldCard(
+                          controller: _nameController,
+                          label: 'ФИО',
+                          icon: Icons.badge,
+                          validator: (value) {
+                            final trimmed = value?.trim() ?? '';
+                            if (trimmed.runes.length < 2) {
+                              return 'Введите имя длиной не менее 2 символов';
+                            }
+                            return null;
+                          },
+                        ),
+                        _buildTextFieldCard(
+                          controller: _emailController,
+                          label: 'E-mail',
+                          icon: Icons.alternate_email,
+                          readOnly: true,
+                        ),
+                        _buildTextFieldCard(
+                          controller: _loginController,
+                          label: 'Логин',
+                          icon: Icons.lock_person_outlined,
+                          readOnly: true,
+                        ),
+                        _buildTextFieldCard(
+                          controller: _jobTitleController,
+                          label: 'Должность',
+                          icon: Icons.assignment_ind_outlined,
+                          textCapitalization: TextCapitalization.sentences,
+                        ),
+                        _buildTextFieldCard(
+                          controller: _phoneController,
+                          label: 'Телефон',
+                          icon: Icons.phone_iphone,
+                          keyboardType: TextInputType.phone,
+                        ),
+                        _buildTextFieldCard(
+                          controller: _bioController,
+                          label: 'О себе',
+                          icon: Icons.description_outlined,
+                          minLines: 1,
+                          maxLines: 5,
+                          keyboardType: TextInputType.multiline,
+                          textCapitalization: TextCapitalization.sentences,
+                        ),
+                        if (profile != null) ...[
+                          const SizedBox(height: 8),
+                          _buildInfoTile(
+                            icon: Icons.calendar_month_outlined,
+                            label: 'Аккаунт создан',
+                            value: DateFormat('dd.MM.yyyy HH:mm').format(profile.createdAt.toLocal()),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.dashboard_customize_outlined, size: 20, color: brandPrimaryGreen),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Разделы',
-                                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              if (profile.sections.isEmpty)
-                                Text(
-                                  'Не назначены',
-                                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                                )
-                              else
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 4,
-                                  children: profile.sections.map((sectionId) {
-                                    final match = _sections.firstWhere(
-                                      (s) => s.id == sectionId,
-                                      orElse: () => Section(id: sectionId, title: sectionId),
-                                    );
-                                    return Chip(
-                                      label: Text(match.title, style: const TextStyle(fontSize: 12)),
-                                      padding: EdgeInsets.zero,
-                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      visualDensity: VisualDensity.compact,
-                                    );
-                                  }).toList(),
+                          _buildInfoTile(
+                            icon: Icons.verified_user_outlined,
+                            label: 'Роль',
+                            value: profile.roleLabel,
+                          ),
+                          if (!isAdmin) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(AppRadii.card),
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
                                 ),
-                              const SizedBox(height: 14),
-                              Row(
-                                children: [
-                                  Icon(Icons.business_center_outlined, size: 20, color: brandPrimaryGreen),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'БИНы',
-                                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                ],
                               ),
-                              const SizedBox(height: 8),
-                              if (profile.binAssignments.isEmpty)
-                                Text(
-                                  'Не назначены',
-                                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                                )
-                              else
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 4,
-                                  children: profile.binAssignments.map((assignment) {
-                                    final expiresLabel = assignment.expiresAt != null
-                                        ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
-                                        : 'бессрочно';
-                                    return Chip(
-                                      label: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(assignment.bin, style: const TextStyle(fontSize: 12)),
-                                          Text(
-                                            expiresLabel,
-                                            style: theme.textTheme.bodySmall?.copyWith(fontSize: 10, color: theme.colorScheme.onSurfaceVariant),
-                                          ),
-                                        ],
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(Icons.dashboard_customize_outlined, size: 20, color: brandPrimaryGreen),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Разделы',
+                                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                                       ),
-                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      visualDensity: VisualDensity.compact,
-                                    );
-                                  }).toList(),
-                                ),
-                            ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (profile.sections.isEmpty)
+                                    Text(
+                                      'Не назначены',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    )
+                                  else
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: profile.sections.map((sectionId) {
+                                        final match = _sections.firstWhere(
+                                          (s) => s.id == sectionId,
+                                          orElse: () => Section(id: sectionId, title: sectionId),
+                                        );
+                                        return Chip(
+                                          label: Text(match.title, style: const TextStyle(fontSize: 12)),
+                                          padding: EdgeInsets.zero,
+                                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          visualDensity: VisualDensity.compact,
+                                        );
+                                      }).toList(),
+                                    ),
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.business_center_outlined, size: 20, color: brandPrimaryGreen),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'БИНы',
+                                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (profile.binAssignments.isEmpty)
+                                    Text(
+                                      'Не назначены',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    )
+                                  else
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: profile.binAssignments.map((assignment) {
+                                        final expiresLabel = assignment.expiresAt != null
+                                            ? 'до ${DateFormat('dd.MM.yyyy HH:mm').format(assignment.expiresAt!.toLocal())}'
+                                            : 'бессрочно';
+                                        return Chip(
+                                          label: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(assignment.bin, style: const TextStyle(fontSize: 12)),
+                                              Text(
+                                                expiresLabel,
+                                                style: theme.textTheme.bodySmall?.copyWith(
+                                                  fontSize: 10,
+                                                  color: theme.colorScheme.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          visualDensity: VisualDensity.compact,
+                                        );
+                                      }).toList(),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          _buildInfoTile(
+                            icon: Icons.star_outline,
+                            label: 'Избранные диалоги',
+                            value: profile.favoriteDialogIds.length.toString(),
+                          ),
+                        ],
+                        if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: brandAccentAlert.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(AppRadii.control),
+                              ),
+                              child: Text(_error!, style: TextStyle(color: theme.colorScheme.error, fontSize: 13)),
+                            ),
+                          ),
+                        if (_successMessage != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: brandPrimaryGreen.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(AppRadii.control),
+                              ),
+                              child: Text(
+                                _successMessage!,
+                                style: const TextStyle(color: brandPrimaryGreen, fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: FilledButton(
+                            onPressed: _logButtonPress('save profile changes', _saving ? null : _save),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: brandPrimaryGreen,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.field)),
+                            ),
+                            child: _saving
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Text('Сохранить', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: TextButton.icon(
+                            onPressed: _logButtonPress('change own password', _saving ? null : _changeOwnPassword),
+                            icon: const Icon(Icons.lock_outline, size: 18),
+                            label: const Text('Сменить пароль'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: theme.colorScheme.onSurfaceVariant,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppRadii.field),
+                                side: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4)),
+                              ),
+                            ),
                           ),
                         ),
                       ],
-                      _buildInfoTile(
-                        icon: Icons.star_outline,
-                        label: 'Избранные диалоги',
-                        value: profile.favoriteDialogIds.length.toString(),
-                      ),
-                    ],
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(_error!, style: TextStyle(color: theme.colorScheme.error, fontSize: 13)),
-                        ),
-                      ),
-                    if (_successMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(_successMessage!, style: const TextStyle(color: Colors.green, fontSize: 13)),
-                        ),
-                      ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: FilledButton(
-                        onPressed: _logButtonPress('save profile changes', _saving ? null : _save),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: brandPrimaryGreen,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                        child: _saving
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Text('Сохранить', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                      ),
                     ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: TextButton.icon(
-                        onPressed: _logButtonPress('change own password', _saving ? null : _changeOwnPassword),
-                        icon: const Icon(Icons.lock_outline, size: 18),
-                        label: const Text('Сменить пароль'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: theme.colorScheme.onSurfaceVariant,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            side: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -3766,7 +3814,7 @@ class _SectionSelectorFieldState extends State<_SectionSelectorField> {
           alignment: Alignment.topLeft,
           child: Material(
             elevation: 4,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadii.field),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 240, minWidth: 240),
               child: ListView.builder(
@@ -3869,7 +3917,7 @@ class _BinSelectorFieldState extends State<_BinSelectorField> {
           alignment: Alignment.topLeft,
           child: Material(
             elevation: 4,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadii.field),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 240, minWidth: 240),
               child: ListView.builder(
@@ -3936,5 +3984,19 @@ DateTime? _parseDateTime(dynamic value) {
   if (value is String) return DateTime.tryParse(value)?.toLocal();
   return null;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

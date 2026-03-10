@@ -3,6 +3,18 @@
 enum _DashboardTab { overview, operators, sections, activity, commercial }
 enum _TimePreset { today, yesterday, last7, last30, last90, custom }
 enum _TopMetric { avgResponse, messages, dialogs }
+enum _DashboardCategoryKind { operations, serviceQuality, teamContent, loadAndBins }
+typedef _ResponseSegment = ({String key, int count, double? avgMinutes, double percentage});
+
+const double _dashboardRadiusCard = 22;
+const double _dashboardRadiusMedium = 16;
+const double _dashboardRadiusSmall = 14;
+const Color _dashboardAccentMint = Color(0xFF3BB58A);
+const Color _dashboardAccentTeal = Color(0xFF4FB9C1);
+const Color _dashboardAccentSky = Color(0xFF6B9EEB);
+const Color _dashboardAccentIris = Color(0xFF8A8FD8);
+const Color _dashboardAccentWarm = Color(0xFFE3A85A);
+const Color _dashboardAccentAlert = Color(0xFFE07D76);
 
 class DashboardView extends StatefulWidget {
   const DashboardView({required this.apiClient, super.key});
@@ -311,21 +323,13 @@ class _DashboardViewState extends State<DashboardView> {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            colorScheme.primary.withValues(alpha: 0.12),
-            colorScheme.secondaryContainer.withValues(alpha: 0.05),
-            colorScheme.surface,
-          ],
-        ),
+        gradient: AppSurfaces.dashboardBg(colorScheme),
       ),
       child: ListView(
         physics: const NeverScrollableScrollPhysics(),
         padding: EdgeInsets.zero,
         children: [
-          // ── Header card skeleton ──
+          // -- Header card skeleton --
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
             child: Container(
@@ -382,7 +386,7 @@ class _DashboardViewState extends State<DashboardView> {
               ),
             ),
           ),
-          // ── Content card 1 skeleton ──
+          // -- Content card 1 skeleton --
           shimmerCard(
             children: [
               shimmerBox(width: 140, height: 14, radius: 6),
@@ -411,7 +415,7 @@ class _DashboardViewState extends State<DashboardView> {
               ),
             ],
           ),
-          // ── Content card 2 skeleton ──
+          // -- Content card 2 skeleton --
           shimmerCard(
             children: [
               shimmerBox(width: 100, height: 14, radius: 6),
@@ -449,10 +453,10 @@ class _DashboardViewState extends State<DashboardView> {
     final colorScheme = theme.colorScheme;
     final moduleTheme = theme.copyWith(
       cardTheme: theme.cardTheme.copyWith(
-        elevation: 2,
+        elevation: 1,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(_dashboardRadiusCard),
         ),
         shadowColor: colorScheme.shadow.withValues(alpha: 0.08),
         color: colorScheme.surface.withValues(alpha: 0.97),
@@ -462,17 +466,17 @@ class _DashboardViewState extends State<DashboardView> {
         fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(_dashboardRadiusMedium),
           borderSide: BorderSide(color: colorScheme.outlineVariant),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(_dashboardRadiusMedium),
           borderSide: BorderSide(
             color: colorScheme.outlineVariant.withValues(alpha: 0.75),
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(_dashboardRadiusMedium),
           borderSide: BorderSide(color: colorScheme.primary, width: 1.4),
         ),
       ),
@@ -781,7 +785,7 @@ class _DashboardViewState extends State<DashboardView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Card header ──
+            // -- Card header --
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(14, 12, 10, 10),
@@ -859,25 +863,25 @@ class _DashboardViewState extends State<DashboardView> {
                         }
                       },
                       itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'xlsx', child: Text('📥 Excel')),
-                        PopupMenuItem(value: 'pdf', child: Text('📄 PDF')),
+                        PopupMenuItem(value: 'xlsx', child: Text('?? Excel')),
+                        PopupMenuItem(value: 'pdf', child: Text('?? PDF')),
                       ],
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         decoration: BoxDecoration(
-                          color: Colors.green.withValues(alpha: 0.1),
+                          color: _dashboardAccentMint.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.download_rounded, size: 14, color: Colors.green.shade700),
+                            Icon(Icons.download_rounded, size: 14, color: _dashboardAccentMint),
                             const SizedBox(width: 4),
                             Text(
                               'Экспорт',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.green.shade700),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _dashboardAccentMint),
                             ),
-                            Icon(Icons.arrow_drop_down, size: 16, color: Colors.green.shade700),
+                            Icon(Icons.arrow_drop_down, size: 16, color: _dashboardAccentMint),
                           ],
                         ),
                       ),
@@ -886,15 +890,15 @@ class _DashboardViewState extends State<DashboardView> {
                 ],
               ),
             ),
-            // ── Quick stats row ──
+            // -- Quick stats row --
 
-            // ── Body ──
+            // -- Body --
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Time preset chips (compact) ──
+                  // -- Time preset chips (compact) --
                   SizedBox(
                     width: double.infinity,
                     child: Builder(
@@ -969,7 +973,7 @@ class _DashboardViewState extends State<DashboardView> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // ── Operator dropdown (compact) ──
+                  // -- Operator dropdown (compact) --
                   SizedBox(
                     height: 48,
                     child: DropdownButtonFormField<int?>(
@@ -1068,14 +1072,14 @@ class _DashboardViewState extends State<DashboardView> {
                 Builder(
                   builder: (context) {
                     final colors = const [
-                      Color(0xFF6366F1),
-                      Color(0xFF3B82F6),
-                      Color(0xFF06B6D4),
-                      Color(0xFF10B981),
-                      Color(0xFFF59E0B),
-                      Color(0xFFEF4444),
-                      Color(0xFF8B5CF6),
-                      Color(0xFFEC4899),
+                      _dashboardAccentIris,
+                      _dashboardAccentSky,
+                      _dashboardAccentTeal,
+                      _dashboardAccentMint,
+                      _dashboardAccentWarm,
+                      _dashboardAccentAlert,
+                      _dashboardAccentIris,
+                      _dashboardAccentIris,
                     ];
                     return Column(
                       children: [
@@ -1409,7 +1413,7 @@ class _DashboardViewState extends State<DashboardView> {
                                     children: [
                                       Expanded(
                                         child: _AgentStatChip(
-                                          label: 'Диалогов',
+                                          label: 'Обращений',
                                           value: numberFormatter.format(agent.dialogs),
                                         ),
                                       ),
@@ -1496,13 +1500,13 @@ class _DashboardViewState extends State<DashboardView> {
                               width: 10,
                               height: 10,
                               decoration: const BoxDecoration(
-                                color: Color(0xFF5A7AB8),
+                                color: _dashboardAccentSky,
                                 shape: BoxShape.circle,
                               ),
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'Новые диалоги',
+                              'Новые обращения',
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
@@ -1512,7 +1516,7 @@ class _DashboardViewState extends State<DashboardView> {
                               width: 10,
                               height: 10,
                               decoration: const BoxDecoration(
-                                color: Color(0xFF22C55E),
+                                color: _dashboardAccentMint,
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -1568,10 +1572,10 @@ class _DashboardViewState extends State<DashboardView> {
                       Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+                          color: _dashboardAccentIris.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.smart_toy_rounded, size: 18, color: Color(0xFF8B5CF6)),
+                        child: const Icon(Icons.smart_toy_rounded, size: 18, color: _dashboardAccentIris),
                       ),
                       const SizedBox(width: 8),
                       Text(
@@ -1584,7 +1588,7 @@ class _DashboardViewState extends State<DashboardView> {
                   _DashboardKvRow(
                     label: 'Решено ботом',
                     value: numberFormatter.format(data.aiClosedDialogs),
-                    valueColor: const Color(0xFF3B82F6),
+                    valueColor: _dashboardAccentSky,
                   ),
                   _DashboardKvRow(
                     label: 'Переведено оператору',
@@ -1644,7 +1648,7 @@ class _DashboardViewState extends State<DashboardView> {
                   Builder(
                     builder: (context) {
                       final slaValue = data.slaCompliancePercentage ?? 0.0;
-                      final gaugeColor = slaValue >= 80 ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
+                      final gaugeColor = slaValue >= 80 ? _dashboardAccentMint : _dashboardAccentAlert;
                       return Column(
                         children: [
                           Stack(
@@ -1710,7 +1714,7 @@ class _DashboardViewState extends State<DashboardView> {
                           _DashboardKvRow(
                             label: 'Ответов с задержкой',
                             value: numberFormatter.format(data.slaViolationsCount),
-                            valueColor: data.slaViolationsCount > 0 ? const Color(0xFFEF4444) : null,
+                            valueColor: data.slaViolationsCount > 0 ? _dashboardAccentAlert : null,
                           ),
                           const SizedBox(height: 6),
                           Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
@@ -1865,9 +1869,9 @@ class _DashboardViewState extends State<DashboardView> {
                                   (e) => e.rating == rating,
                                   orElse: () => CsatDistributionEntry(rating: rating, count: 0),
                                 );
-                                Color barColor = const Color(0xFFEF4444);
-                                if (rating == 3) barColor = const Color(0xFFF59E0B);
-                                if (rating >= 4) barColor = const Color(0xFF22C55E);
+                                Color barColor = _dashboardAccentAlert;
+                                if (rating == 3) barColor = _dashboardAccentWarm;
+                                if (rating >= 4) barColor = _dashboardAccentMint;
                                 return BarChartGroupData(
                                   x: index,
                                   barRods: [
@@ -1876,8 +1880,8 @@ class _DashboardViewState extends State<DashboardView> {
                                       color: barColor,
                                       width: 14,
                                       borderRadius: const BorderRadius.only(
-                                        topLeft: Radius.circular(4),
-                                        topRight: Radius.circular(4),
+                                        topLeft: Radius.circular(8),
+                                        topRight: Radius.circular(8),
                                       ),
                                     ),
                                   ],
@@ -1914,10 +1918,10 @@ class _DashboardViewState extends State<DashboardView> {
                       Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEAB308).withValues(alpha: 0.1),
+                          color: _dashboardAccentWarm.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.star_rounded, size: 18, color: Color(0xFFEAB308)),
+                        child: const Icon(Icons.star_rounded, size: 18, color: _dashboardAccentWarm),
                       ),
                       const SizedBox(width: 8),
                       Text(
@@ -2041,9 +2045,9 @@ class _DashboardViewState extends State<DashboardView> {
                                         orElse: () => CsatDistributionEntry(rating: rating, count: 0),
                                       );
                                       
-                                      Color barColor = const Color(0xFFEF4444); // 1, 2
-                                      if (rating == 3) barColor = const Color(0xFFF59E0B);
-                                      if (rating >= 4) barColor = const Color(0xFF22C55E);
+                                      Color barColor = _dashboardAccentAlert; // 1, 2
+                                      if (rating == 3) barColor = _dashboardAccentWarm;
+                                      if (rating >= 4) barColor = _dashboardAccentMint;
 
                                       return BarChartGroupData(
                                         x: index,
@@ -2053,8 +2057,8 @@ class _DashboardViewState extends State<DashboardView> {
                                             color: barColor,
                                             width: 16,
                                             borderRadius: const BorderRadius.only(
-                                              topLeft: Radius.circular(4),
-                                              topRight: Radius.circular(4),
+                                              topLeft: Radius.circular(8),
+                                              topRight: Radius.circular(8),
                                             ),
                                         ),
                                       ],
@@ -2079,7 +2083,7 @@ class _DashboardViewState extends State<DashboardView> {
     final aiCsatCard = buildCompactRatingCard(
       title: 'Оценка работы AI',
       icon: Icons.auto_awesome_rounded,
-      iconColor: const Color(0xFF8B5CF6),
+      iconColor: _dashboardAccentIris,
       average: data.aiCsatAverage,
       count: data.aiCsatCount,
       distribution: data.aiCsatDistribution,
@@ -2186,10 +2190,10 @@ class _DashboardViewState extends State<DashboardView> {
                   Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF06B6D4).withValues(alpha: 0.12),
+                      color: _dashboardAccentTeal.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.grid_view_rounded, size: 18, color: Color(0xFF0891B2)),
+                    child: const Icon(Icons.grid_view_rounded, size: 18, color: _dashboardAccentTeal),
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -2223,10 +2227,10 @@ class _DashboardViewState extends State<DashboardView> {
                       final intensity = (count / maxCount).clamp(0.0, 1.0);
                       return Color.lerp(
                             colorScheme.surfaceContainerHighest.withValues(alpha: 0.25),
-                            const Color(0xFF0891B2),
+                            _dashboardAccentTeal,
                             intensity,
                           ) ??
-                          const Color(0xFF0891B2);
+                          _dashboardAccentTeal;
                     }
 
                     return Column(
@@ -2324,7 +2328,7 @@ class _DashboardViewState extends State<DashboardView> {
                           .toList(),
                       centerValue:
                           numberFormatter.format(responseSegments.fold<int>(0, (sum, item) => sum + item.count)),
-                      centerLabel: _activeOperatorId == null ? 'операторов' : 'диалогов',
+                      centerLabel: _activeOperatorId == null ? 'операторов' : 'обращений',
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -2334,17 +2338,17 @@ class _DashboardViewState extends State<DashboardView> {
                         _LegendRow(
                           label: 'Быстрые',
                           count: responseSegments.firstWhere((e) => e.key == 'fast').count,
-                          dotColor: const Color(0xFF22C55E),
+                          dotColor: _dashboardAccentMint,
                         ),
                         _LegendRow(
                           label: 'Средние',
                           count: responseSegments.firstWhere((e) => e.key == 'medium').count,
-                          dotColor: const Color(0xFFEAB308),
+                          dotColor: _dashboardAccentWarm,
                         ),
                         _LegendRow(
                           label: 'Медленные',
                           count: responseSegments.firstWhere((e) => e.key == 'slow').count,
-                          dotColor: const Color(0xFFEF4444),
+                          dotColor: _dashboardAccentAlert,
                         ),
                         const SizedBox(height: 6),
                         Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
@@ -2429,7 +2433,7 @@ class _DashboardViewState extends State<DashboardView> {
                         onTap: () => setState(() => _topMetric = _TopMetric.messages),
                       ),
                       _DashboardMiniChip(
-                        label: 'Диалоги',
+                        label: 'Обращения',
                         selected: _topMetric == _TopMetric.dialogs,
                         onTap: () => setState(() => _topMetric = _TopMetric.dialogs),
                       ),
@@ -2536,8 +2540,8 @@ class _DashboardViewState extends State<DashboardView> {
                                   color: colorScheme.primary,
                                   width: 16,
                                   borderRadius: const BorderRadius.only(
-                                    topLeft: Radius.circular(4),
-                                    topRight: Radius.circular(4),
+                                    topLeft: Radius.circular(8),
+                                    topRight: Radius.circular(8),
                                   ),
                                 ),
                               ],
@@ -2586,13 +2590,13 @@ class _DashboardViewState extends State<DashboardView> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Диалоги',
+                    'Обращения',
                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
-              // ── KPI metric tiles row ──
+              // -- KPI metric tiles row --
               Row(
                 children: [
                   Expanded(
@@ -2607,7 +2611,7 @@ class _DashboardViewState extends State<DashboardView> {
                   Expanded(
                     child: _KpiTile(
                       icon: Icons.mark_chat_unread_rounded,
-                      iconColor: const Color(0xFF22C55E),
+                      iconColor: _dashboardAccentMint,
                       label: 'Активные',
                       value: numberFormatter.format(data.openDialogs),
                     ),
@@ -2626,7 +2630,7 @@ class _DashboardViewState extends State<DashboardView> {
               const SizedBox(height: 12),
               Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
               const SizedBox(height: 10),
-              // ── Messages row (compact) ──
+              // -- Messages row (compact) --
               Row(
                 children: [
                   Expanded(
@@ -2657,78 +2661,106 @@ class _DashboardViewState extends State<DashboardView> {
       ),
     );
 
-    void openDashboardModal(String title, Widget content) {
-      showDialog<void>(
-        context: context,
-        barrierDismissible: true,
-        builder: (dialogContext) {
-          final size = MediaQuery.of(dialogContext).size;
-          final maxWidth = math.min(size.width - 20, 560.0);
-          final maxHeight = size.height * 0.9;
-
-          return Dialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 12, 8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(dialogContext).pop(),
-                          icon: const Icon(Icons.close_rounded),
-                          tooltip: 'Close',
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Flexible(
-                    fit: FlexFit.loose,
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.only(top: 10, bottom: 18),
-                      child: content,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+    void openCategoryDashboard(_DashboardCategoryKind kind) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => _DashboardCategoryScreen(
+            kind: kind,
+            data: data,
+            rangeLabel: rangeLabel,
+            responseSegments: responseSegments,
+            avgResponseMinutes: avgResponseMinutes,
+            topOperators: topOperators,
+            filteredAgents: agentStats,
+            selectedQuestions: selectedQuestions,
+          ),
+        ),
       );
     }
 
-    Widget launcherPanel(String title, List<Widget> launchers) {
+    Widget categoryPanelButton({
+      required String title,
+      required String subtitle,
+      required IconData icon,
+      required Color accent,
+      required List<String> tags,
+      required VoidCallback onTap,
+    }) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         child: Card(
           clipBehavior: Clip.antiAlias,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(_dashboardRadiusSmall),
+                          ),
+                          child: Icon(icon, color: accent, size: 20),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitle,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right_rounded, color: colorScheme.onSurfaceVariant),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: tags
+                          .map(
+                            (tag) => Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.22),
+                                border: Border.all(
+                                  color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: Text(
+                                tag,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: launchers,
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -2736,90 +2768,53 @@ class _DashboardViewState extends State<DashboardView> {
     }
 
     final tabChildren = <Widget>[
-      launcherPanel(
-        'Операционные',
-        [
-          _DashboardLauncherButton(
-            icon: Icons.speed_rounded,
-            label: 'Скорость ответа',
-            onTap: () => openDashboardModal('Скорость ответа', responseCard),
-          ),
-          _DashboardLauncherButton(
-            icon: Icons.chat_bubble_outline_rounded,
-            label: 'Диалоги',
-            onTap: () => openDashboardModal('Диалоги', dialogsCard),
-          ),
-          _DashboardLauncherButton(
-            icon: Icons.smart_toy_rounded,
-            label: 'AI автоматизация',
-            onTap: () => openDashboardModal('AI автоматизация', aiCard),
-          ),
+      categoryPanelButton(
+        title: 'Операционные',
+        subtitle: 'Скорость, обращения и AI-автоматизация',
+        icon: Icons.speed_rounded,
+        accent: _dashboardAccentMint,
+        tags: [
+          'Ответ: ${_formatResponseTime(avgResponseMinutes)}',
+          'Обращений: ${numberFormatter.format(data.totalDialogs)}',
+          'AI: ${numberFormatter.format(data.aiClosedDialogs)}',
         ],
+        onTap: () => openCategoryDashboard(_DashboardCategoryKind.operations),
       ),
-      launcherPanel(
-        'Качество сервиса',
-        [
-          _DashboardLauncherButton(
-            icon: Icons.health_and_safety_rounded,
-            label: 'SLA',
-            onTap: () => openDashboardModal('Качество обслуживания (SLA)', slaCard),
-          ),
-          _DashboardLauncherButton(
-            icon: Icons.star_rounded,
-            label: 'CSAT',
-            onTap: () => openDashboardModal('Удовлетворенность (CSAT)', csatCard),
-          ),
-          _DashboardLauncherButton(
-            icon: Icons.auto_awesome_rounded,
-            label: 'Оценка AI',
-            onTap: () => openDashboardModal('Оценка работы AI', aiCsatCard),
-          ),
+      categoryPanelButton(
+        title: 'Качество сервиса',
+        subtitle: 'SLA, CSAT и оценка AI',
+        icon: Icons.verified_rounded,
+        accent: _dashboardAccentTeal,
+        tags: [
+          'SLA: ${data.slaCompliancePercentage?.toStringAsFixed(1) ?? '—'}%',
+          'CSAT: ${data.csatAverage?.toStringAsFixed(1) ?? '—'}',
+          'AI CSAT: ${data.aiCsatAverage?.toStringAsFixed(1) ?? '—'}',
         ],
+        onTap: () => openCategoryDashboard(_DashboardCategoryKind.serviceQuality),
       ),
-      launcherPanel(
-        'Команда и контент',
-        [
-          _DashboardLauncherButton(
-            icon: Icons.emoji_events_rounded,
-            label: 'TOP-10',
-            onTap: () => openDashboardModal('TOP-10', topOperatorsCard),
-          ),
-          _DashboardLauncherButton(
-            icon: Icons.groups_rounded,
-            label: 'Сотрудники',
-            onTap: () => openDashboardModal('Сотрудники', agentsCard),
-          ),
-          _DashboardLauncherButton(
-            icon: Icons.pie_chart_outline_rounded,
-            label: 'Разделы',
-            onTap: () => openDashboardModal('Обращения по разделам', sectionCard),
-          ),
-          _DashboardLauncherButton(
-            icon: Icons.question_answer_outlined,
-            label: 'Частые вопросы',
-            onTap: () => openDashboardModal('Частые вопросы', questionsCard),
-          ),
+      categoryPanelButton(
+        title: 'Команда и контент',
+        subtitle: 'Рейтинг сотрудников, разделы, частые вопросы',
+        icon: Icons.groups_rounded,
+        accent: _dashboardAccentSky,
+        tags: [
+          'Сотрудников: ${numberFormatter.format(agentStats.length)}',
+          'Разделов: ${numberFormatter.format(data.sectionBreakdown.length)}',
+          'Вопросов: ${numberFormatter.format(selectedQuestions.length)}',
         ],
+        onTap: () => openCategoryDashboard(_DashboardCategoryKind.teamContent),
       ),
-      launcherPanel(
-        'Нагрузка и БИН',
-        [
-          _DashboardLauncherButton(
-            icon: Icons.show_chart_rounded,
-            label: 'Активность',
-            onTap: () => openDashboardModal('Активность по дням', activityCard),
-          ),
-          _DashboardLauncherButton(
-            icon: Icons.grid_view_rounded,
-            label: 'Пиковые нагрузки',
-            onTap: () => openDashboardModal('Пиковые нагрузки', heatmapCard),
-          ),
-          _DashboardLauncherButton(
-            icon: Icons.badge_rounded,
-            label: 'Топ БИН',
-            onTap: () => openDashboardModal('Топ БИН', topBinsCard),
-          ),
+      categoryPanelButton(
+        title: 'Нагрузка и БИН',
+        subtitle: 'Динамика, пиковые часы и топ БИН',
+        icon: Icons.query_stats_rounded,
+        accent: _dashboardAccentIris,
+        tags: [
+          'Активность: ${numberFormatter.format(data.recentActivity.length)} дн.',
+          'Пики: ${numberFormatter.format(data.peakLoadHeatmap.length)} точек',
+          'БИН: ${numberFormatter.format(data.topBinsWithoutContract.length + data.topBinsWithContract.length)}',
         ],
+        onTap: () => openCategoryDashboard(_DashboardCategoryKind.loadAndBins),
       ),
     ];
 
@@ -2829,15 +2824,7 @@ class _DashboardViewState extends State<DashboardView> {
       data: moduleTheme,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.12),
-              colorScheme.secondaryContainer.withValues(alpha: 0.05),
-              colorScheme.surface,
-            ],
-          ),
+          gradient: AppSurfaces.dashboardBg(colorScheme),
         ),
         child: RefreshIndicator(
           onRefresh: _handleRefresh,
@@ -2932,12 +2919,12 @@ class _DonutSegment {
   Color color() {
     switch (key) {
       case 'fast':
-        return const Color(0xFF22C55E);
+        return _dashboardAccentMint;
       case 'medium':
-        return const Color(0xFFEAB308);
+        return _dashboardAccentWarm;
       case 'slow':
       default:
-        return const Color(0xFFEF4444);
+        return _dashboardAccentAlert;
     }
   }
 }
@@ -3087,7 +3074,7 @@ class _DashboardLineChartState extends State<_DashboardLineChart> {
                 ),
                 const Spacer(),
                 Text(
-                  'Диалоги: ${numberFormatter.format(selected.dialogs)}',
+                  'Обращения: ${numberFormatter.format(selected.dialogs)}',
                   style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(width: 12),
@@ -3185,7 +3172,7 @@ class _DashboardLineChartState extends State<_DashboardLineChart> {
                 LineChartBarData(
                   spots: widget.items.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.dialogs.toDouble())).toList(),
                   isCurved: true,
-                  color: const Color(0xFF5A7AB8),
+                  color: _dashboardAccentSky,
                   barWidth: 2.5,
                   isStrokeCapRound: true,
                   dotData: FlDotData(
@@ -3193,7 +3180,7 @@ class _DashboardLineChartState extends State<_DashboardLineChart> {
                     getDotPainter: (spot, percent, barData, index) {
                       return FlDotCirclePainter(
                         radius: 3.5,
-                        color: const Color(0xFF5A7AB8),
+                        color: _dashboardAccentSky,
                         strokeWidth: 0,
                       );
                     },
@@ -3203,7 +3190,7 @@ class _DashboardLineChartState extends State<_DashboardLineChart> {
                 LineChartBarData(
                   spots: widget.items.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.incomingMessages.toDouble())).toList(),
                   isCurved: true,
-                  color: const Color(0xFF22C55E),
+                  color: _dashboardAccentMint,
                   barWidth: 2.5,
                   isStrokeCapRound: true,
                   dotData: FlDotData(
@@ -3211,7 +3198,7 @@ class _DashboardLineChartState extends State<_DashboardLineChart> {
                     getDotPainter: (spot, percent, barData, index) {
                       return FlDotCirclePainter(
                         radius: 3.5,
-                        color: const Color(0xFF22C55E),
+                        color: _dashboardAccentMint,
                         strokeWidth: 0,
                       );
                     },
@@ -3273,7 +3260,7 @@ class _AgentStatChip extends StatelessWidget {
   }
 }
 
-// ── KPI metric tile with colored icon container ──
+// -- KPI metric tile with colored icon container --
 class _KpiTile extends StatelessWidget {
   const _KpiTile({
     required this.icon,
@@ -3407,7 +3394,7 @@ class _DashboardMiniChip extends StatelessWidget {
   }
 }
 
-// ── Quick stat in the header hero row ──
+// -- Quick stat in the header hero row --
 class _DashboardLauncherButton extends StatelessWidget {
   const _DashboardLauncherButton({
     required this.icon,
@@ -3515,7 +3502,7 @@ class _QuickStat extends StatelessWidget {
   }
 }
 
-// ── Segmented tab button ──
+// -- Segmented tab button --
 class _TabSegment extends StatelessWidget {
   const _TabSegment({
     required this.label,
@@ -3566,10 +3553,1146 @@ class _TabSegment extends StatelessWidget {
   }
 }
 
-// ── Gradient accent strip for sub-cards ──
+// -- Gradient accent strip for sub-cards --
 Widget _cardAccentStrip(ColorScheme colorScheme) {
   return const SizedBox.shrink();
 }
+
+enum _BinScope { withContract, withoutContract }
+
+class _DashboardCategoryScreen extends StatefulWidget {
+  const _DashboardCategoryScreen({
+    required this.kind,
+    required this.data,
+    required this.rangeLabel,
+    required this.responseSegments,
+    required this.avgResponseMinutes,
+    required this.topOperators,
+    required this.filteredAgents,
+    required this.selectedQuestions,
+  });
+
+  final _DashboardCategoryKind kind;
+  final DashboardSummary data;
+  final String rangeLabel;
+  final List<_ResponseSegment> responseSegments;
+  final double? avgResponseMinutes;
+  final List<DashboardAgentStat> topOperators;
+  final List<DashboardAgentStat> filteredAgents;
+  final List<DashboardTopQuestion> selectedQuestions;
+
+  @override
+  State<_DashboardCategoryScreen> createState() => _DashboardCategoryScreenState();
+}
+
+class _DashboardCategoryScreenState extends State<_DashboardCategoryScreen> {
+  static const _accentBlue = _dashboardAccentMint;
+  static const _accentCyan = _dashboardAccentTeal;
+  static const _accentViolet = _dashboardAccentTeal;
+  static const _accentGreen = _dashboardAccentMint;
+  _BinScope _binScope = _BinScope.withoutContract;
+
+  @override
+  Widget build(BuildContext context) {
+    final sections = switch (widget.kind) {
+      _DashboardCategoryKind.operations => _buildOperations(context),
+      _DashboardCategoryKind.serviceQuality => _buildServiceQuality(context),
+      _DashboardCategoryKind.teamContent => _buildTeamContent(context),
+      _DashboardCategoryKind.loadAndBins => _buildLoadAndBins(context),
+    };
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Scaffold(
+      backgroundColor: AppSurfaces.dashboardScaffold(colorScheme),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: colorScheme.onSurface,
+        elevation: 0,
+        flexibleSpace: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: AppGradients.appBar(colorScheme),
+          ),
+        ),
+        title: Text(_screenTitle()),
+      ),
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: AppSurfaces.dashboardBg(colorScheme),
+        ),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 18),
+          children: [
+            _DarkPanelCard(
+              title: 'Период',
+              subtitle: widget.rangeLabel,
+              child: Row(
+                children: [
+                  _MetricPill(
+                    label: 'Обращения',
+                    value: NumberFormat.decimalPattern('ru').format(widget.data.totalDialogs),
+                    color: _accentBlue,
+                  ),
+                  _MetricPill(
+                    label: 'Сообщения',
+                    value: NumberFormat.decimalPattern('ru').format(widget.data.totalMessages),
+                    color: _accentCyan,
+                  ),
+                ],
+              ),
+            ),
+            ...sections,
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _screenTitle() {
+    return switch (widget.kind) {
+      _DashboardCategoryKind.operations => 'Операционные дашборды',
+      _DashboardCategoryKind.serviceQuality => 'Качество сервиса',
+      _DashboardCategoryKind.teamContent => 'Команда и контент',
+      _DashboardCategoryKind.loadAndBins => 'Нагрузка и БИН',
+    };
+  }
+
+  List<Widget> _buildOperations(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final points = [...widget.data.recentActivity]..sort((a, b) => a.date.compareTo(b.date));
+    final last7 = points.length <= 7 ? points : points.sublist(points.length - 7);
+    final rawMaxFlow = last7.isEmpty
+        ? 1.0
+        : last7.map((e) => math.max(e.dialogs.toDouble(), e.incomingMessages.toDouble())).reduce(math.max) * 1.2;
+    final maxFlow = rawMaxFlow <= 0 ? 1.0 : rawMaxFlow;
+    final horizontalInterval = math.max(1.0, maxFlow / 4);
+    final numberFormatter = NumberFormat.decimalPattern('ru');
+    final totalForAiFlow = widget.data.aiClosedDialogs + widget.data.transferredToOperatorDialogs;
+    final aiSolvedPct = totalForAiFlow == 0 ? 0.0 : widget.data.aiClosedDialogs / totalForAiFlow;
+    final hasFlowData = last7.any((e) => e.dialogs > 0 || e.incomingMessages > 0);
+    final hasResponseData = widget.responseSegments.any((item) => item.count > 0);
+
+    return [
+      _DarkPanelCard(
+        title: 'Динамика обращений',
+        subtitle: 'Динамика обращений и сообщений за 7 дней',
+        child: hasFlowData
+            ? SizedBox(
+                height: 220,
+                child: LineChart(
+                  LineChartData(
+                    minX: 0,
+                    maxX: math.max(0, last7.length - 1).toDouble(),
+                    minY: 0,
+                    maxY: maxFlow,
+                    clipData: const FlClipData.all(),
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      horizontalInterval: horizontalInterval,
+                      getDrawingHorizontalLine: (_) => FlLine(
+                        color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                        strokeWidth: 1,
+                      ),
+                    ),
+                    borderData: FlBorderData(show: false),
+                    titlesData: FlTitlesData(
+                      leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          getTitlesWidget: (value, meta) {
+                            final idx = value.toInt();
+                            if (idx < 0 || idx >= last7.length) return const SizedBox();
+                            return Text(
+                              _weekdayShort(last7[idx].date.weekday),
+                              style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: List.generate(last7.length, (i) => FlSpot(i.toDouble(), last7[i].dialogs.toDouble())),
+                        isCurved: true,
+                        preventCurveOverShooting: true,
+                        color: _accentBlue,
+                        barWidth: 2.8,
+                        dotData: FlDotData(
+                          show: true,
+                          getDotPainter: (_, __, ___, ____) =>
+                              FlDotCirclePainter(radius: 2.8, color: _accentBlue, strokeWidth: 0),
+                        ),
+                      ),
+                      LineChartBarData(
+                        spots: List.generate(last7.length, (i) => FlSpot(i.toDouble(), last7[i].incomingMessages.toDouble())),
+                        isCurved: true,
+                        preventCurveOverShooting: true,
+                        color: _accentViolet,
+                        barWidth: 2.8,
+                        dotData: FlDotData(
+                          show: true,
+                          getDotPainter: (_, __, ___, ____) =>
+                              FlDotCirclePainter(radius: 2.8, color: _accentViolet, strokeWidth: 0),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : const _DashboardEmptyState(
+                height: 220,
+                title: 'Нет данных за выбранный период',
+                subtitle: 'График появится, когда появятся обращения или сообщения.',
+              ),
+      ),
+      _DarkPanelCard(
+        title: 'AI автоматизация',
+        subtitle: 'Распределение обращений AI и операторов',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${(aiSolvedPct * 100).toStringAsFixed(0)}%',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${numberFormatter.format(widget.data.aiClosedDialogs)} / ${numberFormatter.format(totalForAiFlow)}',
+                  style: theme.textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                minHeight: 10,
+                value: aiSolvedPct.clamp(0.0, 1.0),
+                backgroundColor: colorScheme.surfaceContainerHighest,
+                valueColor: const AlwaysStoppedAnimation<Color>(_accentGreen),
+              ),
+            ),
+            const SizedBox(height: 10),
+            _darkKv(theme, 'AI решил', numberFormatter.format(widget.data.aiClosedDialogs)),
+            _darkKv(theme, 'Передано оператору', numberFormatter.format(widget.data.transferredToOperatorDialogs)),
+            _darkKv(theme, 'Сообщений от AI', numberFormatter.format(widget.data.aiMessagesCount)),
+            _darkKv(theme, 'До передачи', widget.data.avgMessagesBeforeTransfer?.toStringAsFixed(1) ?? '—'),
+          ],
+        ),
+      ),
+      _DarkPanelCard(
+        title: 'Скорость ответа',
+        subtitle: 'Распределение времени ответа',
+        child: hasResponseData
+            ? Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: PieChart(
+                        PieChartData(
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 36,
+                          sections: widget.responseSegments.map((item) {
+                            final color = switch (item.key) {
+                              'fast' => _accentGreen,
+                              'medium' => _dashboardAccentWarm,
+                              _ => _dashboardAccentAlert,
+                            };
+                            return PieChartSectionData(
+                              value: item.count.toDouble(),
+                              color: color,
+                              radius: 20,
+                              showTitle: false,
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 4,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _formatMinutes(widget.avgResponseMinutes),
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text('Среднее время ответа', style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+                        const SizedBox(height: 10),
+                        ...widget.responseSegments.map((item) {
+                          final label = switch (item.key) {
+                            'fast' => 'Быстрые',
+                            'medium' => 'Средние',
+                            _ => 'Медленные',
+                          };
+                          final color = switch (item.key) {
+                            'fast' => _accentGreen,
+                            'medium' => _dashboardAccentWarm,
+                            _ => _dashboardAccentAlert,
+                          };
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              children: [
+                                Container(width: 8, height: 8, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(999))),
+                                const SizedBox(width: 6),
+                                Expanded(child: Text(label, style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant))),
+                                Text(
+                                  '${numberFormatter.format(item.count)} (${item.percentage.toStringAsFixed(0)}%)',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: colorScheme.onSurface,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            : const _DashboardEmptyState(
+                height: 170,
+                title: 'Нет данных по времени ответа',
+                subtitle: 'Статистика появится после первых ответов операторов.',
+              ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildServiceQuality(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final sla = (widget.data.slaCompliancePercentage ?? 0).clamp(0, 100).toDouble();
+    final hasSlaData = widget.data.totalDialogs > 0 ||
+        widget.data.totalMessages > 0 ||
+        widget.data.slaViolationsCount > 0 ||
+        widget.data.recurringRequestsCount > 0 ||
+        sla > 0;
+
+    return [
+      _DarkPanelCard(
+        title: 'KPI сервиса',
+        subtitle: 'SLA и удовлетворенность',
+        child: Row(
+          children: [
+            _MetricPill(label: 'SLA', value: '${sla.toStringAsFixed(1)}%', color: sla >= 80 ? _accentGreen : _dashboardAccentAlert),
+            _MetricPill(label: 'CSAT', value: widget.data.csatAverage?.toStringAsFixed(1) ?? '—', color: _accentBlue),
+            _MetricPill(label: 'AI CSAT', value: widget.data.aiCsatAverage?.toStringAsFixed(1) ?? '—', color: _accentViolet),
+          ],
+        ),
+      ),
+      _DarkPanelCard(
+        title: 'Соблюдение SLA',
+        subtitle: 'Показатели соблюдения SLA',
+        child: hasSlaData
+            ? Row(
+                children: [
+                  SizedBox(
+                    width: 140,
+                    height: 140,
+                    child: PieChart(
+                      PieChartData(
+                        startDegreeOffset: -90,
+                        centerSpaceRadius: 42,
+                        sectionsSpace: 0,
+                        sections: [
+                          PieChartSectionData(value: sla, color: sla >= 80 ? _accentGreen : _dashboardAccentAlert, radius: 16, showTitle: false),
+                          PieChartSectionData(
+                            value: 100 - sla,
+                            color: colorScheme.surfaceContainerHighest,
+                            radius: 16,
+                            showTitle: false,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${sla.toStringAsFixed(1)}%', style: theme.textTheme.headlineMedium?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 4),
+                        Text('Задержки: ${NumberFormat.decimalPattern('ru').format(widget.data.slaViolationsCount)}', style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                        Text('Повторные: ${NumberFormat.decimalPattern('ru').format(widget.data.recurringRequestsCount)}', style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                        Text('Доля: ${widget.data.recurringRequestsPercentage?.toStringAsFixed(1) ?? '—'}%', style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            : const _DashboardEmptyState(
+                height: 140,
+                title: 'Нет данных по SLA',
+                subtitle: 'SLA-метрики появятся после накопления обращений.',
+              ),
+      ),
+      _DarkPanelCard(
+        title: 'Оценки оператора',
+        subtitle: 'Средняя оценка: ${widget.data.csatAverage?.toStringAsFixed(1) ?? '—'}',
+        child: _buildRatingDistributionChart(
+          context: context,
+          distribution: widget.data.csatDistribution,
+          color: _accentBlue,
+        ),
+      ),
+      _DarkPanelCard(
+        title: 'Оценки AI',
+        subtitle: 'Средняя оценка: ${widget.data.aiCsatAverage?.toStringAsFixed(1) ?? '—'}',
+        child: _buildRatingDistributionChart(
+          context: context,
+          distribution: widget.data.aiCsatDistribution,
+          color: _accentViolet,
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildRatingDistributionChart({
+    required BuildContext context,
+    required List<CsatDistributionEntry> distribution,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final totalRatings = distribution.fold<int>(0, (sum, item) => sum + item.count);
+    if (totalRatings == 0) {
+      return const _DashboardEmptyState(
+        height: 180,
+        title: 'Нет оценок за период',
+        subtitle: 'График появится, когда пользователи начнут ставить оценки.',
+      );
+    }
+    final maxCount = List.generate(5, (i) => _distributionCount(distribution, i + 1))
+        .fold<int>(1, (p, c) => c > p ? c : p);
+    return SizedBox(
+      height: 180,
+      child: BarChart(
+        BarChartData(
+          maxY: maxCount * 1.25,
+          alignment: BarChartAlignment.spaceAround,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (_) =>
+                FlLine(color: colorScheme.outlineVariant.withValues(alpha: 0.4), strokeWidth: 1),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final rating = value.toInt() + 1;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      '$rating',
+                      style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          barGroups: List.generate(5, (i) {
+            final rating = i + 1;
+            return BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: _distributionCount(distribution, rating).toDouble(),
+                  width: 12,
+                  color: color,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(8),
+                    topRight: Radius.circular(8),
+                  ),
+                ),
+              ],
+            );
+          }),
+        ),
+        swapAnimationDuration: Duration.zero,
+      ),
+    );
+  }
+  List<Widget> _buildTeamContent(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final numberFormatter = NumberFormat.decimalPattern('ru');
+    final operatorsByDialogs = [...widget.topOperators]..sort((a, b) => b.dialogs.compareTo(a.dialogs));
+    final sections = [...widget.data.sectionBreakdown]..sort((a, b) => b.dialogs.compareTo(a.dialogs));
+    final topSections = sections.take(6).toList();
+    final topQuestionsList = widget.selectedQuestions.isEmpty
+        ? widget.data.topQuestions.take(5).toList()
+        : widget.selectedQuestions.take(5).toList();
+    final maxQuestionsCount = topQuestionsList.isEmpty ? 1 : topQuestionsList.map((e) => e.count).reduce(math.max);
+    final hasOperatorData = operatorsByDialogs.any((op) => op.dialogs > 0);
+    final hasSectionData = topSections.any((section) => section.dialogs > 0);
+    final hasQuestionsData = topQuestionsList.any((q) => q.count > 0);
+
+    return [
+      _DarkPanelCard(
+        title: 'Рейтинг сотрудников',
+        subtitle: 'TOP-10 по обращениям',
+        child: hasOperatorData
+            ? SizedBox(
+                height: 250,
+                child: BarChart(
+                  BarChartData(
+                    alignment: BarChartAlignment.spaceAround,
+                    maxY: operatorsByDialogs.isEmpty ? 1 : operatorsByDialogs.map((e) => e.dialogs.toDouble()).reduce(math.max) * 1.2,
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      getDrawingHorizontalLine: (_) =>
+                          FlLine(color: colorScheme.outlineVariant.withValues(alpha: 0.4), strokeWidth: 1),
+                    ),
+                    borderData: FlBorderData(show: false),
+                    titlesData: FlTitlesData(
+                      leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 42,
+                          getTitlesWidget: (value, meta) {
+                            final idx = value.toInt();
+                            if (idx < 0 || idx >= operatorsByDialogs.length) return const SizedBox();
+                            final name = operatorsByDialogs[idx].name;
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text(
+                                name.length > 7 ? '${name.substring(0, 7)}…' : name,
+                                style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    barGroups: List.generate(operatorsByDialogs.length, (i) {
+                      final op = operatorsByDialogs[i];
+                      return BarChartGroupData(
+                        x: i,
+                        barRods: [
+                          BarChartRodData(
+                            toY: op.dialogs.toDouble(),
+                            width: 14,
+                            gradient: const LinearGradient(colors: [_accentBlue, _accentViolet]),
+                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(8), topRight: Radius.circular(8)),
+                          ),
+                        ],
+                      );
+                    }),
+                  ),
+                  swapAnimationDuration: Duration.zero,
+                ),
+              )
+            : const _DashboardEmptyState(
+                height: 250,
+                title: 'Нет данных по сотрудникам',
+                subtitle: 'Рейтинг появится после первых обращений.',
+              ),
+      ),
+      _DarkPanelCard(
+        title: 'Разделы',
+        subtitle: 'Доля обращений по разделам',
+        child: hasSectionData
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 130,
+                    height: 130,
+                    child: PieChart(
+                      PieChartData(
+                        sectionsSpace: 2,
+                        centerSpaceRadius: 36,
+                        sections: List.generate(topSections.length, (i) {
+                          final section = topSections[i];
+                          return PieChartSectionData(
+                            value: section.dialogs.toDouble(),
+                            color: _palette(i),
+                            radius: 18,
+                            showTitle: false,
+                          );
+                        }),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      children: List.generate(topSections.length, (i) {
+                        final section = topSections[i];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            children: [
+                              Container(width: 8, height: 8, decoration: BoxDecoration(color: _palette(i), borderRadius: BorderRadius.circular(999))),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  section.title.isEmpty ? 'Без раздела' : section.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                                ),
+                              ),
+                              Text(
+                                numberFormatter.format(section.dialogs),
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colorScheme.onSurface,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                ],
+              )
+            : const _DashboardEmptyState(
+                height: 140,
+                title: 'Нет данных по разделам',
+                subtitle: 'Диаграмма появится, когда обращения будут распределены по разделам.',
+              ),
+      ),
+      _DarkPanelCard(
+        title: 'Частые вопросы',
+        subtitle: 'Топ запросов по количеству',
+        child: hasQuestionsData
+            ? Column(
+                children: topQuestionsList.map((q) {
+                  final pct = maxQuestionsCount == 0 ? 0.0 : q.count / maxQuestionsCount;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                q.question,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              numberFormatter.format(q.count),
+                              style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: pct.clamp(0.0, 1.0),
+                            minHeight: 7,
+                            backgroundColor: colorScheme.surfaceContainerHighest,
+                            valueColor: const AlwaysStoppedAnimation<Color>(_accentCyan),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              )
+            : const _DashboardEmptyState(
+                height: 84,
+                title: 'Нет популярных запросов',
+                subtitle: 'Список появится, когда накопится статистика вопросов.',
+              ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildLoadAndBins(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final topBins = _binScope == _BinScope.withoutContract
+        ? [...widget.data.topBinsWithoutContract]
+        : [...widget.data.topBinsWithContract];
+    topBins.sort((a, b) => b.requests.compareTo(a.requests));
+    final bins = topBins.take(6).toList();
+    final maxBins = bins.isEmpty ? 1.0 : bins.map((e) => e.requests.toDouble()).reduce(math.max) * 1.2;
+    final hasBinsData = bins.any((b) => b.requests > 0);
+
+    return [
+      _DarkPanelCard(
+        title: 'Пиковая нагрузка',
+        subtitle: 'Пиковые нагрузки по дням/часам',
+        child: _PeakHeatmap(points: widget.data.peakLoadHeatmap),
+      ),
+      _DarkPanelCard(
+        title: 'Топ БИН',
+        subtitle: 'Компании по количеству обращений',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                ChoiceChip(
+                  label: const Text('Без договора'),
+                  selected: _binScope == _BinScope.withoutContract,
+                  onSelected: (_) => setState(() => _binScope = _BinScope.withoutContract),
+                  selectedColor: _dashboardAccentMint.withValues(alpha: 0.14),
+                  backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.22),
+                  side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.35)),
+                  labelStyle: theme.textTheme.labelMedium?.copyWith(
+                    color: _binScope == _BinScope.withoutContract
+                        ? colorScheme.onSurface
+                        : colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('С договором'),
+                  selected: _binScope == _BinScope.withContract,
+                  onSelected: (_) => setState(() => _binScope = _BinScope.withContract),
+                  selectedColor: _dashboardAccentMint.withValues(alpha: 0.14),
+                  backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.22),
+                  side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.35)),
+                  labelStyle: theme.textTheme.labelMedium?.copyWith(
+                    color: _binScope == _BinScope.withContract
+                        ? colorScheme.onSurface
+                        : colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            hasBinsData
+                ? SizedBox(
+                    height: 220,
+                    child: BarChart(
+                      BarChartData(
+                        maxY: maxBins,
+                        alignment: BarChartAlignment.spaceAround,
+                        borderData: FlBorderData(show: false),
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          getDrawingHorizontalLine: (_) =>
+                              FlLine(color: colorScheme.outlineVariant.withValues(alpha: 0.4), strokeWidth: 1),
+                        ),
+                        titlesData: FlTitlesData(
+                          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 34,
+                              getTitlesWidget: (value, meta) {
+                                final idx = value.toInt();
+                                if (idx < 0 || idx >= bins.length) return const SizedBox();
+                                final bin = bins[idx].bin;
+                                return Text(
+                                  bin.length > 6 ? '${bin.substring(0, 6)}…' : bin,
+                                  style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        barGroups: List.generate(bins.length, (i) {
+                          return BarChartGroupData(
+                            x: i,
+                            barRods: [
+                              BarChartRodData(
+                                toY: bins[i].requests.toDouble(),
+                                width: 14,
+                                gradient: const LinearGradient(colors: [_accentCyan, _accentBlue]),
+                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(8), topRight: Radius.circular(8)),
+                              ),
+                            ],
+                          );
+                        }),
+                      ),
+                      swapAnimationDuration: Duration.zero,
+                    ),
+                  )
+                : const _DashboardEmptyState(
+                    height: 220,
+                    title: 'Нет данных по БИН',
+                    subtitle: 'График появится, когда появятся обращения по компаниям.',
+                  ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  Widget _darkKv(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+          Text(
+            value,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurface,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _distributionCount(List<CsatDistributionEntry> distribution, int rating) {
+    for (final item in distribution) {
+      if (item.rating == rating) return item.count;
+    }
+    return 0;
+  }
+
+  String _weekdayShort(int weekday) {
+    switch (weekday) {
+      case DateTime.monday:
+        return 'Пн';
+      case DateTime.tuesday:
+        return 'Вт';
+      case DateTime.wednesday:
+        return 'Ср';
+      case DateTime.thursday:
+        return 'Чт';
+      case DateTime.friday:
+        return 'Пт';
+      case DateTime.saturday:
+        return 'Сб';
+      case DateTime.sunday:
+        return 'Вс';
+      default:
+        return '—';
+    }
+  }
+
+  String _formatMinutes(double? minutes) {
+    if (minutes == null || !minutes.isFinite) return '—';
+    if (minutes < 1) {
+      return '${(minutes * 60).round()}с';
+    }
+    final totalSec = (minutes * 60).round();
+    final mins = totalSec ~/ 60;
+    final secs = totalSec % 60;
+    return '${mins}м ${secs}с';
+  }
+
+  Color _palette(int index) {
+    const palette = [
+      _dashboardAccentMint,
+      _dashboardAccentTeal,
+      Color(0xFF6ECFB7),
+      Color(0xFF7FC7CF),
+      Color(0xFF9ADCC8),
+      Color(0xFF8FD8D4),
+      _dashboardAccentMint,
+    ];
+    return palette[index % palette.length];
+  }
+}
+
+class _DarkPanelCard extends StatelessWidget {
+  const _DarkPanelCard({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+        return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppSurfaces.dashboardCard(colorScheme),
+        borderRadius: BorderRadius.circular(_dashboardRadiusCard),
+        border: Border.all(color: AppSurfaces.dashboardCardBorder(colorScheme)),
+        boxShadow: [
+          BoxShadow(
+            color: AppSurfaces.dashboardCardShadow(colorScheme),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: _dashboardAccentMint,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricPill extends StatelessWidget {
+  const _MetricPill({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(_dashboardRadiusSmall),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _DashboardEmptyState extends StatelessWidget {
+  const _DashboardEmptyState({
+    required this.title,
+    required this.subtitle,
+    this.height = 180,
+  });
+
+  final String title;
+  final String subtitle;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return SizedBox(
+      height: height,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxHeight < 120;
+          return Center(
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 14, vertical: compact ? 8 : 12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(_dashboardRadiusSmall),
+                border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.35)),
+              ),
+              child: compact
+                  ? Row(
+                      children: [
+                        Icon(Icons.insights_outlined, size: 18, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: colorScheme.onSurface,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.insights_outlined, size: 24, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8)),
+                        const SizedBox(height: 8),
+                        Text(
+                          title,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleSmall?.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+class _PeakHeatmap extends StatelessWidget {
+  const _PeakHeatmap({required this.points});
+
+  final List<DashboardHeatmapPoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    const hours = [0, 6, 12, 18];
+    const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    final maxCount = points.fold<int>(1, (m, p) => p.count > m ? p.count : m);
+    final hasHeatmapData = points.any((p) => p.count > 0);
+
+    if (!hasHeatmapData) {
+      return const _DashboardEmptyState(
+        height: 130,
+        title: 'Нет данных по нагрузке',
+        subtitle: 'Тепловая карта появится после накопления активности.',
+      );
+    }
+
+    int countFor(int day, int hour) {
+      for (final p in points) {
+        if (p.dayOfWeek == day && p.hour == hour) return p.count;
+      }
+      return 0;
+    }
+
+    Color colorFor(int count) {
+      final intensity = (count / maxCount).clamp(0.0, 1.0);
+      return Color.lerp(
+            theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+            _dashboardAccentMint,
+            intensity,
+          ) ??
+          _dashboardAccentMint;
+    }
+
+    return Column(
+      children: List.generate(days.length, (dayIdx) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 30,
+                child: Text(
+                  days[dayIdx],
+                  style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+              ...hours.map((h) {
+                final c = countFor(dayIdx + 1, h);
+                return Expanded(
+                  child: Container(
+                    height: 14,
+                    margin: const EdgeInsets.only(left: 4),
+                    decoration: BoxDecoration(color: colorFor(c), borderRadius: BorderRadius.circular(4)),
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

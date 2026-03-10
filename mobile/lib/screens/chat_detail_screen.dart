@@ -1,4 +1,4 @@
-part of '../main.dart';
+﻿part of '../main.dart';
 
 class ChatDetailScreen extends StatefulWidget {
   const ChatDetailScreen({required this.apiClient, required this.chat, super.key});
@@ -539,20 +539,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             titleSpacing: 10,
             flexibleSpace: Container(
               decoration: BoxDecoration(
-                gradient: AppGradients.heroBanner(colorScheme),
+                gradient: AppGradients.appBar(colorScheme),
               ),
             ),
             title: Row(
               children: [
                 CircleAvatar(
                   radius: 17,
-                  backgroundColor: Colors.white.withValues(alpha: 0.2),
-                  foregroundColor: Colors.white,
+                  backgroundColor: colorScheme.primary.withValues(alpha: 0.14),
+                  foregroundColor: colorScheme.primary,
                   child: Text(
                     _chat.title.isNotEmpty ? _chat.title[0].toUpperCase() : '?',
                     style: theme.textTheme.labelLarge?.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                      color: colorScheme.primary,
                     ),
                   ),
                 ),
@@ -568,7 +568,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: colorScheme.onSurface,
                         ),
                       ),
                       Text(
@@ -576,7 +576,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.8),
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -591,8 +591,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   _isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
                 ),
                 color: _isFavorite
-                    ? const Color(0xFFFFD54F)
-                    : Colors.white.withValues(alpha: 0.8),
+                    ? brandAccentWarm
+                    : colorScheme.onSurfaceVariant,
                 onPressed: _logButtonPress(
                   'toggle favorite in chat details',
                   (_updatingFavorite || _deleting) ? null : _toggleFavorite,
@@ -602,7 +602,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 enabled: !_deleting,
                 icon: Icon(
                   Icons.more_horiz_rounded,
-                  color: Colors.white.withValues(alpha: 0.8),
+                  color: colorScheme.onSurfaceVariant,
                 ),
                 onSelected: (value) {
                   switch (value) {
@@ -675,7 +675,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
+                          color: colorScheme.surface.withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Row(
@@ -687,20 +687,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                                 height: 13,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 1.5,
-                                  color: Colors.white.withValues(alpha: 0.9),
+                                  color: colorScheme.primary,
                                 ),
                               )
                             else
                               Icon(
                                 isClosed ? Icons.lock_rounded : Icons.lock_open_rounded,
                                 size: 13,
-                                color: Colors.white.withValues(alpha: 0.9),
+                                color: colorScheme.primary,
                               ),
                             const SizedBox(width: 5),
                             Text(
                               statusLabel,
                               style: theme.textTheme.labelSmall?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.9),
+                                color: colorScheme.onSurface,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 11,
                               ),
@@ -712,7 +712,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
+                          color: colorScheme.surface.withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Row(
@@ -724,20 +724,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                                 height: 13,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 1.5,
-                                  color: Colors.white.withValues(alpha: 0.9),
+                                  color: colorScheme.primary,
                                 ),
                               )
                             else
                               Icon(
                                 _chat.aiEnabled ? Icons.smart_toy_rounded : Icons.smart_toy_outlined,
                                 size: 13,
-                                color: Colors.white.withValues(alpha: 0.9),
+                                color: colorScheme.primary,
                               ),
                             const SizedBox(width: 5),
                             Text(
                               _chat.aiEnabled ? 'AI вкл' : 'AI выкл',
                               style: theme.textTheme.labelSmall?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.9),
+                                color: colorScheme.onSurface,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 11,
                               ),
@@ -757,15 +757,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             onTap: _dismissKeyboard,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    colorScheme.primary.withValues(alpha: 0.07),
-                    colorScheme.surface,
-                    colorScheme.surface,
-                  ],
-                ),
+                gradient: AppSurfaces.dashboardBg(colorScheme),
               ),
               child: Column(
                 children: [
@@ -783,7 +775,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                                         padding: const EdgeInsets.all(16),
                                         decoration: BoxDecoration(
                                           color: colorScheme.surface,
-                                          borderRadius: BorderRadius.circular(16),
+                                          borderRadius: BorderRadius.circular(AppRadii.card),
                                           border: Border.all(color: colorScheme.outlineVariant),
                                         ),
                                         child: Column(
@@ -976,7 +968,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                           padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
                           decoration: BoxDecoration(
                             color: colorScheme.surface,
-                            borderRadius: BorderRadius.circular(24),
+                            borderRadius: BorderRadius.circular(AppRadii.card),
                             border: Border.all(
                               color: colorScheme.outlineVariant.withValues(alpha: 0.5),
                             ),
@@ -1022,7 +1014,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                               const SizedBox(width: 4),
                               DecoratedBox(
                                 decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(18),
+                                  borderRadius: BorderRadius.circular(AppRadii.field),
                                   gradient: AppGradients.primaryAction(colorScheme),
                                 ),
                                 child: IconButton(
@@ -1051,4 +1043,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 }
+
+
 

@@ -1,4 +1,4 @@
-part of '../main.dart';
+﻿part of '../main.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({
@@ -786,7 +786,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
             decoration: BoxDecoration(
               color: colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(AppRadii.card),
               border: Border.all(
                 color: colorScheme.outlineVariant.withValues(alpha: 0.3),
               ),
@@ -1079,13 +1079,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
               clipBehavior: Clip.antiAlias,
               elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(AppRadii.card),
                 side: BorderSide(
                   color: colorScheme.outlineVariant.withOpacity(0.5),
                 ),
               ),
               child: InkWell(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(AppRadii.card),
                 onTap: () async {
                   UiLogger.navigation(
                     'chat_list',
@@ -1538,7 +1538,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
         child: Container(
           decoration: BoxDecoration(
-            gradient: AppGradients.appBar(colorScheme),
+            gradient: AppSurfaces.dashboardBg(colorScheme),
           ),
           child: Scaffold(
             backgroundColor: Colors.transparent,
@@ -1602,3 +1602,5 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 }
+
+

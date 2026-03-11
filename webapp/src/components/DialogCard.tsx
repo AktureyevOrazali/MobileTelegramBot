@@ -154,9 +154,6 @@ const DialogCard: React.FC<DialogCardProps> = ({
           <div className="dialog-card__minimal-top">
             <div className="dialog-card__minimal-heading">
               <h3 className="dialog-card__minimal-title">{chat.title}</h3>
-              <div className="dialog-card__minimal-subtitle">
-                {chat.username ? `@${chat.username}` : chat.type}
-              </div>
             </div>
 
             <div className="dialog-card__minimal-actions">

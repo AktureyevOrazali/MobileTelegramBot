@@ -24,7 +24,26 @@ const getCollapsedRailLabel = (chat: ChatSummary): string => {
   return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
 };
 
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg, #f2a23a, #ef7c45)',
+  'linear-gradient(135deg, #6366f1, #818cf8)',
+  'linear-gradient(135deg, #10b981, #34d399)',
+  'linear-gradient(135deg, #f43f5e, #fb7185)',
+  'linear-gradient(135deg, #3b82f6, #60a5fa)',
+  'linear-gradient(135deg, #8b5cf6, #a78bfa)',
+  'linear-gradient(135deg, #f59e0b, #fbbf24)',
+  'linear-gradient(135deg, #ec4899, #f472b6)',
+  'linear-gradient(135deg, #14b8a6, #5eead4)',
+  'linear-gradient(135deg, #ef4444, #f87171)',
+];
 
+const getAvatarColor = (name: string): string => {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  }
+  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
+};
 
 const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -125,7 +144,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     });
   }, [filteredChats, searchQuery]);
 
-  const collapsedRailChat = activeChat ?? visibleChats[0] ?? null;
+  const collapsedRailChats = useMemo(() => visibleChats.slice(0, 6), [visibleChats]);
 
 
   const findOptionLabel = (options: Array<{ value: string; label: string }>, value: string | null) =>
@@ -351,19 +370,27 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                 <span className="dialogs-list-panel__rail-badge">{activeFilterChips.length}</span>
               )}
             </button>
-            {collapsedRailChat && (
-              <button
-                type="button"
-                className="dialogs-list-panel__rail-avatar"
-                onClick={() => handleOpenChat(collapsedRailChat)}
-                aria-label={`Открыть чат ${collapsedRailChat.title}`}
-                title={collapsedRailChat.title}
-              >
-                {getCollapsedRailLabel(collapsedRailChat)}
-              </button>
+            {collapsedRailChats.length > 0 && (
+              <div className="dialogs-list-panel__rail-chats">
+                {collapsedRailChats.map((chat) => (
+                  <button
+                    key={`${chat.chatId}-${chat.dialogId}`}
+                    type="button"
+                    className={`dialogs-list-panel__rail-avatar ${activeChat?.dialogId === chat.dialogId ? 'dialogs-list-panel__rail-avatar--active' : ''}`}
+                    style={{ "--avatar-bg": getAvatarColor(chat.title || chat.username || "Клиент") } as React.CSSProperties}
+                    onClick={() => handleOpenChat(chat)}
+                    aria-label={`Открыть чат ${chat.title}`}
+                    title={chat.title}
+                  >
+                    {getCollapsedRailLabel(chat)}
+                    {chat.unreadCount > 0 && <span className="dialogs-list-panel__rail-chat-badge">{chat.unreadCount}</span>}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </section>
+
 
         <aside className="dialogs-side-panel dialogs-side-panel--main dialogs-side-panel--chat dialogs-side-panel--minimal dialogs-side-panel--reference">
           <InlineChatPanel

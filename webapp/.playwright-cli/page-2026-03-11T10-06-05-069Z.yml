@@ -1,0 +1,18 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - img [ref=e7]
+    - generic [ref=e9]: MobileBot
+    - generic [ref=e10]: Платформа для управления диалогами
+  - heading "Вход в аккаунт" [level=2] [ref=e11]
+  - generic [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]: Логин или e-mail
+      - textbox "Логин или e-mail" [active] [ref=e15]:
+        - /placeholder: login или email
+    - generic [ref=e16]:
+      - generic [ref=e17]: Пароль
+      - textbox "Пароль" [ref=e18]:
+        - /placeholder: Введите пароль
+        - text: adminadmin
+    - button "Войти" [ref=e19] [cursor=pointer]
+  - button "Создать новый аккаунт" [ref=e21] [cursor=pointer]

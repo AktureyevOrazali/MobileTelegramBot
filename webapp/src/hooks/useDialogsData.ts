@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiClient } from '../api/ApiClient';
-import { AuthSession, BinDetailed, ChatSummary, DashboardSummary, MessageNotification, Section } from '../types';
+import { AuthSession, BinDetailed, ChatSummary, DashboardSummary, Section } from '../types';
 import { extractErrorMessage } from '../utils/errors';
 import { useDialogFilters } from './useDialogFilters';
 import {
@@ -84,13 +84,13 @@ export interface UseDialogsDataReturn {
     statusOptions: { value: string; label: string }[];
 
     /* actions */
-    loadSectionsAndChats: (withLoading?: boolean, overrides?: { bin?: string | null; favoritesOnly?: boolean }) => Promise<void>;
+    loadSectionsAndChats: (withLoading?: boolean) => Promise<void>;
     handleDialogDelete: () => Promise<void>;
     handleDialogStatusChange: () => Promise<void>;
     handleToggleAi: (chat: ChatSummary) => Promise<void>;
     handleToggleFavorite: (dialogId: number, currentIsFavorite: boolean) => Promise<void>;
     requestStatusChange: (chat: ChatSummary) => void;
-    renderStatusBadge: (chat: ChatSummary) => { className: string; label: string; canClick: boolean; onClick: () => void; title: string };
+    renderStatusBadge: (chat: ChatSummary) => { canClick: boolean; onClick: () => void };
 }
 
 /* ------------------------------------------------------------------ */
@@ -115,7 +115,6 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
     const [activeChat, setActiveChat] = useState<ChatSummary | null>(null);
     const [dialogToDelete, setDialogToDelete] = useState<ChatSummary | null>(null);
     const [dialogDeleteLoading, setDialogDeleteLoading] = useState(false);
-    const [updatesCursor, setUpdatesCursor] = useState<Date | null>(null);
     const [aiToggleDialogId, setAiToggleDialogId] = useState<number | null>(null);
     const [aiManuallyDisabled, setAiManuallyDisabled] = useState<Set<number>>(new Set());
     const [dialogStatusTarget, setDialogStatusTarget] = useState<{ chat: ChatSummary; action: 'open' | 'close' } | null>(null);
@@ -137,19 +136,15 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
 
     /* ---- Data loaders ---- */
     const loadSectionsAndChats = useCallback(
-        async (withLoading = true, overrides?: { bin?: string | null; favoritesOnly?: boolean }) => {
+        async (withLoading = true) => {
             if (withLoading) {
                 setLoading(true);
                 setError(null);
             }
             try {
-                const binFilter = overrides && 'bin' in overrides ? overrides.bin : selectedBin;
-                const favoritesOnly =
-                    overrides && 'favoritesOnly' in overrides ? overrides.favoritesOnly ?? false : showFavoritesOnly;
-
                 const [loadedSections, loadedChats, summary] = await Promise.all([
                     apiClient.fetchSections(),
-                    apiClient.fetchChats({ favoriteOnly: favoritesOnly, binQuery: binFilter ?? undefined }),
+                    apiClient.fetchChats(),
                     apiClient.fetchDashboardSummary().catch(err => {
                         console.warn('Dashboard summary not available (operator role lacks access):', err);
                         return null;
@@ -166,7 +161,6 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
 
                 setLoading(false);
                 setError(null);
-                if (!updatesCursor) setUpdatesCursor(new Date());
             } catch (err) {
                 setError(extractErrorMessage(err, 'Не удалось загрузить данные.'));
                 setLoading(false);
@@ -177,9 +171,6 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
             applyAiOverrides,
             currentUser.isAdmin,
             currentUser.sections,
-            selectedBin,
-            showFavoritesOnly,
-            updatesCursor,
         ],
     );
 
@@ -248,121 +239,7 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
         setActiveChat((prev) => (prev ? applyAiOverrides([prev])[0] : prev));
     }, [applyAiOverrides]);
 
-    /* ---- Polling with visibility API ---- */
-    const handleUpdates = useCallback(
-        (updates: MessageNotification[]) => {
-            const messages = updates
-                .filter((update) => update.type === 'message' && update.chatTitle)
-                .map((update) => `${update.chatTitle}: ${update.text}`);
-            const assignments = updates
-                .filter((update) => update.type === 'bin_assignment' && update.bin)
-                .map((update) => `Вам назначен новый БИН ${update.bin}.`);
-            const combined = [...assignments, ...messages];
-            if (combined.length > 0) {
-                setBanner(combined.join(' '));
-                loadSectionsAndChats(false);
-                if (assignments.length > 0) {
-                    loadBins();
-                }
-            }
-        },
-        [loadBins, loadSectionsAndChats],
-    );
-
-    // Updates polling (5s) — pauses when tab is hidden
-    useEffect(() => {
-        let cancelled = false;
-        let timer: ReturnType<typeof setInterval> | null = null;
-
-        const poll = async () => {
-            try {
-                if (!updatesCursor) {
-                    setUpdatesCursor(new Date());
-                    return;
-                }
-                const updates = await apiClient.fetchUpdates(updatesCursor);
-                if (!cancelled && updates.length > 0) {
-                    handleUpdates(updates);
-                    const lastUpdate = updates[updates.length - 1].createdAt;
-                    setUpdatesCursor(lastUpdate);
-                }
-            } catch (err) {
-                console.warn('Не удалось получить обновления', err);
-            }
-        };
-
-        const startPolling = () => {
-            if (timer) return;
-            timer = setInterval(poll, 5000);
-        };
-
-        const stopPolling = () => {
-            if (timer) { clearInterval(timer); timer = null; }
-        };
-
-        const onVisibility = () => {
-            if (document.hidden) {
-                stopPolling();
-            } else {
-                poll(); // immediate refresh on tab focus
-                startPolling();
-            }
-        };
-
-        startPolling();
-        document.addEventListener('visibilitychange', onVisibility);
-        return () => {
-            cancelled = true;
-            stopPolling();
-            document.removeEventListener('visibilitychange', onVisibility);
-        };
-    }, [apiClient, updatesCursor, handleUpdates]);
-
-    // Full refresh polling (15s) — pauses when tab is hidden
-    useEffect(() => {
-        let cancelled = false;
-        let interval: ReturnType<typeof setInterval> | null = null;
-
-        const startRefresh = () => {
-            if (interval) return;
-            interval = setInterval(() => {
-                if (!cancelled) loadSectionsAndChats(false);
-            }, 30000);
-        };
-
-        const stopRefresh = () => {
-            if (interval) { clearInterval(interval); interval = null; }
-        };
-
-        const onVisibility = () => {
-            if (document.hidden) {
-                stopRefresh();
-            } else {
-                if (!cancelled) loadSectionsAndChats(false);
-                startRefresh();
-            }
-        };
-
-        startRefresh();
-        document.addEventListener('visibilitychange', onVisibility);
-        return () => {
-            cancelled = true;
-            stopRefresh();
-            document.removeEventListener('visibilitychange', onVisibility);
-        };
-    }, [loadSectionsAndChats]);
-
-    // SSE Stream for real-time updates
-    useEffect(() => {
-        const cleanup = apiClient.connectToStream({
-            onMessage: (messageRaw) => {
-                // When a new message arrives, we trigger a silent reload
-                // of the current chats to ensure UI is instantly updated
-                loadSectionsAndChats(false);
-            }
-        });
-        return cleanup;
-    }, [apiClient, loadSectionsAndChats]);
+    /* ---- Auto-refresh disabled: manual refresh only ---- */
 
     /* ---- Filter options ---- */
     const sectionOptions = useMemo(
@@ -391,7 +268,7 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
 
     // Re-load on filter change
     useEffect(() => {
-        loadSectionsAndChats(true, { bin: selectedBin, favoritesOnly: showFavoritesOnly });
+        loadSectionsAndChats(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedSection, selectedBin, showFavoritesOnly]);
 
@@ -643,9 +520,11 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
         if (selectedSection) {
             list = list.filter((chat) => chat.section === selectedSection);
         }
+        if (selectedBin) {
+            list = list.filter((chat) => chat.bin === selectedBin);
+        }
         if (showFavoritesOnly) {
-            const favorites = new Set(apiClient.currentUser?.favoriteDialogIds ?? []);
-            list = list.filter((chat) => favorites.has(chat.dialogId));
+            list = list.filter((chat) => Boolean(chat.isFavorite));
         }
         if (statusFilter === 'open') {
             list = list.filter((chat) => !chat.dialogClosedAt);
@@ -658,8 +537,8 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
         });
         return sorted;
     }, [
-        apiClient.currentUser?.favoriteDialogIds,
         chats,
+        selectedBin,
         selectedSection,
         showFavoritesOnly,
         sortOrder,

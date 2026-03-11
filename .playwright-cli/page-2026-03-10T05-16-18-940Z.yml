@@ -1,0 +1,43 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic "MobileBot" [ref=e7]:
+          - generic [ref=e8]: MB
+          - generic [ref=e10]: MobileBot
+        - navigation "Основная навигация" [ref=e11]:
+          - link "Диалоги" [ref=e12] [cursor=pointer]:
+            - /url: /dialogs
+            - img [ref=e13]
+            - text: Диалоги
+          - link "Дашборд" [ref=e15] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e16]
+            - text: Дашборд
+          - link "Сотрудники" [ref=e21] [cursor=pointer]:
+            - /url: /admin
+            - img [ref=e22]
+            - text: Сотрудники
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e27]: Раздел
+          - generic [ref=e28]: Сотрудники
+        - button "А Администратор Администратор" [ref=e29] [cursor=pointer]:
+          - generic [ref=e30]: А
+          - generic [ref=e31]:
+            - generic [ref=e32]: Администратор
+            - generic [ref=e33]: Администратор
+        - button "Переключить на светлую тему" [ref=e34] [cursor=pointer]:
+          - img [ref=e35]
+        - button "Выйти" [ref=e37] [cursor=pointer]:
+          - img [ref=e38]
+  - main [ref=e41]:
+    - paragraph [ref=e44]: Загрузка...
+  - contentinfo [ref=e45]:
+    - generic [ref=e46]:
+      - generic [ref=e47]:
+        - generic [ref=e48]: MobileBot Workspace
+        - generic [ref=e49]: Единое пространство для диалогов, аналитики и управления сотрудниками.
+      - generic [ref=e50]:
+        - generic [ref=e51]: Сотрудники
+        - generic [ref=e52]: Администратор

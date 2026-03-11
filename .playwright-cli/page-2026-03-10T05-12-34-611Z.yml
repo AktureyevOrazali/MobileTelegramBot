@@ -1,0 +1,156 @@
+- generic [ref=e22]:
+  - banner [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - generic "MobileBot" [ref=e26]:
+          - generic [ref=e27]: MB
+          - generic [ref=e29]: MobileBot
+        - navigation "Основная навигация" [ref=e30]:
+          - link "Диалоги" [ref=e31] [cursor=pointer]:
+            - /url: /dialogs
+            - img [ref=e32]
+            - text: Диалоги
+          - link "Дашборд" [active] [ref=e34] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e35]
+            - text: Дашборд
+          - link "Сотрудники" [ref=e40] [cursor=pointer]:
+            - /url: /admin
+            - img [ref=e41]
+            - text: Сотрудники
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: Раздел
+          - generic [ref=e47]: Дашборд
+        - button "А Администратор Администратор" [ref=e48] [cursor=pointer]:
+          - generic [ref=e49]: А
+          - generic [ref=e50]:
+            - generic [ref=e51]: Администратор
+            - generic [ref=e52]: Администратор
+        - button "Переключить на тёмную тему" [ref=e53] [cursor=pointer]:
+          - img [ref=e54]
+        - button "Выйти" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+  - main [ref=e64]:
+    - generic [ref=e180]:
+      - generic [ref=e181]:
+        - generic [ref=e182]:
+          - generic [ref=e183]:
+            - heading "Статистика" [level=2] [ref=e184]
+            - paragraph [ref=e185]: Все сотрудники · 7 дней · 10.03.2026 10:12
+          - generic [ref=e186]:
+            - generic [ref=e188] [cursor=pointer]:
+              - generic [ref=e189]: 7 дней
+              - img [ref=e191]
+            - generic [ref=e194] [cursor=pointer]:
+              - generic [ref=e195]: Все сотрудники
+              - img [ref=e197]
+            - button "Пересчитать" [ref=e199] [cursor=pointer]
+            - button "Excel" [ref=e200] [cursor=pointer]
+            - button "PDF" [ref=e201] [cursor=pointer]
+        - generic [ref=e202]:
+          - button "Обзор" [ref=e203] [cursor=pointer]
+          - button "Сотрудники" [ref=e204] [cursor=pointer]
+          - button "Разделы" [ref=e205] [cursor=pointer]
+          - button "Активность" [ref=e206] [cursor=pointer]
+          - button "Аналитика" [ref=e207] [cursor=pointer]
+      - generic [ref=e208]:
+        - generic [ref=e209]:
+          - generic [ref=e210]:
+            - generic [ref=e211]:
+              - heading "Скорость ответа" [level=3] [ref=e212]
+              - generic [ref=e213]: 0 оператора
+            - generic [ref=e214]:
+              - generic [ref=e215]:
+                - generic:
+                  - generic: "0"
+                  - generic: операторов
+              - generic [ref=e219]:
+                - generic [ref=e220]:
+                  - generic [ref=e223]: Быстрые
+                  - generic [ref=e225]: "0"
+                - generic [ref=e226]:
+                  - generic [ref=e229]: Средние
+                  - generic [ref=e231]: "0"
+                - generic [ref=e232]:
+                  - generic [ref=e235]: Медленные
+                  - generic [ref=e237]: "0"
+                - generic [ref=e239]:
+                  - generic [ref=e241]: Ср. время ответа
+                  - generic [ref=e243]: —
+          - generic [ref=e244]:
+            - heading "Обращения" [level=3] [ref=e245]
+            - generic [ref=e246]:
+              - generic [ref=e247]:
+                - generic [ref=e248]: Всего
+                - generic [ref=e249]: "1"
+              - generic [ref=e250]:
+                - generic [ref=e251]: Активные
+                - generic [ref=e252]: "0"
+              - generic [ref=e253]:
+                - generic [ref=e254]: Закрытые
+                - generic [ref=e255]: "1"
+              - generic [ref=e257]:
+                - generic [ref=e258]: Сообщений
+                - generic [ref=e259]: "1"
+              - generic [ref=e260]:
+                - generic [ref=e261]: Ср. за день
+                - generic [ref=e262]: "0"
+            - generic [ref=e263]: "Период: 7 дней"
+        - generic [ref=e264]:
+          - generic [ref=e265]:
+            - heading "Автоматизация (AI)" [level=3] [ref=e266]
+            - generic [ref=e267]:
+              - generic [ref=e268]:
+                - generic [ref=e269]: 100%
+                - generic [ref=e270]: решено ботом
+              - generic [ref=e275]:
+                - generic [ref=e276]:
+                  - generic [ref=e279]: Решено ботом
+                  - generic [ref=e281]: "1"
+                - generic [ref=e282]:
+                  - generic [ref=e285]: Переведено оператору
+                  - generic [ref=e287]: "0"
+                - generic [ref=e289]:
+                  - generic [ref=e291]: Сообщений от бота
+                  - generic [ref=e293]: "0"
+                - generic [ref=e294]:
+                  - generic [ref=e296]: Ср. до перевода
+                  - generic [ref=e298]: —
+          - generic [ref=e299]:
+            - heading "Качество обслуживания" [level=3] [ref=e300]
+            - generic [ref=e301]:
+              - generic [ref=e306]:
+                - generic [ref=e307]: —
+                - generic [ref=e308]: SLA (ответ до 5 мин)
+              - generic [ref=e309]:
+                - generic [ref=e310]:
+                  - generic [ref=e313]: Ответов с задержкой
+                  - generic [ref=e315]: "0"
+                - generic [ref=e317]:
+                  - generic [ref=e319]: Повторные обращения
+                  - generic [ref=e321]: "1"
+                - generic [ref=e322]:
+                  - generic [ref=e324]: Доля повторных
+                  - generic [ref=e326]: 100.0%
+        - generic [ref=e327]:
+          - generic [ref=e328]:
+            - heading "Удовлетворенность (CSAT)" [level=3] [ref=e329]
+            - generic [ref=e330]:
+              - generic [ref=e331]: ⭐
+              - paragraph [ref=e332]: Пока нет оценок операторов.
+          - generic [ref=e333]:
+            - heading "Оценка работы AI" [level=3] [ref=e334]
+            - generic [ref=e336]:
+              - generic [ref=e337]: "2.0"
+              - generic [ref=e338]: Средняя оценка
+              - generic [ref=e339]: 1 отзывов
+      - generic [ref=e344]: 2 сотрудников
+  - contentinfo [ref=e169]:
+    - generic [ref=e170]:
+      - generic [ref=e171]:
+        - generic [ref=e172]: MobileBot Workspace
+        - generic [ref=e173]: Единое пространство для диалогов, аналитики и управления сотрудниками.
+      - generic [ref=e174]:
+        - generic [ref=e175]: Дашборд
+        - generic [ref=e176]: Администратор

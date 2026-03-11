@@ -1148,3 +1148,44 @@ body {
 [data-theme='dark'] .heatmap-legend__gradient {
   background: linear-gradient(90deg, rgba(40, 167, 69, 0.2), rgba(40, 167, 69, 0.9));
 }
+
+/* Dashboard map widget (moved from Dialogs) */
+.dashboard-card--map {
+  padding: 14px;
+  overflow: hidden;
+}
+
+.dashboard-map-widget__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.dashboard-map-widget__eyebrow {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.dashboard-map-widget__body {
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-soft-color);
+  min-height: 290px;
+  overflow: hidden;
+}
+
+.dashboard-card--map .kz-map {
+  min-height: 290px;
+}
+
+.dashboard-card--map .kz-map__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}

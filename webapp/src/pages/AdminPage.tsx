@@ -250,7 +250,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
         <div className="admin-hero__search">
           <input
             className="admin-hero__search-input"
-            placeholder="🔍  Поиск по имени, логину или e-mail…"
+            placeholder="Поиск по имени, логину или e-mail..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -524,7 +524,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
 
           <input
             className="input"
-            placeholder="🔍 Поиск по БИН..."
+            placeholder="Поиск по БИН..."
             value={unassignedBinSearch}
             onChange={(e) => setUnassignedBinSearch(e.target.value)}
           />
@@ -567,7 +567,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
 
           <input
             className="input"
-            placeholder="🔍 Поиск по сотруднику..."
+            placeholder="Поиск по сотруднику..."
             value={assignEmployeeSearch}
             onChange={(e) => setAssignEmployeeSearch(e.target.value)}
           />

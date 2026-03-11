@@ -1,0 +1,87 @@
+- generic [ref=e22]:
+  - banner [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - generic "MobileBot" [ref=e26]:
+          - generic [ref=e27]: MB
+          - generic [ref=e29]: MobileBot
+        - navigation "Основная навигация" [ref=e30]:
+          - link "Диалоги" [ref=e31] [cursor=pointer]:
+            - /url: /dialogs
+            - img [ref=e32]
+            - text: Диалоги
+          - link "Дашборд" [ref=e34] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e35]
+            - text: Дашборд
+          - link "Сотрудники" [ref=e40] [cursor=pointer]:
+            - /url: /admin
+            - img [ref=e41]
+            - text: Сотрудники
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: Раздел
+          - generic [ref=e47]: Диалоги
+        - button "А Администратор Администратор" [ref=e48] [cursor=pointer]:
+          - generic [ref=e49]: А
+          - generic [ref=e50]:
+            - generic [ref=e51]: Администратор
+            - generic [ref=e52]: Администратор
+        - button "Переключить на тёмную тему" [ref=e53] [cursor=pointer]:
+          - img [ref=e54]
+        - button "Выйти" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+  - main [ref=e64]:
+    - generic [ref=e66]:
+      - generic [ref=e67]:
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - generic [ref=e70]: Карта БИН
+            - heading "Активность по регионам Казахстана" [level=2] [ref=e71]
+          - generic [ref=e72]:
+            - generic [ref=e73]: 0 БИН
+            - generic [ref=e75]: 1 БИН
+        - generic [ref=e77]:
+          - button "⛶" [ref=e79] [cursor=pointer]
+          - img "Карта Казахстана по регионам" [ref=e80]
+          - generic:
+            - generic: Улытауская область
+            - generic: 0 БИН
+      - generic [ref=e122]:
+        - generic [ref=e124] [cursor=pointer]:
+          - generic [ref=e125]: Все разделы
+          - img [ref=e127]
+        - generic [ref=e130] [cursor=pointer]:
+          - generic [ref=e131]: Все БИНы
+          - img [ref=e133]
+        - generic [ref=e136] [cursor=pointer]:
+          - generic [ref=e137]: Сначала новые
+          - img [ref=e139]
+        - generic [ref=e142] [cursor=pointer]:
+          - generic [ref=e143]: Все диалоги
+          - img [ref=e145]
+        - generic [ref=e147] [cursor=pointer]:
+          - checkbox "Только избранные" [ref=e148]
+          - generic [ref=e149]: Только избранные
+      - 'button "1С клиент 4ed61a6658e54f66b26c Открыт AI: вкл Действия HR и кадры БИН: 111111111112" [ref=e150] [cursor=pointer]':
+        - generic [ref=e151]:
+          - generic [ref=e152]:
+            - heading "1С клиент 4ed61a6658e54f66b26c" [level=3] [ref=e153]
+            - generic [ref=e154]: Открыт
+            - generic [ref=e155]: "AI: вкл"
+          - generic [ref=e156]:
+            - button "В избранное" [ref=e157]:
+              - img [ref=e158]
+            - button "Действия" [ref=e161]:
+              - img [ref=e162]
+        - generic [ref=e166]:
+          - generic [ref=e167]: HR и кадры
+          - generic [ref=e168]: "БИН: 111111111112"
+  - contentinfo [ref=e169]:
+    - generic [ref=e170]:
+      - generic [ref=e171]:
+        - generic [ref=e172]: MobileBot Workspace
+        - generic [ref=e173]: Единое пространство для диалогов, аналитики и управления сотрудниками.
+      - generic [ref=e174]:
+        - generic [ref=e175]: Диалоги
+        - generic [ref=e176]: Администратор

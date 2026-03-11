@@ -1,4 +1,4 @@
-﻿/* --- РљРЅРѕРїРєРё Рё РРЅРїСѓС‚С‹ --- */
+﻿/* --- Кнопки и Рнпуты --- */
 /* ===== Admin Hero Header ===== */
 
 .admin-page {
@@ -314,7 +314,7 @@
   color: var(--text-muted);
 }
 
-/* --- 1. РљР°СЂС‚РѕС‡РєР° РЅРµСЂР°Р·РґРµР»РµРЅРЅС‹С… Р‘РРќ --- */
+/* --- 1. Карточка неразделенных БРН --- */
 .admin-assign-grid {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
@@ -444,7 +444,7 @@
   color: #f59e0b;
 }
 
-/* --- 2. РљР°СЂС‚РѕС‡РєР° СЃРѕС‚СЂСѓРґРЅРёРєР° --- */
+/* --- 2. Карточка сотрудника --- */
 .admin-user-card {
   display: flex;
   flex-direction: column;
@@ -452,7 +452,7 @@
   padding: 20px;
 }
 
-/* Р’РµСЂС…: С‚РѕР»СЊРєРѕ РёРјСЏ Рё СЂРѕР»СЊ */
+/* Верх: только имя и роль */
 .admin-user-card__header-minimal {
   display: flex;
   justify-content: space-between;
@@ -466,7 +466,7 @@
   color: var(--text-heading);
 }
 
-/* Р Р°Р·РґРµР»РёС‚РµР»СЊРЅР°СЏ Р»РёРЅРёСЏ */
+/* Разделительная линия */
 .admin-user-card__separator {
   height: 1px;
   background-color: var(--border-color);
@@ -474,7 +474,7 @@
   margin: 4px 0;
 }
 
-/* РџРѕС‡С‚Р° Рё СЂРѕР»СЊ РЅР° РѕРґРЅРѕРј СѓСЂРѕРІРЅРµ */
+/* Почта и роль на одном уровне */
 .admin-user-card__info-row {
   display: flex;
   justify-content: space-between;
@@ -505,7 +505,7 @@
   text-overflow: ellipsis;
 }
 
-/* РљРЅРѕРїРєРё Р‘РРќС‹/Р Р°Р·РґРµР»С‹ РІРѕ РІСЃСЋ С€РёСЂРёРЅСѓ */
+/* Кнопки БРНы/Разделы во всю ширину */
 .admin-user-card__actions-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -528,7 +528,7 @@
   margin-top: 8px;
 }
 
-/* --- 3. РњРѕРґР°Р»СЊРЅС‹Рµ РѕРєРЅР° Рё Р РµРіРёСЃС‚СЂР°С†РёРё --- */
+/* --- 3. Модальные окна и Регистрации --- */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -556,7 +556,7 @@
   border-radius: 18px;
 }
 
-/* РЁР°РїРєР° РјРѕРґР°Р»РєРё Р·Р°СЏРІРѕРє: РєРЅРѕРїРєРё РІРІРµСЂС…Сѓ, РјРёРЅРёРјСѓРј РјРµСЃС‚Р° */
+/* Шапка модалки заявок: кнопки вверху, минимум места */
 .admin-modal__header {
   display: flex;
   justify-content: space-between;
@@ -580,7 +580,7 @@
   border-radius: 12px;
 }
 
-/* РЎС‚РёР»Рё С‡РёРїРѕРІ/СЂР°Р·РґРµР»РѕРІ */
+/* Стили чипов/разделов */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -610,7 +610,7 @@
   color: #fff;
 }
 
-/* РљР°СЂС‚РѕС‡РєР° Р·Р°СЏРІРєРё */
+/* Карточка заявки */
 .pending-registration-card {
   display: flex;
   justify-content: space-between;
@@ -622,7 +622,7 @@
   margin-bottom: 8px;
 }
 
-/* --- РЎРµС‚РєР° СЃРѕС‚СЂСѓРґРЅРёРєРѕРІ --- */
+/* --- Сетка сотрудников --- */
 .admin-user-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -654,14 +654,14 @@
    Responsive overflow fixes
    ========================= */
 
-/* 1) Р’РѕРѕР±С‰Рµ Р·Р°РїСЂРµС‰Р°РµРј РіРѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅС‹Р№ СЃРєСЂРѕР»Р» СЃС‚СЂР°РЅРёС†С‹ */
+/* 1) Вообще запрещаем горизонтальный скролл страницы */
 html,
 body,
 #root {
   overflow-x: hidden;
 }
 
-/* 2) Р‘Р°Р·РѕРІРѕ: Р»СЋР±С‹Рµ С‚РµРєСЃС‚С‹ РЅРµ РґРѕР»Р¶РЅС‹ РІС‹Р»РµР·Р°С‚СЊ РёР· РєРѕРЅС‚РµР№РЅРµСЂРѕРІ */
+/* 2) Базово: любые тексты не должны вылезать из контейнеров */
 .card,
 .modal,
 .admin-modal,
@@ -678,19 +678,19 @@ body,
   word-break: break-word;
 }
 
-/* 3) РњРѕРґР°Р»РєРё: РЅРёРєРѕРіРґР° РЅРµ СЃРѕР·РґР°С‘Рј РіРѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅС‹Р№ СЃРєСЂРѕР»Р» */
+/* 3) Модалки: никогда не создаём горизонтальный скролл */
 .modal,
 .admin-modal {
   max-width: 100%;
   overflow-x: hidden;
 }
 
-/* overlay СѓР¶Рµ РёРјРµРµС‚ overflow-y:auto вЂ” РґРѕР±Р°РІРёРј Р·Р°С‰РёС‚Сѓ РїРѕ X */
+/* overlay уже имеет overflow-y:auto — добавим защиту по X */
 .modal-overlay {
   overflow-x: hidden;
 }
 
-/* 4) Header РјРѕРґР°Р»РєРё: СЂР°Р·СЂРµС€Р°РµРј РїРµСЂРµРЅРѕСЃ, С‡С‚РѕР±С‹ Р·Р°РіРѕР»РѕРІРѕРє/Р±РµР№РґР¶ РЅРµ Р»РѕРјР°Р»Рё С€РёСЂРёРЅСѓ */
+/* 4) Header модалки: разрешаем перенос, чтобы заголовок/бейдж не ломали ширину */
 .admin-modal__header {
   min-width: 0;
   flex-wrap: wrap;
@@ -702,24 +702,24 @@ body,
   overflow-wrap: anywhere;
 }
 
-/* 5) Р“Р»Р°РІРЅР°СЏ РїСЂРёС‡РёРЅР° РіРѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅРѕРіРѕ СЃРєСЂРѕР»Р»Р° РІ "РќРµСЂР°Р·РґРµР»РµРЅРЅС‹Рµ Р‘РРќС‹":
-      grid СЃ auto-РєРЅРѕРїРєРѕР№. Р”РµР»Р°РµРј Р±РµР·РѕРїР°СЃРЅС‹Рµ minmax(0,1fr) */
+/* 5) Главная причина горизонтального скролла в "Неразделенные БРНы":
+      grid с auto-кнопкой. Делаем безопасные minmax(0,1fr) */
 .admin-assign-grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(120px, auto);
   width: 100%;
   max-width: 100%;
   overflow: hidden;
-  /* Р·Р°С‰РёС‚Р° РѕС‚ РІРЅСѓС‚СЂРµРЅРЅРёС… min-width */
+  /* защита от внутренних min-width */
 }
 
-/* РљРЅРѕРїРєР° РЅРµ РґРѕР»Р¶РЅР° Р±С‹С‚СЊ С€РёСЂРµ РєРѕРЅС‚РµР№РЅРµСЂР° */
+/* Кнопка не должна быть шире контейнера */
 .admin-assign-grid__btn {
   min-width: 120px;
   max-width: 100%;
   white-space: nowrap;
 }
 
-/* РќР° СѓР·РєРёС… СЌРєСЂР°РЅР°С… вЂ” РІСЃС‘ РІ СЃС‚РѕР»Р±РёРє, Р±РµР· РІР°СЂРёР°РЅС‚РѕРІ */
+/* На узких экранах — всё в столбик, без вариантов */
 @media (max-width: 640px) {
   .admin-assign-grid {
     grid-template-columns: 1fr;
@@ -730,7 +730,7 @@ body,
   }
 }
 
-/* 6) РЎРїРёСЃРѕРє "С‡РёРїРѕРІ" РІРЅСѓС‚СЂРё РјРѕРґР°Р»РѕРє/РєР°СЂС‚РѕС‡РµРє: СЂР°Р·СЂРµС€Р°РµРј РїРµСЂРµРЅРѕСЃ Рё РѕРіСЂР°РЅРёС‡РёРІР°РµРј С€РёСЂРёРЅСѓ */
+/* 6) Список "чипов" внутри модалок/карточек: разрешаем перенос и ограничиваем ширину */
 .admin-section__list,
 .admin-modal__list,
 .flex-gap {
@@ -742,7 +742,7 @@ body,
   max-width: 100%;
 }
 
-/* 7) РљР°СЂС‚РѕС‡РєР° СЃРѕС‚СЂСѓРґРЅРёРєР°: email РЅРµ РґРѕР»Р¶РµРЅ вЂњРІС‹С‚Р°Р»РєРёРІР°С‚СЊвЂќ select */
+/* 7) Карточка сотрудника: email не должен “выталкивать” select */
 .admin-user-card__info-row {
   min-width: 0;
 }
@@ -752,14 +752,14 @@ body,
   max-width: 100%;
 }
 
-/* РќР° СѓР·РєРёС… вЂ” Сѓ С‚РµР±СЏ СѓР¶Рµ РµСЃС‚СЊ flex-direction:column, РЅРѕ СѓСЃРёР»РёРј РїРµСЂРµРЅРѕСЃ */
+/* На узких — у тебя уже есть flex-direction:column, но усилим перенос */
 @media (max-width: 600px) {
   .admin-user-card__email {
     width: 100%;
   }
 }
 
-/* 8) РљР°СЂС‚РѕС‡РєРё Р·Р°СЏРІРѕРє: РґРµР№СЃС‚РІРёСЏ РЅРµ РґРѕР»Р¶РЅС‹ Р»РѕРјР°С‚СЊ С€РёСЂРёРЅСѓ */
+/* 8) Карточки заявок: действия не должны ломать ширину */
 .pending-registration-card {
   min-width: 0;
   max-width: 100%;
@@ -771,8 +771,8 @@ body,
 }
 
 
-/* 9) Р’РЅСѓС‚СЂРµРЅРЅРёРµ СЌР»РµРјРµРЅС‚С‹ SelectPill/РїРёР»СЋР»СЊ:
-      РІР°Р¶РЅРѕРµ РїСЂР°РІРёР»Рѕ вЂ” min-width:0, РёРЅР°С‡Рµ flex/grid Р»РѕРІРёС‚ overflow */
+/* 9) Внутренние элементы SelectPill/пилюль:
+      важное правило — min-width:0, иначе flex/grid ловит overflow */
 .pill,
 .pill .value,
 .pill .label {
@@ -790,7 +790,7 @@ body,
   flex-shrink: 0;
 }
 
-/* РЈР»СѓС‡С€РµРЅРЅС‹Рµ РєР°СЂС‚РѕС‡РєРё Р‘РРќ РІ РјРѕРґР°Р»СЊРЅРѕРј РѕРєРЅРµ "Р’СЃРµ Р‘РРќС‹" */
+/* Улучшенные карточки БРН в модальном окне "Все БРНы" */
 .admin-section__list--grid .bin-chip--compact {
   display: flex;
   flex-direction: row;
@@ -803,7 +803,7 @@ body,
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-/* РљР°СЂС‚РѕС‡РєРё СЃ РєРЅРѕРїРєРѕР№ СѓРґР°Р»РµРЅРёСЏ - РІС‹СЂР°РІРЅРёРІР°РЅРёРµ flex-start */
+/* Карточки с кнопкой удаления - выравнивание flex-start */
 .admin-section__list--grid .bin-chip--deletable {
   justify-content: flex-start;
 }
@@ -813,7 +813,7 @@ body,
   box-shadow: 0 0 0 3px var(--input-ring);
 }
 
-/* РЎС‚Р°С‚СѓСЃ РґРѕРіРѕРІРѕСЂР° РІРЅСѓС‚СЂРё РєР°СЂС‚РѕС‡РєРё Р‘РРќ */
+/* Статус договора внутри карточки БРН */
 .bin-chip__status {
   padding: 2px 6px;
   border-radius: 4px;
@@ -846,7 +846,7 @@ body,
   color: #fde047;
 }
 
-/* ===== РЈР»СѓС‡С€РµРЅРЅС‹Р№ РґРёР·Р°Р№РЅ Р°РґРјРёРЅ РјРѕРґР°Р»СЊРЅС‹С… РѕРєРѕРЅ ===== */
+/* ===== Улучшенный дизайн админ модальных окон ===== */
 .admin-modal__container {
   width: min(95vw, 560px);
 }
@@ -861,7 +861,7 @@ body,
   font-weight: 700;
 }
 
-/* РЎРµС‚РєР° РґР»СЏ РЅР°Р·РЅР°С‡РµРЅРёСЏ Р‘РРќ/СЃРѕС‚СЂСѓРґРЅРёРєРѕРІ */
+/* Сетка для назначения БРН/сотрудников */
 .admin-assign-grid {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
@@ -898,7 +898,7 @@ body,
   cursor: not-allowed;
 }
 
-/* РЈР»СѓС‡С€РµРЅРЅС‹Рµ РІС‹РїР°РґР°СЋС‰РёРµ СЃРїРёСЃРєРё РІ РјРѕРґР°Р»СЊРЅС‹С… РѕРєРЅР°С… */
+/* Улучшенные выпадающие списки в модальных окнах */
 .admin-modal .pill {
   height: 42px;
   border-radius: 10px;
@@ -926,7 +926,7 @@ body,
   font-weight: 500;
 }
 
-/* РђРґР°РїС‚РёРІРЅРѕСЃС‚СЊ РґР»СЏ РјРѕР±РёР»СЊРЅС‹С… */
+/* Адаптивность для мобильных */
 @media (max-width: 560px) {
   .admin-assign-grid {
     grid-template-columns: 1fr;
@@ -943,7 +943,7 @@ body,
   }
 }
 
-/* ===== РЈР»СѓС‡С€РµРЅРЅС‹Р№ РґРёР·Р°Р№РЅ РєР°СЂС‚РѕС‡РµРє РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ ===== */
+/* ===== Улучшенный дизайн карточек пользователей ===== */
 .admin-user-card {
   background: var(--surface-color);
   border-radius: 16px;
@@ -958,7 +958,7 @@ body,
   border-color: var(--brand-color);
 }
 
-/* Р—Р°РіРѕР»РѕРІРѕРє РєР°СЂС‚РѕС‡РєРё */
+/* Заголовок карточки */
 .admin-user-card__header {
   margin-bottom: 4px;
 }
@@ -969,7 +969,7 @@ body,
   color: var(--text-heading);
 }
 
-/* Р‘РµР№РґР¶ СЂРѕР»Рё РІ Р·Р°РіРѕР»РѕРІРєРµ */
+/* Бейдж роли в заголовке */
 .admin-user-card__title-row .role-badge {
   padding: 4px 10px;
   border-radius: 6px;
@@ -982,13 +982,13 @@ body,
   border: 1px solid var(--border-color);
 }
 
-/* Email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ */
+/* Email пользователя */
 .admin-user-card__meta {
   font-size: 0.88rem;
   color: var(--text-muted);
 }
 
-/* РљРѕРЅС‚СЂРѕР»С‹ (СЃРµР»РµРєС‚ СЂРѕР»Рё) */
+/* Контролы (селект роли) */
 .admin-user-card__control .pill {
   height: 38px;
   font-size: 0.85rem;
@@ -996,7 +996,7 @@ body,
   min-width: 140px;
 }
 
-/* РЎС‚Р°С‚РёСЃС‚РёРєР° Р‘РРќС‹ Рё Р Р°Р·РґРµР»С‹ */
+/* Статистика БРНы и Разделы */
 .admin-user-card__stat-button {
   height: 40px;
   padding: 0 16px;
@@ -1020,14 +1020,14 @@ body,
   box-shadow: 0 0 0 3px var(--input-ring);
 }
 
-/* Р¤СѓС‚РµСЂ РєР°СЂС‚РѕС‡РєРё */
+/* Футер карточки */
 .admin-user-card__footer {
   margin-top: 8px;
   padding-top: 16px;
   gap: 10px;
 }
 
-/* РљРЅРѕРїРєРё РІ С„СѓС‚РµСЂРµ */
+/* Кнопки в футере */
 .admin-user-card__footer .button {
   height: 38px;
   padding: 0 16px;
@@ -1037,7 +1037,7 @@ body,
   transition: all 0.2s ease;
 }
 
-/* РљРЅРѕРїРєР° "РЎР±СЂРѕСЃРёС‚СЊ РїР°СЂРѕР»СЊ" */
+/* Кнопка "Сбросить пароль" */
 .admin-user-card__footer .button.secondary {
   background: var(--surface-color);
   border: 1px solid var(--border-color);
@@ -1049,7 +1049,7 @@ body,
   border-color: var(--brand-color);
 }
 
-/* РљРЅРѕРїРєР° "РЈРґР°Р»РёС‚СЊ" */
+/* Кнопка "Удалить" */
 .admin-user-card__footer .button--danger,
 .admin-user-card__footer .button.danger {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
@@ -1065,7 +1065,7 @@ body,
   transform: translateY(-1px);
 }
 
-/* РђРґР°РїС‚РёРІРЅРѕСЃС‚СЊ РєР°СЂС‚РѕС‡РµРє РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ */
+/* Адаптивность карточек пользователей */
 @media (max-width: 768px) {
   .admin-user-grid {
     grid-template-columns: 1fr;
@@ -1087,7 +1087,7 @@ body,
   }
 }
 
-/* ===== РљРѕРјРїР°РєС‚РЅС‹Р№ РґРёР·Р°Р№РЅ РјРѕРґР°Р»РєРё Р‘РРќРѕРІ РѕРїРµСЂР°С‚РѕСЂР° ===== */
+/* ===== Компактный дизайн модалки БРНов оператора ===== */
 .admin-modal {
   padding: 16px;
   gap: 12px;
@@ -1134,7 +1134,7 @@ body,
   gap: 8px;
 }
 
-/* РљР°СЂС‚РѕС‡РєРё Р‘РРќ РІ РјРѕРґР°Р»РєРµ РѕРїРµСЂР°С‚РѕСЂР° */
+/* Карточки БРН в модалке оператора */
 .bin-chip--detailed {
   display: flex;
   flex-direction: row;
@@ -1216,7 +1216,7 @@ body,
   color: #ef4444;
 }
 
-/* РљР°СЂС‚РѕС‡РєРё СЂР°Р·РґРµР»РѕРІ РІ РјРѕРґР°Р»РєРµ РѕРїРµСЂР°С‚РѕСЂР° */
+/* Карточки разделов в модалке оператора */
 .section-chip--detailed {
   display: flex;
   flex-direction: row;
@@ -1280,7 +1280,7 @@ body,
   color: #ef4444;
 }
 
-/* РљРѕРЅС‚РµР№РЅРµСЂ РґР»СЏ СЃРїРёСЃРєР° СЃ Р»РµР№Р±Р»РѕРј */
+/* Контейнер для списка с лейблом */
 .admin-modal__list-container {
   display: flex;
   flex-direction: column;
@@ -1293,7 +1293,7 @@ body,
   color: var(--text-muted);
 }
 
-/* РљРЅРѕРїРєРё РІ Р·Р°РіРѕР»РѕРІРєРµ РјРѕРґР°Р»РєРё */
+/* Кнопки в заголовке модалки */
 .admin-modal__header-actions {
   display: flex;
   gap: 8px;
@@ -1306,14 +1306,14 @@ body,
   border-radius: 8px;
 }
 
-/* РЎРїРёСЃРѕРє Р·Р°СЏРІРѕРє РІ СЃС‚РѕР»Р±РёРє */
+/* Список заявок в столбик */
 .admin-modal__list--stack {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-/* РџРѕР»Рµ РїРѕРёСЃРєР° РІ РјРѕРґР°Р»РєР°С… */
+/* Поле поиска в модалках */
 .admin-modal__search {
   margin-bottom: 4px;
 }
@@ -1325,7 +1325,7 @@ body,
   border-radius: 8px;
 }
 
-/* РљР°СЂС‚РѕС‡РєР° Р·Р°СЏРІРєРё РЅР° СЂРµРіРёСЃС‚СЂР°С†РёСЋ */
+/* Карточка заявки на регистрацию */
 .pending-registration-card {
   display: flex;
   flex-direction: row;
@@ -1372,7 +1372,7 @@ body,
   justify-content: center;
 }
 
-/* РљРЅРѕРїРєР° РїСЂРёРЅСЏС‚СЊ (Р·РµР»С‘РЅР°СЏ) */
+/* Кнопка принять (зелёная) */
 .pending-registration-card__actions .button:not(.secondary) {
   background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
   color: #fff;
@@ -1385,7 +1385,7 @@ body,
   transform: translateY(-1px);
 }
 
-/* РљРЅРѕРїРєР° РѕС‚РєР»РѕРЅРёС‚СЊ (СЃРµСЂР°СЏ СЃ РєСЂР°СЃРЅС‹Рј hover) */
+/* Кнопка отклонить (серая с красным hover) */
 .pending-registration-card__actions .button.secondary {
   background: var(--surface-color);
   border: 1px solid var(--border-color);

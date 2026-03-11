@@ -1,4 +1,4 @@
-"""Telegram bot that writes incoming messages into the database."""
+﻿"""Telegram bot that writes incoming messages into the database."""
 from __future__ import annotations
 
 import logging
@@ -34,21 +34,21 @@ SELECT_BIN_BUTTON = "📂 Выбрать БИН"
 FINISH_BUTTON = "⏹ Завершить работу"
 SWITCH_BIN_CALLBACK = "switch_bin"
 
-# Глобальный словарь для управления AI сессиями
+# Р“Р»РѕР±Р°Р»СЊРЅС‹Р№ СЃР»РѕРІР°СЂСЊ РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ AI СЃРµСЃСЃРёСЏРјРё
 AI_SESSIONS = {}  # {chat_id: {'ai_enabled': True, 'operator_requested': False, 'waiting_message_id': None}}
 
 def get_ai_session(chat_id: int) -> dict:
-    """Получает или создает AI сессию для чата"""
+    """РџРѕР»СѓС‡Р°РµС‚ РёР»Рё СЃРѕР·РґР°РµС‚ AI СЃРµСЃСЃРёСЋ РґР»СЏ С‡Р°С‚Р°"""
     if chat_id not in AI_SESSIONS:
         AI_SESSIONS[chat_id] = {
-            'ai_enabled': True,  # ИЗНАЧАЛЬНО ВКЛЮЧЕН
+            'ai_enabled': True,  # РР—РќРђР§РђР›Р¬РќРћ Р’РљР›Р®Р§Р•Рќ
             'operator_requested': False,
-            'waiting_message_id': None  # ID сообщения "Подождите..."
+            'waiting_message_id': None  # ID СЃРѕРѕР±С‰РµРЅРёСЏ "РџРѕРґРѕР¶РґРёС‚Рµ..."
         }
     return AI_SESSIONS[chat_id]
 
 def enable_ai_session(chat_id: int) -> None:
-    """Сбрасывает флаги и включает AI для указанного чата."""
+    """РЎР±СЂР°СЃС‹РІР°РµС‚ С„Р»Р°РіРё Рё РІРєР»СЋС‡Р°РµС‚ AI РґР»СЏ СѓРєР°Р·Р°РЅРЅРѕРіРѕ С‡Р°С‚Р°."""
     session = get_ai_session(chat_id)
     session['ai_enabled'] = True
     session['operator_requested'] = False
@@ -72,104 +72,78 @@ def _section_keyboard() -> types.ReplyKeyboardMarkup:
         keyboard.add(types.KeyboardButton(section["title"]))
     keyboard.add(types.KeyboardButton("Частые вопросы"))
     keyboard.add(types.KeyboardButton("Связаться с оператором"))
-    # Добавляем кнопки управления AI
+    # Р”РѕР±Р°РІР»СЏРµРј РєРЅРѕРїРєРё СѓРїСЂР°РІР»РµРЅРёСЏ AI
     keyboard.add(types.KeyboardButton("🤖 Включить AI"), types.KeyboardButton("👨‍💼 Оператор"))
     return keyboard
 
 def _generate_ai_response(message: telebot.types.Message, section: str) -> None:
-    """Генерирует и отправляет AI ответ с индикатором ожидания"""
+    """Generate and send AI response with typing indicator."""
     chat_id = message.chat.id
     ai_session = get_ai_session(chat_id)
-    
-    # ПРОВЕРЯЕМ ЧТО AI ЕЩЕ ВКЛЮЧЕН (на случай если пользователь отправил оператора во время генерации)
+
     if not ai_session['ai_enabled'] or ai_session['operator_requested']:
         return
-    
+
     try:
-        # Показываем индикатор набора текста
         bot.send_chat_action(chat_id, 'typing')
-        
-        # ОТПРАВЛЯЕМ СООБЩЕНИЕ "ПОДОЖДИТЕ"
-        waiting_msg = bot.send_message(chat_id, "⏳ Подождите, бот думает...")
+        waiting_msg = bot.send_message(chat_id, "🤖 Подождите, AI думает...")
         ai_session['waiting_message_id'] = waiting_msg.message_id
-        
-        # Получаем историю чата для контекста
+
         chat_history = database.get_messages(chat_id, limit=6)
-        
-        # ДВОЙНАЯ ПРОВЕРКА что AI еще включен
+
         if not ai_session['ai_enabled'] or ai_session['operator_requested']:
             try:
                 bot.delete_message(chat_id, waiting_msg.message_id)
-            except:
+            except Exception:
                 pass
             ai_session['waiting_message_id'] = None
             return
-            
-        # Генерируем AI ответ
+
         ai_response = ai_manager.generate_response(message.text, chat_history)
-        
-        # ТРОЙНАЯ ПРОВЕРКА что AI еще включен
+
         if not ai_session['ai_enabled'] or ai_session['operator_requested']:
             try:
                 bot.delete_message(chat_id, waiting_msg.message_id)
-            except:
+            except Exception:
                 pass
             ai_session['waiting_message_id'] = None
             return
-        
-        # УДАЛЯЕМ СООБЩЕНИЕ "ПОДОЖДИТЕ"
+
         try:
             bot.delete_message(chat_id, waiting_msg.message_id)
-        except:
-            pass  # Если не удалось удалить - не страшно
+        except Exception:
+            pass
         ai_session['waiting_message_id'] = None
-        
-        # Отправляем ответ пользователю
-        sent_message = bot.send_message(chat_id, f"🤖 {ai_response}")
-        
-        # Сохраняем AI ответ в базу
-        database.save_message(
-            chat_id=chat_id,
-            direction="outgoing",
-            text=ai_response,
-            message_id=sent_message.message_id,
-            author="AI Assistant",
-            chat_title=sent_message.chat.title or sent_message.chat.username or str(sent_message.chat.id),
-            username=sent_message.chat.username,
-            chat_type=sent_message.chat.type,
+
+        _send_and_store_message(
+            chat_id,
+            f"🤖 {ai_response}",
+            stored_text=ai_response,
             section=section,
+            author="AI Assistant",
         )
-        
-        logger.info("AI ответ отправлен в чат %s", chat_id)
-        
+        logger.info("AI response sent to chat %s", chat_id)
+
     except Exception as e:
-        logger.error("Ошибка генерации AI ответа для чата %s: %s", chat_id, e)
-        
-        # УДАЛЯЕМ СООБЩЕНИЕ "ПОДОЖДИТЕ" ПРИ ОШИБКЕ
+        logger.error("Failed to generate AI response for chat %s: %s", chat_id, e)
         if ai_session['waiting_message_id']:
             try:
                 bot.delete_message(chat_id, ai_session['waiting_message_id'])
-            except:
+            except Exception:
                 pass
             ai_session['waiting_message_id'] = None
-        
-        # В случае ошибки предлагаем оператора
-        error_msg = bot.send_message(
+
+        _send_and_store_message(
             chat_id,
-            "⚠️ Произошла ошибка AI помощника. Для консультации напишите 'оператор'"
-        )
-        _persist_message(
-            error_msg,
-            direction="outgoing",
+            "❌ Временная ошибка AI помощника. При необходимости напишите 'оператор'",
             section=section,
-            author="System"
+            author="System",
         )
 
-
-# Добавляем обработчики команд AI
+# Р”РѕР±Р°РІР»СЏРµРј РѕР±СЂР°Р±РѕС‚С‡РёРєРё РєРѕРјР°РЅРґ AI
 @bot.message_handler(commands=['ai_on', 'ai_off', 'operator', 'ai'])
 def handle_ai_commands(message: telebot.types.Message) -> None:
-    """Обработчик команд управления AI"""
+    """Handle AI control commands."""
     chat_id = message.chat.id
     session = get_ai_session(chat_id)
     command = message.text.split('@')[0].lower()
@@ -182,7 +156,7 @@ def handle_ai_commands(message: telebot.types.Message) -> None:
             "✅ AI помощник включен. Задавайте вопросы по бухгалтерии и налогам РК!\n\n"
             "Чтобы отключить AI напишите /ai_off или 'оператор'"
         )
-        logger.info("AI включен для чата %s", chat_id)
+        logger.info("AI РІРєР»СЋС‡РµРЅ РґР»СЏ С‡Р°С‚Р° %s", chat_id)
         
     elif command == '/ai_off':
         session['ai_enabled'] = False
@@ -191,14 +165,14 @@ def handle_ai_commands(message: telebot.types.Message) -> None:
             "❌ AI помощник выключен. Ваши сообщения будут направлены оператору.\n\n"
             "Чтобы включить AI напишите /ai_on"
         )
-        logger.info("AI выключен для чата %s", chat_id)
+        logger.info("AI РІС‹РєР»СЋС‡РµРЅ РґР»СЏ С‡Р°С‚Р° %s", chat_id)
         
     elif command == '/operator':
-        # ВКЛЮЧАЕМ РЕЖИМ ОПЕРАТОРА И ОТКЛЮЧАЕМ AI
+        # Р’РљР›Р®Р§РђР•Рњ Р Р•Р–РРњ РћРџР•Р РђРўРћР Рђ Р РћРўРљР›Р®Р§РђР•Рњ AI
         session['operator_requested'] = True
-        session['ai_enabled'] = False  # АВТОМАТИЧЕСКОЕ ОТКЛЮЧЕНИЕ
+        session['ai_enabled'] = False  # РђР’РўРћРњРђРўРР§Р•РЎРљРћР• РћРўРљР›Р®Р§Р•РќРР•
         
-        # УДАЛЯЕМ СООБЩЕНИЕ "ПОДОЖДИТЕ" ЕСЛИ ОНО ЕСТЬ
+        # РЈР”РђР›РЇР•Рњ РЎРћРћР‘Р©Р•РќРР• "РџРћР”РћР–Р”РРўР•" Р•РЎР›Р РћРќРћ Р•РЎРўР¬
         if session['waiting_message_id']:
             try:
                 bot.delete_message(chat_id, session['waiting_message_id'])
@@ -211,9 +185,9 @@ def handle_ai_commands(message: telebot.types.Message) -> None:
             "👨‍💼 Подключаю оператора... AI помощник отключен.\n"
             "Оператор ответит в ближайшее время."
         )
-        logger.info("Запрошен оператор для чата %s, AI отключен", chat_id)
+        logger.info("Р—Р°РїСЂРѕС€РµРЅ РѕРїРµСЂР°С‚РѕСЂ РґР»СЏ С‡Р°С‚Р° %s, AI РѕС‚РєР»СЋС‡РµРЅ", chat_id)
         
-        # Сохраняем запрос оператора в историю
+        # РЎРѕС…СЂР°РЅСЏРµРј Р·Р°РїСЂРѕСЃ РѕРїРµСЂР°С‚РѕСЂР° РІ РёСЃС‚РѕСЂРёСЋ
         _persist_message(
             message,
             direction="incoming",
@@ -228,7 +202,7 @@ def handle_start(message: telebot.types.Message) -> None:
     database.upsert_chat(chat.id, chat.title or chat.username or str(chat.id), chat.username, chat.type)
     database.close_active_chat_dialog(chat.id)
 
-    # Инициализируем AI сессию (автоматически включен)
+    # РРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј AI СЃРµСЃСЃРёСЋ (Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РІРєР»СЋС‡РµРЅ)
     session = get_ai_session(chat.id)
     
     bot.send_message(
@@ -239,7 +213,7 @@ def handle_start(message: telebot.types.Message) -> None:
         chat.id,
         "🤖 AI помощник автоматически включен и готов отвечать на вопросы по бухгалтерии и налогам РК!\n\n"
         "Команды:\n"
-        "/ai_on - включить AI помощника\n" 
+        "/ai_on - включить AI помощника\n"
         "/ai_off - выключить AI помощника\n"
         "/operator - связаться с оператором\n\n"
         "Для начала укажите БИН вашей организации (12 цифр).",
@@ -286,10 +260,10 @@ def handle_updates(message: telebot.types.Message) -> None:
     text = message.text or ""
     chat_record = database.get_chat(chat.id)
     
-    # Получаем AI сессию
+    # РџРѕР»СѓС‡Р°РµРј AI СЃРµСЃСЃРёСЋ
     ai_session = get_ai_session(chat.id)
 
-    # Обрабатываем текстовые команды управления AI
+    # РћР±СЂР°Р±Р°С‚С‹РІР°РµРј С‚РµРєСЃС‚РѕРІС‹Рµ РєРѕРјР°РЅРґС‹ СѓРїСЂР°РІР»РµРЅРёСЏ AI
     if message.content_type == "text":
         stripped_text = text.strip()
         if stripped_text == START_BUTTON:
@@ -346,7 +320,7 @@ def handle_updates(message: telebot.types.Message) -> None:
             return
         normalized = text.strip().lower()
         
-        # Кнопки управления AI
+        # РљРЅРѕРїРєРё СѓРїСЂР°РІР»РµРЅРёСЏ AI
         if normalized == "🤖 включить ai":
             ai_session['ai_enabled'] = True
             ai_session['operator_requested'] = False
@@ -355,11 +329,11 @@ def handle_updates(message: telebot.types.Message) -> None:
             return
             
         elif normalized == "👨‍💼 оператор" or normalized == "оператор":
-            # АВТОМАТИЧЕСКОЕ ОТКЛЮЧЕНИЕ AI ПРИ ЗАПРОСЕ ОПЕРАТОРА
+            # РђР’РўРћРњРђРўРР§Р•РЎРљРћР• РћРўРљР›Р®Р§Р•РќРР• AI РџР Р Р—РђРџР РћРЎР• РћРџР•Р РђРўРћР Рђ
             ai_session['operator_requested'] = True
             ai_session['ai_enabled'] = False
             
-            # УДАЛЯЕМ СООБЩЕНИЕ "ПОДОЖДИТЕ" ЕСЛИ ОНО ЕСТЬ
+            # РЈР”РђР›РЇР•Рњ РЎРћРћР‘Р©Р•РќРР• "РџРћР”РћР–Р”РРўР•" Р•РЎР›Р РћРќРћ Р•РЎРўР¬
             if ai_session['waiting_message_id']:
                 try:
                     bot.delete_message(chat.id, ai_session['waiting_message_id'])
@@ -375,7 +349,7 @@ def handle_updates(message: telebot.types.Message) -> None:
     is_text_message = message.content_type == "text"
     is_bin_message = is_text_message and BIN_PATTERN.match(normalized_text)
 
-    # Требуем БИН, если он ещё не указан
+    # РўСЂРµР±СѓРµРј Р‘РРќ, РµСЃР»Рё РѕРЅ РµС‰С‘ РЅРµ СѓРєР°Р·Р°РЅ
     if chat_record and not chat_record.get("bin") and not is_bin_message:
         bot.send_message(chat.id, "Отправьте БИН организации числом из 12 цифр.")
         if is_text_message:
@@ -390,53 +364,30 @@ def handle_updates(message: telebot.types.Message) -> None:
         return
 
     if is_bin_message:
-        # Check if customer has a valid contract for 2026
+        dialog_id, _ = database.set_chat_bin(chat.id, normalized_text)
         contract_result = contract_checker.check_customer_contracts(normalized_text)
         has_contract = contract_result.get("has_contract", False)
-        
-        # Save organization without contract info (for admin tracking)
+
         if not has_contract:
-            database.add_organization_without_contract(
-                customer_bin=normalized_text,
-                customer_legal_address=contract_result.get("customer_legal_address"),
-                customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
-            )
-            logger.info("Organization %s saved as organization without contract", normalized_text)
-        
-        # Create dialog for ALL BINs (with or without contract)
-        was_empty_bin = not chat_record or not chat_record.get("bin")
-        dialog_id, is_resumed = database.set_chat_bin(chat.id, normalized_text)
-        # Save BIN to client's persistent list (survives dialog deletion)
-        database.add_client_bin(chat.id, normalized_text)
-        ai_session['ai_enabled'] = True
-        ai_session['operator_requested'] = False
-        
-        if is_resumed:
-            appeal_num = database.count_appeals(dialog_id)
-            bot.send_message(chat.id, f"Диалог по БИН {normalized_text} возобновлён. Новое обращение №{appeal_num}.")
-        elif was_empty_bin:
-            bot.send_message(chat.id, f"Спасибо! БИН {normalized_text} сохранён.")
-        else:
-            bot.send_message(chat.id, f"БИН обновлён. Открыт диалог для {normalized_text}.")
-        
-        # Notify about contract status
-        if not has_contract:
-            bot.send_message(
+            _send_and_store_message(
                 chat.id,
-                "⚠️ Обратите внимание: у вашей организации нет действующего договора с нами на 2026 год.\n"
-                "Для заключения договора обратитесь в наш офис.",
+                "⚠️ Внимание: у вашей организации нет действующего договора с нами на 2026 год.\nВы можете оставить обращение, и мы его проверим.",
+                dialog_id=dialog_id,
+                author="System",
             )
-        
-        bot.send_message(
+
+        _send_and_store_message(
             chat.id,
-            "Теперь выберите подходящий раздел.\n\n"
-            "🤖 AI помощник автоматически включен и готов отвечать на ваши вопросы!",
+            "Теперь выберите подходящий раздел.\n\n🤖 AI помощник автоматически включен и будет отвечать по теме раздела!",
             reply_markup=_section_keyboard(),
+            dialog_id=dialog_id,
+            author="System",
         )
         _persist_message(message, direction="incoming", section=None, dialog_id=dialog_id)
         return
 
-    # ── Auto-resume: если нет активного диалога, но есть закрытый — возобновляем ──
+
+    # в”Ђв”Ђ Auto-resume: РµСЃР»Рё РЅРµС‚ Р°РєС‚РёРІРЅРѕРіРѕ РґРёР°Р»РѕРіР°, РЅРѕ РµСЃС‚СЊ Р·Р°РєСЂС‹С‚С‹Р№ вЂ” РІРѕР·РѕР±РЅРѕРІР»СЏРµРј в”Ђв”Ђ
     active_dialog = database.get_active_chat_dialog(chat.id)
     if active_dialog is None:
         resumed = database.resume_last_closed_dialog(chat.id)
@@ -454,7 +405,7 @@ def handle_updates(message: telebot.types.Message) -> None:
             # Re-fetch chat record with updated BIN
             chat_record = database.get_chat(chat.id)
 
-    # Обработка разделов и FAQ
+    # РћР±СЂР°Р±РѕС‚РєР° СЂР°Р·РґРµР»РѕРІ Рё FAQ
     selected_section = None
     if message.content_type == "text":
         normalized = text.strip().lower()
@@ -468,11 +419,11 @@ def handle_updates(message: telebot.types.Message) -> None:
                 bot.send_message(chat.id, "Сначала выберите раздел через команды или кнопки.", reply_markup=_section_keyboard())
             return
         elif normalized == OPERATOR_TRIGGER:
-            # АВТОМАТИЧЕСКОЕ ОТКЛЮЧЕНИЕ AI ПРИ ЗАПРОСЕ ОПЕРАТОРА
+            # РђР’РўРћРњРђРўРР§Р•РЎРљРћР• РћРўРљР›Р®Р§Р•РќРР• AI РџР Р Р—РђРџР РћРЎР• РћРџР•Р РђРўРћР Рђ
             ai_session['operator_requested'] = True
             ai_session['ai_enabled'] = False
             
-            # УДАЛЯЕМ СООБЩЕНИЕ "ПОДОЖДИТЕ" ЕСЛИ ОНО ЕСТЬ
+            # РЈР”РђР›РЇР•Рњ РЎРћРћР‘Р©Р•РќРР• "РџРћР”РћР–Р”РРўР•" Р•РЎР›Р РћРќРћ Р•РЎРўР¬
             if ai_session['waiting_message_id']:
                 try:
                     bot.delete_message(chat.id, ai_session['waiting_message_id'])
@@ -489,9 +440,9 @@ def handle_updates(message: telebot.types.Message) -> None:
         _select_section(chat.id, selected_section)
         return
 
-    # Получаем раздел из активного диалога (привязан к БИНу), а не из чата
+    # РџРѕР»СѓС‡Р°РµРј СЂР°Р·РґРµР» РёР· Р°РєС‚РёРІРЅРѕРіРѕ РґРёР°Р»РѕРіР° (РїСЂРёРІСЏР·Р°РЅ Рє Р‘РРќСѓ), Р° РЅРµ РёР· С‡Р°С‚Р°
     current_section = database.get_dialog_section(chat.id)
-    # Если section пустой в диалоге - берём из чата для обратной совместимости
+    # Р•СЃР»Рё section РїСѓСЃС‚РѕР№ РІ РґРёР°Р»РѕРіРµ - Р±РµСЂС‘Рј РёР· С‡Р°С‚Р° РґР»СЏ РѕР±СЂР°С‚РЅРѕР№ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё
     if not current_section:
         chat_record = database.get_chat(chat.id)
         current_section = chat_record.get("section") if chat_record else None
@@ -505,7 +456,7 @@ def handle_updates(message: telebot.types.Message) -> None:
         _persist_message(message, direction="incoming", override_text=_humanize_message(message), section=None)
         return
 
-    # СОХРАНЯЕМ сообщение пользователя в любом случае
+    # РЎРћРҐР РђРќРЇР•Рњ СЃРѕРѕР±С‰РµРЅРёРµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ Р»СЋР±РѕРј СЃР»СѓС‡Р°Рµ
     _persist_message(
         message,
         direction="incoming",
@@ -513,12 +464,12 @@ def handle_updates(message: telebot.types.Message) -> None:
         section=current_section,
     )
 
-    # ЕСЛИ AI ВЫКЛЮЧЕН ИЛИ ЗАПРОШЕН ОПЕРАТОР - выходим (НИКАКИХ AI ОТВЕТОВ)
+    # Р•РЎР›Р AI Р’Р«РљР›Р®Р§Р•Рќ РР›Р Р—РђРџР РћРЁР•Рќ РћРџР•Р РђРўРћР  - РІС‹С…РѕРґРёРј (РќРРљРђРљРРҐ AI РћРўР’Р•РўРћР’)
     if not ai_session['ai_enabled'] or ai_session['operator_requested']:
-        logger.info("AI отключен для чата %s. Сообщение сохранено для оператора.", chat.id)
+        logger.info("AI РѕС‚РєР»СЋС‡РµРЅ РґР»СЏ С‡Р°С‚Р° %s. РЎРѕРѕР±С‰РµРЅРёРµ СЃРѕС…СЂР°РЅРµРЅРѕ РґР»СЏ РѕРїРµСЂР°С‚РѕСЂР°.", chat.id)
         return
 
-    # ЕСЛИ AI ВКЛЮЧЕН - генерируем ответ С ИНДИКАТОРОМ ОЖИДАНИЯ
+    # Р•РЎР›Р AI Р’РљР›Р®Р§Р•Рќ - РіРµРЅРµСЂРёСЂСѓРµРј РѕС‚РІРµС‚ РЎ РРќР”РРљРђРўРћР РћРњ РћР–РР”РђРќРРЇ
     if message.content_type == "text" and ai_manager is not None:
         _generate_ai_response(message, current_section)
 
@@ -527,6 +478,97 @@ def _humanize_message(message: telebot.types.Message) -> str:
     if message.content_type == "text":
         return message.text or ""
     return f"[{message.content_type} сообщение]"
+
+
+def _resolve_dialog_id(chat_id: int, dialog_id: Optional[int] = None) -> Optional[int]:
+    if dialog_id is not None:
+        return dialog_id
+    return database.get_active_chat_dialog_id(chat_id)
+
+
+def _publish_message_event(
+    *,
+    chat_id: int,
+    dialog_id: Optional[int],
+    message_id: int,
+    text: str,
+    direction: str,
+    author: Optional[str],
+) -> None:
+    try:
+        from .api import event_bus
+
+        if not event_bus.loop:
+            return
+        asyncio.run_coroutine_threadsafe(
+            event_bus.publish_all("new_message", {
+                "chat_id": chat_id,
+                "dialog_id": dialog_id,
+                "message_id": message_id,
+                "text": text,
+                "direction": direction,
+                "author": author,
+            }),
+            event_bus.loop,
+        )
+    except Exception as e:
+        logger.error("Failed to publish SSE event: %s", e)
+
+
+def _store_outgoing_message(
+    message: telebot.types.Message,
+    *,
+    text: str,
+    section: Optional[str] = None,
+    author: Optional[str] = "Bot",
+    dialog_id: Optional[int] = None,
+) -> int:
+    chat = message.chat
+    resolved_dialog_id = _resolve_dialog_id(chat.id, dialog_id)
+    stored_message_id = database.save_message(
+        chat_id=chat.id,
+        direction="outgoing",
+        text=text,
+        message_id=message.message_id,
+        author=author,
+        chat_title=chat.title or chat.username or str(chat.id),
+        username=chat.username,
+        chat_type=chat.type,
+        section=section,
+        dialog_id=resolved_dialog_id,
+    )
+    _publish_message_event(
+        chat_id=chat.id,
+        dialog_id=resolved_dialog_id,
+        message_id=stored_message_id,
+        text=text,
+        direction="outgoing",
+        author=author,
+    )
+    return stored_message_id
+
+
+def _send_and_store_message(
+    chat_id: int,
+    text: str,
+    *,
+    stored_text: str | None = None,
+    section: Optional[str] = None,
+    author: Optional[str] = "Bot",
+    dialog_id: Optional[int] = None,
+    persist: bool = True,
+    **kwargs,
+) -> telebot.types.Message:
+    message = bot.send_message(chat_id, text, **kwargs)
+    if persist:
+        _store_outgoing_message(
+            message,
+            text=stored_text if stored_text is not None else text,
+            section=section,
+            author=author,
+            dialog_id=dialog_id,
+        )
+    return message
 
 
 def _persist_message(
@@ -541,10 +583,11 @@ def _persist_message(
     chat = message.chat
     text = override_text if override_text is not None else _humanize_message(message)
     message_author = author
-    
+    resolved_dialog_id = _resolve_dialog_id(chat.id, dialog_id)
+
     if not message_author and message.from_user:
         message_author = message.from_user.username or message.from_user.full_name
-        
+
     message_id = database.save_message(
         chat_id=chat.id,
         direction=direction,
@@ -555,26 +598,17 @@ def _persist_message(
         username=chat.username,
         chat_type=chat.type,
         section=section,
-        dialog_id=dialog_id,
+        dialog_id=resolved_dialog_id,
     )
     logger.info("Stored %s message from chat %s", direction, chat.id)
-    
-    # ── Notify SSE clients ──
-    try:
-        from .api import event_bus
-        asyncio.run_coroutine_threadsafe(
-            event_bus.publish_all("new_message", {
-                "chat_id": chat.id,
-                "dialog_id": dialog_id,
-                "message_id": message_id,
-                "text": text,
-                "direction": direction,
-                "author": message_author,
-            }),
-            asyncio.get_event_loop()
-        )
-    except Exception as e:
-        logger.error("Failed to publish SSE event: %s", e)
+    _publish_message_event(
+        chat_id=chat.id,
+        dialog_id=resolved_dialog_id,
+        message_id=message_id,
+        text=text,
+        direction=direction,
+        author=message_author,
+    )
 
 
 def _select_section(chat_id: int, section_id: str) -> None:
@@ -582,10 +616,12 @@ def _select_section(chat_id: int, section_id: str) -> None:
     if not section:
         return
     database.set_chat_section(chat_id, section_id)
-    bot.send_message(
+    _send_and_store_message(
         chat_id,
-        f"Раздел «{section['title']}» выбран. Напишите свой вопрос.",
+        f"Раздел «{section['title']}» выбран. Опишите ваш вопрос.",
         reply_markup=_section_keyboard(),
+        section=section_id,
+        author="System",
     )
     logger.info("Chat %s selected section %s", chat_id, section_id)
     _send_faq_menu(chat_id, section_id)
@@ -614,10 +650,12 @@ def _send_faq_menu(chat_id: int, section_id: str) -> None:
     keyboard = _faq_keyboard(section_id)
     if not keyboard:
         return
-    bot.send_message(
+    _send_and_store_message(
         chat_id,
         "Посмотрите частые вопросы по разделу или свяжитесь с оператором.",
         reply_markup=keyboard,
+        section=section_id,
+        author="System",
     )
 
 
@@ -661,17 +699,11 @@ def _try_auto_answer(message: telebot.types.Message, section_id: str) -> None:
     if not answer_text:
         return
 
-    sent = bot.send_message(message.chat.id, answer_text)
-    database.save_message(
-        chat_id=message.chat.id,
-        direction="outgoing",
-        text=answer_text,
-        message_id=sent.message_id,
-        author="AutoBot",
-        chat_title=sent.chat.title or sent.chat.username or str(sent.chat.id),
-        username=sent.chat.username,
-        chat_type=sent.chat.type,
+    _send_and_store_message(
+        message.chat.id,
+        answer_text,
         section=entry.get("section") or section_id,
+        author="AutoBot",
     )
 
 
@@ -701,18 +733,7 @@ def handle_faq_callback(call: telebot.types.CallbackQuery) -> None:
         chat_type=chat.type,
         section=section_id,
     )
-    sent = bot.send_message(chat.id, entry["answer"])
-    database.save_message(
-        chat_id=chat.id,
-        direction="outgoing",
-        text=entry["answer"],
-        message_id=sent.message_id,
-        author="AutoBot",
-        chat_title=sent.chat.title or sent.chat.username or str(sent.chat.id),
-        username=sent.chat.username,
-        chat_type=sent.chat.type,
-        section=section_id,
-    )
+    _send_and_store_message(chat.id, entry["answer"], section=section_id, author="AutoBot")
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("operator:"))
@@ -720,21 +741,19 @@ def handle_operator_callback(call: telebot.types.CallbackQuery) -> None:
     _, section_id = call.data.split(":", 1)
     chat = call.message.chat
     database.set_chat_section(chat.id, section_id)
-    bot.answer_callback_query(call.id, "Подключаем оператора")
-    
-    # АВТОМАТИЧЕСКОЕ ОТКЛЮЧЕНИЕ AI ПРИ ЗАПРОСЕ ОПЕРАТОРА
+    bot.answer_callback_query(call.id, "Запрос передан оператору")
+
     ai_session = get_ai_session(chat.id)
     ai_session['operator_requested'] = True
     ai_session['ai_enabled'] = False
-    
-    # УДАЛЯЕМ СООБЩЕНИЕ "ПОДОЖДИТЕ" ЕСЛИ ОНО ЕСТЬ
+
     if ai_session['waiting_message_id']:
         try:
             bot.delete_message(chat.id, ai_session['waiting_message_id'])
-        except:
+        except Exception:
             pass
         ai_session['waiting_message_id'] = None
-    
+
     author = None
     if call.from_user:
         author = call.from_user.username or call.from_user.full_name
@@ -749,7 +768,7 @@ def handle_operator_callback(call: telebot.types.CallbackQuery) -> None:
         chat_type=chat.type,
         section=section_id,
     )
-    bot.send_message(chat.id, "👨‍💼 Подключаю оператора...")
+    _send_and_store_message(chat.id, "Запрос оператору отправлен...", section=section_id, author="System")
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(f"{SWITCH_BIN_CALLBACK}:"))
@@ -758,40 +777,43 @@ def handle_switch_bin_callback(call: telebot.types.CallbackQuery) -> None:
         _, bin_value = call.data.split(":", 1)
         bin_value = bin_value.strip()
     except (ValueError, IndexError):
-        bot.answer_callback_query(call.id, "Не удалось распознать БИН")
+        bot.answer_callback_query(call.id, "Не удалось определить БИН")
         return
     if not bin_value:
         bot.answer_callback_query(call.id, "БИН не указан")
         return
     chat = call.message.chat
-    # Create or activate dialog for this BIN
     dialog_id, is_resumed = database.set_chat_bin(chat.id, bin_value)
     if dialog_id is None:
-        bot.answer_callback_query(call.id, "Ошибка активации диалога")
+        bot.answer_callback_query(call.id, "Не удалось открыть диалог")
         return
     ai_session = get_ai_session(chat.id)
     ai_session['ai_enabled'] = True
     ai_session['operator_requested'] = False
     if is_resumed:
         appeal_num = database.count_appeals(dialog_id)
-        bot.answer_callback_query(call.id, "Диалог возобновлён")
-        bot.send_message(
+        bot.answer_callback_query(call.id, "БИН переключен")
+        _send_and_store_message(
             chat.id,
             f"📋 Возобновлён диалог по БИН {bin_value}. Новое обращение №{appeal_num}. AI помощник включен.",
             reply_markup=_section_keyboard(),
+            dialog_id=dialog_id,
+            author="System",
         )
     else:
-        bot.answer_callback_query(call.id, "Диалог активирован")
-        bot.send_message(
+        bot.answer_callback_query(call.id, "БИН переключен")
+        _send_and_store_message(
             chat.id,
             f"Активирован диалог по БИН {bin_value}. AI помощник включен.",
             reply_markup=_section_keyboard(),
+            dialog_id=dialog_id,
+            author="System",
         )
 
 
-# ═══════════════════════════════════════════
-# CSAT — Customer Satisfaction Rating
-# ═══════════════════════════════════════════
+# -----------------------------------------------------------
+# CSAT / Customer Satisfaction Rating
+# -----------------------------------------------------------
 
 CSAT_PREFIX = "csat_"
 AI_CSAT_PREFIX = "ai_csat_"
@@ -818,7 +840,7 @@ def _send_rating_request(
         for i in range(1, 6)
     ]
     markup.add(*buttons)
-    bot.send_message(chat_id, prompt, reply_markup=markup)
+    _send_and_store_message(chat_id, prompt, reply_markup=markup, dialog_id=dialog_id, author="System")
 
 
 def send_csat_request(chat_id: int, dialog_id: int, appeal_id: int | None = None) -> None:
@@ -969,3 +991,6 @@ bot.set_my_commands(
         ],
     ]
 )
+
+
+

@@ -289,6 +289,9 @@ class ChatResponse(BaseModel):
     is_favorite: bool = False
     operator_mode: bool = False
     unread_count: int = 0
+    last_message_text: str | None = None
+    last_message_direction: str | None = None
+    last_message_author: str | None = None
 
 
 class DialogStatusResponse(BaseModel):
@@ -1499,6 +1502,9 @@ def list_chats(
                 is_favorite=bool(chat.get("is_favorite")),
                 operator_mode=bool(chat.get("operator_mode")),
                 unread_count=int(chat.get("unread_count") or 0),
+                last_message_text=chat.get("last_message_text"),
+                last_message_direction=chat.get("last_message_direction"),
+                last_message_author=chat.get("last_message_author"),
             )
         )
     return enriched
@@ -2754,3 +2760,6 @@ app.include_router(router)
 app.include_router(router, prefix="/api")
 
 app.include_router(kabinet_backend.router, prefix="/kabinet")
+
+
+

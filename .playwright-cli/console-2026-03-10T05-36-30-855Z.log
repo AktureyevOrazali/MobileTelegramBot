@@ -1,0 +1,106 @@
+[     101ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[     101ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[ 4028733ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/utils/converters.ts?t=1773125019468:0
+[ 4028736ms] [ERROR] [hmr] Failed to reload /src/pages/DialogsPage.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:175
+[ 4028736ms] [ERROR] [hmr] Failed to reload /src/pages/AuthPage.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:175
+[ 4028736ms] [ERROR] [hmr] Failed to reload /src/context/ApiContext.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:175
+[ 4028736ms] [ERROR] [hmr] Failed to reload /src/pages/AdminPage.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:175
+[ 4028736ms] [ERROR] [hmr] Failed to reload /src/components/AdminUserCard.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:175
+[ 4028736ms] [ERROR] [hmr] Failed to reload /src/components/ChatDetailModal.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:175
+[ 4096938ms] Error: useApi must be used within ApiProvider
+    at useApi (http://localhost:5173/src/context/ApiContext.tsx:146:11)
+    at App (http://localhost:5173/src/App.tsx?t=1773119989332:42:54)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:11548:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:14926:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19198:20)
+[ 4096943ms] Error: useApi must be used within ApiProvider
+    at useApi (http://localhost:5173/src/context/ApiContext.tsx:146:11)
+    at App (http://localhost:5173/src/App.tsx?t=1773119989332:42:54)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:11548:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:14926:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19198:20)
+[ 4096937ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://localhost:5173/src/App.tsx?t=1773119989332:42:54)
+    at ApiProvider (http://localhost:5173/src/context/ApiContext.tsx?t=1773125087706:63:31)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4501:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:5247:5)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:14031
+[ 4096945ms] Error: useApi must be used within ApiProvider
+    at useApi (http://localhost:5173/src/context/ApiContext.tsx:146:11)
+    at App (http://localhost:5173/src/App.tsx?t=1773119989332:42:54)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:11548:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:14926:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:15914:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19753:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19137:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19116:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:18736:28)
+[ 4097273ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[ 4097273ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[ 4392623ms] Error: useApi must be used within ApiProvider
+    at useApi (http://localhost:5173/src/context/ApiContext.tsx?t=1773125087706:146:11)
+    at App (http://localhost:5173/src/App.tsx?t=1773125087706:42:54)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:11548:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:14926:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19198:20)
+[ 4392624ms] Error: useApi must be used within ApiProvider
+    at useApi (http://localhost:5173/src/context/ApiContext.tsx?t=1773125087706:146:11)
+    at App (http://localhost:5173/src/App.tsx?t=1773125087706:42:54)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:11548:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:14926:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19198:20)
+[ 4392624ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://localhost:5173/src/App.tsx?t=1773125087706:42:54)
+    at ApiProvider (http://localhost:5173/src/context/ApiContext.tsx?t=1773125383416:63:31)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4501:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:5247:5)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:14031
+[ 4392626ms] Error: useApi must be used within ApiProvider
+    at useApi (http://localhost:5173/src/context/ApiContext.tsx?t=1773125087706:146:11)
+    at App (http://localhost:5173/src/App.tsx?t=1773125087706:42:54)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:11548:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:14926:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:15914:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19753:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19137:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19116:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:18736:28)
+[ 4392923ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[ 4392923ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[ 5724671ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/pages/DialogsPage.tsx?t=1773126715494:0
+[ 5724672ms] [ERROR] [hmr] Failed to reload /src/pages/DialogsPage.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:175
+[15339145ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[15344013ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[15344015ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[23125653ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[23125653ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[23274485ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[23274485ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392

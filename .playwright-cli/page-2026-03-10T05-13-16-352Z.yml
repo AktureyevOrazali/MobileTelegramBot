@@ -1,0 +1,118 @@
+- generic [ref=e22]:
+  - banner [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - generic "MobileBot" [ref=e26]:
+          - generic [ref=e27]: MB
+          - generic [ref=e29]: MobileBot
+        - navigation "Основная навигация" [ref=e30]:
+          - link "Диалоги" [ref=e31] [cursor=pointer]:
+            - /url: /dialogs
+            - img [ref=e32]
+            - text: Диалоги
+          - link "Дашборд" [ref=e34] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e35]
+            - text: Дашборд
+          - link "Сотрудники" [active] [ref=e40] [cursor=pointer]:
+            - /url: /admin
+            - img [ref=e41]
+            - text: Сотрудники
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: Раздел
+          - generic [ref=e47]: Сотрудники
+        - button "А Администратор Администратор" [ref=e48] [cursor=pointer]:
+          - generic [ref=e49]: А
+          - generic [ref=e50]:
+            - generic [ref=e51]: Администратор
+            - generic [ref=e52]: Администратор
+        - button "Переключить на тёмную тему" [ref=e53] [cursor=pointer]:
+          - img [ref=e54]
+        - button "Выйти" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+  - main [ref=e64]:
+    - generic [ref=e346]:
+      - generic [ref=e347]:
+        - generic [ref=e349]:
+          - heading "Администрирование" [level=2] [ref=e350]
+          - paragraph [ref=e351]: 4 пользователя
+        - generic [ref=e352]:
+          - button "7 Все БИНы" [ref=e353] [cursor=pointer]:
+            - generic [ref=e354]: "7"
+            - generic [ref=e355]: Все БИНы
+          - button "7 Без договора" [ref=e356] [cursor=pointer]:
+            - generic [ref=e357]: "7"
+            - generic [ref=e358]: Без договора
+          - button "0 С договором" [disabled] [ref=e359]:
+            - generic [ref=e360]: "0"
+            - generic [ref=e361]: С договором
+          - button "1 Неназначенные" [ref=e362] [cursor=pointer]:
+            - generic [ref=e363]: "1"
+            - generic [ref=e364]: Неназначенные
+          - button "0 Регистрации" [disabled] [ref=e365]:
+            - generic [ref=e366]: "0"
+            - generic [ref=e367]: Регистрации
+        - textbox "🔍 Поиск по имени, логину или e-mail…" [ref=e369]:
+          - /placeholder: 🔍  Поиск по имени, логину или e-mail…
+      - generic [ref=e370]:
+        - generic [ref=e371]:
+          - generic [ref=e372]:
+            - heading "Orazali" [level=3] [ref=e373]
+            - generic [ref=e374]: Модератор
+          - generic [ref=e376]:
+            - generic [ref=e377]: aktureevorka@gmail.com
+            - generic [ref=e380] [cursor=pointer]:
+              - generic [ref=e381]: Модератор
+              - img [ref=e383]
+          - generic [ref=e385]:
+            - button "Сбросить пароль" [ref=e386] [cursor=pointer]
+            - button "Удалить" [ref=e388] [cursor=pointer]
+        - generic [ref=e389]:
+          - generic [ref=e390]:
+            - heading "Администратор" [level=3] [ref=e391]
+            - generic [ref=e392]: Администратор
+          - generic [ref=e394]:
+            - generic [ref=e395]: admin@example.com
+            - generic [ref=e398] [cursor=pointer]:
+              - generic [ref=e399]: Администратор
+              - img [ref=e401]
+          - button "Сбросить пароль" [ref=e404] [cursor=pointer]
+        - generic [ref=e405]:
+          - generic [ref=e406]:
+            - heading "ivan1" [level=3] [ref=e407]
+            - generic [ref=e408]: Оператор
+          - generic [ref=e410]:
+            - generic [ref=e411]: ivan1@example.com
+            - generic [ref=e414] [cursor=pointer]:
+              - generic [ref=e415]: Оператор
+              - img [ref=e417]
+          - generic [ref=e419]:
+            - button "БИНы · 4" [ref=e420] [cursor=pointer]
+            - button "Разделы · 0" [ref=e421] [cursor=pointer]
+          - generic [ref=e422]:
+            - button "Сбросить пароль" [ref=e423] [cursor=pointer]
+            - button "Удалить" [ref=e425] [cursor=pointer]
+        - generic [ref=e426]:
+          - generic [ref=e427]:
+            - heading "ivan2" [level=3] [ref=e428]
+            - generic [ref=e429]: Оператор
+          - generic [ref=e431]:
+            - generic [ref=e432]: ivan2@example.com
+            - generic [ref=e435] [cursor=pointer]:
+              - generic [ref=e436]: Оператор
+              - img [ref=e438]
+          - generic [ref=e440]:
+            - button "БИНы · 2" [ref=e441] [cursor=pointer]
+            - button "Разделы · 0" [ref=e442] [cursor=pointer]
+          - generic [ref=e443]:
+            - button "Сбросить пароль" [ref=e444] [cursor=pointer]
+            - button "Удалить" [ref=e446] [cursor=pointer]
+  - contentinfo [ref=e169]:
+    - generic [ref=e170]:
+      - generic [ref=e171]:
+        - generic [ref=e172]: MobileBot Workspace
+        - generic [ref=e173]: Единое пространство для диалогов, аналитики и управления сотрудниками.
+      - generic [ref=e174]:
+        - generic [ref=e175]: Сотрудники
+        - generic [ref=e176]: Администратор

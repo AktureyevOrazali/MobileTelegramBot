@@ -1,4 +1,5 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { FeatureCollection, Geometry } from 'geojson';
 import { scaleLinear } from 'd3';
 import kzMap from '../../kz.json';
@@ -747,9 +748,10 @@ const RegionActivityMap: React.FC<{
     const wrapperClass = [
         'kz-map',
         isFullscreen ? 'kz-map--fullscreen' : '',
+        selectedOblastData ? 'kz-map--district-mode' : '',
     ].filter(Boolean).join(' ');
 
-    return (
+    const mapElement = (
         <>
             {isFullscreen && (
                 <div
@@ -1330,7 +1332,14 @@ const RegionActivityMap: React.FC<{
             </div >
         </>
     );
+
+    if (isFullscreen && typeof document !== 'undefined') {
+        return createPortal(mapElement, document.body);
+    }
+
+    return mapElement;
 });
 
 export default RegionActivityMap;
+
 

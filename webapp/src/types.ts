@@ -98,6 +98,9 @@ export interface ChatSummaryRaw {
   is_favorite: boolean;
   operator_mode?: boolean;
   unread_count?: number;
+  last_message_text?: string | null;
+  last_message_direction?: 'incoming' | 'outgoing' | null;
+  last_message_author?: string | null;
 }
 
 export interface DialogStatusUpdateRaw {
@@ -188,6 +191,9 @@ export interface ChatSummary {
   isFavorite: boolean;
   aiEnabled: boolean;
   unreadCount: number;
+  lastMessageText: string | null;
+  lastMessageDirection: 'incoming' | 'outgoing' | null;
+  lastMessageAuthor: string | null;
 }
 
 export interface DialogStatusUpdate {
@@ -449,3 +455,6 @@ export interface ReplyTemplate {
   createdBy?: number | null;
   createdAt: Date;
 }
+
+
+

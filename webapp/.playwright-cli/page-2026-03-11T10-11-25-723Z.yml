@@ -1,0 +1,86 @@
+- generic [ref=e23]:
+  - complementary [ref=e24]:
+    - generic "MobileBot" [ref=e25]:
+      - generic [ref=e26]: MB
+      - generic [ref=e27]:
+        - generic [ref=e28]: MobileBot
+        - generic [ref=e29]: Operator Console
+      - button "Свернуть левую панель" [ref=e30] [cursor=pointer]:
+        - img [ref=e31]
+    - navigation "Основная навигация" [ref=e33]:
+      - link "Диалоги" [ref=e34] [cursor=pointer]:
+        - /url: /dialogs
+        - img [ref=e35]
+        - generic [ref=e37]: Диалоги
+      - link "Дашборд" [ref=e38] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e39]
+        - generic [ref=e44]: Дашборд
+      - link "Сотрудники" [ref=e45] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=e46]
+        - generic [ref=e49]: Сотрудники
+    - generic [ref=e50]:
+      - button "А Администратор Администратор" [ref=e51] [cursor=pointer]:
+        - generic [ref=e52]: А
+        - generic [ref=e53]:
+          - generic [ref=e54]: Администратор
+          - generic [ref=e55]: Администратор
+      - generic [ref=e56]:
+        - button "Переключить на тёмную тему" [ref=e57] [cursor=pointer]:
+          - img [ref=e58]
+        - button "Выйти" [ref=e64] [cursor=pointer]:
+          - img [ref=e65]
+  - main [ref=e69]:
+    - generic [ref=e72]:
+      - generic [ref=e73]:
+        - generic [ref=e74]:
+          - heading "Сообщения" [level=2] [ref=e76]
+          - generic [ref=e77]:
+            - button "Показать поиск" [ref=e78] [cursor=pointer]:
+              - img [ref=e79]
+            - button "Свернуть список диалогов" [ref=e82] [cursor=pointer]:
+              - img [ref=e83]
+        - generic [ref=e143]:
+          - generic [ref=e145]:
+            - generic [ref=e147] [cursor=pointer]:
+              - generic [ref=e148]: Все разделы
+              - img [ref=e150]
+            - generic [ref=e153] [cursor=pointer]:
+              - generic [ref=e154]: Все БИНы
+              - img [ref=e156]
+            - button "?????? ?????????" [ref=e158] [cursor=pointer]:
+              - img [ref=e159]
+            - button "??? ???????" [ref=e161] [cursor=pointer]:
+              - img [ref=e162]
+              - generic [ref=e165]: "2"
+          - 'button "1К 1С клиент 4ed61a6658e54f66b26c onec В избранное 11:33 Действия Вы: 👨‍💼 Оператор подключён. AI помощник отключён для этого диалога. Открыт AI HR и кадры BIN 111111111112" [ref=e167] [cursor=pointer]':
+            - generic [ref=e168]:
+              - generic [ref=e169]: 1К
+              - generic [ref=e170]:
+                - generic [ref=e171]:
+                  - generic [ref=e172]:
+                    - heading "1С клиент 4ed61a6658e54f66b26c" [level=3] [ref=e173]
+                    - generic [ref=e174]: onec
+                  - generic [ref=e175]:
+                    - button "В избранное" [ref=e176]:
+                      - img [ref=e177]
+                    - generic [ref=e179]: 11:33
+                    - button "Действия" [ref=e181]:
+                      - img [ref=e182]
+                - paragraph [ref=e186]: "Вы: 👨‍💼 Оператор подключён. AI помощник отключён для этого диалога."
+                - generic [ref=e187]:
+                  - generic [ref=e188]: Открыт
+                  - generic [ref=e189]: AI
+                  - generic [ref=e190]: HR и кадры
+                  - generic [ref=e191]: BIN 111111111112
+        - generic:
+          - button "??????? ???????":
+            - img
+            - generic: "2"
+          - button "??????? ?????? 1С клиент 4ed61a6658e54f66b26c": 1К
+      - complementary [ref=e133]:
+        - generic [ref=e139]:
+          - generic [ref=e140]: Диалоги
+          - heading "Выберите диалог" [level=3] [ref=e141]
+          - paragraph [ref=e142]: Откройте чат слева, чтобы здесь появилась переписка и поле ответа.

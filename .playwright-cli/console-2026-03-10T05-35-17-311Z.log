@@ -1,0 +1,31 @@
+[       9ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[       9ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[     143ms] [WARNING] Cannot connect to stream without a session token @ http://localhost:5173/src/api/ApiClient.ts:556
+[     145ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[     145ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=455a1520:4392
+[     159ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:8000/api/sections:0
+[     160ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:8000/api/chats:0
+[     160ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:8000/api/analytics/dashboard:0
+[     160ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:8000/api/bins:0
+[     161ms] [WARNING] Dashboard summary not available (operator role lacks access): ApiError: Сессия истекла. Выполните вход заново.
+    at ApiClient.request (http://localhost:5173/src/api/ApiClient.ts:93:13)
+    at async ApiClient.fetchDashboardSummary (http://localhost:5173/src/api/ApiClient.ts:304:22)
+    at async Promise.all (index 2) @ http://localhost:5173/src/hooks/useDialogsData.ts?t=1773119989332:60
+[     162ms] [WARNING] Не удалось загрузить БИНы ApiError: Сессия истекла. Выполните вход заново.
+    at ApiClient.request (http://localhost:5173/src/api/ApiClient.ts:93:13)
+    at async http://localhost:5173/src/hooks/useDialogsData.ts?t=1773119989332:89:20 @ http://localhost:5173/src/hooks/useDialogsData.ts?t=1773119989332:99
+[     168ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:8000/api/bins/detailed:0
+[     169ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:8000/api/sections:0
+[     169ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:8000/api/chats:0
+[     170ms] [WARNING] Cannot load full bin details (operator role lacks access): ApiError: Сессия истекла. Выполните вход заново.
+    at ApiClient.request (http://localhost:5173/src/api/ApiClient.ts:93:13)
+    at async ApiClient.getBinsDetailed (http://localhost:5173/src/api/ApiClient.ts:269:22)
+    at async http://localhost:5173/src/hooks/useDialogsData.ts?t=1773119989332:106:20 @ http://localhost:5173/src/hooks/useDialogsData.ts?t=1773119989332:109
+[     203ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:8000/api/analytics/dashboard:0
+[     204ms] [WARNING] Dashboard summary not available (operator role lacks access): ApiError: Сессия истекла. Выполните вход заново.
+    at ApiClient.request (http://localhost:5173/src/api/ApiClient.ts:93:13)
+    at async ApiClient.fetchDashboardSummary (http://localhost:5173/src/api/ApiClient.ts:304:22)
+    at async Promise.all (index 2) @ http://localhost:5173/src/hooks/useDialogsData.ts?t=1773119989332:60
+[     470ms] [ERROR] Access to resource at 'http://localhost:8000/api/stream?api_token=MySecretTokenSayCheese&session_token=1003189211784010a8e21a55a51ec328' from origin 'http://localhost:5173' has been blocked by CORS policy: The value of the 'Access-Control-Allow-Origin' header in the response must not be the wildcard '*' when the request's credentials mode is 'include'. @ http://localhost:5173/dialogs:0
+[     470ms] [ERROR] SSE Error Event @ http://localhost:5173/src/api/ApiClient.ts:578
+[     471ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:8000/api/stream?api_token=MySecretTokenSayCheese&session_token=1003189211784010a8e21a55a51ec328:0

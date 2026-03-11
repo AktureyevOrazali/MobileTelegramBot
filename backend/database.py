@@ -1915,6 +1915,27 @@ def list_chats_for_user(
         "  cd.ended_at AS dialog_ended_at,",
         "  cd.last_message_at AS dialog_last_message_at,",
         "  cd.operator_mode AS dialog_operator_mode,",
+        "  (",
+        "    SELECT m.text",
+        "    FROM messages m",
+        "    WHERE m.chat_id = c.chat_id AND m.dialog_id = cd.id",
+        "    ORDER BY m.created_at DESC, m.id DESC",
+        "    LIMIT 1",
+        "  ) AS last_message_text,",
+        "  (",
+        "    SELECT m.direction",
+        "    FROM messages m",
+        "    WHERE m.chat_id = c.chat_id AND m.dialog_id = cd.id",
+        "    ORDER BY m.created_at DESC, m.id DESC",
+        "    LIMIT 1",
+        "  ) AS last_message_direction,",
+        "  (",
+        "    SELECT m.author",
+        "    FROM messages m",
+        "    WHERE m.chat_id = c.chat_id AND m.dialog_id = cd.id",
+        "    ORDER BY m.created_at DESC, m.id DESC",
+        "    LIMIT 1",
+        "  ) AS last_message_author,",
         "  f.user_id AS fav_user_id,",
         "  dr.last_read_at AS last_read_at,",
         "  COALESCE((",
@@ -1980,6 +2001,9 @@ def list_chats_for_user(
                 "is_favorite": bool(row["fav_user_id"]),
                 "operator_mode": bool(row["dialog_operator_mode"]),
                 "unread_count": int(row["unread_count"] or 0),
+                "last_message_text": row["last_message_text"],
+                "last_message_direction": row["last_message_direction"],
+                "last_message_author": row["last_message_author"],
             }
         )
     return chats
@@ -4547,3 +4571,8 @@ def delete_reply_template(template_id: int) -> bool:
             (template_id,),
         )
     return cursor.rowcount > 0
+
+
+
+
+

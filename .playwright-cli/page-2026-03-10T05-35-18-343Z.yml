@@ -1,0 +1,73 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic "MobileBot" [ref=e7]:
+          - generic [ref=e8]: MB
+          - generic [ref=e10]: MobileBot
+        - navigation "Основная навигация" [ref=e11]:
+          - link "Диалоги" [ref=e12] [cursor=pointer]:
+            - /url: /dialogs
+            - img [ref=e13]
+            - text: Диалоги
+          - link "Дашборд" [ref=e15] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e16]
+            - text: Дашборд
+          - link "Сотрудники" [ref=e21] [cursor=pointer]:
+            - /url: /admin
+            - img [ref=e22]
+            - text: Сотрудники
+      - generic [ref=e25]:
+        - button "А Администратор Администратор" [ref=e26] [cursor=pointer]:
+          - generic [ref=e27]: А
+          - generic [ref=e28]:
+            - generic [ref=e29]: Администратор
+            - generic [ref=e30]: Администратор
+        - button "Переключить на тёмную тему" [ref=e31] [cursor=pointer]:
+          - img [ref=e32]
+        - button "Выйти" [ref=e38] [cursor=pointer]:
+          - img [ref=e39]
+  - main [ref=e42]:
+    - generic [ref=e44]:
+      - generic [ref=e45]:
+        - generic [ref=e46]:
+          - generic [ref=e47]:
+            - generic [ref=e48]: Карта БИН
+            - heading "Активность по регионам Казахстана" [level=2] [ref=e49]
+          - generic [ref=e50]:
+            - generic [ref=e51]: 0 БИН
+            - generic [ref=e53]: 1 БИН
+        - generic [ref=e55]:
+          - button "⛶" [ref=e57] [cursor=pointer]
+          - img "Карта Казахстана по регионам" [ref=e58]
+      - generic [ref=e100]:
+        - generic [ref=e102] [cursor=pointer]:
+          - generic [ref=e103]: Все разделы
+          - img [ref=e105]
+        - generic [ref=e108] [cursor=pointer]:
+          - generic [ref=e109]: Все БИНы
+          - img [ref=e111]
+        - generic [ref=e114] [cursor=pointer]:
+          - generic [ref=e115]: Сначала новые
+          - img [ref=e117]
+        - generic [ref=e120] [cursor=pointer]:
+          - generic [ref=e121]: Все диалоги
+          - img [ref=e123]
+        - generic [ref=e125] [cursor=pointer]:
+          - checkbox "Только избранные" [ref=e126]
+          - generic [ref=e127]: Только избранные
+      - 'button "1С клиент 4ed61a6658e54f66b26c Открыт AI: вкл Действия HR и кадры БИН: 111111111112" [ref=e133] [cursor=pointer]':
+        - generic [ref=e134]:
+          - generic [ref=e135]:
+            - heading "1С клиент 4ed61a6658e54f66b26c" [level=3] [ref=e136]
+            - generic [ref=e137]: Открыт
+            - generic [ref=e138]: "AI: вкл"
+          - generic [ref=e139]:
+            - button "В избранное" [ref=e140]:
+              - img [ref=e141]
+            - button "Действия" [ref=e144]:
+              - img [ref=e145]
+        - generic [ref=e149]:
+          - generic [ref=e150]: HR и кадры
+          - generic [ref=e151]: "БИН: 111111111112"

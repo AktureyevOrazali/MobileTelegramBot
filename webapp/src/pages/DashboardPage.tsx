@@ -1,7 +1,9 @@
-import React from 'react';
+﻿import React from 'react';
 import * as echarts from 'echarts';
 import EChartsWrapper from '../components/EChartsWrapper';
 import { ApiClient } from '../api/ApiClient';
+import RegionActivityMap, { GEOJSON_FEATURES, detectRegionFromAddress } from '../components/RegionActivityMap';
+import { BinDetailed, ChatSummary } from '../types';
 import { formatDate, formatDateTime } from '../utils/date';
 import { formatMinutes, getInitials, parseQuestion, speedLabel, toInputDate } from '../utils/dashboard-helpers';
 import SelectPill from '../components/SelectPill';
@@ -64,6 +66,47 @@ const ExportButton: React.FC<{
 const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   const d = useDashboardData(apiClient);
   const [topBinFilter, setTopBinFilter] = React.useState<'without_contract' | 'with_contract'>('without_contract');
+  const [mapBins, setMapBins] = React.useState<BinDetailed[]>([]);
+  const [mapChats, setMapChats] = React.useState<ChatSummary[]>([]);
+  const [mapLoading, setMapLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setMapLoading(true);
+    Promise.all([
+      apiClient.getBinsDetailed().catch(() => [] as BinDetailed[]),
+      apiClient.fetchChats().catch(() => [] as ChatSummary[]),
+    ])
+      .then(([bins, chats]) => {
+        if (cancelled) return;
+        setMapBins(bins);
+        setMapChats(chats);
+      })
+      .finally(() => {
+        if (!cancelled) setMapLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient]);
+
+  const dashboardRegionCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    GEOJSON_FEATURES.features.forEach((feature) => {
+      if (feature.properties?.name) counts[feature.properties.name] = 0;
+    });
+    mapBins.forEach((detail) => {
+      const regionKey = detectRegionFromAddress(detail.customerLegalAddress);
+      if (regionKey && regionKey in counts) counts[regionKey] += 1;
+    });
+    return counts;
+  }, [mapBins]);
+
+  const dashboardMapMaxCount = React.useMemo(
+    () => Math.max(1, ...Object.values(dashboardRegionCounts)),
+    [dashboardRegionCounts],
+  );
 
   const lastUpdated = d.hasData ? formatDateTime(d.data.updatedAt) : '';
 
@@ -303,6 +346,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             {/* ══════════════════ Overview tab ══════════════════ */}
             {d.dashboardTab === 'overview' && (
               <>
+                <div className="dashboard-card dashboard-card--map">
+                  <div className="dashboard-map-widget__header">
+                    <div>
+                      <div className="dashboard-map-widget__eyebrow">Карта BIN</div>
+                      <h3 className="dashboard-card__title">Активность по регионам Казахстана</h3>
+                    </div>
+                    <div className="kz-map__legend">
+                      <span>0 BIN</span>
+                      <span className="kz-map__legend-gradient" aria-hidden="true" />
+                      <span>{dashboardMapMaxCount} BIN</span>
+                    </div>
+                  </div>
+                  <div className="dashboard-map-widget__body">
+                    {mapLoading ? (
+                      <div className="dashboard-empty" style={{ minHeight: 260 }}>Загрузка карты...</div>
+                    ) : (
+                      <RegionActivityMap
+                        counts={dashboardRegionCounts}
+                        binDetails={mapBins}
+                        chats={mapChats}
+                      />
+                    )}
+                  </div>
+                </div>
+
                 {/* Row 1: Скорость ответа + Обращения */}
                 <div className="dashboard-overview-row">
                   {/* ── Response speed donut ── */}
@@ -1315,3 +1383,5 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 };
 
 export default DashboardPage;
+
+

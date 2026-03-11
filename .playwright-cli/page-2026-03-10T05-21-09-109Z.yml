@@ -1,0 +1,62 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic "MobileBot" [ref=e7]:
+          - generic [ref=e8]: MB
+          - generic [ref=e10]: MobileBot
+        - navigation "Основная навигация" [ref=e11]:
+          - link "Диалоги" [ref=e12] [cursor=pointer]:
+            - /url: /dialogs
+            - img [ref=e13]
+            - text: Диалоги
+          - link "Дашборд" [ref=e15] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e16]
+            - text: Дашборд
+          - link "Сотрудники" [ref=e21] [cursor=pointer]:
+            - /url: /admin
+            - img [ref=e22]
+            - text: Сотрудники
+      - generic [ref=e25]:
+        - button "А Администратор Администратор" [ref=e26] [cursor=pointer]:
+          - generic [ref=e27]: А
+          - generic [ref=e28]:
+            - generic [ref=e29]: Администратор
+            - generic [ref=e30]: Администратор
+        - button "Переключить на светлую тему" [ref=e31] [cursor=pointer]:
+          - img [ref=e32]
+        - button "Выйти" [ref=e34] [cursor=pointer]:
+          - img [ref=e35]
+  - main [ref=e38]:
+    - generic [ref=e40]:
+      - generic [ref=e41]:
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - generic [ref=e44]: Карта БИН
+            - heading "Активность по регионам Казахстана" [level=2] [ref=e45]
+          - generic [ref=e46]:
+            - generic [ref=e47]: 0 БИН
+            - generic [ref=e49]: 1 БИН
+        - generic [ref=e51]:
+          - button "⛶" [ref=e53] [cursor=pointer]
+          - img "Карта Казахстана по регионам" [ref=e54]
+      - generic [ref=e96]:
+        - generic [ref=e98] [cursor=pointer]:
+          - generic [ref=e99]: Все разделы
+          - img [ref=e101]
+        - generic [ref=e104] [cursor=pointer]:
+          - generic [ref=e105]: Все БИНы
+          - img [ref=e107]
+        - generic [ref=e110] [cursor=pointer]:
+          - generic [ref=e111]: Сначала новые
+          - img [ref=e113]
+        - generic [ref=e116] [cursor=pointer]:
+          - generic [ref=e117]: Все диалоги
+          - img [ref=e119]
+        - generic [ref=e121] [cursor=pointer]:
+          - checkbox "Только избранные" [ref=e122]
+          - generic [ref=e123]: Только избранные
+      - generic [ref=e124]:
+        - generic [ref=e125]: 💬
+        - paragraph [ref=e126]: Загружаем диалоги…

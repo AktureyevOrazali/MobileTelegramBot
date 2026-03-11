@@ -1,0 +1,78 @@
+- generic [ref=e22]:
+  - banner [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - generic "MobileBot" [ref=e26]:
+          - generic [ref=e27]: MB
+          - generic [ref=e29]: MobileBot
+        - navigation "Основная навигация" [ref=e30]:
+          - link "Диалоги" [ref=e31] [cursor=pointer]:
+            - /url: /dialogs
+            - img [ref=e32]
+            - text: Диалоги
+          - link "Дашборд" [ref=e34] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e35]
+            - text: Дашборд
+          - link "Сотрудники" [ref=e40] [cursor=pointer]:
+            - /url: /admin
+            - img [ref=e41]
+            - text: Сотрудники
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: Раздел
+          - generic [ref=e47]: Профиль
+        - button "А Администратор Администратор" [active] [ref=e48] [cursor=pointer]:
+          - generic [ref=e49]: А
+          - generic [ref=e50]:
+            - generic [ref=e51]: Администратор
+            - generic [ref=e52]: Администратор
+        - button "Переключить на тёмную тему" [ref=e53] [cursor=pointer]:
+          - img [ref=e54]
+        - button "Выйти" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+  - main [ref=e64]:
+    - generic [ref=e448]:
+      - generic [ref=e449]:
+        - generic [ref=e450]: А
+        - generic [ref=e451]:
+          - heading "Администратор" [level=2] [ref=e452]
+          - generic [ref=e453]:
+            - generic [ref=e454]: Администратор
+            - generic [ref=e455]: ·
+            - generic [ref=e456]: "Аккаунт создан: 02.10.2025"
+      - generic [ref=e457]:
+        - heading "Личная информация" [level=3] [ref=e458]
+        - generic [ref=e459]:
+          - generic [ref=e460]:
+            - generic [ref=e461]: Имя и фамилия
+            - textbox "Имя и фамилия" [ref=e462]: Администратор
+          - generic [ref=e463]:
+            - generic [ref=e464]: Электронная почта
+            - textbox "Электронная почта" [ref=e465]:
+              - /placeholder: name@example.com
+              - text: admin@example.com
+          - generic [ref=e466]:
+            - generic [ref=e467]: Должность
+            - textbox "Должность" [ref=e468]: Администратор
+          - generic [ref=e469]:
+            - generic [ref=e470]: Телефон
+            - textbox "Телефон" [ref=e471]:
+              - /placeholder: +7 (777) 000-00-00
+              - text: "+77080018243"
+        - generic [ref=e472]:
+          - generic [ref=e473]: О себе и компетенции
+          - textbox "О себе и компетенции" [ref=e474]:
+            - /placeholder: Опишите ваш опыт и компетенции
+            - text: admin3
+        - generic [ref=e475]:
+          - button "Сохранить изменения" [ref=e476] [cursor=pointer]
+          - button "Сменить пароль" [ref=e477] [cursor=pointer]
+  - contentinfo [ref=e169]:
+    - generic [ref=e170]:
+      - generic [ref=e171]:
+        - generic [ref=e172]: MobileBot Workspace
+        - generic [ref=e173]: Единое пространство для диалогов, аналитики и управления сотрудниками.
+      - generic [ref=e174]:
+        - generic [ref=e175]: Профиль
+        - generic [ref=e176]: Администратор

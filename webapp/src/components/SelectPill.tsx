@@ -1,11 +1,11 @@
-import { CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+﻿import { CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 type Option = { value: string; label: string; meta?: string };
 
 export default function SelectPill({
   label,
-  placeholder = "Не выбрано",
+  placeholder = 'Не выбрано',
   options,
   value,
   onChange,
@@ -21,34 +21,32 @@ export default function SelectPill({
   onChange: (v: string) => void;
   searchable?: boolean;
   style?: React.CSSProperties;
-  showLabelInside?: boolean; // NEW
+  showLabelInside?: boolean;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLDivElement | null>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
 
   const currentLabel = useMemo(
     () => options.find((o) => o.value === value)?.label ?? placeholder,
-    [options, value, placeholder]
+    [options, value, placeholder],
   );
 
   const filtered = useMemo(() => {
     if (!searchable || !q.trim()) return options;
     const s = q.toLowerCase();
-    return options.filter((o) =>
-      (o.label + o.value + (o.meta || "")).toLowerCase().includes(s)
-    );
+    return options.filter((o) => (o.label + o.value + (o.meta || '')).toLowerCase().includes(s));
   }, [q, options, searchable]);
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
   }, []);
 
   const updateMenuPosition = useCallback(() => {
@@ -76,14 +74,14 @@ export default function SelectPill({
     const maxHeight = window.innerHeight - viewportPadding - top;
 
     setMenuStyle({
-      position: "fixed",
+      position: 'fixed',
       top,
       left,
       width,
       minWidth: width,
       maxHeight: maxHeight > 0 ? maxHeight : undefined,
-      overflowY: "auto",
-      zIndex: 1000,
+      overflowY: 'auto',
+      zIndex: 3500,
     });
   }, []);
 
@@ -96,20 +94,20 @@ export default function SelectPill({
     updateMenuPosition();
 
     const handleScroll = () => updateMenuPosition();
-    window.addEventListener("scroll", handleScroll, true);
-    window.addEventListener("resize", handleScroll);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleScroll);
 
     return () => {
-      window.removeEventListener("scroll", handleScroll, true);
-      window.removeEventListener("resize", handleScroll);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleScroll);
     };
   }, [open, updateMenuPosition, currentLabel]);
 
   return (
-    <div ref={containerRef} style={{ position: "relative", ...style }}>
+    <div ref={containerRef} style={{ position: 'relative', ...style }}>
       <div
         ref={triggerRef}
-        className={`pill${disabled ? " pill--disabled" : ""}`}
+        className={`pill${disabled ? ' pill--disabled' : ''}`}
         onClick={() => {
           if (disabled) return;
           setOpen((v) => !v);
@@ -120,7 +118,11 @@ export default function SelectPill({
       >
         {showLabelInside && <span className="label">{label}</span>}
         <span className="value">{currentLabel}</span>
-        <span className="caret">▾</span>
+        <span className="caret" aria-hidden="true">
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m5 7 5 6 5-6" />
+          </svg>
+        </span>
       </div>
       {open && !disabled && createPortal(
         <div
@@ -152,12 +154,12 @@ export default function SelectPill({
             </div>
           ))}
           {filtered.length === 0 && (
-            <div className="opt" style={{ opacity: 0.6, cursor: "default" }}>
+            <div className="opt" style={{ opacity: 0.6, cursor: 'default' }}>
               Ничего не найдено
             </div>
           )}
         </div>,
-        document.body
+        document.body,
       )}
     </div>
   );

@@ -168,6 +168,9 @@ export function mapChatSummary(raw: ChatSummaryRaw): ChatSummary {
     isFavorite: Boolean(raw.is_favorite),
     aiEnabled: !operatorMode,
     unreadCount: typeof raw.unread_count === 'number' ? raw.unread_count : 0,
+    lastMessageText: typeof raw.last_message_text === 'string' ? raw.last_message_text : null,
+    lastMessageDirection: raw.last_message_direction === 'incoming' || raw.last_message_direction === 'outgoing' ? raw.last_message_direction : null,
+    lastMessageAuthor: typeof raw.last_message_author === 'string' ? raw.last_message_author : null,
   };
 }
 
@@ -447,3 +450,6 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
     updatedAt: raw.updated_at ? new Date(raw.updated_at) : new Date(),
   };
 }
+
+
+

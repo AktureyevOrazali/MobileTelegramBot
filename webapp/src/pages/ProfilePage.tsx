@@ -106,7 +106,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
   };
 
   return (
-    <div className="profile-page">
+    <div className="profile-page profile-page--app-sidebar">
       {banner && <div className="profile-banner">{banner}</div>}
       {error && <div className="profile-error">{error}</div>}
 
@@ -126,6 +126,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
       </div>
 
       {/* ── Profile edit form ── */}
+      <div className="profile-content-shell">
+        <div className="profile-content">
       <div className="card profile-card">
         <h3 className="profile-card__title">Личная информация</h3>
 
@@ -221,6 +223,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
       )}
 
       {/* ── Password change modal ── */}
+        </div>
+      </div>
+
       <Modal open={pwdOpen} onClose={() => setPwdOpen(false)}>
         <h3>Сменить пароль</h3>
 

@@ -181,11 +181,11 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   };
 
   return (
-    <div className="admin-page">
+    <div className="admin-page admin-page--app-sidebar">
       {/* ── Gradient hero header ── */}
       <div className={`admin-hero ${admin.loading ? 'admin-hero--loading' : ''}`}>
         <div className="admin-hero__top">
-          <div>
+          <div className="admin-hero__meta">
             <h2 className="admin-hero__title">Администрирование</h2>
             <p className="admin-hero__sub">
               {filteredUsers.length} пользовател{filteredUsers.length === 1 ? 'ь' : filteredUsers.length < 5 ? 'я' : 'ей'}
@@ -258,12 +258,14 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       </div>
 
       {/* ── User grid ── */}
-      {admin.loading ? (
+      <div className="admin-content-shell">
+        <div className="admin-content">
+          {admin.loading ? (
         <div className="admin-empty-state">
           <div className="admin-empty-state__icon">⏳</div>
           <p>Загружаем данные…</p>
         </div>
-      ) : admin.error ? (
+          ) : admin.error ? (
         <div className="admin-empty-state">
           <div className="admin-empty-state__icon">⚠️</div>
           <p>Ошибка: {admin.error}</p>
@@ -271,12 +273,12 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
             Повторить попытку
           </button>
         </div>
-      ) : filteredUsers.length === 0 ? (
+          ) : filteredUsers.length === 0 ? (
         <div className="admin-empty-state">
           <div className="admin-empty-state__icon">👤</div>
           <p>Пользователи не найдены</p>
         </div>
-      ) : (
+          ) : (
         <div className="admin-user-grid">
           {filteredUsers.map((user, index) => (
             <AdminUserCard
@@ -299,7 +301,9 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
             />
           ))}
         </div>
-      )}
+          )}
+        </div>
+      </div>
 
       <ConfirmModal
         open={Boolean(admin.userToDelete)}

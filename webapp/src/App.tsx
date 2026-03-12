@@ -1,4 +1,4 @@
-﻿import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import DialogsPage from './pages/DialogsPage';
 import { useApi } from './context/ApiContext';
@@ -116,6 +116,10 @@ const App: React.FC = () => {
     return 'MobileBot';
   }, [location.pathname]);
 
+  const isDashboardRoute = location.pathname.startsWith('/dashboard');
+  const isAdminRoute = location.pathname.startsWith('/admin');
+  const isProfileRoute = location.pathname.startsWith('/profile');
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
     document.documentElement.setAttribute('data-theme', theme);
@@ -161,7 +165,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className={`app-shell app-shell--sidebar ${isSidebarCollapsed ? 'app-shell--sidebar-collapsed' : ''}`}>
+    <div className={`app-shell app-shell--sidebar ${isSidebarCollapsed ? 'app-shell--sidebar-collapsed' : ''} ${isDashboardRoute ? 'app-shell--dashboard' : ''} ${isAdminRoute ? 'app-shell--admin' : ''} ${isProfileRoute ? 'app-shell--profile' : ''}`}>
       <div className="app-shell__ambient app-shell__ambient--one" aria-hidden="true" />
       <div className="app-shell__ambient app-shell__ambient--two" aria-hidden="true" />
 
@@ -287,8 +291,4 @@ const App: React.FC = () => {
 };
 
 export default App;
-
-
-
-
 

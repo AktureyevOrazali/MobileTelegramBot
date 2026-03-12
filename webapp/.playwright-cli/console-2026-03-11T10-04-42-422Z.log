@@ -94,3 +94,5 @@ Visit https://reactjs.org/link/error-boundaries to learn more about error bounda
     at ApiClient.request (http://localhost:5173/src/api/ApiClient.ts:93:13)
     at async ApiClient.fetchDashboardSummary (http://localhost:5173/src/api/ApiClient.ts:304:22)
     at async Promise.all (index 2) @ http://localhost:5173/src/hooks/useDialogsData.ts?t=1773227880032:57
+[10472667ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[10476028ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0

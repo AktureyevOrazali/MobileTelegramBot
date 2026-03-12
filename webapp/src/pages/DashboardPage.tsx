@@ -18,6 +18,13 @@ interface DashboardPageProps {
 const SECTION_COLORS = ['#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 const HEATMAP_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const HEATMAP_HOURS = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
+const DASHBOARD_TABS: ReadonlyArray<{ key: DashboardTab; icon: string; label: string }> = [
+  { key: 'overview', icon: '📊', label: 'Обзор' },
+  { key: 'operators', icon: '👥', label: 'Сотрудники' },
+  { key: 'sections', icon: '📂', label: 'Разделы' },
+  { key: 'activity', icon: '📈', label: 'Активность' },
+  { key: 'commercial', icon: '💼', label: 'Аналитика' },
+];
 
 const ExportButton: React.FC<{
   apiClient: ApiClient;
@@ -44,7 +51,7 @@ const ExportButton: React.FC<{
   return (
     <>
       <button
-        className="dashboard-hero__refresh"
+        className="dashboard-hero__refresh dashboard-hero__refresh--export"
         type="button"
         onClick={() => handleExport('xlsx')}
         disabled={exporting !== null}
@@ -52,7 +59,7 @@ const ExportButton: React.FC<{
         {exporting === 'xlsx' ? '⏳…' : '📥 Excel'}
       </button>
       <button
-        className="dashboard-hero__refresh"
+        className="dashboard-hero__refresh dashboard-hero__refresh--export"
         type="button"
         onClick={() => handleExport('pdf')}
         disabled={exporting !== null}
@@ -128,7 +135,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       <div className="dashboard-card dashboard-card--delay-3 dashboard-card--rating">
         <h3 className="dashboard-card__title">{title}</h3>
         {count === 0 ? (
-          <div className="dashboard-empty" style={{ minHeight: 160 }}>
+          <div className="dashboard-empty dashboard-empty--card">
             <div className="dashboard-empty__icon">⭐</div>
             <p className="dashboard-empty__text">{emptyText}</p>
           </div>
@@ -204,11 +211,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   };
 
   return (
-    <div className="dashboard-page">
+    <div className="dashboard-page dashboard-page--app-sidebar">
       {/* ── Gradient hero header ── */}
       <div className={`dashboard-hero ${d.isLoading ? 'dashboard-hero--loading' : ''}`}>
         <div className="dashboard-hero__top">
-          <div>
+          <div className="dashboard-hero__meta">
             <h2 className="dashboard-hero__title">Статистика</h2>
             <p className="dashboard-hero__sub">
               {d.selectedOperatorLabel} · {d.timeRange.label}{lastUpdated ? ` · ${lastUpdated}` : ''}
@@ -216,47 +223,51 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
           </div>
 
           <div className="dashboard-hero__controls">
-            <SelectPill
-              label=""
-              options={d.periodOptions}
-              value={d.effectiveTimePreset}
-              onChange={(value) => {
-                const next = (value as TimePreset) || 'last7';
-                if (next === 'custom') {
-                  d.setCustomRange((prev) => ({
-                    start: prev.start || d.timeRange.startDate || '',
-                    end: prev.end || d.timeRange.endDate || '',
-                  }));
-                  d.setTimePreset('custom');
-                  return;
-                }
-                d.setTimePreset(next);
-              }}
-              showLabelInside={false}
-            />
+            <div className="dashboard-hero__controls-group dashboard-hero__controls-group--filters">
+              <SelectPill
+                label=""
+                options={d.periodOptions}
+                value={d.effectiveTimePreset}
+                onChange={(value) => {
+                  const next = (value as TimePreset) || 'last7';
+                  if (next === 'custom') {
+                    d.setCustomRange((prev) => ({
+                      start: prev.start || d.timeRange.startDate || '',
+                      end: prev.end || d.timeRange.endDate || '',
+                    }));
+                    d.setTimePreset('custom');
+                    return;
+                  }
+                  d.setTimePreset(next);
+                }}
+                showLabelInside={false}
+              />
 
-            <SelectPill
-              label={d.operatorsLoading ? 'Загрузка…' : ''}
-              options={d.operatorOptions}
-              value={d.operatorSelectValue}
-              onChange={(value) => {
-                const nextValue = value === 'all' ? null : Number(value);
-                d.setSelectedOperatorId((prev) => (prev === nextValue ? prev : nextValue));
-              }}
-              searchable
-              showLabelInside={false}
-              disabled={d.dashboardTab === 'operators'}
-            />
+              <SelectPill
+                label={d.operatorsLoading ? '\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430\u2026' : ''}
+                options={d.operatorOptions}
+                value={d.operatorSelectValue}
+                onChange={(value) => {
+                  const nextValue = value === 'all' ? null : Number(value);
+                  d.setSelectedOperatorId((prev) => (prev === nextValue ? prev : nextValue));
+                }}
+                searchable
+                showLabelInside={false}
+                disabled={d.dashboardTab === 'operators'}
+              />
+            </div>
 
-            <button
-              className="dashboard-hero__refresh"
-              type="button"
-              onClick={() => d.loadData('refresh', d.activeFilters)}
-              disabled={d.refreshing}
-            >
-              {d.refreshing ? 'Обновляем…' : '↻ Пересчитать'}
-            </button>
-            <ExportButton apiClient={apiClient} filters={d.activeFilters} />
+            <div className="dashboard-hero__controls-group dashboard-hero__controls-group--actions">
+              <button
+                className="dashboard-hero__refresh dashboard-hero__refresh--primary"
+                type="button"
+                onClick={() => d.loadData('refresh', d.activeFilters)}
+                disabled={d.refreshing}
+              >
+                {d.refreshing ? '\u041E\u0431\u043D\u043E\u0432\u043B\u044F\u0435\u043C\u2026' : '\u21BB \u041F\u0435\u0440\u0435\u0441\u0447\u0438\u0442\u0430\u0442\u044C'}
+              </button>
+              <ExportButton apiClient={apiClient} filters={d.activeFilters} />
+            </div>
           </div>
         </div>
 
@@ -266,59 +277,47 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             {d.error && <span className="dashboard-hero__error">{d.error}</span>}
           </div>
         )}
-
-        <div
-          className="dashboard-date-row"
-          style={{
-            minHeight: 32,
-            visibility: d.timePreset === 'custom' ? 'visible' : 'hidden',
-            pointerEvents: d.timePreset === 'custom' ? 'auto' : 'none',
-          }}
-        >
-          <input
-            type="date"
-            value={d.customRange.start}
-            disabled={d.timePreset !== 'custom'}
-            onChange={(event) => {
-              d.setCustomRange((prev) => ({ ...prev, start: event.target.value }));
-              d.setTimePreset('custom');
-            }}
-          />
-          <span className="text-muted">—</span>
-          <input
-            type="date"
-            value={d.customRange.end}
-            disabled={d.timePreset !== 'custom'}
-            onChange={(event) => {
-              d.setCustomRange((prev) => ({ ...prev, end: event.target.value }));
-              d.setTimePreset('custom');
-            }}
-          />
-        </div>
+        {d.timePreset === 'custom' && (
+          <div className="dashboard-date-row">
+            <input
+              type="date"
+              value={d.customRange.start}
+              onChange={(event) => {
+                d.setCustomRange((prev) => ({ ...prev, start: event.target.value }));
+                d.setTimePreset('custom');
+              }}
+            />
+            <span className="text-muted">—</span>
+            <input
+              type="date"
+              value={d.customRange.end}
+              onChange={(event) => {
+                d.setCustomRange((prev) => ({ ...prev, end: event.target.value }));
+                d.setTimePreset('custom');
+              }}
+            />
+          </div>
+        )}
 
         <div className="dashboard-tabs">
-          {[
-            { key: 'overview', label: '📊 Обзор' },
-            { key: 'operators', label: '👥 Сотрудники' },
-            { key: 'sections', label: '📂 Разделы' },
-            { key: 'activity', label: '📈 Активность' },
-            { key: 'commercial', label: '💼 Аналитика' },
-          ].map((tab) => (
+          {DASHBOARD_TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"
               className={`dashboard-tab ${d.dashboardTab === tab.key ? 'is-active' : ''}`}
-              onClick={() => d.setDashboardTab(tab.key as DashboardTab)}
+              onClick={() => d.setDashboardTab(tab.key)}
             >
-              {tab.label}
+              <span className="dashboard-tab__icon" aria-hidden="true">{tab.icon}</span>
+              <span className="dashboard-tab__label">{tab.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* ── Tab content ── */}
-      <div className="dashboard-content">
-        {!d.hasData ? (
+      <div className="dashboard-content-shell">
+        {/* ?? Tab content ?? */}
+        <div className="dashboard-content">
+          {!d.hasData ? (
           d.loading ? (
             <div className="dashboard-loading-state">
               <div className="dashboard-loading-state__icon">⏳</div>
@@ -360,7 +359,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                   </div>
                   <div className="dashboard-map-widget__body">
                     {mapLoading ? (
-                      <div className="dashboard-empty" style={{ minHeight: 260 }}>Загрузка карты...</div>
+                      <div className="dashboard-empty dashboard-empty--map">Загрузка карты...</div>
                     ) : (
                       <RegionActivityMap
                         counts={dashboardRegionCounts}
@@ -1371,6 +1370,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
             )}
           </>
         )}
+        </div>
       </div>
 
       {d.operatorCount > 0 && (

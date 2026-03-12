@@ -1,0 +1,171 @@
+- generic [ref=e23]:
+  - complementary [ref=e24]:
+    - generic "MobileBot" [ref=e25]:
+      - generic [ref=e26]: MB
+      - generic [ref=e27]:
+        - generic [ref=e28]: MobileBot
+        - generic [ref=e29]: Operator Console
+      - button "Свернуть левую панель" [ref=e30] [cursor=pointer]:
+        - img [ref=e31]
+    - navigation "Основная навигация" [ref=e33]:
+      - link "Диалоги" [ref=e34] [cursor=pointer]:
+        - /url: /dialogs
+        - img [ref=e35]
+        - generic [ref=e37]: Диалоги
+      - link "Дашборд" [active] [ref=e38] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e39]
+        - generic [ref=e44]: Дашборд
+      - link "Сотрудники" [ref=e45] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=e46]
+        - generic [ref=e49]: Сотрудники
+    - generic [ref=e50]:
+      - button "А Администратор Администратор" [ref=e51] [cursor=pointer]:
+        - generic [ref=e52]: А
+        - generic [ref=e53]:
+          - generic [ref=e54]: Администратор
+          - generic [ref=e55]: Администратор
+      - generic [ref=e56]:
+        - button "Переключить на тёмную тему" [ref=e57] [cursor=pointer]:
+          - img [ref=e58]
+        - button "Выйти" [ref=e64] [cursor=pointer]:
+          - img [ref=e65]
+  - main [ref=e69]:
+    - generic [ref=e191]:
+      - generic [ref=e192]:
+        - generic [ref=e193]:
+          - generic [ref=e194]:
+            - heading "Статистика" [level=2] [ref=e195]
+            - paragraph [ref=e196]: Все сотрудники · 7 дней · 12.03.2026 15:56
+          - generic [ref=e197]:
+            - generic [ref=e404]:
+              - generic [ref=e406] [cursor=pointer]:
+                - generic [ref=e407]: 7 дней
+                - img [ref=e409]
+              - generic [ref=e412] [cursor=pointer]:
+                - generic [ref=e413]: Все сотрудники
+                - img [ref=e415]
+            - generic [ref=e417]:
+              - button "↻ Пересчитать" [ref=e418] [cursor=pointer]
+              - button "📥 Excel" [ref=e419] [cursor=pointer]
+              - button "📄 PDF" [ref=e420] [cursor=pointer]
+        - generic [ref=e213]:
+          - button "Обзор" [ref=e421] [cursor=pointer]:
+            - generic [ref=e422]: 📊
+            - generic [ref=e423]: Обзор
+          - button "Сотрудники" [ref=e424] [cursor=pointer]:
+            - generic [ref=e425]: 👥
+            - generic [ref=e426]: Сотрудники
+          - button "Разделы" [ref=e427] [cursor=pointer]:
+            - generic [ref=e428]: 📂
+            - generic [ref=e429]: Разделы
+          - button "Активность" [ref=e430] [cursor=pointer]:
+            - generic [ref=e431]: 📈
+            - generic [ref=e432]: Активность
+          - button "Аналитика" [ref=e433] [cursor=pointer]:
+            - generic [ref=e434]: 💼
+            - generic [ref=e435]: Аналитика
+      - generic [ref=e220]:
+        - generic [ref=e221]:
+          - generic [ref=e222]:
+            - generic [ref=e223]:
+              - generic [ref=e224]: Карта BIN
+              - heading "Активность по регионам Казахстана" [level=3] [ref=e225]
+            - generic [ref=e226]:
+              - generic [ref=e227]: 0 BIN
+              - generic [ref=e229]: 1 BIN
+          - generic [ref=e436]:
+            - button "⛶" [ref=e438] [cursor=pointer]
+            - img "Карта Казахстана по регионам" [ref=e439]:
+              - generic [ref=e462]:
+                - generic: "1"
+        - generic [ref=e275]:
+          - generic [ref=e276]:
+            - generic [ref=e277]:
+              - heading "Скорость ответа" [level=3] [ref=e278]
+              - generic [ref=e279]: 0 оператора
+            - generic [ref=e280]:
+              - generic [ref=e281]:
+                - generic:
+                  - generic: "0"
+                  - generic: операторов
+              - generic [ref=e285]:
+                - generic [ref=e286]:
+                  - generic [ref=e289]: Быстрые
+                  - generic [ref=e291]: "0"
+                - generic [ref=e292]:
+                  - generic [ref=e295]: Средние
+                  - generic [ref=e297]: "0"
+                - generic [ref=e298]:
+                  - generic [ref=e301]: Медленные
+                  - generic [ref=e303]: "0"
+                - generic [ref=e305]:
+                  - generic [ref=e307]: Ср. время ответа
+                  - generic [ref=e309]: —
+          - generic [ref=e310]:
+            - heading "Обращения" [level=3] [ref=e311]
+            - generic [ref=e312]:
+              - generic [ref=e313]:
+                - generic [ref=e314]: Всего
+                - generic [ref=e315]: "2"
+              - generic [ref=e316]:
+                - generic [ref=e317]: Активные
+                - generic [ref=e318]: "1"
+              - generic [ref=e319]:
+                - generic [ref=e320]: Закрытые
+                - generic [ref=e321]: "1"
+              - generic [ref=e323]:
+                - generic [ref=e324]: Сообщений
+                - generic [ref=e325]: "6"
+              - generic [ref=e326]:
+                - generic [ref=e327]: Ср. за день
+                - generic [ref=e328]: "0"
+            - generic [ref=e329]: "Период: 7 дней"
+        - generic [ref=e330]:
+          - generic [ref=e331]:
+            - heading "Автоматизация (AI)" [level=3] [ref=e332]
+            - generic [ref=e333]:
+              - generic [ref=e334]:
+                - generic [ref=e335]: 100%
+                - generic [ref=e336]: решено ботом
+              - generic [ref=e341]:
+                - generic [ref=e342]:
+                  - generic [ref=e345]: Решено ботом
+                  - generic [ref=e347]: "1"
+                - generic [ref=e348]:
+                  - generic [ref=e351]: Переведено оператору
+                  - generic [ref=e353]: "0"
+                - generic [ref=e355]:
+                  - generic [ref=e357]: Сообщений от бота
+                  - generic [ref=e359]: "0"
+                - generic [ref=e360]:
+                  - generic [ref=e362]: Ср. до перевода
+                  - generic [ref=e364]: —
+          - generic [ref=e365]:
+            - heading "Качество обслуживания" [level=3] [ref=e366]
+            - generic [ref=e367]:
+              - generic [ref=e372]:
+                - generic [ref=e373]: —
+                - generic [ref=e374]: SLA (ответ до 5 мин)
+              - generic [ref=e375]:
+                - generic [ref=e376]:
+                  - generic [ref=e379]: Ответов с задержкой
+                  - generic [ref=e381]: "0"
+                - generic [ref=e383]:
+                  - generic [ref=e385]: Повторные обращения
+                  - generic [ref=e387]: "0"
+                - generic [ref=e388]:
+                  - generic [ref=e390]: Доля повторных
+                  - generic [ref=e392]: 0.0%
+        - generic [ref=e393]:
+          - generic [ref=e394]:
+            - heading "Удовлетворенность (CSAT)" [level=3] [ref=e395]
+            - generic [ref=e396]:
+              - generic [ref=e397]: ⭐
+              - paragraph [ref=e398]: Пока нет оценок операторов.
+          - generic [ref=e399]:
+            - heading "Оценка работы AI" [level=3] [ref=e400]
+            - generic [ref=e401]:
+              - generic [ref=e402]: ⭐
+              - paragraph [ref=e403]: Пока нет оценок AI.

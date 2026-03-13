@@ -5413,3 +5413,15 @@
   flex-wrap: wrap;
   align-items: center;
 }
+
+
+/* Profile card stretch alignment (2026-03-13) */
+.app-shell--profile .profile-page--app-sidebar .profile-content > .profile-card:first-child:last-child {
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
+.app-shell--profile .profile-page--app-sidebar .profile-content > .profile-card:first-child:last-child .profile-card__actions {
+  margin-top: auto;
+  padding-top: 8px;
+}

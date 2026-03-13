@@ -1,0 +1,82 @@
+- generic [ref=e4]:
+  - complementary [ref=e5]:
+    - generic "MobileBot" [ref=e6]:
+      - generic [ref=e7]: MB
+      - generic [ref=e8]:
+        - generic [ref=e9]: MobileBot
+        - generic [ref=e10]: Operator Console
+      - button "Свернуть левую панель" [ref=e11] [cursor=pointer]:
+        - img [ref=e12]
+    - navigation "Основная навигация" [ref=e14]:
+      - link "Диалоги" [ref=e15] [cursor=pointer]:
+        - /url: /dialogs
+        - img [ref=e16]
+        - generic [ref=e18]: Диалоги
+      - link "Дашборд" [ref=e19] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e20]
+        - generic [ref=e25]: Дашборд
+      - link "Сотрудники" [ref=e26] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=e27]
+        - generic [ref=e30]: Сотрудники
+    - generic [ref=e31]:
+      - button "А Администратор Администратор" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: А
+        - generic [ref=e34]:
+          - generic [ref=e35]: Администратор
+          - generic [ref=e36]: Администратор
+      - generic [ref=e37]:
+        - button "Переключить на тёмную тему" [ref=e38] [cursor=pointer]:
+          - img [ref=e39]
+        - button "Выйти" [ref=e45] [cursor=pointer]:
+          - img [ref=e46]
+  - main [ref=e50]:
+    - generic [ref=e52]:
+      - generic [ref=e53]:
+        - generic [ref=e54]: А
+        - generic [ref=e55]:
+          - heading "Администратор" [level=2] [ref=e56]
+          - generic [ref=e57]:
+            - generic [ref=e58]: РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ
+            - generic [ref=e59]: В·
+            - generic [ref=e60]: "РђРєРєР°СѓРЅС‚ СЃРѕР·РґР°РЅ: 02.10.2025"
+      - generic [ref=e63]:
+        - heading "Р›РёС‡РЅР°СЏ РёРЅС„РѕСЂРјР°С†РёСЏ" [level=3] [ref=e64]
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - generic [ref=e67]:
+              - generic [ref=e68]:
+                - generic [ref=e69]: "Р\x98РјСЏ Рё С„Р°РјРёР»РёСЏ"
+                - 'textbox "РРјСЏ Рё С„Р°РјРёР»РёСЏ" [ref=e70]': Администратор
+              - generic [ref=e71]:
+                - generic [ref=e72]: РР»РµРєС‚СЂРѕРЅРЅР°СЏ РїРѕС‡С‚Р°
+                - textbox "РР»РµРєС‚СЂРѕРЅРЅР°СЏ РїРѕС‡С‚Р°" [ref=e73]:
+                  - /placeholder: name@example.com
+                  - text: admin@example.com
+              - generic [ref=e74]:
+                - generic [ref=e75]: Р”РѕР»Р¶РЅРѕСЃС‚СЊ
+                - textbox "Р”РѕР»Р¶РЅРѕСЃС‚СЊ" [ref=e76]: Администратор
+              - generic [ref=e77]:
+                - generic [ref=e78]: РўРµР»РµС„РѕРЅ
+                - textbox "РўРµР»РµС„РѕРЅ" [ref=e79]:
+                  - /placeholder: +7 (777) 000-00-00
+                  - text: "+77080018243"
+            - generic [ref=e80]:
+              - generic [ref=e81]:
+                - generic [ref=e82]: Логин
+                - strong [ref=e83]: admin
+              - generic [ref=e84]:
+                - generic [ref=e85]: Роль
+                - strong [ref=e86]: РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ
+              - generic [ref=e87]:
+                - generic [ref=e88]: Создан
+                - strong [ref=e89]: 02.10.2025
+            - generic [ref=e90]:
+              - button "РЎРѕС…СЂР°РЅРёС‚СЊ РёР·РјРµРЅРµРЅРёСЏ" [ref=e91] [cursor=pointer]
+              - button "РЎРјРµРЅРёС‚СЊ РїР°СЂРѕР»СЊ" [ref=e92] [cursor=pointer]
+          - generic [ref=e93]:
+            - generic [ref=e94]: Рћ СЃРµР±Рµ Рё РєРѕРјРїРµС‚РµРЅС†РёРё
+            - textbox "Рћ СЃРµР±Рµ Рё РєРѕРјРїРµС‚РµРЅС†РёРё" [ref=e95]:
+              - /placeholder: РћРїРёС€РёС‚Рµ РІР°С€ РѕРїС‹С‚ Рё РєРѕРјРїРµС‚РµРЅС†РёРё
+              - text: admin3

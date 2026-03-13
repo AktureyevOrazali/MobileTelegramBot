@@ -42,3 +42,5 @@ Visit https://reactjs.org/link/error-boundaries to learn more about error bounda
     at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:19116:15)
     at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:18736:28)
     at performSyncWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-PJEEZAML.js?v=455a1520:18879:28)
+[ 7869387ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[ 7872757ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0

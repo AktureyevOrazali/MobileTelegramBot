@@ -1,5 +1,6 @@
 ﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatSummary } from '../types';
+import { getAttachmentKindLabel, sanitizeMessageText } from '../utils/text';
 
 interface StatusBadgeInfo {
   canClick: boolean;
@@ -119,12 +120,14 @@ const DialogCard: React.FC<DialogCardProps> = ({
   }, [menuOpen]);
 
   const isAiToggling = aiToggleDialogId === chat.dialogId;
+  const previewContent = sanitizeMessageText(chat.lastMessageText)
+    ?? (chat.lastMessageHasAttachments ? getAttachmentKindLabel(chat.lastMessageAttachmentKind) : null);
   const previewPrefix = (() => {
-    if (!chat.lastMessageText) return null;
+    if (!previewContent) return null;
     if (chat.lastMessageDirection === 'outgoing') return sanitizeAuthorLabel(chat.lastMessageAuthor) ?? '\u0412\u044b';
     return sanitizeAuthorLabel(chat.lastMessageAuthor) ?? '\u041a\u043b\u0438\u0435\u043d\u0442';
   })();
-  const previewText = chat.lastMessageText ? `${previewPrefix ? `${previewPrefix}: ` : ''}${chat.lastMessageText}` : '\u041d\u0435\u0442 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0439';
+  const previewText = previewContent ? `${previewPrefix ? `${previewPrefix}: ` : ''}${previewContent}` : '\u041d\u0435\u0442 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0439';
 
   const isClosed = Boolean(chat.dialogClosedAt);
   const avatarBg = getAvatarColor(chat.title || chat.username || '\u041a\u043b\u0438\u0435\u043d\u0442');
@@ -249,7 +252,7 @@ const DialogCard: React.FC<DialogCardProps> = ({
             </div>
           </div>
 
-          <p className="dialog-card__minimal-preview" title={chat.lastMessageText ?? undefined}>{previewText}</p>
+          <p className="dialog-card__minimal-preview" title={previewContent ?? undefined}>{previewText}</p>
           <div className="dialog-card__tags">
             <span className={`dialog-card__tag ${isClosed ? 'dialog-card__tag--closed' : 'dialog-card__tag--open'}`}>
               {isClosed ? '\u0417\u0430\u043a\u0440\u044b\u0442' : '\u041e\u0442\u043a\u0440\u044b\u0442'}
@@ -268,3 +271,7 @@ const DialogCard: React.FC<DialogCardProps> = ({
 };
 
 export default DialogCard;
+
+
+
+

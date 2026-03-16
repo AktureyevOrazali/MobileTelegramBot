@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { RoleInfo, Section, UserBinAssignment, UserProfile } from '../types';
 import { formatDateTime } from '../utils/date';
 import { extractErrorMessage } from '../utils/errors';
@@ -82,7 +82,7 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     }, [user]);
 
     const roleOptions = useMemo(
-        () => roles.map((r) => ({ value: r.id, label: r.title })),
+        () => roles.map((r) => ({ value: r.id, label: roleLabels[r.id] ?? r.title })),
         [roles],
     );
 
@@ -567,3 +567,4 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
 };
 
 export default AdminUserCard;
+

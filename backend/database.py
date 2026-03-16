@@ -319,12 +319,54 @@ def _init_db() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS media_files (
+            id BIGSERIAL PRIMARY KEY,
+            storage_provider TEXT NOT NULL,
+            bucket TEXT NOT NULL,
+            object_key TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            size_bytes BIGINT NOT NULL,
+            original_name TEXT NOT NULL,
+            width INTEGER,
+            height INTEGER,
+            duration_sec REAL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS message_attachments (
+            id BIGSERIAL PRIMARY KEY,
+            message_id BIGINT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+            media_file_id BIGINT NOT NULL REFERENCES media_files(id) ON DELETE RESTRICT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            kind TEXT NOT NULL,
+            caption TEXT
+        )
+        """,
+        """
         CREATE INDEX IF NOT EXISTS idx_outbox_onec_status_ext_id
         ON outbox_onec(status, external_chat_id, id)
         """,
         """
         CREATE INDEX IF NOT EXISTS idx_outbox_onec_message
         ON outbox_onec(message_id)
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_media_files_object
+        ON media_files(storage_provider, bucket, object_key)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_media_files_fingerprint
+        ON media_files(sha256, size_bytes, mime_type)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_message_attachments_message_sort
+        ON message_attachments(message_id, sort_order, id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_message_attachments_media_file
+        ON message_attachments(media_file_id)
         """,
         """
         CREATE TABLE IF NOT EXISTS dialog_stats (
@@ -586,6 +628,8 @@ def _sync_sequences() -> None:
         "users",
         "chat_dialogs",
         "messages",
+        "media_files",
+        "message_attachments",
         "messages_archive",
         "notifications",
         "outbox_onec",
@@ -754,6 +798,224 @@ class Message:
         )
 
 
+def _row_to_media_file(row: Mapping[str, Any] | None) -> Dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "storage_provider": str(row["storage_provider"]),
+        "bucket": str(row["bucket"]),
+        "object_key": str(row["object_key"]),
+        "sha256": str(row["sha256"]),
+        "mime_type": str(row["mime_type"]),
+        "size_bytes": int(row["size_bytes"]),
+        "original_name": str(row["original_name"]),
+        "width": int(row["width"]) if row.get("width") is not None else None,
+        "height": int(row["height"]) if row.get("height") is not None else None,
+        "duration_sec": float(row["duration_sec"]) if row.get("duration_sec") is not None else None,
+        "created_at": str(row["created_at"]),
+    }
+
+
+def _normalize_media_kind(mime_type: str) -> str:
+    return "video" if str(mime_type).startswith("video/") else "image"
+
+
+def create_media_file(
+    *,
+    storage_provider: str,
+    bucket: str,
+    object_key: str,
+    sha256: str,
+    mime_type: str,
+    size_bytes: int,
+    original_name: str,
+    width: int | None = None,
+    height: int | None = None,
+    duration_sec: float | None = None,
+) -> Dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        cursor = execute(
+            """
+            INSERT INTO media_files (
+                storage_provider, bucket, object_key, sha256, mime_type,
+                size_bytes, original_name, width, height, duration_sec, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, storage_provider, bucket, object_key, sha256, mime_type, size_bytes, original_name, width, height, duration_sec, created_at
+            """,
+            (
+                storage_provider,
+                bucket,
+                object_key,
+                sha256,
+                mime_type,
+                int(size_bytes),
+                original_name,
+                width,
+                height,
+                duration_sec,
+                now,
+            ),
+        )
+        row = cursor.fetchone()
+    media_file = _row_to_media_file(row)
+    if media_file is None:
+        raise RuntimeError("Failed to persist media file")
+    return media_file
+
+
+def find_media_file_by_fingerprint(sha256: str, size_bytes: int, mime_type: str) -> Dict[str, Any] | None:
+    with _lock:
+        row = execute(
+            """
+            SELECT id, storage_provider, bucket, object_key, sha256, mime_type, size_bytes, original_name, width, height, duration_sec, created_at
+            FROM media_files
+            WHERE sha256 = %s AND size_bytes = %s AND mime_type = %s
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (sha256, int(size_bytes), mime_type),
+        ).fetchone()
+    return _row_to_media_file(row)
+
+
+def get_media_file(media_id: int) -> Dict[str, Any] | None:
+    with _lock:
+        row = execute(
+            """
+            SELECT id, storage_provider, bucket, object_key, sha256, mime_type, size_bytes, original_name, width, height, duration_sec, created_at
+            FROM media_files
+            WHERE id = %s
+            """,
+            (media_id,),
+        ).fetchone()
+    return _row_to_media_file(row)
+
+
+def list_media_files(media_ids: Sequence[int]) -> List[Dict[str, Any]]:
+    normalized_ids = [int(media_id) for media_id in media_ids]
+    if not normalized_ids:
+        return []
+    placeholders = ",".join("%s" for _ in normalized_ids)
+    with _lock:
+        rows = execute(
+            f"""
+            SELECT id, storage_provider, bucket, object_key, sha256, mime_type, size_bytes, original_name, width, height, duration_sec, created_at
+            FROM media_files
+            WHERE id IN ({placeholders})
+            ORDER BY id ASC
+            """,
+            normalized_ids,
+        ).fetchall()
+    result: List[Dict[str, Any]] = []
+    for row in rows:
+        media_file = _row_to_media_file(row)
+        if media_file is not None:
+            result.append(media_file)
+    return result
+
+
+def attach_media_to_message(
+    message_id: int,
+    media_file_ids: Sequence[int],
+    captions: Mapping[int, str | None] | None = None,
+) -> None:
+    normalized_ids: List[int] = []
+    seen: set[int] = set()
+    for media_file_id in media_file_ids:
+        normalized_id = int(media_file_id)
+        if normalized_id <= 0 or normalized_id in seen:
+            continue
+        normalized_ids.append(normalized_id)
+        seen.add(normalized_id)
+    if not normalized_ids:
+        return
+
+    existing = {item["id"]: item for item in list_media_files(normalized_ids)}
+    if len(existing) != len(normalized_ids):
+        missing = [str(media_id) for media_id in normalized_ids if media_id not in existing]
+        raise ValueError(f"Unknown attachment ids: {', '.join(missing)}")
+
+    caption_map = captions or {}
+    with _lock:
+        for sort_order, media_file_id in enumerate(normalized_ids):
+            media_file = existing[media_file_id]
+            execute(
+                """
+                INSERT INTO message_attachments (message_id, media_file_id, sort_order, kind, caption)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    int(message_id),
+                    media_file_id,
+                    sort_order,
+                    _normalize_media_kind(str(media_file["mime_type"])),
+                    caption_map.get(media_file_id),
+                ),
+            )
+
+
+def get_message_attachments_map(message_ids: Sequence[int]) -> Dict[int, List[Dict[str, Any]]]:
+    normalized_ids = [int(message_id) for message_id in message_ids]
+    result: Dict[int, List[Dict[str, Any]]] = {message_id: [] for message_id in normalized_ids}
+    if not normalized_ids:
+        return result
+    placeholders = ",".join("%s" for _ in normalized_ids)
+    with _lock:
+        rows = execute(
+            f"""
+            SELECT
+                ma.id AS attachment_id,
+                ma.message_id,
+                ma.media_file_id,
+                ma.sort_order,
+                ma.kind,
+                ma.caption,
+                mf.mime_type,
+                mf.size_bytes,
+                mf.original_name,
+                mf.width,
+                mf.height,
+                mf.duration_sec,
+                mf.storage_provider,
+                mf.bucket,
+                mf.object_key,
+                mf.sha256,
+                mf.created_at
+            FROM message_attachments ma
+            JOIN media_files mf ON mf.id = ma.media_file_id
+            WHERE ma.message_id IN ({placeholders})
+            ORDER BY ma.message_id ASC, ma.sort_order ASC, ma.id ASC
+            """,
+            normalized_ids,
+        ).fetchall()
+    for row in rows:
+        message_id = int(row["message_id"])
+        result.setdefault(message_id, []).append(
+            {
+                "id": int(row["attachment_id"]),
+                "media_id": int(row["media_file_id"]),
+                "sort_order": int(row["sort_order"]),
+                "kind": str(row["kind"]),
+                "caption": row.get("caption"),
+                "mime_type": str(row["mime_type"]),
+                "size_bytes": int(row["size_bytes"]),
+                "original_name": str(row["original_name"]),
+                "width": int(row["width"]) if row.get("width") is not None else None,
+                "height": int(row["height"]) if row.get("height") is not None else None,
+                "duration_sec": float(row["duration_sec"]) if row.get("duration_sec") is not None else None,
+                "storage_provider": str(row["storage_provider"]),
+                "bucket": str(row["bucket"]),
+                "object_key": str(row["object_key"]),
+                "sha256": str(row["sha256"]),
+                "created_at": str(row["created_at"]),
+            }
+        )
+    return result
+
+
 def upsert_chat(
     chat_id: int,
     title: str,
@@ -792,14 +1054,20 @@ def save_message(
     chat_type: str,
     section: str | None,
     dialog_id: int | None = None,
+    attachment_ids: Sequence[int] | None = None,
 ) -> int:
+    normalized_text = text if text is not None else ""
+    normalized_attachment_ids = [int(item) for item in (attachment_ids or []) if int(item) > 0]
+    if not normalized_text.strip() and not normalized_attachment_ids:
+        raise ValueError("Message must contain text or attachments")
+
     now = datetime.now(timezone.utc).isoformat()
     resolved_dialog_id = dialog_id
     if resolved_dialog_id is None:
         active_dialog = get_active_chat_dialog(chat_id)
         if active_dialog:
             resolved_dialog_id = active_dialog["id"]
-            
+
     with _lock:
         cursor = execute(
             """
@@ -807,12 +1075,14 @@ def save_message(
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (chat_id, direction, text, message_id, author, now, section, resolved_dialog_id),
+            (chat_id, direction, normalized_text, message_id, author, now, section, resolved_dialog_id),
         )
         inserted_row = cursor.fetchone()
         if inserted_row is None:
             raise RuntimeError("Failed to persist message")
         inserted_id = int(inserted_row["id"])
+        if normalized_attachment_ids:
+            attach_media_to_message(inserted_id, normalized_attachment_ids)
         if resolved_dialog_id is not None:
             execute(
                 "UPDATE chat_dialogs SET last_message_at = %s WHERE id = %s",
@@ -1936,6 +2206,22 @@ def list_chats_for_user(
         "    ORDER BY m.created_at DESC, m.id DESC",
         "    LIMIT 1",
         "  ) AS last_message_author,",
+        "  EXISTS(",
+        "    SELECT 1",
+        "    FROM messages m",
+        "    JOIN message_attachments ma ON ma.message_id = m.id",
+        "    WHERE m.chat_id = c.chat_id AND m.dialog_id = cd.id",
+        "    ORDER BY m.created_at DESC, m.id DESC, ma.sort_order ASC, ma.id ASC",
+        "    LIMIT 1",
+        "  ) AS last_message_has_attachments,",
+        "  (",
+        "    SELECT ma.kind",
+        "    FROM messages m",
+        "    JOIN message_attachments ma ON ma.message_id = m.id",
+        "    WHERE m.chat_id = c.chat_id AND m.dialog_id = cd.id",
+        "    ORDER BY m.created_at DESC, m.id DESC, ma.sort_order ASC, ma.id ASC",
+        "    LIMIT 1",
+        "  ) AS last_message_attachment_kind,",
         "  f.user_id AS fav_user_id,",
         "  dr.last_read_at AS last_read_at,",
         "  COALESCE((",
@@ -2004,6 +2290,8 @@ def list_chats_for_user(
                 "last_message_text": row["last_message_text"],
                 "last_message_direction": row["last_message_direction"],
                 "last_message_author": row["last_message_author"],
+                "last_message_has_attachments": bool(row["last_message_has_attachments"]),
+                "last_message_attachment_kind": row["last_message_attachment_kind"],
             }
         )
     return chats
@@ -2055,10 +2343,13 @@ def get_messages(
     sql = "\n".join(query_parts)
     with _lock:
         rows = execute(sql, params).fetchall()
+    row_ids = [int(row["id"]) for row in rows]
+    attachments_map = get_message_attachments_map(row_ids)
     messages = []
     for row in rows:
         message = asdict(Message.from_row(row))
         message["created_at"] = message["created_at"].isoformat()
+        message["attachments"] = attachments_map.get(int(message["id"]), [])
         messages.append(message)
     return list(reversed(messages))
 
@@ -4571,6 +4862,10 @@ def delete_reply_template(template_id: int) -> bool:
             (template_id,),
         )
     return cursor.rowcount > 0
+
+
+
+
 
 
 

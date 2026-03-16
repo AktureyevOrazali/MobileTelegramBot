@@ -1,6 +1,7 @@
 ﻿"""Telegram bot that writes incoming messages into the database."""
 from __future__ import annotations
 
+import io
 import logging
 import os
 import re
@@ -11,6 +12,7 @@ from telebot import types
 
 from . import database
 from .ai_manager import ai_manager
+from .media import MediaValidationError, media_service
 from . import contract_checker
 import asyncio
 
@@ -474,6 +476,39 @@ def handle_updates(message: telebot.types.Message) -> None:
         _generate_ai_response(message, current_section)
 
 
+def _extract_telegram_attachment_ids(message: telebot.types.Message) -> list[int]:
+    if message.content_type not in ("photo", "video"):
+        return []
+    try:
+        if message.content_type == "photo":
+            photo = message.photo[-1] if message.photo else None
+            if photo is None:
+                return []
+            file_id = photo.file_id
+            original_name = f"telegram_photo_{message.message_id}.jpg"
+            claimed_mime = "image/jpeg"
+        else:
+            video = message.video
+            if video is None:
+                return []
+            file_id = video.file_id
+            original_name = video.file_name or f"telegram_video_{message.message_id}.mp4"
+            claimed_mime = video.mime_type or "video/mp4"
+        file_info = bot.get_file(file_id)
+        payload = bot.download_file(file_info.file_path)
+        media = media_service.ingest_upload(
+            io.BytesIO(payload),
+            original_name=original_name,
+            claimed_mime_type=claimed_mime,
+        )
+        return [media.media_id]
+    except MediaValidationError as exc:
+        logger.warning("Telegram media validation failed for chat %s: %s", message.chat.id, exc.message)
+    except Exception as exc:
+        logger.exception("Failed to ingest Telegram media for chat %s: %s", message.chat.id, exc)
+    return []
+
+
 def _humanize_message(message: telebot.types.Message) -> str:
     if message.content_type == "text":
         return message.text or ""
@@ -581,7 +616,15 @@ def _persist_message(
     dialog_id: Optional[int] = None,
 ) -> None:
     chat = message.chat
-    text = override_text if override_text is not None else _humanize_message(message)
+    attachment_ids = _extract_telegram_attachment_ids(message)
+    if override_text is not None:
+        text = override_text
+    elif message.content_type in ("photo", "video"):
+        text = (message.caption or "").strip()
+    else:
+        text = _humanize_message(message)
+    if not text.strip() and not attachment_ids:
+        text = _humanize_message(message) or f"[{message.content_type} ?????????]"
     message_author = author
     resolved_dialog_id = _resolve_dialog_id(chat.id, dialog_id)
 
@@ -599,6 +642,7 @@ def _persist_message(
         chat_type=chat.type,
         section=section,
         dialog_id=resolved_dialog_id,
+        attachment_ids=attachment_ids,
     )
     logger.info("Stored %s message from chat %s", direction, chat.id)
     _publish_message_event(

@@ -1,5 +1,6 @@
 ﻿import { CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { sanitizeUiText } from '../utils/text';
 
 type Option = { value: string; label: string; meta?: string };
 
@@ -31,14 +32,14 @@ export default function SelectPill({
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
 
   const currentLabel = useMemo(
-    () => options.find((o) => o.value === value)?.label ?? placeholder,
+    () => sanitizeUiText(options.find((o) => o.value === value)?.label) ?? placeholder,
     [options, value, placeholder],
   );
 
   const filtered = useMemo(() => {
     if (!searchable || !q.trim()) return options;
     const s = q.toLowerCase();
-    return options.filter((o) => (o.label + o.value + (o.meta || '')).toLowerCase().includes(s));
+    return options.filter((o) => ((sanitizeUiText(o.label) ?? o.label) + o.value + (sanitizeUiText(o.meta) ?? o.meta ?? '')).toLowerCase().includes(s));
   }, [q, options, searchable]);
 
   useEffect(() => {
@@ -149,8 +150,8 @@ export default function SelectPill({
                 setOpen(false);
               }}
             >
-              <span>{o.label}</span>
-              {o.meta && <span className="meta">{o.meta}</span>}
+              <span>{sanitizeUiText(o.label) ?? o.label}</span>
+              {o.meta && <span className="meta">{sanitizeUiText(o.meta) ?? o.meta}</span>}
             </div>
           ))}
           {filtered.length === 0 && (
@@ -164,3 +165,5 @@ export default function SelectPill({
     </div>
   );
 }
+
+

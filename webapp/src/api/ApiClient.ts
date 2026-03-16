@@ -1,4 +1,4 @@
-import {
+﻿import {
   AuthSession,
   AuthSessionRaw,
   BinDetailed,
@@ -11,9 +11,11 @@ import {
   DialogStatusUpdateRaw,
   Message,
   MessageNotification,
+  UploadMediaResponse,
   MessageNotificationRaw,
   MessageRaw,
   OrganizationWithoutContract,
+  UploadMediaResponseRaw,
   OrganizationWithoutContractRaw,
   PendingRegistration,
   PendingRegistrationRaw,
@@ -29,6 +31,7 @@ import {
   UserBinAssignment,
 } from '../types';
 import {
+  mapAttachment,
   mapChatSummary,
   mapDashboardSummary,
   mapMessage,
@@ -36,6 +39,7 @@ import {
   mapSession,
   mapUserProfile,
 } from '../utils/converters';
+import { sanitizeUiText } from '../utils/text';
 
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -44,6 +48,11 @@ export class ApiError extends Error {
   }
 }
 
+const ROLE_TITLES: Record<string, string> = {
+  admin: '\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440',
+  moderator: '\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440',
+  operator: '\u041e\u043f\u0435\u0440\u0430\u0442\u043e\u0440',
+};
 const BUILD_TIME_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim();
 const BUILD_TIME_API_TOKEN = (import.meta.env.VITE_API_TOKEN ?? '').trim();
 
@@ -137,7 +146,7 @@ export class ApiClient {
         throw error;
       }
       throw new ApiError(
-        'Не удалось подключиться к серверу. Проверьте интернет-соединение и адрес API.',
+        '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c\u0441\u044f \u043a \u0441\u0435\u0440\u0432\u0435\u0440\u0443. \u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u0438\u043d\u0442\u0435\u0440\u043d\u0435\u0442-\u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0435 \u0438 \u0430\u0434\u0440\u0435\u0441 API.',
       );
     }
 
@@ -147,12 +156,12 @@ export class ApiClient {
     }
 
     if (!expectJson) {
-      // Сбрасываем тело ответа, чтобы соединение могло быть переиспользовано.
+      // РЎР±СЂР°СЃС‹РІР°РµРј С‚РµР»Рѕ РѕС‚РІРµС‚Р°, С‡С‚РѕР±С‹ СЃРѕРµРґРёРЅРµРЅРёРµ РјРѕРіР»Рѕ Р±С‹С‚СЊ РїРµСЂРµРёСЃРїРѕР»СЊР·РѕРІР°РЅРѕ.
       if (response.body) {
         try {
           await response.body.cancel();
         } catch (error) {
-          // Игнорируем ошибки при отмене чтения тела ответа.
+          // РРіРЅРѕСЂРёСЂСѓРµРј РѕС€РёР±РєРё РїСЂРё РѕС‚РјРµРЅРµ С‡С‚РµРЅРёСЏ С‚РµР»Р° РѕС‚РІРµС‚Р°.
         }
       }
       return undefined as T;
@@ -177,7 +186,7 @@ export class ApiClient {
     } catch (error) {
       const message = this.normalizeErrorMessage(raw.trim());
       throw new ApiError(
-        message || 'Сервер вернул неожиданный ответ. Попробуйте повторить попытку позже.',
+        message || '\u0421\u0435\u0440\u0432\u0435\u0440 \u0432\u0435\u0440\u043d\u0443\u043b \u043d\u0435\u043e\u0436\u0438\u0434\u0430\u043d\u043d\u044b\u0439 \u043e\u0442\u0432\u0435\u0442. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u043f\u043e\u0432\u0442\u043e\u0440\u0438\u0442\u044c \u043f\u043e\u043f\u044b\u0442\u043a\u0443 \u043f\u043e\u0437\u0436\u0435.',
         response.status,
       );
     }
@@ -227,22 +236,23 @@ export class ApiClient {
     if (!normalized || normalized.startsWith('<')) {
       return null;
     }
-    switch (normalized) {
+    const repaired = sanitizeUiText(normalized) ?? normalized;
+    switch (repaired) {
       case 'Invalid API token':
-        return 'Неверный API токен. Проверьте конфигурацию.';
+        return '\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 API \u0442\u043e\u043a\u0435\u043d. \u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u043a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044e.';
       case 'Invalid credentials':
-        return 'Неверный логин или пароль.';
+        return '\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 \u043b\u043e\u0433\u0438\u043d \u0438\u043b\u0438 \u043f\u0430\u0440\u043e\u043b\u044c.';
       case 'User already exists':
-        return 'Пользователь с таким e-mail уже зарегистрирован.';
+        return '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u0441 \u0442\u0430\u043a\u0438\u043c e-mail \u0443\u0436\u0435 \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043e\u0432\u0430\u043d.';
       case 'Administrator role required':
-        return 'Недостаточно прав: требуется роль администратора.';
-      case 'Аккаунт ожидает подтверждения модератора':
-        return 'Аккаунт ожидает подтверждения модератора.';
+        return '\u041d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043e\u0447\u043d\u043e \u043f\u0440\u0430\u0432: \u0442\u0440\u0435\u0431\u0443\u0435\u0442\u0441\u044f \u0440\u043e\u043b\u044c \u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430.';
+      case '\u0410\u043a\u043a\u0430\u0443\u043d\u0442 \u043e\u0436\u0438\u0434\u0430\u0435\u0442 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f \u043c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440\u0430':
+        return '\u0410\u043a\u043a\u0430\u0443\u043d\u0442 \u043e\u0436\u0438\u0434\u0430\u0435\u0442 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f \u043c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440\u0430.';
       case 'Session token required':
       case 'Invalid session token':
-        return 'Сессия истекла. Выполните вход заново.';
+        return '\u0421\u0435\u0441\u0441\u0438\u044f \u0438\u0441\u0442\u0435\u043a\u043b\u0430. \u0412\u044b\u043f\u043e\u043b\u043d\u0438\u0442\u0435 \u0432\u0445\u043e\u0434 \u0437\u0430\u043d\u043e\u0432\u043e.';
       default:
-        return normalized;
+        return repaired;
     }
   }
 
@@ -301,7 +311,12 @@ export class ApiClient {
   }
 
   async fetchSections(): Promise<Section[]> {
-    return this.request<Section[]>('sections', { method: 'GET' });
+    const response = await this.request<Section[]>('sections', { method: 'GET' });
+    return response.map((section) => ({
+      ...section,
+      id: sanitizeUiText(section.id) ?? section.id,
+      title: sanitizeUiText(section.title) ?? section.title,
+    }));
   }
 
   async fetchBins(query?: string): Promise<string[]> {
@@ -421,7 +436,7 @@ export class ApiClient {
       },
     });
     if (!response.ok) {
-      throw new ApiError('Не удалось скачать отчёт.', response.status);
+      throw new ApiError('\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043a\u0430\u0447\u0430\u0442\u044c \u043e\u0442\u0447\u0451\u0442.', response.status);
     }
 
     const blob = await response.blob();
@@ -444,10 +459,41 @@ export class ApiClient {
     URL.revokeObjectURL(a.href);
   }
 
-  async sendMessage(chatId: number, text: string, dialogId?: number): Promise<void> {
+  async uploadMedia(file: File): Promise<UploadMediaResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(this.buildUrl('uploads'), {
+      method: 'POST',
+      headers: {
+        'X-Api-Token': this.apiToken,
+        ...(this.session?.token ? { 'X-Session-Token': this.session.token } : {}),
+      },
+      body: formData,
+    });
+    if (!response.ok) {
+      const message = await this.extractErrorMessage(response);
+      throw new ApiError(message ?? 'Не удалось загрузить файл.', response.status);
+    }
+    const raw = await this.parseJsonResponse<UploadMediaResponseRaw>(response);
+    return {
+      status: raw.status,
+      mediaId: raw.media_id,
+      kind: raw.kind,
+      url: raw.url,
+      previewUrl: raw.preview_url ?? null,
+      mimeType: raw.mime_type,
+      sizeBytes: raw.size_bytes,
+      originalName: raw.original_name,
+      width: raw.width ?? null,
+      height: raw.height ?? null,
+      durationSec: raw.duration_sec ?? null,
+    };
+  }
+
+  async sendMessage(chatId: number, text: string, dialogId?: number, attachmentIds: number[] = []): Promise<void> {
     await this.request('messages/send', {
       method: 'POST',
-      body: JSON.stringify({ chat_id: chatId, text, dialog_id: dialogId }),
+      body: JSON.stringify({ chat_id: chatId, text, dialog_id: dialogId, attachment_ids: attachmentIds }),
     });
   }
 
@@ -551,7 +597,12 @@ export class ApiClient {
   }
 
   async fetchRoles(): Promise<RoleInfo[]> {
-    return this.request<RoleInfo[]>('roles', { method: 'GET' });
+    const response = await this.request<RoleInfo[]>('roles', { method: 'GET' });
+    return response.map((role) => ({
+      ...role,
+      id: sanitizeUiText(role.id) ?? role.id,
+      title: sanitizeUiText(role.title) ?? role.title,
+    }));
   }
 
   async updateUserRole(userId: number, role: string): Promise<UserProfile> {
@@ -719,3 +770,8 @@ export class ApiClient {
     };
   }
 }
+
+
+
+
+

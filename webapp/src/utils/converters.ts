@@ -1,4 +1,6 @@
-import {
+﻿import {
+  Attachment,
+  AttachmentRaw,
   AuthSession,
   AuthSessionRaw,
   ChatSummary,
@@ -20,6 +22,7 @@ import {
   UserBinAssignment,
   UserBinAssignmentRaw,
 } from '../types';
+import { sanitizeUiText } from './text';
 
 /**
  * Shape of a bin assignment entry as it may appear in localStorage
@@ -90,13 +93,13 @@ export function mapUserProfile(raw: UserProfileRaw): UserProfile {
   };
   return {
     id: raw.id,
-    email: raw.email,
-    login: raw.login,
-    name: raw.name,
+    email: sanitizeUiText(raw.email) ?? raw.email,
+    login: sanitizeUiText(raw.login) ?? raw.login,
+    name: sanitizeUiText(raw.name) ?? raw.name,
     createdAt: new Date(raw.created_at),
-    jobTitle: raw.job_title,
-    phone: raw.phone,
-    bio: raw.bio,
+    jobTitle: sanitizeUiText(raw.job_title) ?? raw.job_title,
+    phone: sanitizeUiText(raw.phone) ?? raw.phone,
+    bio: sanitizeUiText(raw.bio) ?? raw.bio,
     role,
     isApproved: raw.is_approved ?? true,
     sections: raw.sections ?? [],
@@ -151,26 +154,45 @@ export function mapSession(raw: AuthSessionRaw): AuthSession {
   };
 }
 
+export function mapAttachment(raw: AttachmentRaw): Attachment {
+  return {
+    id: raw.id,
+    mediaId: raw.media_id,
+    kind: raw.kind,
+    url: raw.url,
+    previewUrl: raw.preview_url ?? null,
+    mimeType: raw.mime_type,
+    sizeBytes: raw.size_bytes,
+    originalName: raw.original_name,
+    width: raw.width ?? null,
+    height: raw.height ?? null,
+    durationSec: raw.duration_sec ?? null,
+    caption: raw.caption ?? null,
+  };
+}
+
 export function mapChatSummary(raw: ChatSummaryRaw): ChatSummary {
   const operatorMode = Boolean(raw.operator_mode);
   return {
     chatId: raw.chat_id,
     dialogId: raw.dialog_id ?? raw.chat_id,
-    title: raw.title,
-    username: raw.username ?? null,
+    title: sanitizeUiText(raw.title) ?? raw.title,
+    username: sanitizeUiText(raw.username) ?? null,
     type: raw.type,
     updatedAt: new Date(raw.updated_at),
     dialogStartedAt: new Date(raw.dialog_started_at),
     dialogClosedAt: raw.dialog_closed_at ? new Date(raw.dialog_closed_at) : null,
     section: raw.section ?? null,
-    sectionTitle: raw.section_title ?? null,
+    sectionTitle: sanitizeUiText(raw.section_title) ?? null,
     bin: raw.bin ?? null,
     isFavorite: Boolean(raw.is_favorite),
     aiEnabled: !operatorMode,
     unreadCount: typeof raw.unread_count === 'number' ? raw.unread_count : 0,
-    lastMessageText: typeof raw.last_message_text === 'string' ? raw.last_message_text : null,
+    lastMessageText: typeof raw.last_message_text === 'string' ? sanitizeUiText(raw.last_message_text) : null,
     lastMessageDirection: raw.last_message_direction === 'incoming' || raw.last_message_direction === 'outgoing' ? raw.last_message_direction : null,
-    lastMessageAuthor: typeof raw.last_message_author === 'string' ? raw.last_message_author : null,
+    lastMessageAuthor: typeof raw.last_message_author === 'string' ? sanitizeUiText(raw.last_message_author) : null,
+    lastMessageHasAttachments: Boolean(raw.last_message_has_attachments),
+    lastMessageAttachmentKind: typeof raw.last_message_attachment_kind === 'string' ? raw.last_message_attachment_kind : null,
   };
 }
 
@@ -179,12 +201,13 @@ export function mapMessage(raw: MessageRaw): Message {
     id: raw.id,
     chatId: raw.chat_id,
     direction: raw.direction,
-    text: raw.text,
-    author: raw.author ?? null,
+    text: sanitizeUiText(raw.text) ?? raw.text,
+    author: sanitizeUiText(raw.author) ?? null,
     createdAt: new Date(raw.created_at),
     section: raw.section ?? null,
-    sectionTitle: raw.section_title ?? null,
+    sectionTitle: sanitizeUiText(raw.section_title) ?? null,
     dialogId: raw.dialog_id ?? null,
+    attachments: Array.isArray(raw.attachments) ? raw.attachments.map(mapAttachment) : [],
   };
 }
 
@@ -192,11 +215,11 @@ export function mapNotification(raw: MessageNotificationRaw): MessageNotificatio
   return {
     type: raw.type,
     chatId: raw.chat_id ?? null,
-    chatTitle: raw.chat_title ?? null,
-    text: raw.text,
+    chatTitle: sanitizeUiText(raw.chat_title) ?? null,
+    text: sanitizeUiText(raw.text) ?? raw.text,
     createdAt: new Date(raw.created_at),
     section: raw.section ?? null,
-    sectionTitle: raw.section_title ?? null,
+    sectionTitle: sanitizeUiText(raw.section_title) ?? null,
     bin: raw.bin ?? null,
     dialogId: raw.dialog_id ?? null,
   };
@@ -450,6 +473,10 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
     updatedAt: raw.updated_at ? new Date(raw.updated_at) : new Date(),
   };
 }
+
+
+
+
 
 
 

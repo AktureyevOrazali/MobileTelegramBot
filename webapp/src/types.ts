@@ -101,6 +101,8 @@ export interface ChatSummaryRaw {
   last_message_text?: string | null;
   last_message_direction?: 'incoming' | 'outgoing' | null;
   last_message_author?: string | null;
+  last_message_has_attachments?: boolean;
+  last_message_attachment_kind?: 'image' | 'video' | string | null;
 }
 
 export interface DialogStatusUpdateRaw {
@@ -108,6 +110,35 @@ export interface DialogStatusUpdateRaw {
   dialog_id: number;
   dialog_closed_at?: string | null;
   ai_enabled?: boolean;
+}
+
+export interface AttachmentRaw {
+  id: number;
+  media_id: number;
+  kind: 'image' | 'video';
+  url: string;
+  preview_url?: string | null;
+  mime_type: string;
+  size_bytes: number;
+  original_name: string;
+  width?: number | null;
+  height?: number | null;
+  duration_sec?: number | null;
+  caption?: string | null;
+}
+
+export interface UploadMediaResponseRaw {
+  status: string;
+  media_id: number;
+  kind: 'image' | 'video';
+  url: string;
+  preview_url?: string | null;
+  mime_type: string;
+  size_bytes: number;
+  original_name: string;
+  width?: number | null;
+  height?: number | null;
+  duration_sec?: number | null;
 }
 
 export interface MessageRaw {
@@ -120,6 +151,7 @@ export interface MessageRaw {
   section?: string | null;
   section_title?: string | null;
   dialog_id?: number | null;
+  attachments?: AttachmentRaw[];
 }
 
 export interface MessageNotificationRaw {
@@ -194,6 +226,8 @@ export interface ChatSummary {
   lastMessageText: string | null;
   lastMessageDirection: 'incoming' | 'outgoing' | null;
   lastMessageAuthor: string | null;
+  lastMessageHasAttachments: boolean;
+  lastMessageAttachmentKind: 'image' | 'video' | string | null;
 }
 
 export interface DialogStatusUpdate {
@@ -201,6 +235,35 @@ export interface DialogStatusUpdate {
   dialogId: number;
   dialogClosedAt: Date | null;
   aiEnabled: boolean;
+}
+
+export interface Attachment {
+  id: number;
+  mediaId: number;
+  kind: 'image' | 'video';
+  url: string;
+  previewUrl: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  originalName: string;
+  width: number | null;
+  height: number | null;
+  durationSec: number | null;
+  caption: string | null;
+}
+
+export interface UploadMediaResponse {
+  status: string;
+  mediaId: number;
+  kind: 'image' | 'video';
+  url: string;
+  previewUrl: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  originalName: string;
+  width: number | null;
+  height: number | null;
+  durationSec: number | null;
 }
 
 export interface Message {
@@ -213,6 +276,7 @@ export interface Message {
   section?: string | null;
   sectionTitle?: string | null;
   dialogId?: number | null;
+  attachments: Attachment[];
 }
 
 export interface MessageNotification {
@@ -455,6 +519,7 @@ export interface ReplyTemplate {
   createdBy?: number | null;
   createdAt: Date;
 }
+
 
 
 

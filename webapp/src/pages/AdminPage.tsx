@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ApiClient } from '../api/ApiClient';
-import { UserBinAssignment, UserProfile } from '../types';
+import { UserProfile } from '../types';
 import { extractErrorMessage } from '../utils/errors';
 import { cloneAssignment, formatDateTimeLocalInput, parseDateTimeLocalInput } from '../utils/admin-helpers';
-import SelectPill from '../components/SelectPill';
 import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
 import AdminUserCard from '../components/AdminUserCard';
@@ -116,6 +115,28 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const selectedAssignUser = useMemo(
     () => admin.assignableUsers.find((user) => String(user.id) === assignUserId) ?? null,
     [admin.assignableUsers, assignUserId],
+  );
+
+  const binNameByBin = useMemo(() => {
+    const map = new Map<string, string>();
+    admin.binsDetailed.forEach((item) => {
+      if (item.customerNameRu) {
+        map.set(item.bin, item.customerNameRu);
+      }
+    });
+    admin.organizationsWithoutContracts.forEach((item) => {
+      if (item.customerNameRu && !map.has(item.customerBin)) {
+        map.set(item.customerBin, item.customerNameRu);
+      }
+    });
+    return map;
+  }, [admin.binsDetailed, admin.organizationsWithoutContracts]);
+
+  const getBinName = (bin: string, preferredName?: string | null) => preferredName ?? binNameByBin.get(bin) ?? null;
+
+  const assignBinName = useMemo(
+    () => (assignBinValue ? getBinName(assignBinValue) : null),
+    [assignBinValue, binNameByBin],
   );
 
   // ── Open assignment modal for a specific BIN ──
@@ -288,6 +309,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
               roles={admin.roles}
               sections={admin.sections}
               availableBins={admin.bins}
+              binDetails={admin.binsDetailed}
               onRoleSave={admin.handleRoleSave}
               onSectionsSave={admin.handleSectionsSave}
               onBinsSave={admin.handleBinsSave}
@@ -427,13 +449,16 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
               <div className="bin-info-details">
                 <h4>{admin.selectedBinInfo.bin}</h4>
                 <p className="text-warning">⚠ Без договора</p>
+                {admin.selectedBinInfo.customerNameRu && (
+                  <p><strong>{"\u041e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0446\u0438\u044f:"}</strong> {admin.selectedBinInfo.customerNameRu}</p>
+                )}
                 {admin.selectedBinInfo.customerLegalAddress && (
                   <p><strong>Адрес:</strong> {admin.selectedBinInfo.customerLegalAddress}</p>
                 )}
                 {admin.selectedBinInfo.customerBankNameRu && (
                   <p><strong>Банк:</strong> {admin.selectedBinInfo.customerBankNameRu}</p>
                 )}
-                {!admin.selectedBinInfo.customerLegalAddress && !admin.selectedBinInfo.customerBankNameRu && (
+                {!admin.selectedBinInfo.customerNameRu && !admin.selectedBinInfo.customerLegalAddress && !admin.selectedBinInfo.customerBankNameRu && (
                   <p className="text-muted">Дополнительная информация недоступна</p>
                 )}
               </div>
@@ -448,7 +473,10 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                   className="chip bin-chip bin-chip--compact bin-chip--clickable"
                   onClick={() => admin.handleBinClick(item.customerBin)}
                 >
-                  <span className="bin-chip__title">{item.customerBin}</span>
+                  <span className="bin-chip__text">
+                    <span className="bin-chip__title">{item.customerBin}</span>
+                    {getBinName(item.customerBin, item.customerNameRu) && <span className="bin-chip__meta">{getBinName(item.customerBin, item.customerNameRu)}</span>}
+                  </span>
                   <span className="bin-chip__status bin-chip__status--no-contract">без договора</span>
                 </span>
               ))}
@@ -485,13 +513,16 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
               <div className="bin-info-details">
                 <h4>{admin.selectedBinInfo.bin}</h4>
                 <p className="text-success">✓ Есть договор</p>
+                {admin.selectedBinInfo.customerNameRu && (
+                  <p><strong>{"\u041e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0446\u0438\u044f:"}</strong> {admin.selectedBinInfo.customerNameRu}</p>
+                )}
                 {admin.selectedBinInfo.customerLegalAddress && (
                   <p><strong>Адрес:</strong> {admin.selectedBinInfo.customerLegalAddress}</p>
                 )}
                 {admin.selectedBinInfo.customerBankNameRu && (
                   <p><strong>Банк:</strong> {admin.selectedBinInfo.customerBankNameRu}</p>
                 )}
-                {!admin.selectedBinInfo.customerLegalAddress && !admin.selectedBinInfo.customerBankNameRu && (
+                {!admin.selectedBinInfo.customerNameRu && !admin.selectedBinInfo.customerLegalAddress && !admin.selectedBinInfo.customerBankNameRu && (
                   <p className="text-muted">Дополнительная информация недоступна</p>
                 )}
               </div>
@@ -506,7 +537,10 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                   className="chip bin-chip bin-chip--compact bin-chip--clickable"
                   onClick={() => admin.handleBinClick(item.bin)}
                 >
-                  <span className="bin-chip__title">{item.bin}</span>
+                  <span className="bin-chip__text">
+                    <span className="bin-chip__title">{item.bin}</span>
+                    {getBinName(item.bin, item.customerNameRu) && <span className="bin-chip__meta">{getBinName(item.bin, item.customerNameRu)}</span>}
+                  </span>
                   <span className="bin-chip__status bin-chip__status--contract">договор</span>
                 </span>
               ))}
@@ -543,7 +577,10 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                   className="chip bin-chip bin-chip--compact bin-chip--clickable"
                   onClick={() => openAssignModal(item.bin)}
                 >
-                  <span className="bin-chip__title">{item.bin}</span>
+                  <span className="bin-chip__text">
+                    <span className="bin-chip__title">{item.bin}</span>
+                    {getBinName(item.bin) && <span className="bin-chip__meta">{getBinName(item.bin)}</span>}
+                  </span>
                   <span className={`bin-chip__status ${item.hasContract ? 'bin-chip__status--contract' : 'bin-chip__status--no-contract'}`}>
                     {item.hasContract ? 'договор' : 'без договора'}
                   </span>
@@ -566,7 +603,8 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
           </div>
 
           <div className="admin-assign-modal__bin-label">
-            {assignBinValue}
+            <span className="bin-chip__title">{assignBinValue}</span>
+            {assignBinName && <span className="bin-chip__meta">{assignBinName}</span>}
           </div>
 
           <input
@@ -691,13 +729,16 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                 <p className={admin.selectedBinInfo.hasContract ? 'text-success' : 'text-warning'}>
                   {admin.selectedBinInfo.hasContract ? '✓ Есть договор' : '⚠ Без договора'}
                 </p>
+                {admin.selectedBinInfo.customerNameRu && (
+                  <p><strong>{"\u041e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0446\u0438\u044f:"}</strong> {admin.selectedBinInfo.customerNameRu}</p>
+                )}
                 {admin.selectedBinInfo.customerLegalAddress && (
                   <p><strong>Адрес:</strong> {admin.selectedBinInfo.customerLegalAddress}</p>
                 )}
                 {admin.selectedBinInfo.customerBankNameRu && (
                   <p><strong>Банк:</strong> {admin.selectedBinInfo.customerBankNameRu}</p>
                 )}
-                {!admin.selectedBinInfo.customerLegalAddress && !admin.selectedBinInfo.customerBankNameRu && (
+                {!admin.selectedBinInfo.customerNameRu && !admin.selectedBinInfo.customerLegalAddress && !admin.selectedBinInfo.customerBankNameRu && (
                   <p className="text-muted">Дополнительная информация недоступна</p>
                 )}
               </div>
@@ -712,7 +753,10 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                   className="chip bin-chip bin-chip--compact bin-chip--deletable bin-chip--clickable"
                   onClick={() => admin.handleBinClick(item.bin)}
                 >
-                  <span className="bin-chip__title">{item.bin}</span>
+                  <span className="bin-chip__text">
+                    <span className="bin-chip__title">{item.bin}</span>
+                    {getBinName(item.bin, item.customerNameRu) && <span className="bin-chip__meta">{getBinName(item.bin, item.customerNameRu)}</span>}
+                  </span>
                   <span className={`bin-chip__status ${item.hasContract ? 'bin-chip__status--contract' : 'bin-chip__status--no-contract'}`}>
                     {item.hasContract ? 'договор' : 'без договора'}
                   </span>

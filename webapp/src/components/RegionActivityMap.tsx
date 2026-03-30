@@ -10,53 +10,194 @@ import type { BinDetailed, ChatSummary } from '../types';
 /** GeoJSON features for Kazakhstan regions — kept for useDialogsData compatibility. */
 export const GEOJSON_FEATURES = kzMap as FeatureCollection<Geometry, { name: string }>;
 
-export const REGION_LABELS: Record<string, string> = {
-    Abai: 'Абайская область',
-    Akmola: 'Акмолинская область',
-    Aktobe: 'Актюбинская область',
-    Almaty: 'Алматинская область',
+const CITY_LABELS: Record<string, string> = {
     'Almaty (city)': 'г. Алматы',
     Astana: 'г. Астана',
-    Atyrau: 'Атырауская область',
-    'East Kazakhstan': 'Восточно-Казахстанская область',
-    Jambyl: 'Жамбылская область',
-    Jetisu: 'Жетысуская область',
-    Karaganda: 'Карагандинская область',
-    Kostanay: 'Костанайская область',
-    Kyzylorda: 'Кызылординская область',
-    Mangystau: 'Мангистауская область',
-    'North Kazakhstan': 'Северо-Казахстанская область',
-    Pavlodar: 'Павлодарская область',
     'Shymkent (city)': 'г. Шымкент',
-    Turkestan: 'Туркестанская область',
-    Ulytau: 'Улытауская область',
-    'West Kazakhstan': 'Западно-Казахстанская область',
 };
 
-const REGION_MATCHERS: { key: string; patterns: string[] }[] = [
-    { key: 'Almaty (city)', patterns: ['алматы', 'г.алматы', 'город алматы', 'алматы қ', 'almaty city'] },
-    { key: 'Astana', patterns: ['г. астана', 'астана'] },
-    { key: 'Shymkent (city)', patterns: ['г. шымкент', 'шымкент', 'shymkent'] },
-    { key: 'Almaty', patterns: ['алматин', 'almaty oblast'] },
-    { key: 'Akmola', patterns: ['акмол', 'akmola'] },
-    { key: 'Aktobe', patterns: ['актоб', 'aktobe', 'актюб'] },
-    { key: 'Atyrau', patterns: ['атырау', 'atyrau'] },
-    { key: 'East Kazakhstan', patterns: ['восточно-казахстан', 'east kazakhstan'] },
-    { key: 'West Kazakhstan', patterns: ['западно-казахстан', 'west kazakhstan'] },
-    { key: 'North Kazakhstan', patterns: ['северо-казахстан', 'north kazakhstan'] },
-    { key: 'Jambyl', patterns: ['жамбыл', 'jambyl', 'zhambyl'] },
-    { key: 'Jetisu', patterns: ['жетысу', 'jetisu', 'zhetisu', 'жетісу'] },
-    { key: 'Karaganda', patterns: ['караган', 'karaganda'] },
-    { key: 'Kostanay', patterns: ['костанай', 'kostanay'] },
-    { key: 'Kyzylorda', patterns: ['кызылорд', 'kyzylorda'] },
-    { key: 'Mangystau', patterns: ['мангист', 'mangystau'] },
-    { key: 'Pavlodar', patterns: ['павлодар', 'pavlodar'] },
-    { key: 'Turkestan', patterns: ['туркестан', 'turkestan'] },
-    { key: 'Ulytau', patterns: ['улытау', 'ulytau'] },
-    { key: 'Abai', patterns: ['абай', 'abai'] },
+export const CITY_REGION_KEYS = new Set(Object.keys(CITY_LABELS));
+
+export const REGION_LABELS = new Proxy(CITY_LABELS, {
+    get(target, prop: string | symbol) {
+        if (typeof prop !== 'string') return undefined;
+        if (prop in target) return target[prop];
+        const svgId = Object.entries(SVG_ID_TO_REGION_KEY).find(([, key]) => key === prop)?.[0];
+        return svgId ? OBLASTS.find((oblast) => oblast.id === svgId)?.name ?? prop : prop;
+    },
+}) as Record<string, string>;
+
+const LOCATION_STOP_WORDS = new Set([
+    'район',
+    'районы',
+    'рн',
+    'область',
+    'обл',
+    'город',
+    'г',
+    'имени',
+    'им',
+    'аудан',
+    'ауданы',
+    'облысы',
+    'поселок',
+    'село',
+]);
+
+const TOKEN_SUFFIXES = [
+    'овского',
+    'евского',
+    'инского',
+    'ынского',
+    'ского',
+    'скому',
+    'скими',
+    'ских',
+    'ский',
+    'ская',
+    'ское',
+    'ской',
+    'ова',
+    'ева',
+    'ина',
+    'ына',
+    'ого',
+    'его',
+    'ой',
+    'ый',
+    'ий',
+    'ая',
+    'ое',
+    'ые',
+    'а',
+    'ы',
 ];
 
-export const CITY_REGION_KEYS = new Set(['Almaty (city)', 'Astana', 'Shymkent (city)']);
+function normalizeForMatch(value: string): string {
+    const kazakhToRussianMap: Record<string, string> = {
+        'ә': 'а',
+        'ғ': 'г',
+        'қ': 'к',
+        'ң': 'н',
+        'ө': 'о',
+        'ұ': 'у',
+        'ү': 'у',
+        'һ': 'х',
+        'і': 'и',
+    };
+    const latinLookalikesMap: Record<string, string> = {
+        a: 'а',
+        b: 'в',
+        c: 'с',
+        e: 'е',
+        h: 'н',
+        k: 'к',
+        m: 'м',
+        o: 'о',
+        p: 'р',
+        t: 'т',
+        x: 'х',
+        y: 'у',
+    };
+
+    return value
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/[әғқңөұүһі]/g, (char) => kazakhToRussianMap[char] ?? char)
+        .replace(/[abcehkmoptxy]/g, (char) => latinLookalikesMap[char] ?? char)
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+const stripDescriptors = (value: string): string => value
+    .split(' ')
+    .filter((token) => token.length >= 2 && !LOCATION_STOP_WORDS.has(token))
+    .join(' ')
+    .trim();
+
+const shortenToken = (token: string): string[] => {
+    const variants = new Set<string>();
+    if (token.length < 3) return [];
+
+    variants.add(token);
+
+    for (const suffix of TOKEN_SUFFIXES) {
+        if (!token.endsWith(suffix) || token.length - suffix.length < 3) continue;
+        variants.add(token.slice(0, -suffix.length));
+    }
+
+    for (const suffix of ['ов', 'ев', 'ин', 'ын']) {
+        if (!token.endsWith(suffix) || token.length - suffix.length < 4) continue;
+        variants.add(token.slice(0, -suffix.length));
+    }
+
+    return [...variants].filter((variant) => variant.length >= 3);
+};
+
+const buildLocationAliases = (name: string): string[] => {
+    const normalizedName = normalizeForMatch(name);
+    const cleanedName = stripDescriptors(normalizedName);
+    const aliases = new Set<string>();
+    const addAlias = (candidate: string) => {
+        const alias = candidate.trim();
+        if (alias.length < 3) return;
+        aliases.add(alias);
+        aliases.add(alias.replace(/\s+/g, ''));
+    };
+
+    addAlias(normalizedName);
+    if (cleanedName && cleanedName !== normalizedName) addAlias(cleanedName);
+
+    const tokens = (cleanedName || normalizedName)
+        .split(' ')
+        .filter((token) => token.length >= 2 && !LOCATION_STOP_WORDS.has(token));
+
+    const stemmedTokens = tokens.map((token) => {
+        const variants = shortenToken(token);
+        variants.forEach(addAlias);
+        return variants.sort((left, right) => left.length - right.length)[0] ?? token;
+    });
+
+    if (tokens.length > 1) {
+        addAlias(tokens.join(' '));
+        addAlias(stemmedTokens.join(' '));
+    }
+
+    return [...aliases];
+};
+
+let regionMatchersCache: { key: string; patterns: string[] }[] | null = null;
+
+const getRegionMatchers = (): { key: string; patterns: string[] }[] => {
+    if (regionMatchersCache) return regionMatchersCache;
+
+    const oblastMatchers = OBLASTS
+        .map((oblast) => {
+            const key = SVG_ID_TO_REGION_KEY[oblast.id];
+            if (!key || CITY_REGION_KEYS.has(key)) return null;
+            return { key, patterns: buildLocationAliases(oblast.name) };
+        })
+        .filter((entry): entry is { key: string; patterns: string[] } => Boolean(entry));
+
+    const cityMatchers = [
+        {
+            key: 'Almaty (city)',
+            patterns: ['алматы', 'г алматы', 'almaty city'],
+        },
+        {
+            key: 'Astana',
+            patterns: ['астана', 'г астана'],
+        },
+        {
+            key: 'Shymkent (city)',
+            patterns: ['шымкент', 'г шымкент', 'shymkent'],
+        },
+    ];
+
+    regionMatchersCache = [...cityMatchers, ...oblastMatchers];
+    return regionMatchersCache;
+};
 
 /**
  * Detects a Kazakhstan region key from a free-text address string.
@@ -64,140 +205,55 @@ export const CITY_REGION_KEYS = new Set(['Almaty (city)', 'Astana', 'Shymkent (c
  */
 export const detectRegionFromAddress = (address: string | null | undefined): string | null => {
     if (!address) return null;
-    const normalized = address.toLowerCase().replace(/ё/g, 'е');
-    const match = REGION_MATCHERS.find((entry) =>
-        entry.patterns.some((pattern) => normalized.includes(pattern)),
+    const normalized = normalizeForMatch(address);
+    const compact = normalized.replace(/\s+/g, '');
+
+    const match = getRegionMatchers().find((entry) =>
+        entry.patterns.some((pattern) => normalized.includes(pattern) || compact.includes(pattern.replace(/\s+/g, ''))),
     );
+
     return match?.key ?? null;
 };
 
-/**
- * Extra search patterns for rayons that can't be detected by simple name matching.
- * Key: oblastId, value: array of [rayonName, additionalPatterns[]].
- * Rayon name must exactly match the name field in OBLAST_RAYONS data.
- */
-const RAYON_EXTRA_PATTERNS: Record<string, [string, string[]][]> = {
+const RAYON_EXTRA_PATTERNS: Record<string, Array<{ rayonName: string; patterns: string[] }>> = {
     turkistanOblast: [
-        ['Сауран', ['г. туркестан', 'г.туркестан', 'город туркестан', 'кентау', 'саура']],
-        ['Cайрам', ['сайрам']],
-        ['Шымкент', ['шымкент']],
-        ['Арыс', ['арыс']],
-        ['Сарыагаш', ['сарыагаш']],
-        ['Мактаарал', ['мактаарал']],
-        ['Казыгурт', ['казыгурт']],
-        ['Толеби', ['толеби']],
-        ['Тулкибас', ['тулкибас']],
-        ['Ордабасы', ['ордабасы']],
-        ['Байдибек', ['байдибек']],
-        ['Шардаринский', ['шардар']],
-        ['Отырарский', ['отырар']],
-        ['Сузакский район', ['сузак']],
-        ['Жетисай', ['жетисай']],
-        ['Келес', ['келес']],
-        ['Тұран', ['туран', 'тұран']],
-        ['Аль-Фараби', ['аль-фараби', 'фараби']],
-        ['Каратау', ['каратау']],
-        ['Абай', ['абай']],
-        ['Енбекшин', ['енбекшин']],
-    ],
-    jambylOblast: [
-        ['Турара Рыскулова', ['рыскулов', 'турара']],
-        ['Жуалынский', ['жуалын']],
-        ['Жамбылский', ['жамбыл']],
-        ['Кордайский', ['кордай']],
-        ['Шуский', ['шуск', 'шуйск']],
-        ['Талас', ['талас']],
-        ['Сарысуский', ['сарысу']],
-        ['Байзакский', ['байзак']],
-        ['Мойынкумский', ['мойынкум']],
-        ['Меркенский', ['меркен']],
-    ],
-    aktobeOblast: [
-        ['Актобе', ['актобе', 'актюбинск']],
-        ['Хромтау', ['хромтау']],
-        ['Айтекеби', ['айтекеби']],
-        ['Мугалжарский', ['мугалжар']],
-        ['Шалкарский', ['шалкар']],
-    ],
-    karagandyOblast: [
-        ['Нұра', ['нура', 'нұра']],
-        ['Бухар-Жырауский', ['бухар-жырау', 'бухар жырау']],
-        ['Шетский район', ['шетск']],
-        ['Нуринский район', ['нурин']],
-        ['Актогайский район', ['актогай']],
-    ],
-    pavlodarOblast: [
-        ['Павлодар', ['павлодар']],
-        ['Экибастуз', ['экибастуз']],
-        ['Аксу', ['г. аксу', 'г.аксу']],
-        ['Тереңкөл', ['тереңкол', 'теренкол']],
-        ['Аққулы', ['аккулы', 'аққулы']],
-    ],
-    VKO: [
-        ['Семей Г.А', ['семей', 'семипалатинск']],
-        ['Глубоковский', ['глубоков']],
-        ['Уланский', ['уланск']],
-    ],
-    abayOblast: [
-        ['Аягозский', ['аягоз']],
-        ['Урджарский', ['урджар']],
-        ['Зайсанский', ['зайсан']],
-        ['Курчумский', ['курчум']],
-    ],
-    almatyOblast: [
-        ['Конаев', ['конаев', 'капчагай']],
-        ['Талгарский', ['талгар']],
-        ['Карасай', ['карасай']],
-        ['Илийский', ['илийск']],
-        ['Енбекшиказахский', ['енбекшиказах']],
-        ['Райымбекский', ['райымбек']],
-    ],
-    jetisuOblast: [
-        ['Панфиловский', ['панфилов', 'жаркент']],
-        ['Саркандский', ['сарканд']],
-        ['Алакольский', ['алаколь']],
-        ['Кербулак', ['кербулак']],
-    ],
-    kostanaiOblast: [
-        ['Костанай', ['костанай', 'кустанай']],
-        ['Аркалык', ['аркалык']],
-        ['Житикара', ['житикара']],
-        ['район Б.Майлина', ['майлин']],
-    ],
-    SKO: [
-        ['Район Мусрепова', ['мусрепов']],
-        ['Район Шал Акына', ['шал акын']],
-        ['Район Магжана Жумабаева', ['магжан', 'жумабаев']],
-    ],
-    akmolaOblast: [
-        ['Биржан сал', ['биржан']],
-        ['Еремейнтау', ['еремейнтау']],
-        ['Коргалжын', ['коргалжын']],
-        ['Шортандинский район', ['шортанд']],
-    ],
-    kyzylordaOblast: [
-        ['Кызылорда', ['кызылорда', 'қызылорда']],
-        ['Жанакорган', ['жанакорган']],
-        ['Шиели', ['шиели']],
+        {
+            rayonName: 'Сауран',
+            patterns: ['г туркестан', 'город туркестан', 'кентау'],
+        },
     ],
     almaty: [
-        ['Алмалинский', ['алмалин', 'алмалы', 'район алматы']],
-        ['МЕДЕУ', ['медеу']],
-        ['Бостандық', ['бостандық', 'бостандык']],
-        ['Турксибский', ['турксиб']],
-        ['Наурызбай', ['наурызбай']],
-        ['Ауэзов', ['ауэзов']],
-        ['Алатау', ['алатау']],
+        {
+            rayonName: 'Бостандык',
+            patterns: ['бостандық', 'бостандык'],
+        },
     ],
 };
 
-/** Normalize text for rayon matching: lowercase, ё→е, latin→cyrillic */
-function normalizeForMatch(s: string): string {
-    return s
-        .toLowerCase()
-        .replace(/ё/g, 'е')
-        .replace(/c/gi, 'с');
-}
+const GENERATED_RAYON_MATCHERS: Record<string, Array<{ index: number; alias: string }>> = Object.fromEntries(
+    Object.entries(OBLAST_RAYONS).map(([oblastKey, oblastData]) => {
+        const aliasOwners = new Map<string, Set<number>>();
+
+        oblastData.rayons.forEach((rayon, index) => {
+            buildLocationAliases(rayon.name).forEach((alias) => {
+                if (!aliasOwners.has(alias)) aliasOwners.set(alias, new Set<number>());
+                aliasOwners.get(alias)?.add(index);
+            });
+        });
+
+        const matchers = [...aliasOwners.entries()]
+            .filter(([alias, owners]) => alias.length >= 4 && owners.size === 1)
+            .map(([alias, owners]) => ({ alias, index: [...owners][0] }))
+            .sort((left, right) => right.alias.length - left.alias.length);
+
+        return [oblastKey, matchers];
+    }),
+);
+
+const matchesAlias = (normalizedAddress: string, compactAddress: string, alias: string): boolean => {
+    const compactAlias = alias.replace(/\s+/g, '');
+    return normalizedAddress.includes(alias) || compactAddress.includes(compactAlias);
+};
 
 /**
  * Detects a rayon index within an oblast from a free-text address string.
@@ -208,49 +264,34 @@ export const detectRayonFromAddress = (
     oblastId: string,
 ): number | null => {
     if (!address) return null;
+
     const oblastData = OBLAST_RAYONS[oblastId];
     if (!oblastData) return null;
-    const normalized = normalizeForMatch(address);
 
-    // Phase 1: Try extra patterns first (most reliable, covers cities and named rayons)
-    const extraPatterns = RAYON_EXTRA_PATTERNS[oblastId];
-    if (extraPatterns) {
-        for (const [rayonName, patterns] of extraPatterns) {
-            if (patterns.some((p) => normalized.includes(normalizeForMatch(p)))) {
-                // Find the rayon index by name
-                const idx = oblastData.rayons.findIndex(
-                    (r) => normalizeForMatch(r.name) === normalizeForMatch(rayonName),
-                );
-                if (idx >= 0) return idx;
-            }
+    const normalized = normalizeForMatch(address);
+    const compact = normalized.replace(/\s+/g, '');
+
+    const extraPatterns = RAYON_EXTRA_PATTERNS[oblastId] ?? [];
+    for (const { rayonName, patterns } of extraPatterns) {
+        if (patterns.some((pattern) => matchesAlias(normalized, compact, normalizeForMatch(pattern)))) {
+            const idx = oblastData.rayons.findIndex(
+                (rayon) => normalizeForMatch(rayon.name) === normalizeForMatch(rayonName),
+            );
+            if (idx >= 0) return idx;
         }
     }
 
-    // Phase 2: Generic matching — try direct name include + root extraction
-    for (let i = 0; i < oblastData.rayons.length; i++) {
-        const rawName = oblastData.rayons[i].name;
-        if (!rawName) continue;
-        const rayonNorm = normalizeForMatch(rawName);
-
-        // Direct name match (e.g. address contains "бейнеу", rayon is "Бейнеу")
-        if (rayonNorm.length >= 3 && normalized.includes(rayonNorm)) {
-            return i;
-        }
-
-        // Root extraction: remove "район" suffix, then adjective endings
-        const withoutRayon = rayonNorm.replace(/\s*район$/i, '').trim();
-        const root = withoutRayon
-            .replace(/ский$|ская$|ское$|ный$|ная$|ное$|ской$|нской$/, '')
-            .trim();
-        if (root.length >= 3 && normalized.includes(root)) {
-            return i;
+    const generatedMatchers = GENERATED_RAYON_MATCHERS[oblastId] ?? [];
+    for (const matcher of generatedMatchers) {
+        if (matchesAlias(normalized, compact, matcher.alias)) {
+            return matcher.index;
         }
     }
 
     return null;
 };
 
-/* ─── Mapping: SVG oblastId → GeoJSON regionKey ─── */
+/* Region key mapping */
 export const SVG_ID_TO_REGION_KEY: Record<string, string> = {
     aktobeOblast: 'Aktobe',
     atyrayOblast: 'Atyrau',
@@ -406,7 +447,7 @@ function computePolygonCentroid(d: string): [number, number] {
 }
 
 /* ─── Hook: detect current theme ─── */
-function useIsDarkTheme(): boolean {
+export function useIsDarkTheme(): boolean {
     const [isDark, setIsDark] = useState(
         () => document.documentElement.getAttribute('data-theme') === 'dark',
     );
@@ -425,6 +466,17 @@ function useIsDarkTheme(): boolean {
 
 import EChartsWrapper from './EChartsWrapper';
 
+type PanelSectionKey = 'contracts' | 'details' | 'resolution' | 'sla' | 'ratings';
+type PanelSectionState = Record<PanelSectionKey, boolean>;
+
+const createInitialExpandedPanels = (): PanelSectionState => ({
+    contracts: true,
+    details: false,
+    resolution: false,
+    sla: false,
+    ratings: false,
+});
+
 const RegionActivityMap: React.FC<{
     counts: Record<string, number>;
     rayonCounts?: Record<string, Record<number, number>>;
@@ -437,6 +489,7 @@ const RegionActivityMap: React.FC<{
     const [hovered, setHovered] = useState<{ key: string; x: number; y: number } | null>(null);
     const [selectedOblast, setSelectedOblast] = useState<string | null>(null);
     const [selectedRayon, setSelectedRayon] = useState<number | null>(null);
+    const [expandedPanels, setExpandedPanels] = useState<PanelSectionState>(createInitialExpandedPanels);
     const [binTab, setBinTab] = useState<'all' | 'with_contract' | 'without_contract'>('all');
     const [isFullscreen, setIsFullscreen] = useState(false);
     const isDark = useIsDarkTheme();
@@ -518,7 +571,7 @@ const RegionActivityMap: React.FC<{
     const selectedOblastData = selectedOblast ? OBLAST_RAYONS[selectedOblast] : null;
     const selectedRegionKey = selectedOblast ? SVG_ID_TO_REGION_KEY[selectedOblast] ?? '' : '';
     const selectedOblastName = selectedRegionKey ? REGION_LABELS[selectedRegionKey] ?? '' : '';
-    const oblastBinCount = selectedRegionKey ? counts[selectedRegionKey] ?? 0 : 0;
+    const analyticsViewKey = selectedOblast ? `${selectedOblast}:${selectedRayon ?? 'all'}` : 'overview';
     const currentRayonCounts = selectedOblast ? rayonCounts?.[selectedOblast] ?? {} : {};
     const maxRayonValue = useMemo(
         () => Math.max(1, ...Object.values(currentRayonCounts)),
@@ -649,6 +702,34 @@ const RegionActivityMap: React.FC<{
         }
     }, [selectedOblast, selectedRegionKey, selectedRayon, regionStats, rayonStats, binDetails, currentRayonCounts, chats, binTab, selectedOblastName]);
 
+    useEffect(() => {
+        setExpandedPanels(createInitialExpandedPanels());
+    }, [analyticsViewKey]);
+
+    const handlePanelToggle = useCallback((panel: PanelSectionKey) => {
+        setExpandedPanels((current) => ({
+            ...current,
+            [panel]: !current[panel],
+        }));
+    }, []);
+
+    const handlePanelSummaryClick = useCallback(
+        (event: React.MouseEvent<HTMLElement>, panel: PanelSectionKey) => {
+            event.preventDefault();
+            handlePanelToggle(panel);
+        },
+        [handlePanelToggle],
+    );
+
+    const handlePanelContainerClick = useCallback(
+        (event: React.MouseEvent<HTMLElement>, panel: PanelSectionKey) => {
+            if (expandedPanels[panel]) return;
+            if (event.target instanceof Element && event.target.closest('summary')) return;
+            handlePanelToggle(panel);
+        },
+        [expandedPanels, handlePanelToggle],
+    );
+
     const renderRatingCard = (
         title: string,
         average: number | null,
@@ -691,10 +772,10 @@ const RegionActivityMap: React.FC<{
                                     tooltip: {
                                         trigger: 'axis',
                                         axisPointer: { type: 'none' },
-                                        backgroundColor: 'var(--surface-color, #ffffff)',
-                                        borderColor: 'var(--border-color, #e2e8f0)',
+                                        backgroundColor: isDark ? '#182538' : '#ffffff',
+                                        borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                                         borderWidth: 1,
-                                        textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                                        textStyle: { color: isDark ? '#edf3fb' : '#1d2940', fontSize: 12 },
                                         formatter: '{b} ★: <b>{c}</b>',
                                     },
                                     grid: { top: 8, right: 8, bottom: 4, left: 8, containLabel: true },
@@ -703,7 +784,7 @@ const RegionActivityMap: React.FC<{
                                         data: ['1', '2', '3', '4', '5'],
                                         axisLine: { show: false },
                                         axisTick: { show: false },
-                                        axisLabel: { fontSize: 13, color: 'var(--text-color, #334155)', margin: 12 },
+                                        axisLabel: { fontSize: 13, color: isDark ? '#edf3fb' : '#1d2940', margin: 12 },
                                     },
                                     yAxis: {
                                         type: 'value',
@@ -721,15 +802,15 @@ const RegionActivityMap: React.FC<{
                                                 borderRadius: [6, 6, 0, 0],
                                                 color: (params: any) => {
                                                     const rating = Number(params.name);
-                                                    if (rating <= 2) return '#ef4444';
-                                                    if (rating === 3) return '#f59e0b';
-                                                    return '#22c55e';
+                                                    if (rating <= 2) return isDark ? '#e17c7c' : '#d96565'; // --danger-bg
+                                                    if (rating === 3) return isDark ? '#fbbf24' : '#f59e0b'; // --chart-color-5
+                                                    return isDark ? '#34d399' : '#10b981'; // --chart-color-4
                                                 },
                                             },
                                             label: {
                                                 show: true,
                                                 position: 'top',
-                                                color: 'var(--text-muted, #64748b)',
+                                                color: isDark ? '#91a1b8' : '#72829a', // --text-muted
                                                 fontSize: 12,
                                                 fontWeight: 700,
                                                 formatter: (params: any) => `${Number(params?.value ?? 0)}`,
@@ -841,7 +922,8 @@ const RegionActivityMap: React.FC<{
                         {/* Left: map */}
                         <div className="kz-map__split-left">
                             <svg
-                                className="kz-map__svg kz-map__svg--district"
+                                key={analyticsViewKey}
+                                className="kz-map__svg kz-map__svg--district kz-map__svg--view-change"
                                 viewBox={selectedOblastData.viewBox}
                                 role="img"
                                 aria-label={`Карта районов: ${selectedOblastName}`}
@@ -895,6 +977,7 @@ const RegionActivityMap: React.FC<{
                         {/* Right: analytics panel */}
                         {activeAnalytics && (
                             <div className="kz-map__split-right">
+                                <div key={analyticsViewKey} className="kz-panel__content kz-panel__content--animated">
                                 {/* Summary stat cards */}
                                 <div className="kz-panel__stats">
                                     <div className="kz-panel__stat">
@@ -922,8 +1005,8 @@ const RegionActivityMap: React.FC<{
                                 </div>
 
                                 {/* Contracts breakdown */}
-                                <details className="kz-panel__section kz-panel__collapsible" open>
-                                    <summary className="kz-panel__section-title">Договоры</summary>
+                                <details className="kz-panel__section kz-panel__collapsible" open={expandedPanels.contracts} onClick={(event) => handlePanelContainerClick(event, 'contracts')}>
+                                    <summary className="kz-panel__section-title" onClick={(event) => handlePanelSummaryClick(event, 'contracts')}>Договоры</summary>
                                     <div style={{ height: 16, width: '100%', marginTop: 8, marginBottom: 8, borderRadius: 4, overflow: 'hidden' }}>
                                         <EChartsWrapper
                                             option={{
@@ -965,8 +1048,8 @@ const RegionActivityMap: React.FC<{
                                 </details>
 
                                 {/* Dynamic Breakdown (Rayons or Top BINs) */}
-                                <details className="kz-panel__section kz-panel__collapsible" open>
-                                    <summary className="kz-panel__section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <details className="kz-panel__section kz-panel__collapsible" open={expandedPanels.details} onClick={(event) => handlePanelContainerClick(event, 'details')}>
+                                    <summary className="kz-panel__section-title" onClick={(event) => handlePanelSummaryClick(event, 'details')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         Сведения
                                     </summary>
                                     <div className="kz-panel__section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: 8 }}>
@@ -974,18 +1057,18 @@ const RegionActivityMap: React.FC<{
                                             {activeAnalytics.breakdownLabel}
                                         </div>
                                         {activeAnalytics.mode === 'rayon' && (
-                                            <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.05)', padding: 2, borderRadius: 6 }} onClick={(e) => e.stopPropagation()}>
+                                        <div className="kz-panel__filters" onClick={(e) => e.stopPropagation()}>
                                                 <button
                                                     onClick={() => setBinTab('all')}
-                                                    style={{ border: 'none', background: binTab === 'all' ? '#fff' : 'transparent', boxShadow: binTab === 'all' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none', color: binTab === 'all' ? '#1e293b' : 'inherit', borderRadius: 4, padding: '2px 8px', fontSize: '0.65rem', cursor: 'pointer' }}
+                                                    className={`kz-panel__filter-btn ${binTab === 'all' ? 'is-active' : ''}`}
                                                 >Все</button>
                                                 <button
                                                     onClick={() => setBinTab('with_contract')}
-                                                    style={{ border: 'none', background: binTab === 'with_contract' ? '#10b981' : 'transparent', color: binTab === 'with_contract' ? '#fff' : 'inherit', borderRadius: 4, padding: '2px 8px', fontSize: '0.65rem', cursor: 'pointer' }}
+                                                    className={`kz-panel__filter-btn kz-panel__filter-btn--contract ${binTab === 'with_contract' ? 'is-active' : ''}`}
                                                 >С дог.</button>
                                                 <button
                                                     onClick={() => setBinTab('without_contract')}
-                                                    style={{ border: 'none', background: binTab === 'without_contract' ? '#f43f5e' : 'transparent', color: binTab === 'without_contract' ? '#fff' : 'inherit', borderRadius: 4, padding: '2px 8px', fontSize: '0.65rem', cursor: 'pointer' }}
+                                                    className={`kz-panel__filter-btn kz-panel__filter-btn--danger ${binTab === 'without_contract' ? 'is-active' : ''}`}
                                                 >Без дог.</button>
                                             </div>
                                         )}
@@ -1011,9 +1094,9 @@ const RegionActivityMap: React.FC<{
                                                                         type: 'bar',
                                                                         data: [r.value],
                                                                         barWidth: '100%',
-                                                                        itemStyle: { color: activeAnalytics.mode === 'oblast' ? '#6366f1' : '#14b8a6', borderRadius: 4 },
+                                                                        itemStyle: { color: activeAnalytics.mode === 'oblast' ? (isDark ? '#818cf8' : '#6366f1') : (isDark ? '#22d3ee' : '#06b6d4'), borderRadius: 4 },
                                                                         showBackground: true,
-                                                                        backgroundStyle: { color: '#e2e8f0', borderRadius: 4 }
+                                                                        backgroundStyle: { color: isDark ? '#2d3748' : '#e2e8f0', borderRadius: 4 }
                                                                     }
                                                                 ]
                                                             }}
@@ -1034,8 +1117,8 @@ const RegionActivityMap: React.FC<{
                                     const aiPct = totalForSlaAndAi > 0 ? (aiClosed / totalForSlaAndAi) * 100 : 0;
 
                                     return (
-                                        <details className="kz-panel__section kz-panel__collapsible" open>
-                                            <summary className="kz-panel__section-title">Автоматизация (AI)</summary>
+                                        <details className="kz-panel__section kz-panel__collapsible" open={expandedPanels.resolution} onClick={(event) => handlePanelContainerClick(event, 'resolution')}>
+                                            <summary className="kz-panel__section-title" onClick={(event) => handlePanelSummaryClick(event, 'resolution')}>Автоматизация (AI)</summary>
                                             <div className="dashboard-ai-bar" style={{ marginTop: 12 }}>
                                                 <div className="dashboard-ai-bar__hero">
                                                     <span className="dashboard-ai-bar__pct">{totalForSlaAndAi > 0 ? aiPct.toFixed(0) + '%' : '—'}</span>
@@ -1048,10 +1131,10 @@ const RegionActivityMap: React.FC<{
                                                             tooltip: {
                                                                 trigger: 'axis',
                                                                 axisPointer: { type: 'none' },
-                                                                backgroundColor: 'var(--surface-color, #ffffff)',
-                                                                borderColor: 'var(--border-color, #e2e8f0)',
+                                                                backgroundColor: isDark ? '#182538' : '#ffffff',
+                                                                borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                                                                 borderWidth: 1,
-                                                                textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                                                                textStyle: { color: 'var(--text-color)', fontSize: 12 },
                                                                 formatter: (params: any) => {
                                                                     if (totalForSlaAndAi === 0) return 'Нет данных';
                                                                     return params.map((p: any) => `${p.seriesName}: <b>${p.value}</b>`).join('<br/>');
@@ -1061,7 +1144,7 @@ const RegionActivityMap: React.FC<{
                                                             xAxis: { type: 'value', show: false, max: totalForSlaAndAi > 0 ? totalForSlaAndAi : 1 },
                                                             yAxis: { type: 'category', data: ['AI'], show: false },
                                                             series: totalForSlaAndAi === 0 ? [
-                                                                { type: 'bar', data: [1], barWidth: 14, itemStyle: { color: '#e2e8f0' }, animation: false }
+                                                                { type: 'bar', data: [1], barWidth: 14, itemStyle: { color: isDark ? '#2d3748' : '#e2e8f0' }, animation: false }
                                                             ] : [
                                                                 {
                                                                     name: 'Решено ботом',
@@ -1069,7 +1152,7 @@ const RegionActivityMap: React.FC<{
                                                                     stack: 'total',
                                                                     data: [aiClosed],
                                                                     barWidth: 14,
-                                                                    itemStyle: { color: '#3b82f6', borderRadius: [8, 0, 0, 8] }
+                                                                    itemStyle: { color: isDark ? '#818cf8' : '#6366f1', borderRadius: [8, 0, 0, 8] }
                                                                 },
                                                                 {
                                                                     name: 'Решено оператором',
@@ -1077,7 +1160,7 @@ const RegionActivityMap: React.FC<{
                                                                     stack: 'total',
                                                                     data: [opsHandled],
                                                                     barWidth: 14,
-                                                                    itemStyle: { color: '#cbd5e1', borderRadius: [0, 8, 8, 0] }
+                                                                    itemStyle: { color: isDark ? '#26344d' : '#e8f1fb', borderRadius: [0, 8, 8, 0] }
                                                                 }
                                                             ]
                                                         }}
@@ -1087,14 +1170,14 @@ const RegionActivityMap: React.FC<{
                                                 <div className="kz-panel__bar-legend" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', fontWeight: 600 }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                            <span className="kz-panel__legend-dot" style={{ background: '#3b82f6', width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />
+                                                            <span className="kz-panel__legend-dot" style={{ background: 'var(--chart-color-1)', width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />
                                                             <span style={{ color: 'var(--text-color)' }}>Решено ботом</span>
                                                         </div>
                                                         <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{aiClosed}</span>
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', fontWeight: 600 }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                            <span className="kz-panel__legend-dot" style={{ background: '#cbd5e1', width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />
+                                                            <span className="kz-panel__legend-dot" style={{ background: 'var(--surface-strong-color)', width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />
                                                             <span style={{ color: 'var(--text-color)' }}>Переведено оператору</span>
                                                         </div>
                                                         <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{opsHandled}</span>
@@ -1107,8 +1190,8 @@ const RegionActivityMap: React.FC<{
 
                                 {/* SLA Section - Conditional Based on Mode */}
                                 {activeAnalytics.mode === 'oblast' ? (
-                                    <details className="kz-panel__section kz-panel__collapsible" open>
-                                        <summary className="kz-panel__section-title">Топ-5 по SLA</summary>
+                                    <details className="kz-panel__section kz-panel__collapsible" open={expandedPanels.sla} onClick={(event) => handlePanelContainerClick(event, 'sla')}>
+                                        <summary className="kz-panel__section-title" onClick={(event) => handlePanelSummaryClick(event, 'sla')}>Топ-5 по SLA</summary>
                                         <div className="kz-panel__rayon-bars" style={{ marginTop: 8 }}>
                                             {activeAnalytics.rayonBreakdown
                                                 .map(r => {
@@ -1138,11 +1221,11 @@ const RegionActivityMap: React.FC<{
                                                                             data: [r.sla],
                                                                             barWidth: '100%',
                                                                             itemStyle: {
-                                                                                color: r.sla >= 80 ? '#22c55e' : (r.sla >= 50 ? '#f59e0b' : '#ef4444'),
+                                                                                color: r.sla >= 80 ? (isDark ? '#34d399' : '#10b981') : (r.sla >= 50 ? (isDark ? '#fbbf24' : '#f59e0b') : (isDark ? '#f87171' : '#ef4444')),
                                                                                 borderRadius: 4
                                                                             },
                                                                             showBackground: true,
-                                                                            backgroundStyle: { color: '#e2e8f0', borderRadius: 4 }
+                                                                            backgroundStyle: { color: isDark ? '#2d3748' : '#e2e8f0', borderRadius: 4 }
                                                                         }
                                                                     ]
                                                                 }}
@@ -1166,8 +1249,8 @@ const RegionActivityMap: React.FC<{
                                         const slaViolations = medium + slow;
 
                                         return (
-                                            <details className="kz-panel__section kz-panel__collapsible" open>
-                                                <summary className="kz-panel__section-title">Качество обслуживания</summary>
+                                            <details className="kz-panel__section kz-panel__collapsible" open={expandedPanels.sla} onClick={(event) => handlePanelContainerClick(event, 'sla')}>
+                                                <summary className="kz-panel__section-title" onClick={(event) => handlePanelSummaryClick(event, 'sla')}>Качество обслуживания</summary>
                                                 {totalResponded > 0 ? (
                                                     <div style={{ marginTop: 12 }}>
                                                         <div className="dashboard-sla-gauge" style={{ position: 'relative', height: 120 }}>
@@ -1195,7 +1278,7 @@ const RegionActivityMap: React.FC<{
                                                                                 roundCap: true,
                                                                                 lineStyle: {
                                                                                     width: 10,
-                                                                                    color: [[1, '#e2e8f0']]
+                                                                                    color: [[1, isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)']]
                                                                                 }
                                                                             },
                                                                             pointer: { show: false },
@@ -1244,8 +1327,8 @@ const RegionActivityMap: React.FC<{
                                     const csatDistribution = stats?.csatDistribution ?? [0, 0, 0, 0, 0];
                                     const aiCsatDistribution = stats?.aiCsatDistribution ?? [0, 0, 0, 0, 0];
                                     return (
-                                        <details className="kz-panel__section kz-panel__collapsible" open>
-                                            <summary className="kz-panel__section-title">Средняя оценка клиентов</summary>
+                                        <details className="kz-panel__section kz-panel__collapsible" open={expandedPanels.ratings} onClick={(event) => handlePanelContainerClick(event, 'ratings')}>
+                                            <summary className="kz-panel__section-title" onClick={(event) => handlePanelSummaryClick(event, 'ratings')}>Средняя оценка клиентов</summary>
                                             <div style={{ display: 'grid', gap: 12, marginTop: 10 }}>
                                                 {renderRatingCard(
                                                     'Удовлетворенность (SCAT)',
@@ -1265,6 +1348,7 @@ const RegionActivityMap: React.FC<{
                                         </details>
                                     );
                                 })()}
+                                </div>
                             </div>
                         )}
                     </div >

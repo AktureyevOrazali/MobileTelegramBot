@@ -25,18 +25,77 @@ if not TELEGRAM_BOT_TOKEN:
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode=None, threaded=True)
 
 SECTION_COMMANDS = {section["id"]: section for section in database.SECTIONS}
-SECTION_TITLES = {section["title"].lower(): section for section in database.SECTIONS}
 FAQ_BY_SECTION = {section["id"]: database.list_faq(section["id"]) for section in database.SECTIONS}
 FAQ_TRIGGER = "частые вопросы"
 OPERATOR_TRIGGER = "связаться с оператором"
+MOJIBAKE_HINT_RE = re.compile("(?:\u0420.|\u0421.|\u00d0.|\u00d1.){2,}")
 BIN_PATTERN = re.compile(r"^\d{12}$")
 START_BUTTON = "▶️ Старт"
 NEW_BIN_BUTTON = "➕ Добавить БИН"
 SELECT_BIN_BUTTON = "📂 Выбрать БИН"
-FINISH_BUTTON = "⏹ Завершить работу"
+FINISH_BUTTON = "⏹ Завершить"
+FAQ_BUTTON = "Частые вопросы"
+OPERATOR_BUTTON = "👨‍💼 Оператор"
 SWITCH_BIN_CALLBACK = "switch_bin"
+SECTION_ICONS = {
+    "general": "💬",
+    "finance": "💰",
+    "support": "🛠",
+    "hr": "👥",
+}
 
-# Р“Р»РѕР±Р°Р»СЊРЅС‹Р№ СЃР»РѕРІР°СЂСЊ РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ AI СЃРµСЃСЃРёСЏРјРё
+def _count_cyrillic(value: str) -> int:
+    return sum(1 for ch in value if "\u0400" <= ch <= "\u04ff")
+
+def _repair_mojibake(value: str) -> str | None:
+    if not value:
+        return None
+    suspicious = "\ufffd" in value or bool(MOJIBAKE_HINT_RE.search(value)) or _count_cyrillic(value) == 0
+    if not suspicious:
+        return None
+    for encoding in ("cp1251", "latin1"):
+        try:
+            repaired = value.encode(encoding).decode("utf-8").strip()
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
+        if repaired and repaired != value:
+            repaired_cyrillic = _count_cyrillic(repaired)
+            original_cyrillic = _count_cyrillic(value)
+            if repaired_cyrillic >= max(3, original_cyrillic // 2) or (
+                repaired_cyrillic >= 3 and len(repaired) < len(value)
+            ):
+                return repaired
+    return None
+
+def _sanitize_telegram_text(value: str | None, fallback: str = "") -> str:
+    normalized = re.sub(r"\s+", " ", value or "").strip()
+    if not normalized:
+        return fallback
+    repaired = _repair_mojibake(normalized) or normalized
+    cleaned = repaired.replace("\ufffd", "").strip()
+    return cleaned or fallback
+
+def _compact_button_text(value: str | None, max_len: int = 28) -> str:
+    text = _sanitize_telegram_text(value)
+    text = text.replace("%s", "").strip()
+    if len(text) <= max_len:
+        return text
+    trimmed = text[: max_len - 3].rstrip(" .,:;!?-")
+    return f"{trimmed}..."
+
+def _section_button_text(section: dict) -> str:
+    title = _sanitize_telegram_text(section.get("title"), "Раздел")
+    icon = SECTION_ICONS.get(section.get("id"), "")
+    return f"{icon} {title}".strip()
+
+SECTION_TITLES = {
+    _sanitize_telegram_text(section["title"]).lower(): section for section in database.SECTIONS
+}
+SECTION_TITLES.update({
+    _section_button_text(section).lower(): section for section in database.SECTIONS
+})
+
+# Global AI session state
 AI_SESSIONS = {}  # {chat_id: {'ai_enabled': True, 'operator_requested': False, 'waiting_message_id': None}}
 
 def get_ai_session(chat_id: int) -> dict:
@@ -63,19 +122,23 @@ def enable_ai_session(chat_id: int) -> None:
         session['waiting_message_id'] = None
         
 def _section_keyboard() -> types.ReplyKeyboardMarkup:
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
-    keyboard.add(types.KeyboardButton(START_BUTTON))
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=2)
+    keyboard.row(
+        types.KeyboardButton(START_BUTTON),
+        types.KeyboardButton(FINISH_BUTTON),
+    )
     keyboard.row(
         types.KeyboardButton(NEW_BIN_BUTTON),
         types.KeyboardButton(SELECT_BIN_BUTTON),
     )
-    keyboard.add(types.KeyboardButton(FINISH_BUTTON))
-    for section in database.SECTIONS:
-        keyboard.add(types.KeyboardButton(section["title"]))
-    keyboard.add(types.KeyboardButton("Частые вопросы"))
-    keyboard.add(types.KeyboardButton("Связаться с оператором"))
-    # Р”РѕР±Р°РІР»СЏРµРј РєРЅРѕРїРєРё СѓРїСЂР°РІР»РµРЅРёСЏ AI
-    keyboard.add(types.KeyboardButton("🤖 Включить AI"), types.KeyboardButton("👨‍💼 Оператор"))
+    section_buttons = [types.KeyboardButton(_section_button_text(section)) for section in database.SECTIONS]
+    for index in range(0, len(section_buttons), 2):
+        keyboard.row(*section_buttons[index:index + 2])
+    keyboard.row(
+        types.KeyboardButton(FAQ_BUTTON),
+        types.KeyboardButton(OPERATOR_BUTTON),
+    )
+    keyboard.row(types.KeyboardButton("\U0001f916 \u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c AI"))
     return keyboard
 
 def _generate_ai_response(message: telebot.types.Message, section: str) -> None:
@@ -205,8 +268,8 @@ def handle_start(message: telebot.types.Message) -> None:
     database.close_active_chat_dialog(chat.id)
 
     # РРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј AI СЃРµСЃСЃРёСЋ (Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РІРєР»СЋС‡РµРЅ)
-    session = get_ai_session(chat.id)
-    
+    get_ai_session(chat.id)
+
     bot.send_message(
         chat.id,
         "Здравствуйте! Я помогу связаться с оператором.",
@@ -624,7 +687,7 @@ def _persist_message(
     else:
         text = _humanize_message(message)
     if not text.strip() and not attachment_ids:
-        text = _humanize_message(message) or f"[{message.content_type} ?????????]"
+        text = _humanize_message(message) or f"[{message.content_type} сообщение]"
     message_author = author
     resolved_dialog_id = _resolve_dialog_id(chat.id, dialog_id)
 
@@ -675,33 +738,41 @@ def _faq_keyboard(section_id: str) -> Optional[types.InlineKeyboardMarkup]:
     entries = FAQ_BY_SECTION.get(section_id) or []
     if not entries:
         return None
-    keyboard = types.InlineKeyboardMarkup()
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    row: list[types.InlineKeyboardButton] = []
     for index, entry in enumerate(entries):
-        keyboard.add(
+        row.append(
             types.InlineKeyboardButton(
-                entry["question"], callback_data=f"faq:{section_id}:{index}"
+                _compact_button_text(entry.get("question"), max_len=30),
+                callback_data=f"faq:{section_id}:{index}",
             )
         )
-    keyboard.add(
+        if len(row) == 2:
+            keyboard.row(*row)
+            row = []
+    if row:
+        keyboard.row(*row)
+    keyboard.row(
         types.InlineKeyboardButton(
-            "Связаться с оператором", callback_data=f"operator:{section_id}"
+            "\U0001f468\u200d\U0001f4bc \u041d\u0443\u0436\u0435\u043d \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440",
+            callback_data=f"operator:{section_id}",
         )
     )
     return keyboard
-
 
 def _send_faq_menu(chat_id: int, section_id: str) -> None:
     keyboard = _faq_keyboard(section_id)
     if not keyboard:
         return
+    section = SECTION_COMMANDS.get(section_id)
+    section_title = _sanitize_telegram_text(section.get("title") if section else None, "\u0440\u0430\u0437\u0434\u0435\u043b")
     _send_and_store_message(
         chat_id,
-        "Посмотрите частые вопросы по разделу или свяжитесь с оператором.",
+        f"\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0431\u044b\u0441\u0442\u0440\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043f\u043e \u0440\u0430\u0437\u0434\u0435\u043b\u0443 \u00ab{section_title}\u00bb \u0438\u043b\u0438 \u043d\u0430\u0436\u043c\u0438\u0442\u0435 \u043a\u043d\u043e\u043f\u043a\u0443 \u043d\u0438\u0436\u0435, \u0447\u0442\u043e\u0431\u044b \u043f\u043e\u0437\u0432\u0430\u0442\u044c \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0430.",
         reply_markup=keyboard,
         section=section_id,
         author="System",
     )
-
 
 def _send_bin_selection_menu(chat_id: int) -> None:
     # Use client_bins for persistent BIN list (not deleted with dialogs)
@@ -745,7 +816,7 @@ def _try_auto_answer(message: telebot.types.Message, section_id: str) -> None:
 
     _send_and_store_message(
         message.chat.id,
-        answer_text,
+        _sanitize_telegram_text(answer_text, "\u041e\u0442\u0432\u0435\u0442 \u043f\u043e\u043a\u0430 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d."),
         section=entry.get("section") or section_id,
         author="AutoBot",
     )
@@ -769,7 +840,7 @@ def handle_faq_callback(call: telebot.types.CallbackQuery) -> None:
     database.save_message(
         chat_id=chat.id,
         direction="incoming",
-        text=f"[FAQ] {entry['question']}",
+        text=f"[FAQ] {_sanitize_telegram_text(entry.get('question'), 'FAQ')}",
         message_id=None,
         author=author,
         chat_title=chat.title or chat.username or str(chat.id),
@@ -777,7 +848,12 @@ def handle_faq_callback(call: telebot.types.CallbackQuery) -> None:
         chat_type=chat.type,
         section=section_id,
     )
-    _send_and_store_message(chat.id, entry["answer"], section=section_id, author="AutoBot")
+    _send_and_store_message(
+        chat.id,
+        _sanitize_telegram_text(entry.get("answer"), "\u041e\u0442\u0432\u0435\u0442 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d."),
+        section=section_id,
+        author="AutoBot",
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("operator:"))
@@ -909,9 +985,45 @@ def send_ai_csat_request(chat_id: int, dialog_id: int, appeal_id: int | None = N
     )
 
 
+
+def _finalize_rating_message(call: types.CallbackQuery, text: str) -> None:
+    """Best-effort UI update after rating click."""
+    message = getattr(call, "message", None)
+    chat = getattr(message, "chat", None)
+    chat_id = getattr(chat, "id", None)
+    message_id = getattr(message, "message_id", None)
+    if chat_id is None or message_id is None:
+        return
+
+    try:
+        bot.edit_message_text(
+            text,
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=None,
+        )
+        return
+    except Exception:
+        logger.warning("Failed to edit rating message for callback %s", call.data, exc_info=True)
+
+    try:
+        bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=None,
+        )
+    except Exception:
+        logger.warning("Failed to clear rating keyboard for callback %s", call.data, exc_info=True)
+
+    try:
+        bot.send_message(chat_id, text)
+    except Exception:
+        logger.warning("Failed to send rating confirmation for callback %s", call.data, exc_info=True)
+
 @bot.callback_query_handler(func=lambda call: call.data and call.data.startswith(CSAT_PREFIX))
 def csat_callback_handler(call: types.CallbackQuery) -> None:
     """Handle CSAT rating callback from inline buttons."""
+    logger.info("CSAT callback received: data=%s chat_id=%s message_id=%s", getattr(call, "data", None), getattr(getattr(getattr(call, "message", None), "chat", None), "id", None), getattr(getattr(call, "message", None), "message_id", None))
     try:
         # Parse callback_data:
         # - csat_{dialog_id}_{rating} (legacy)
@@ -949,16 +1061,11 @@ def csat_callback_handler(call: types.CallbackQuery) -> None:
             return
 
         # Acknowledge and update the message
-        bot.answer_callback_query(call.id, f"Спасибо за оценку! {'⭐' * rating}")
-        try:
-            bot.edit_message_text(
-                f"📊 Спасибо за вашу оценку: {'⭐' * rating}\nМы ценим ваш отзыв!",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=None,
-            )
-        except Exception:
-            pass  # Best-effort message update
+        bot.answer_callback_query(call.id, f"\u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u043e\u0446\u0435\u043d\u043a\u0443! {chr(0x2B50) * rating}")
+        _finalize_rating_message(
+            call,
+            f"\U0001f4ca \u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u0432\u0430\u0448\u0443 \u043e\u0446\u0435\u043d\u043a\u0443: {chr(0x2B50) * rating}\n\u041c\u044b \u0446\u0435\u043d\u0438\u043c \u0432\u0430\u0448 \u043e\u0442\u0437\u044b\u0432!",
+        )
 
     except (ValueError, IndexError):
         logger.warning("Invalid CSAT callback data: %s", call.data, exc_info=True)
@@ -971,6 +1078,7 @@ def csat_callback_handler(call: types.CallbackQuery) -> None:
 @bot.callback_query_handler(func=lambda call: call.data and call.data.startswith(AI_CSAT_PREFIX))
 def ai_csat_callback_handler(call: types.CallbackQuery) -> None:
     """Handle AI CSAT callback from inline buttons."""
+    logger.info("AI CSAT callback received: data=%s chat_id=%s message_id=%s", getattr(call, "data", None), getattr(getattr(getattr(call, "message", None), "chat", None), "id", None), getattr(getattr(call, "message", None), "message_id", None))
     try:
         # Parse callback_data:
         # - ai_csat_{dialog_id}_{rating} (legacy)
@@ -1005,16 +1113,11 @@ def ai_csat_callback_handler(call: types.CallbackQuery) -> None:
             bot.answer_callback_query(call.id, "Не удалось сохранить оценку AI")
             return
 
-        bot.answer_callback_query(call.id, f"Спасибо за оценку AI! {'⭐' * rating}")
-        try:
-            bot.edit_message_text(
-                f"🤖 Спасибо за оценку AI: {'⭐' * rating}\nМы улучшаем ответы на основе вашей обратной связи.",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=None,
-            )
-        except Exception:
-            pass
+        bot.answer_callback_query(call.id, f"\u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u043e\u0446\u0435\u043d\u043a\u0443 AI! {chr(0x2B50) * rating}")
+        _finalize_rating_message(
+            call,
+            f"\U0001f916 \u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u043e\u0446\u0435\u043d\u043a\u0443 AI: {chr(0x2B50) * rating}\n\u041c\u044b \u0443\u043b\u0443\u0447\u0448\u0430\u0435\u043c \u043e\u0442\u0432\u0435\u0442\u044b \u043d\u0430 \u043e\u0441\u043d\u043e\u0432\u0435 \u0432\u0430\u0448\u0435\u0439 \u043e\u0431\u0440\u0430\u0442\u043d\u043e\u0439 \u0441\u0432\u044f\u0437\u0438.",
+        )
     except (ValueError, IndexError):
         logger.warning("Invalid AI CSAT callback data: %s", call.data, exc_info=True)
         bot.answer_callback_query(call.id, "Ошибка обработки")
@@ -1038,3 +1141,19 @@ bot.set_my_commands(
 
 
 
+
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def unhandled_callback_query_handler(call: types.CallbackQuery) -> None:
+    """Log any callback that did not match a dedicated handler."""
+    logger.warning(
+        "Unhandled callback query: data=%r chat_id=%s message_id=%s",
+        getattr(call, "data", None),
+        getattr(getattr(getattr(call, "message", None), "chat", None), "id", None),
+        getattr(getattr(call, "message", None), "message_id", None),
+    )
+    try:
+        bot.answer_callback_query(call.id, "?????? ???? ?? ??????????")
+    except Exception:
+        logger.warning("Failed to answer unhandled callback query: %r", getattr(call, "data", None), exc_info=True)

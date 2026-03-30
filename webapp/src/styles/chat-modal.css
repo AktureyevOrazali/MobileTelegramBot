@@ -1,4 +1,4 @@
-﻿/* низ модалки: инпут и кнопка — одной высоты, автогроу */
+/* ��� �������: ����� � ������ � ����� ������, �������� */
 .dialog-composer {
   display: flex;
   gap: 8px;
@@ -428,7 +428,7 @@
   gap: 16px;
 }
 
-/* .modal.modal--dialog определён ниже в компактной версии */
+/* .modal.modal--dialog �������� ���� � ���������� ������ */
 
 .modal.modal--dialog .modal__content {
   display: flex;
@@ -472,7 +472,7 @@
   background: rgba(203, 213, 225, 0.22);
 }
 
-/* шапка — не сжимается, разделители тоже не сжимаются */
+/* ����� � �� ���������, ����������� ���� �� ��������� */
 .modal__header-row {
   display: flex;
   justify-content: space-between;
@@ -489,38 +489,38 @@
   flex-shrink: 0;
 }
 
-/* прокручиваемая центральная зона с сообщениями */
+/* �������������� ����������� ���� � ����������� */
 .modal.modal--dialog .modal__scroll {
   flex: 1;
   min-height: 0;
-  /* убрать жёсткие 320px */
+  /* ������ ������ 320px */
   overflow: auto;
   padding: 0;
   margin: 0 -4px 0 0;
 }
 
-/* сообщение: уберём жёсткий max-height у списка из прежних стилей */
+/* ���������: ����� ������ max-height � ������ �� ������� ������ */
 .modal.modal--dialog .modal__scroll::-webkit-scrollbar {
   width: 8px;
 }
 
-/* низ модалки: одинаковая высота и автогроу */
+/* ��� �������: ���������� ������ � �������� */
 .modal.modal--dialog .modal__scroll::-webkit-scrollbar-thumb {
   background: rgba(37, 50, 99, 0.22);
   border-radius: 999px;
 }
 
-/* ===== ДОПОЛНРТЕЛЬНЫЕ ПРАВКР ДЛЯ КОМПАКТНОЙ ДРАЛОГОВОЙ МОДАЛКР ===== */
+/* ===== ������И������� �����И ��� ���������� �И�������� ������И ===== */
 
-/* меню: ограничиваем высоту и включаем скролл */
+/* ����: ������������ ������ � �������� ������ */
 .menu {
   max-height: min(260px, calc(100vh - 120px));
   overflow: auto;
 }
 
-/* accent-color фикс удалён — исправлено в основном правиле .preset-reply:hover */
+/* accent-color ���� ����� � ���������� � �������� ������� .preset-reply:hover */
 
-/* делаем диалоговую модалку компактнее и вписываем в окно */
+/* ������ ���������� ������� ���������� � ��������� � ���� */
 .modal.modal--dialog {
   width: min(96vw, 860px);
   max-height: min(calc(100vh - 48px), 780px);
@@ -528,7 +528,7 @@
   border-radius: 20px;
 }
 
-/* компактный заголовок */
+/* ���������� ��������� */
 .modal.modal--dialog .heading {
   font-size: 1.05rem;
   font-weight: 600;
@@ -617,7 +617,7 @@
   align-items: stretch;
 }
 
-/* ─── Scroll lock applied to body when map modal is open ─── */
+/* --- Scroll lock applied to body when map modal is open --- */
 body.kz-map-scroll-lock {
   overflow: hidden !important;
   position: fixed;
@@ -626,7 +626,7 @@ body.kz-map-scroll-lock {
   left: 0;
 }
 
-/* ─── Backdrop overlay behind the map modal ─── */
+/* --- Backdrop overlay behind the map modal --- */
 .kz-map__backdrop {
   position: fixed;
   inset: 0;
@@ -683,7 +683,7 @@ body.kz-map-scroll-lock {
 
 .kz-map__back-btn {
   background: rgba(74, 107, 189, 0.12);
-  color: #3b5998;
+  color: var(--text-primary);
   border: 1px solid rgba(74, 107, 189, 0.25);
   border-radius: 8px;
   padding: 6px 14px;
@@ -708,7 +708,7 @@ body.kz-map-scroll-lock {
 .kz-map__expand-btn {
   margin-left: auto;
   background: rgba(74, 107, 189, 0.1);
-  color: #3b5998;
+  color: var(--text-primary);
   border: 1px solid rgba(74, 107, 189, 0.2);
   border-radius: 8px;
   width: 32px;
@@ -847,7 +847,7 @@ body.kz-map-scroll-lock {
   opacity: 0.7;
   font-size: 0.85rem;
   margin-left: 4px;
-  color: #3b5998;
+  color: var(--text-primary);
 }
 
 .kz-map__legend {
@@ -865,7 +865,7 @@ body.kz-map-scroll-lock {
   background: linear-gradient(90deg, #9bb3d4 0%, #6d92c4 40%, #2c4a90 100%);
 }
 
-/* ─── Split layout: map left + panel right ─── */
+/* --- Split layout: map left + panel right --- */
 .kz-map__split {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -888,10 +888,25 @@ body.kz-map-scroll-lock {
 .kz-map__split-right {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   overflow-y: auto;
   padding-right: 4px;
   animation: kz-panel-in 0.4s ease both;
+}
+
+.kz-panel__content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kz-panel__content--animated {
+  animation: kz-analytics-swap 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.kz-map__svg--view-change {
+  animation: kz-map-view-swap 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: center center;
 }
 
 .kz-map__split-right::-webkit-scrollbar {
@@ -915,42 +930,69 @@ body.kz-map-scroll-lock {
   }
 }
 
-/* ─── Panel stat cards ─── */
+@keyframes kz-analytics-swap {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes kz-map-view-swap {
+  from {
+    opacity: 0;
+    transform: scale(0.975);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* --- Panel stat cards --- */
 .kz-panel__stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
 .kz-panel__stat {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 10px 6px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(37, 50, 99, 0.08);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 68px;
+  padding: 10px 10px 9px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(37, 50, 99, 0.07);
+  box-shadow: 0 8px 18px rgba(37, 50, 99, 0.04);
 }
 
 .kz-panel__stat-value {
-  font-size: 1.3rem;
+  font-size: 1.15rem;
   font-weight: 800;
   color: #2c3e6b;
   line-height: 1;
 }
 
 .kz-panel__stat-label {
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: 0.68rem;
+  font-weight: 700;
   color: #636b8a;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
 }
 
 .kz-panel__stat--open {
-  background: rgba(34, 197, 94, 0.12);
-  border-color: rgba(34, 197, 94, 0.2);
+  background: rgba(233, 250, 239, 0.78);
+  border-color: rgba(34, 197, 94, 0.16);
 }
 
 .kz-panel__stat--open .kz-panel__stat-value {
@@ -958,8 +1000,8 @@ body.kz-map-scroll-lock {
 }
 
 .kz-panel__stat--closed {
-  background: rgba(148, 163, 184, 0.15);
-  border-color: rgba(148, 163, 184, 0.2);
+  background: rgba(244, 247, 252, 0.78);
+  border-color: rgba(148, 163, 184, 0.16);
 }
 
 .kz-panel__stat--closed .kz-panel__stat-value {
@@ -967,36 +1009,38 @@ body.kz-map-scroll-lock {
 }
 
 .kz-panel__stat--unread {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.2);
+  background: rgba(255, 239, 239, 0.78);
+  border-color: rgba(239, 68, 68, 0.16);
 }
 
 .kz-panel__stat--unread .kz-panel__stat-value {
   color: #dc2626;
 }
 
-/* ─── Panel sections ─── */
+/* --- Panel sections --- */
 .kz-panel__section {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.45);
-  border: 1px solid rgba(37, 50, 99, 0.06);
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(37, 50, 99, 0.07);
+  box-shadow: 0 10px 24px rgba(37, 50, 99, 0.04);
 }
 
 .kz-panel__section-title {
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: 0.74rem;
+  font-weight: 800;
   color: #2c3e6b;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
 }
 
-/* ─── Collapsible sections ─── */
+/* --- Collapsible sections --- */
 .kz-panel__collapsible {
   cursor: default;
+  overflow: hidden;
 }
 
 .kz-panel__collapsible>summary {
@@ -1005,7 +1049,11 @@ body.kz-map-scroll-lock {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 44px;
+  margin: -10px -12px;
+  padding: 10px 12px;
   user-select: none;
+  gap: 12px;
 }
 
 .kz-panel__collapsible>summary::-webkit-details-marker {
@@ -1013,18 +1061,46 @@ body.kz-map-scroll-lock {
 }
 
 .kz-panel__collapsible>summary::after {
-  content: '▸';
-  font-size: 0.75rem;
-  transition: transform 0.2s ease;
+  content: '';
+  width: 8px;
+  height: 8px;
+  margin-right: 2px;
+  flex: 0 0 auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transform-origin: center;
+  transition: transform 0.24s ease, opacity 0.24s ease;
   color: inherit;
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 .kz-panel__collapsible[open]>summary::after {
-  transform: rotate(90deg);
+  transform: rotate(45deg);
+  opacity: 0.9;
 }
 
-/* ─── Stacked bar chart ─── */
+.kz-panel__collapsible[open] > :not(summary) {
+  animation: kz-section-reveal 0.22s ease both;
+}
+
+.kz-panel__collapsible[open] > summary {
+  margin-bottom: 6px;
+}
+
+@keyframes kz-section-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Stacked bar chart --- */
 .kz-panel__bar-row {
   display: flex;
   height: 10px;
@@ -1091,7 +1167,46 @@ body.kz-map-scroll-lock {
   background: #f43f5e;
 }
 
-/* ─── Horizontal rayon bar chart ─── */
+.kz-panel__filters {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(37, 50, 99, 0.06);
+}
+
+.kz-panel__filter-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-color);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.kz-panel__filter-btn:hover {
+  transform: translateY(-1px);
+}
+
+.kz-panel__filter-btn.is-active {
+  background: var(--surface-color);
+  box-shadow: 0 8px 18px rgba(37, 50, 99, 0.12);
+}
+
+.kz-panel__filter-btn--contract.is-active {
+  background: var(--chart-color-4);
+  color: #fff;
+}
+
+.kz-panel__filter-btn--danger.is-active {
+  background: var(--danger-bg);
+  color: #fff;
+}
+
+/* --- Horizontal rayon bar chart --- */
 .kz-panel__rayon-bars {
   display: flex;
   flex-direction: column;
@@ -1136,7 +1251,7 @@ body.kz-map-scroll-lock {
   text-align: right;
 }
 
-/* ─── Rayon details table ─── */
+/* --- Rayon details table --- */
 .kz-panel__table-wrap {
   overflow-x: auto;
   margin: 0 -4px;
@@ -1181,8 +1296,8 @@ body.kz-map-scroll-lock {
 
 /* \u2500\u2500\u2500 Dark theme: analytics panel \u2500\u2500\u2500 */
 [data-theme='dark'] .kz-panel__stat {
-  background: rgba(30, 41, 59, 0.6);
-  border-color: rgba(148, 163, 184, 0.12);
+  background: rgba(30, 41, 59, 0.52);
+  border-color: rgba(148, 163, 184, 0.11);
 }
 
 [data-theme='dark'] .kz-panel__stat-value {
@@ -1194,7 +1309,7 @@ body.kz-map-scroll-lock {
 }
 
 [data-theme='dark'] .kz-panel__stat--open {
-  background: rgba(34, 197, 94, 0.15);
+  background: rgba(34, 197, 94, 0.14);
 }
 
 [data-theme='dark'] .kz-panel__stat--open .kz-panel__stat-value {
@@ -1202,7 +1317,7 @@ body.kz-map-scroll-lock {
 }
 
 [data-theme='dark'] .kz-panel__stat--closed {
-  background: rgba(148, 163, 184, 0.15);
+  background: rgba(148, 163, 184, 0.13);
 }
 
 [data-theme='dark'] .kz-panel__stat--closed .kz-panel__stat-value {
@@ -1210,7 +1325,7 @@ body.kz-map-scroll-lock {
 }
 
 [data-theme='dark'] .kz-panel__stat--unread {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(239, 68, 68, 0.13);
 }
 
 [data-theme='dark'] .kz-panel__stat--unread .kz-panel__stat-value {
@@ -1218,12 +1333,20 @@ body.kz-map-scroll-lock {
 }
 
 [data-theme='dark'] .kz-panel__section {
-  background: rgba(30, 41, 59, 0.45);
+  background: rgba(30, 41, 59, 0.38);
   border-color: rgba(148, 163, 184, 0.08);
 }
 
 [data-theme='dark'] .kz-panel__section-title {
   color: #e0e7ff;
+}
+
+[data-theme='dark'] .kz-panel__filters {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+[data-theme='dark'] .kz-panel__filter-btn.is-active {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.34);
 }
 
 [data-theme='dark'] .kz-panel__bar-legend {
@@ -1235,7 +1358,7 @@ body.kz-map-scroll-lock {
 }
 
 [data-theme='dark'] .kz-panel__rayon-value {
-  color: #c7d2fe;
+  color: var(--text-primary);
 }
 
 [data-theme='dark'] .kz-panel__rayon-track {
@@ -1270,7 +1393,7 @@ body.kz-map-scroll-lock {
   }
 }
 
-/* ─── Dark theme overrides for map ─── */
+/* --- Dark theme overrides for map --- */
 [data-theme='dark'] .analytics-banner__header {
   background: linear-gradient(135deg, #2d2a5e 0%, #3d3a8f 50%, #5a56b8 100%);
 }
@@ -1289,8 +1412,8 @@ body.kz-map-scroll-lock {
 }
 
 [data-theme='dark'] .kz-map__back-btn {
-  background: rgba(129, 140, 248, 0.15);
-  color: #c7d2fe;
+  background: var(--surface-strong-color);
+  color: var(--text-primary);
   border-color: rgba(129, 140, 248, 0.3);
 }
 
@@ -1301,7 +1424,7 @@ body.kz-map-scroll-lock {
 
 [data-theme='dark'] .kz-map__expand-btn {
   background: rgba(129, 140, 248, 0.12);
-  color: #c7d2fe;
+  color: var(--text-primary);
   border-color: rgba(129, 140, 248, 0.25);
 }
 
@@ -1375,7 +1498,7 @@ body.kz-map-scroll-lock {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface-color);
 }
 
 .analytics-banner__legend-dot--dialogs {

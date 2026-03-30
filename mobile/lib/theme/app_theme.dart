@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 const Color brandPrimaryGreen = Color(0xFF22C55E);
 const Color brandTeal = Color(0xFF1A9B8A);
@@ -119,15 +119,15 @@ class AppGradients {
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
-      stops: isDark ? null : const [0.0, 0.3, 1.0],
+      stops: isDark ? const [0.0, 1.0] : const [0.0, 0.22, 1.0],
       colors: isDark
           ? [
-              const Color(0xFF152E25),
-              const Color(0xFF0F172A),
+              const Color(0xFF111C18),
+              const Color(0xFF111827),
             ]
           : [
-              colorScheme.primary.withValues(alpha: 0.08),
-              colorScheme.surface.withValues(alpha: 0.94),
+              Color.alphaBlend(colorScheme.primary.withValues(alpha: 0.02), colorScheme.surface),
+              colorScheme.surface.withValues(alpha: 0.98),
               colorScheme.surface,
             ],
     );

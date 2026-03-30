@@ -1,4 +1,4 @@
-part of '../main.dart';
+﻿part of '../main.dart';
 
 class MobileBotModule extends StatefulWidget {
   const MobileBotModule({
@@ -6,6 +6,7 @@ class MobileBotModule extends StatefulWidget {
     this.apiBaseUrl,
     this.apiToken,
     this.isLogin,
+    required this.initialThemeMode,
   });
 
   /// Optional override for API base URL.
@@ -17,6 +18,7 @@ class MobileBotModule extends StatefulWidget {
   final String? apiToken;
 
   final bool? isLogin;
+  final ThemeMode initialThemeMode;
 
   @override
   State<MobileBotModule> createState() => _MobileBotModuleState();
@@ -28,7 +30,7 @@ class _MobileBotModuleState extends State<MobileBotModule> {
   final ThemePreferences _themePreferences = const ThemePreferences();
   AuthSession? _session;
   bool _initializing = true;
-  ThemeMode _themeMode = ThemeMode.system;
+  late ThemeMode _themeMode;
 
   String _requireConfig(String key) {
     final envValue = dotenv.env[key];
@@ -46,13 +48,13 @@ class _MobileBotModuleState extends State<MobileBotModule> {
   void initState() {
     super.initState();
     UiLogger.page('module', state: 'initializing');
+    _themeMode = widget.initialThemeMode;
 
     final apiBaseUrl = widget.apiBaseUrl ?? _requireConfig('API_BASE_URL');
     final apiToken = widget.apiToken ?? _requireConfig('API_TOKEN');
     apiClient = ApiClient(apiBaseUrl, apiToken);
 
     _restoreSession();
-    _restoreThemeMode();
   }
 
   Future<void> _restoreSession() async {
@@ -79,15 +81,6 @@ class _MobileBotModuleState extends State<MobileBotModule> {
     }
   }
 
-  Future<void> _restoreThemeMode() async {
-    final mode = await _themePreferences.load();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _themeMode = mode;
-    });
-  }
 
   void _handleThemeModeChanged(ThemeMode mode) {
     setState(() {
@@ -182,6 +175,11 @@ class _MobileBotModuleState extends State<MobileBotModule> {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isLight ? Brightness.dark : Brightness.light,
+          statusBarBrightness: isLight ? Brightness.light : Brightness.dark,
+        ),
         titleTextStyle: TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w800,
@@ -353,24 +351,45 @@ class _MobileBotModuleState extends State<MobileBotModule> {
 
     final ThemeData effectiveTheme =
         effectiveBrightness == Brightness.dark ? darkTheme : lightTheme;
+    final bool useDarkSystemUi = effectiveBrightness == Brightness.dark;
+    final SystemUiOverlayStyle overlayStyle = SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness:
+          useDarkSystemUi ? Brightness.light : Brightness.dark,
+      statusBarBrightness:
+          useDarkSystemUi ? Brightness.dark : Brightness.light,
+      systemNavigationBarColor:
+          useDarkSystemUi ? darkTheme.colorScheme.surface : Colors.white,
+      systemNavigationBarIconBrightness:
+          useDarkSystemUi ? Brightness.light : Brightness.dark,
+      systemNavigationBarDividerColor: Colors.transparent,
+    );
 
     final Widget content = _initializing
         ? const Scaffold(body: Center(child: CircularProgressIndicator()))
         : home;
 
-    return AnimatedTheme(
-      data: effectiveTheme,
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
-      child: ScaffoldMessenger(child: Material(child: content)),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: AnimatedTheme(
+        data: effectiveTheme,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        child: ScaffoldMessenger(child: Material(child: content)),
+      ),
     );
   }
 }
 
 class MobileBotApp extends StatefulWidget {
-  const MobileBotApp({super.key, this.isLogin});
+  const MobileBotApp({
+    super.key,
+    this.isLogin,
+    required this.initialThemeMode,
+  });
 
   final bool? isLogin;
+  final ThemeMode initialThemeMode;
 
   @override
   State<MobileBotApp> createState() => _MobileBotAppState();
@@ -390,7 +409,12 @@ class _MobileBotAppState extends State<MobileBotApp> {
     return MaterialApp(
       title: 'MobileBot Companion',
       debugShowCheckedModeBanner: false,
-      home: MobileBotModule(isLogin: widget.isLogin),
+      home: MobileBotModule(
+        isLogin: widget.isLogin,
+        initialThemeMode: widget.initialThemeMode,
+      ),
     );
   }
 }
+
+

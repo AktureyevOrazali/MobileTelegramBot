@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <style>
+        /* ===============================================
+   WhatsApp-стиль чата для IE7-11 в 1С
+   =============================================== */
+        * {
+            margin: 0;
+            padding: 0;
+            -webkit-box-sizing: border-box;
+            -moz-box-sizing: border-box;
+            box-sizing: border-box;
+        }
+
+        html {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            height: 100%;
+            font-family: Segoe UI, Tahoma, Arial, sans-serif;
+            font-size: 14px;
+            overflow: hidden;
+        }
+
+        /* ===== ТЕМЫ WhatsApp ===== */
+        /* Тёмная тема */
+        body.theme-dark {
+            background: #111b21;
+            color: #e9edef;
+        }
+
+        /* Светлая тема */
+        body.theme-light {
+            background: #efeae2;
+            color: #111b21;
+        }
+
+        /* ===== КОНТЕЙНЕР ===== */
+        .chat-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* ===== ШАПКА (HEADER) - WhatsApp стиль ===== */
+        .top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 50px;
+            _height: 50px;
+            z-index: 100;
+        }
+
+        .top-bar-inner {
+            height: 50px;
+            padding: 0 12px;
+            line-height: 50px;
+            display: table;
+            width: 100%;
+        }
+
+        /* Dark theme header */
+        body.theme-dark .top-bar-inner {
+            background: #202c33;
+            border-bottom: 1px solid #2a3942;
+        }
+
+        /* Light theme header */
+        body.theme-light .top-bar-inner {
+            background: #008069;
+            border-bottom: 1px solid #007d65;
+        }
+
+        .top-bar-title {
+            font-size: 16px;
+            font-weight: 600;
+            display: table-cell;
+            vertical-align: middle;
+        }
+
+        body.theme-dark .top-bar-title {
+            color: #e9edef;
+        }
+
+        body.theme-light .top-bar-title {
+            color: #ffffff;
+        }
+
+        .top-bar-right {
+            display: table-cell;
+            text-align: right;
+            vertical-align: middle;
+            width: 210px;
+            line-height: normal;
+        }
+
+        /* Кнопка "Завершить обращение" в шапке */
+        .close-dialog-button {
+            display: inline-block;
+            padding: 7px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            text-align: center;
+            border: none;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        body.theme-dark .close-dialog-button {
+            background: #4a3030;
+            color: #f5a5a5;
+        }
+
+        body.theme-dark .close-dialog-button:hover {
+            background: #6b3a3a;
+        }
+
+        body.theme-light .close-dialog-button {
+            background: #fdecea;
+            color: #c62828;
+        }
+
+        body.theme-light .close-dialog-button:hover {
+            background: #f5c6c6;
+        }
+
+        /* ===== ОБЛАСТЬ СООБЩЕНИЙ ===== */
+        .chat-row {
+            position: absolute;
+            top: 50px;
+            left: 0;
+            width: 100%;
+            bottom: 96px;
+            _bottom: auto;
+            _height: expression(document.body.clientHeight - 146 + 'px');
+            overflow: hidden;
+        }
+
+        .chat {
+            width: 100%;
+            height: 100%;
+            padding: 10px 12px;
+            overflow: scroll;
+            overflow-x: hidden;
+        }
+
+        /* Dark chat background */
+        body.theme-dark .chat {
+            background: #0b141a;
+        }
+
+        /* Light chat background - бежевый как в WhatsApp */
+        body.theme-light .chat {
+            background: #efeae2;
+        }
+
+        /* ===== INLINE-КНОПКИ ПОД СООБЩЕНИЯМИ (Telegram-стиль) ===== */
+        .msg-buttons {
+            margin-top: 8px;
+            padding: 0 4px;
+            clear: both;
+            text-align: left;
+        }
+
+        .msg-buttons .qa-btn,
+        .msg-buttons .qa-rate {
+            margin-bottom: 6px;
+        }
+
+        /* ===== АНИМАЦИЯ ПОЯВЛЕНИЯ (IE7-совместимо через JS) ===== */
+        .msg-new {
+            visibility: hidden;
+        }
+
+        /* ===== НИЖНЯЯ ПАНЕЛЬ (FOOTER) ===== */
+        .input-row-outer {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 96px;
+            _height: 96px;
+            z-index: 100;
+        }
+
+        .input-container {
+            height: 96px;
+            padding: 8px 12px;
+        }
+
+        body.theme-dark .input-container {
+            background: #202c33;
+            border-top: 1px solid #2a3942;
+        }
+
+        body.theme-light .input-container {
+            background: #f0f2f5;
+            border-top: 1px solid #d1d7db;
+        }
+
+        /* Убираем toolbar */
+        .toolbar {
+            display: none;
+        }
+
+        /* ===== ПОЛЕ ВВОДА + КНОПКА ===== */
+        .input-row {
+            display: table;
+            width: 100%;
+        }
+
+        .attach-button-cell {
+            display: table-cell;
+            vertical-align: middle;
+            width: 70px;
+            padding-left: 8px;
+        }
+
+        .input-cell {
+            display: table-cell;
+            vertical-align: middle;
+        }
+
+        .button-cell {
+            display: table-cell;
+            vertical-align: middle;
+            width: 118px;
+            padding-left: 8px;
+        }
+
+        /* Поле ввода - WhatsApp стиль */
+        .message-input {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 14px;
+            border: none;
+        }
+
+        body.theme-dark .message-input {
+            background: #2a3942;
+            color: #e9edef;
+        }
+
+        body.theme-dark .message-input:focus {
+            background: #3b4a54;
+        }
+
+        body.theme-light .message-input {
+            background: #ffffff;
+            color: #111b21;
+        }
+
+        body.theme-light .message-input:focus {
+            background: #ffffff;
+        }
+
+        .message-input:focus {
+            outline: none;
+        }
+
+        /* Кнопка отправки - WhatsApp зелёный */
+        .send-button {
+            display: block;
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            text-align: center;
+            border: none;
+        }
+
+        body.theme-dark .send-button {
+            background: #00a884;
+            color: #111b21;
+        }
+
+        body.theme-dark .send-button:hover {
+            background: #06cf9c;
+        }
+
+        body.theme-light .send-button {
+            background: #008069;
+            color: #ffffff;
+        }
+
+        body.theme-light .send-button:hover {
+            background: #017561;
+        }
+
+        .attach-button {
+            display: block;
+            width: 100%;
+            padding: 10px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            text-align: center;
+            border: none;
+        }
+
+        body.theme-dark .attach-button {
+            background: #2a3942;
+            color: #d8e6ee;
+        }
+
+        body.theme-dark .attach-button:hover {
+            background: #3b4a54;
+        }
+
+        body.theme-light .attach-button {
+            background: #e9edef;
+            color: #54656f;
+        }
+
+        body.theme-light .attach-button:hover {
+            background: #d9dbdb;
+        }
+
+        .msg-attachments {
+            margin: 6px 0;
+        }
+
+        .msg-attachment-image {
+            display: block;
+            border: 1px solid #d1d7db;
+            border-radius: 0;
+        }
+
+        .pending-upload-item {
+            display: inline-block;
+            padding: 4px 8px;
+            margin: 0 6px 4px 0;
+            border-radius: 12px;
+        }
+
+        body.theme-dark .pending-upload-item {
+            background: #2a3942;
+            color: #e9edef;
+        }
+
+        body.theme-light .pending-upload-item {
+            background: #ffffff;
+            color: #111b21;
+        }
+
+        .pending-upload-name {
+            display: inline-block;
+            max-width: 170px;
+            overflow: hidden;
+            vertical-align: middle;
+        }
+
+        .pending-upload-remove {
+            display: inline-block;
+            margin-left: 6px;
+            text-decoration: none;
+            font-weight: bold;
+            vertical-align: middle;
+        }
+
+        body.theme-dark .pending-upload-remove {
+            color: #f5a5a5;
+        }
+
+        body.theme-light .pending-upload-remove {
+            color: #c62828;
+        }
+
+        .msg-attachments {
+            margin: 6px 0;
+        }
+
+        .msg-attachment-image {
+            display: block;
+            width: auto;
+            max-width: 420px;
+            height: auto;
+            max-height: 420px;
+            border: 1px solid #d1d7db;
+            border-radius: 8px;
+        }
+
+        .msg-file-link {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 8px;
+            text-decoration: none;
+        }
+
+        body.theme-dark .msg-file-link {
+            background: #2a3942;
+            color: #8bd8c7;
+        }
+
+        body.theme-light .msg-file-link {
+            background: #ffffff;
+            color: #008069;
+        }
+
+        /* Быстрые кнопки (IE-совместимо) */
+        .qa-btn {
+            display: inline-block;
+            padding: 6px 12px;
+            margin: 0 5px 4px 0;
+            border: 1px solid #b7c3d0;
+            background: #eef3f8;
+            color: #2a3d5f;
+            text-decoration: none;
+            border-radius: 12px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .qa-btn-danger {
+            border-color: #d7a7a7;
+            background: #f8eeee;
+            color: #7b2d2d;
+        }
+
+        .qa-rate {
+            display: inline-block;
+            width: 28px;
+            height: 28px;
+            line-height: 28px;
+            text-align: center;
+            margin: 0 4px 4px 0;
+            border: 1px solid #c9d3df;
+            border-radius: 14px;
+            background: #fff;
+            color: #2a3d5f;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        body.theme-dark .qa-btn {
+            border-color: #345064;
+            background: #233847;
+            color: #cfe2f0;
+        }
+
+        body.theme-dark .qa-btn-danger {
+            border-color: #704646;
+            background: #3d2a2a;
+            color: #f4c0c0;
+        }
+
+        body.theme-dark .qa-rate {
+            border-color: #3d5667;
+            background: #213847;
+            color: #d6e8f7;
+        }
+
+        body.theme-light .qa-rate {
+            border-color: #b8c5d4;
+            background: #ffffff;
+            color: #2a3d5f;
+        }
+
+        /* ===== СООБЩЕНИЯ ===== */
+        .msg {
+            max-width: 80%;
+            margin: 4px 0;
+            padding: 8px 12px;
+            border-radius: 8px;
+            line-height: 1.4;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            position: relative;
+        }
+
+        .msg:after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        /* Сообщения входящие (слева) - темная тема */
+        body.theme-dark .left {
+            background: #202c33;
+            color: #e9edef;
+            border-top-left-radius: 0;
+        }
+
+        /* Сообщения входящие (слева) - светлая тема */
+        body.theme-light .left {
+            background: #ffffff;
+            color: #111b21;
+            border-top-left-radius: 0;
+        }
+
+        /* Сообщения исходящие (справа) - WhatsApp зелёный */
+        .right {
+            float: right;
+            clear: both;
+            border-top-right-radius: 0;
+        }
+
+        body.theme-dark .right {
+            background: #005c4b;
+            color: #e9edef;
+        }
+
+        body.theme-light .right {
+            background: #d9fdd3;
+            color: #111b21;
+        }
+
+        .left {
+            float: left;
+            clear: both;
+        }
+
+        /* Метаданные сообщения */
+        .meta {
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+        body.theme-dark .meta {
+            color: #8696a0;
+        }
+
+        body.theme-light .left .meta {
+            color: #667781;
+        }
+
+        body.theme-light .right .meta {
+            color: #1f7a60;
+        }
+
+        .right .meta {
+            text-align: right;
+        }
+
+        /* Автор сообщения */
+        .author {
+            font-weight: 600;
+            margin-bottom: 3px;
+            font-size: 13px;
+        }
+
+        body.theme-dark .left .author {
+            color: #53bdeb;
+        }
+
+        body.theme-light .left .author {
+            color: #008069;
+        }
+
+        body.theme-dark .right .author {
+            color: #8eecc6;
+        }
+
+        body.theme-light .right .author {
+            color: #0d7d5a;
+        }
+
+        /* Утилиты */
+        .clearfix:after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        /* ===== КНОПКА ПЕРЕКЛЮЧЕНИЯ ТЕМЫ ===== */
+        .theme-toggle-button {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            text-align: center;
+            line-height: 32px;
+            padding: 0;
+            border: none;
+        }
+
+        body.theme-light .theme-toggle-button {
+            background: #017561;
+            color: #ffffff;
+        }
+
+        body.theme-light .theme-toggle-button:hover {
+            background: #005c4b;
+        }
+
+        body.theme-dark .theme-toggle-button {
+            background: #2a3942;
+            color: #aebac1;
+        }
+
+        body.theme-dark .theme-toggle-button:hover {
+            background: #3b4a54;
+        }
+
+        /* ===== EMOJI PICKER ===== */
+        .emoji-button-cell {
+            display: table-cell;
+            vertical-align: middle;
+            width: 40px;
+            padding-right: 8px;
+        }
+
+        .emoji-button {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+            text-align: center;
+            line-height: 36px;
+            padding: 0;
+            border: none;
+            position: relative;
+        }
+
+        body.theme-dark .emoji-button {
+            background: #2a3942;
+            color: #aebac1;
+        }
+
+        body.theme-dark .emoji-button:hover {
+            background: #3b4a54;
+        }
+
+        body.theme-light .emoji-button {
+            background: #e9edef;
+            color: #54656f;
+        }
+
+        body.theme-light .emoji-button:hover {
+            background: #d9dbdb;
+        }
+
+        /* Панель смайликов */
+        .emoji-panel {
+            display: none;
+            position: absolute;
+            bottom: 50px;
+            left: 12px;
+            width: 280px;
+            padding: 8px;
+            border-radius: 8px;
+            z-index: 200;
+        }
+
+        body.theme-dark .emoji-panel {
+            background: #202c33;
+            border: 1px solid #2a3942;
+        }
+
+        body.theme-light .emoji-panel {
+            background: #ffffff;
+            border: 1px solid #d1d7db;
+        }
+
+        .emoji-panel.show {
+            display: block;
+        }
+
+        .emoji-grid {
+            width: 100%;
+        }
+
+        .emoji-grid td {
+            text-align: center;
+            padding: 4px;
+        }
+
+        .emoji-item {
+            display: inline-block;
+            width: 32px;
+            height: 32px;
+            line-height: 32px;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 4px;
+            text-decoration: none;
+        }
+
+        body.theme-dark .emoji-item {
+            color: #e9edef;
+        }
+
+        body.theme-dark .emoji-item:hover {
+            background: #3b4a54;
+        }
+
+        body.theme-light .emoji-item {
+            color: #111b21;
+        }
+
+        body.theme-light .emoji-item:hover {
+            background: #f0f2f5;
+        }
+    </style>
+
+    <script>
+        /* ===== EMOJI PICKER ===== */
+        var emojiPanelOpen = false;
+
+        function toggleEmojiPanel() {
+            var panel = document.getElementById('emojiPanel');
+            if (!panel) return;
+
+            if (emojiPanelOpen) {
+                panel.className = panel.className.replace(/\s*show\s*/g, '');
+                emojiPanelOpen = false;
+            } else {
+                panel.className = panel.className + ' show';
+                emojiPanelOpen = true;
+            }
+        }
+
+        function insertEmoji(emoji) {
+            var input = document.getElementById('messageInput');
+            if (!input) return;
+
+            // Вставляем смайлик в текущую позицию курсора или в конец
+            if (typeof input.selectionStart !== 'undefined') {
+                var start = input.selectionStart;
+                var end = input.selectionEnd;
+                var text = input.value;
+                input.value = text.substring(0, start) + emoji + text.substring(end);
+                input.selectionStart = input.selectionEnd = start + emoji.length;
+            } else {
+                input.value = input.value + emoji;
+            }
+
+            input.focus();
+            closeEmojiPanel();
+        }
+
+        function closeEmojiPanel() {
+            var panel = document.getElementById('emojiPanel');
+            if (panel) {
+                panel.className = panel.className.replace(/\s*show\s*/g, '');
+                emojiPanelOpen = false;
+            }
+        }
+
+        /* прокрутка вниз - улучшенная для IE */
+        function scrollChatToBottom() {
+            try {
+                var chat = document.getElementById('chatMessages');
+                if (chat) {
+                    // Для IE нужна небольшая задержка для правильного расчета scrollHeight
+                    var doScroll = function () {
+                        chat.scrollTop = chat.scrollHeight + 1000;
+                    };
+                    doScroll();
+                    // Дополнительный вызов с задержкой для IE
+                    if (window.setTimeout) {
+                        window.setTimeout(doScroll, 50);
+                        window.setTimeout(doScroll, 200);
+                    }
+                }
+            } catch (e) { }
+        }
+
+        /* применить тему к body + иконка переключателя */
+        function applyTheme(theme) {
+            var body = document.body;
+            if (!body) return;
+
+            // Убираем старые классы
+            var oldClass = body.className;
+            oldClass = oldClass.replace(/theme-dark/g, '');
+            oldClass = oldClass.replace(/theme-light/g, '');
+            body.className = oldClass + ' theme-' + theme;
+
+            var btn = document.getElementById('themeToggle');
+            if (btn) {
+                btn.innerHTML = (theme === 'light') ? '&#9728;' : '&#9790;';
+            }
+        }
+
+        /* переключатель темы по клику – только фиксируем выбор в 1С */
+        function toggleTheme() {
+            var body = document.body;
+            if (!body) return;
+
+            var isLight = body.className.indexOf('theme-light') >= 0;
+            var newTheme = isLight ? 'dark' : 'light';
+
+            // меняем визуально
+            applyTheme(newTheme);
+
+            // сохраняем выбор в форме 1С
+            try {
+                if (window.external && window.external.Call) {
+                    window.external.Call("УстановитьТему", newTheme);
+                }
+            } catch (e) { }
+        }
+
+        /* отправка по Enter - совместимо со старым IE и русской клавиатурой */
+        function handleKeyPress(e) {
+            var event = e || window.event;
+            var keyCode = event.keyCode || event.which || 0;
+
+            // Enter = keyCode 13 (работает для любой раскладки)
+            if (keyCode === 13) {
+                // Предотвращаем стандартное поведение формы
+                if (event.preventDefault) {
+                    event.preventDefault();
+                }
+                if (event.stopPropagation) {
+                    event.stopPropagation();
+                }
+                event.returnValue = false;
+                event.cancelBubble = true;
+
+                var input = document.getElementById('messageInput');
+                if (!input) return false;
+
+                // trim для старого IE
+                var val = input.value;
+                if (val) {
+                    val = val.replace(/^\s+|\s+$/g, '');
+                }
+                // Кликаем по ссылке "Отправить" - 1С перехватит это событие
+                var sendLink = document.getElementById('sendLink');
+                if (sendLink) {
+                    // Для старого IE используем fireEvent или click()
+                    if (sendLink.click) {
+                        sendLink.click();
+                    } else if (document.createEvent) {
+                        var evt = document.createEvent('MouseEvents');
+                        evt.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+                        sendLink.dispatchEvent(evt);
+                    } else if (sendLink.fireEvent) {
+                        sendLink.fireEvent('onclick');
+                    }
+                }
+                return false;
+            }
+            return true;
+        }
+
+        /* анимация появления элементов - IE7-совместимо (filter:alpha) */
+        function fadeInMessages() {
+            try {
+                var chat = document.getElementById('chatMessages');
+                if (!chat) return;
+                var items = chat.getElementsByTagName('div');
+                var targets = [];
+                for (var i = 0; i < items.length; i++) {
+                    if (items[i].className && items[i].className.indexOf('msg-new') >= 0) {
+                        targets.push(items[i]);
+                    }
+                }
+                if (targets.length === 0) return;
+
+                // Начальное состояние: невидимо
+                for (var j = 0; j < targets.length; j++) {
+                    targets[j].style.visibility = 'visible';
+                    if (targets[j].style.filter !== undefined) {
+                        targets[j].style.filter = 'alpha(opacity=0)';
+                    }
+                    if (targets[j].style.opacity !== undefined) {
+                        targets[j].style.opacity = '0';
+                    }
+                }
+
+                // Поэтапный fade-in
+                var s = 0;
+                var opacityInterval = window.setInterval(function () {
+                    s += 25;
+                    for (var k = 0; k < targets.length; k++) {
+                        var el = targets[k];
+                        if (el.style.filter !== undefined) {
+                            el.style.filter = 'alpha(opacity=' + s + ')';
+                        }
+                        if (el.style.opacity !== undefined) {
+                            el.style.opacity = (s / 100);
+                        }
+                        if (s >= 100) {
+                            el.className = el.className.replace(/\s*msg-new\s*/g, ' ');
+                        }
+                    }
+                    if (s >= 100) {
+                        window.clearInterval(opacityInterval);
+                    }
+                }, 70);
+            } catch (e) { }
+        }
+
+        /* обработка вставки из буфера обмена */
+        function handlePaste(e) {
+            try {
+                // Получаем данные из буфера обмена
+                var clipboardData = e.clipboardData || window.clipboardData;
+                if (!clipboardData) return;
+
+                // Проверяем, есть ли изображения в буфере
+                var items = clipboardData.items;
+                if (!items) return;
+
+                for (var i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        // Это изображение, отменяем стандартную вставку
+                        e.preventDefault();
+
+                        // Получаем файл изображения
+                        var file = items[i].getAsFile();
+                        if (!file) continue;
+
+                        // Читаем файл как base64
+                        var reader = new FileReader();
+                        reader.onload = function (e) {
+                            var base64 = e.target.result.split(',')[1]; // Убираем data:image/xxx;base64,
+                            var mimeType = file.type;
+                            var fileName = 'pasted_image_' + Date.now() + '.' + (mimeType.split('/')[1] || 'jpg');
+
+                            // Вызываем процедуру 1С для загрузки изображения
+                            if (window.external && window.external.Call) {
+                                window.external.Call("ЗагрузитьИзображениеИзБуфера", fileName, base64, mimeType);
+                            }
+                        };
+                        reader.readAsDataURL(file);
+                        break;
+                    }
+                }
+            } catch (err) { }
+        }
+
+        // Добавляем обработчик paste к полю ввода
+        function setupPasteHandler() {
+            var input = document.getElementById('messageInput');
+            if (input) {
+                input.addEventListener('paste', handlePaste);
+            }
+        }
+
+        /* onload */
+        window.onload = function () {
+            // На старте класс body уже theme-{{THEME}} из 1С
+            var body = document.body;
+            var currentTheme = 'dark';
+            if (body && body.className.indexOf('theme-light') >= 0) {
+                currentTheme = 'light';
+            }
+
+            applyTheme(currentTheme);
+            scrollChatToBottom();
+            fadeInMessages();
+
+            var messageInput = document.getElementById('messageInput');
+            if (messageInput) {
+                messageInput.focus();
+            }
+
+            // ДОБАВЬТЕ ЭТУ СТРОКУ
+            setupPasteHandler();
+        };
+        /* функция открытия изображения на весь экран через 1С */
+        function openFullImage(imageId) {
+            try {
+                var hiddenInput = document.getElementById(imageId);
+                if (!hiddenInput) return false;
+
+                var imageUrl = hiddenInput.value;
+                var base64Data = hiddenInput.getAttribute('data-base64');
+                var mimeType = hiddenInput.getAttribute('data-mime');
+
+                // Вызываем процедуру 1С для открытия изображения
+                if (window.external && window.external.Call) {
+                    if (base64Data && base64Data !== '' && base64Data !== 'null' && base64Data !== 'undefined') {
+                        window.external.Call("ОткрытьИзображениеНаВесьЭкран", "", base64Data, mimeType);
+                    } else {
+                        window.external.Call("ОткрытьИзображениеНаВесьЭкран", imageUrl, "", "");
+                    }
+                }
+            } catch (e) { }
+            return false;
+        }
+    </script>
+</head>
+
+<body class="theme-{{THEME}}">
+    <div class="chat-container">
+
+        <div class="top-bar">
+            <div class="top-bar-inner">
+                <span class="top-bar-title">Чат поддержки</span>
+                <span class="top-bar-right">
+                    <a href="#" class="close-dialog-button" data-button-id="CloseDialog"
+                        onclick="return false;">Завершить</a>
+                    <button type="button" id="themeToggle" class="theme-toggle-button"
+                        onclick="toggleTheme()">&#9790;</button>
+                </span>
+            </div>
+        </div>
+
+        <div class="chat-row">
+            <div class="chat" id="chatMessages">
+                {{MESSAGES}}
+            </div>
+        </div>
+
+
+
+        <div class="input-row-outer">
+            <div class="input-container">
+                {{PENDING_UPLOADS}}
+                <!-- Панель смайликов -->
+                <div id="emojiPanel" class="emoji-panel">
+                    <table class="emoji-grid" cellspacing="0" cellpadding="0">
+                        <tr>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji(':)'); return false;">:)</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji(':('); return false;">:(</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji(':D'); return false;">:D</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji(';)'); return false;">;)</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji(':P'); return false;">:P</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji(':O'); return false;">:O</a></td>
+                        </tr>
+                        <tr>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('XD'); return false;">XD</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('B)'); return false;">B)</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji(':/'); return false;">:/</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji(':*'); return false;">:*</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('&lt;3'); return false;">&lt;3</a>
+                            </td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('^^'); return false;">^^</a></td>
+                        </tr>
+                        <tr>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('OK'); return false;">OK</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('+1'); return false;">+1</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('-1'); return false;">-1</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('?!'); return false;">?!</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('!!!'); return false;">!!!</a></td>
+                            <td><a class="emoji-item" href="#" onclick="insertEmoji('...'); return false;">...</a></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <form name="dataInput" onsubmit="return false;">
+                    <div class="input-row">
+                        <div class="emoji-button-cell">
+                            <button type="button" class="emoji-button" onclick="toggleEmojiPanel()">&#9786;</button>
+                        </div>
+                        <div class="input-cell">
+                            <input type="text" name="textInput" id="messageInput" class="message-input"
+                                placeholder="Введите сообщение..." onkeypress="return handleKeyPress(event)"
+                                onfocus="closeEmojiPanel()">
+                        </div>
+                        <div class="attach-button-cell">
+                            <a href="#" class="attach-button" title="Прикрепить файл" data-button-id="AttachFile"
+                                onclick="return false;">Файл</a>
+                        </div>
+                        <div class="button-cell">
+                            <a href="#" id="sendLink" class="send-button" data-button-id="Exchange"
+                                onclick="return false;">Отправить</a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</body>
+
+</html>

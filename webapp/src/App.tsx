@@ -1,9 +1,9 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import DialogsPage from './pages/DialogsPage';
 import { useApi } from './context/ApiContext';
 import AuthPage from './pages/AuthPage';
 
+const DialogsPage = React.lazy(() => import('./pages/DialogsPage'));
 const DashboardPage = React.lazy(() => import('./pages/DashboardPage'));
 const AdminPage = React.lazy(() => import('./pages/AdminPage'));
 const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
@@ -108,13 +108,6 @@ const App: React.FC = () => {
       .join('');
   }, [currentUser]);
 
-  const pageTitle = useMemo(() => {
-    if (location.pathname.startsWith('/dialogs')) return 'Диалоги';
-    if (location.pathname.startsWith('/dashboard')) return 'Дашборд';
-    if (location.pathname.startsWith('/admin')) return 'Сотрудники';
-    if (location.pathname.startsWith('/profile')) return 'Профиль';
-    return 'MobileBot';
-  }, [location.pathname]);
 
   const isDashboardRoute = location.pathname.startsWith('/dashboard');
   const isAdminRoute = location.pathname.startsWith('/admin');

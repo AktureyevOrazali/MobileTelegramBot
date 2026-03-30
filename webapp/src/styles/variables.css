@@ -79,6 +79,16 @@
   --nav-item-hover: #eef5fc;
   --nav-active-bg: linear-gradient(135deg, #7f9fd2, #9bc7bf);
   --nav-active-shadow: 0 10px 18px rgba(108, 143, 200, 0.18);
+  --chart-color-1: #6366f1;
+  --chart-color-2: #3b82f6;
+  --chart-color-3: #06b6d4;
+  --chart-color-4: #10b981;
+  --chart-color-5: #f59e0b;
+  --chart-color-6: #ef4444;
+  --chart-grid: #e2e8f0;
+  --hero-gradient: linear-gradient(135deg, #3b5998 0%, #5a7ab8 25%, #7c9fd6 50%, #5a7ab8 75%, #3b5998 100%);
+  --button-shadow: 0 4px 12px rgba(62, 90, 168, 0.25);
+  --button-shadow-hover: 0 8px 24px rgba(62, 90, 168, 0.35);
 }
 
 [data-theme='dark'] {
@@ -148,6 +158,16 @@
   --nav-item-hover: #24344f;
   --nav-active-bg: linear-gradient(135deg, #7f9fcd, #8ec2bc);
   --nav-active-shadow: 0 10px 18px rgba(137, 168, 214, 0.2);
+  --chart-color-1: #818cf8;
+  --chart-color-2: #60a5fa;
+  --chart-color-3: #22d3ee;
+  --chart-color-4: #34d399;
+  --chart-color-5: #fbbf24;
+  --chart-color-6: #f87171;
+  --chart-grid: #2d3748;
+  --hero-gradient: linear-gradient(135deg, #1a2333 0%, #202d44 25%, #2a3b5a 50%, #202d44 75%, #1a2333 100%);
+  --button-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --button-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 * { box-sizing: border-box; }

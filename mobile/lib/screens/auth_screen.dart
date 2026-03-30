@@ -1,4 +1,4 @@
-part of '../main.dart';
+﻿part of '../main.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({
@@ -98,16 +98,6 @@ class _AuthScreenState extends State<AuthScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final platformBrightness = MediaQuery.of(context).platformBrightness;
-    final isDarkModeActive = widget.themeMode == ThemeMode.dark ||
-        (widget.themeMode == ThemeMode.system &&
-            platformBrightness == Brightness.dark);
-    final themeToggleIcon =
-        isDarkModeActive ? Icons.light_mode : Icons.dark_mode;
-    final themeToggleTooltip =
-        isDarkModeActive ? 'Светлая тема' : 'Тёмная тема';
-    final nextThemeMode = isDarkModeActive ? ThemeMode.light : ThemeMode.dark;
-
     Widget buildMessageBox({
       required String text,
       required Color background,
@@ -132,11 +122,32 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        elevation: 0,
+        forceMaterialTransparency: true,
+        automaticallyImplyLeading: false,
+        flexibleSpace: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: AppGradients.authBackground(colorScheme),
+          ),
+        ),
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          tooltip: '\u041d\u0430\u0437\u0430\u0434',
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+      ),
       body: DecoratedBox(
         decoration: BoxDecoration(
           gradient: AppGradients.authBackground(colorScheme),
         ),
-        child: SafeArea(
+        child: SafeArea(top: false,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final availableHeight =
@@ -181,19 +192,6 @@ class _AuthScreenState extends State<AuthScreen> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: IconButton.filledTonal(
-                                  onPressed: _logButtonPress(
-                                    'toggle theme from auth screen',
-                                    () => widget
-                                        .onThemeModeChanged(nextThemeMode),
-                                  ),
-                                  tooltip: themeToggleTooltip,
-                                  icon: Icon(themeToggleIcon),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
                               Column(
                                 children: [
                                   Container(

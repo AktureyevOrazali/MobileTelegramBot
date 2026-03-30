@@ -1,4 +1,4 @@
-﻿/* ===== Dashboard page ===== */
+/* ===== Dashboard page ===== */
 
 .dashboard-page {
   display: flex;
@@ -7,10 +7,10 @@
   padding-bottom: 32px;
 }
 
-/* ── Gradient hero header ── */
+/* -- Gradient hero header -- */
 
 .dashboard-hero {
-  background: linear-gradient(135deg, #3b5998 0%, #5a7ab8 25%, #7c9fd6 50%, #5a7ab8 75%, #3b5998 100%);
+    background: var(--hero-gradient);
   background-size: 300% 300%;
   animation: dashboard-hero-gradient 8s ease infinite;
   border-radius: var(--radius-xl);
@@ -125,7 +125,7 @@
   color: #fecaca;
 }
 
-/* ── Date range inputs ── */
+/* -- Date range inputs -- */
 
 .dashboard-date-row {
   display: flex;
@@ -147,7 +147,7 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
-/* выпадающие списки внутри градиента: белый текст для читаемости */
+/* ���������� ������ ������ ���������: ����� ����� ��� ���������� */
 .dashboard-hero .pill {
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.3);
@@ -164,7 +164,7 @@
   background: rgba(255, 255, 255, 0.22);
 }
 
-/* Табы — растягиваются на всю ширину или прокручиваются */
+/* ���� � ������������� �� ��� ������ ��� �������������� */
 
 .dashboard-tabs {
   display: flex;
@@ -198,14 +198,14 @@
 }
 
 .dashboard-tab.is-active {
-  background: #fff;
+    background: var(--nav-active-bg);
   color: #3b5998;
   border-color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px var(--button-shadow);
   transform: translateY(-1px);
 }
 
-/* ── Content cards ── */
+/* -- Content cards -- */
 
 .dashboard-content {
   display: flex;
@@ -281,7 +281,7 @@
   border-radius: inherit;
 }
 
-/* ── Overview: 2-column responsive grid ── */
+/* -- Overview: 2-column responsive grid -- */
 
 .dashboard-overview-row {
   display: grid;
@@ -296,7 +296,7 @@
   }
 }
 
-/* ── Speed donut card ── */
+/* -- Speed donut card -- */
 
 .dashboard-speed__header {
   display: flex;
@@ -376,7 +376,7 @@
   transform-origin: center;
 }
 
-/* ── Legend ── */
+/* -- Legend -- */
 
 .dashboard-legend {
   display: flex;
@@ -450,7 +450,7 @@
   margin: 3px 0;
 }
 
-/* ── KV (key-value) card ── */
+/* -- KV (key-value) card -- */
 
 .dashboard-kv {
   display: flex;
@@ -482,7 +482,7 @@
   background: var(--border-color);
 }
 
-/* ── Operators columns ── */
+/* -- Operators columns -- */
 
 .dashboard-columns {
   display: grid;
@@ -495,7 +495,7 @@
   height: 100%;
 }
 
-/* ── Rating cards (CSAT / AI CSAT) ── */
+/* -- Rating cards (CSAT / AI CSAT) -- */
 
 .dashboard-rating {
   display: grid;
@@ -545,7 +545,7 @@
   color: #93c5fd;
 }
 
-/* ── Top list ── */
+/* -- Top list -- */
 
 .dashboard-top-list {
   list-style: none;
@@ -617,7 +617,7 @@
   color: var(--text-muted);
 }
 
-/* ── Tables ── */
+/* -- Tables -- */
 
 .table-scroll {
   overflow-x: auto;
@@ -661,7 +661,7 @@
   font-weight: 600;
 }
 
-/* ── Sections progress ── */
+/* -- Sections progress -- */
 
 .section-progress-list {
   list-style: none;
@@ -697,7 +697,7 @@
   transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ── Questions ── */
+/* -- Questions -- */
 
 .question-list {
   margin: 0;
@@ -740,7 +740,7 @@
   margin-right: 8px;
 }
 
-/* ── Empty state ── */
+/* -- Empty state -- */
 
 .dashboard-empty {
   text-align: center;
@@ -757,7 +757,7 @@
   margin: 0;
 }
 
-/* ── Loading empty state ── */
+/* -- Loading empty state -- */
 
 .dashboard-loading-state {
   display: flex;
@@ -797,7 +797,7 @@
   }
 }
 
-/* ── Line chart (Activity tab) ── */
+/* -- Line chart (Activity tab) -- */
 
 .dashboard-chart-wrap {
   display: flex;
@@ -847,7 +847,7 @@
   r: 6;
 }
 
-/* ── Footer ── */
+/* -- Footer -- */
 
 .dashboard-footer {
   font-size: 0.82rem;
@@ -855,7 +855,7 @@
   text-align: right;
 }
 
-/* ── No-data state ── */
+/* -- No-data state -- */
 
 .dashboard-no-data {
   border-top: 1px solid var(--border-color);
@@ -865,7 +865,7 @@
   gap: 12px;
 }
 
-/* ── Animation ── */
+/* -- Animation -- */
 
 @keyframes dash-card-in {
   from {
@@ -889,7 +889,7 @@
   }
 }
 
-/* ── Responsive ── */
+/* -- Responsive -- */
 
 @media (max-width: 640px) {
   .dashboard-hero {
@@ -921,7 +921,7 @@
   }
 }
 
-/* ── Typography (shared) ── */
+/* -- Typography (shared) -- */
 
 :root {
   --font-sans: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji';
@@ -949,14 +949,14 @@ body {
   overflow: hidden;
 }
 
-/* ── Recharts custom tooltip ── */
+/* -- Recharts custom tooltip -- */
 
 .recharts-custom-tooltip {
-  background: var(--surface-color, #fff);
+  background: var(--surface-color);
   border: 1px solid var(--border-color, #e2e8f0);
   border-radius: 10px;
   padding: 10px 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px var(--button-shadow);
   font-size: 0.82rem;
 }
 
@@ -978,7 +978,7 @@ body {
   outline: none !important;
 }
 
-/* ── AI automation progress bar ── */
+/* -- AI automation progress bar -- */
 
 .dashboard-ai-bar {
   display: flex;
@@ -1022,7 +1022,7 @@ body {
   min-width: 4px;
 }
 
-/* ── SLA gauge ── */
+/* -- SLA gauge -- */
 
 .dashboard-sla-gauge {
   display: flex;
@@ -1051,7 +1051,7 @@ body {
   margin-top: 4px;
 }
 
-/* ── Section pie legend ── */
+/* -- Section pie legend -- */
 
 .dashboard-section-legend {
   display: flex;
@@ -1069,7 +1069,7 @@ body {
   color: var(--text-color);
 }
 
-/* ── Heatmap cells ── */
+/* -- Heatmap cells -- */
 
 .heatmap-cell {
   height: 100%;
@@ -1089,7 +1089,7 @@ body {
   z-index: 1;
 }
 
-/* ── Heatmap color legend ── */
+/* -- Heatmap color legend -- */
 
 .heatmap-legend {
   display: flex;
@@ -1106,7 +1106,7 @@ body {
   background: linear-gradient(90deg, rgba(99, 102, 241, 0.15), rgba(99, 102, 241, 1));
 }
 
-/* ── Table inline bar ── */
+/* -- Table inline bar -- */
 
 .dashboard-table-bar {
   width: 100%;
@@ -1123,13 +1123,13 @@ body {
   transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ─── Dark theme overrides for dashboard hero ─── */
+/* --- Dark theme overrides for dashboard hero --- */
 [data-theme='dark'] .dashboard-hero {
   background: linear-gradient(135deg, #2d2a5e 0%, #3d3a8f 50%, #5a56b8 100%);
   box-shadow: 0 12px 40px rgba(99, 102, 241, 0.15);
 }
 
-/* ─── Dark theme overrides for Recharts ─── */
+/* --- Dark theme overrides for Recharts --- */
 [data-theme='dark'] .recharts-custom-tooltip {
   background: var(--surface-color, #1e1e2e);
   border-color: var(--border-color, #374151);
@@ -1383,7 +1383,7 @@ body {
 [data-theme='dark'] .dashboard-page--app-sidebar .dashboard-hero,
 [data-theme='dark'] .dashboard-page--app-sidebar .dashboard-card,
 [data-theme='dark'] .dashboard-page--app-sidebar .dashboard-loading-state {
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 12px 30px var(--button-shadow-hover);
 }
 
 [data-theme='dark'] .dashboard-page--app-sidebar .dashboard-hero__error {

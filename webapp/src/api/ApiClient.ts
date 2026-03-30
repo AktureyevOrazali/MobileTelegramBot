@@ -1,4 +1,4 @@
-﻿import {
+import {
   AuthSession,
   AuthSessionRaw,
   BinDetailed,
@@ -31,7 +31,6 @@
   UserBinAssignment,
 } from '../types';
 import {
-  mapAttachment,
   mapChatSummary,
   mapDashboardSummary,
   mapMessage,
@@ -48,11 +47,6 @@ export class ApiError extends Error {
   }
 }
 
-const ROLE_TITLES: Record<string, string> = {
-  admin: '\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440',
-  moderator: '\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440',
-  operator: '\u041e\u043f\u0435\u0440\u0430\u0442\u043e\u0440',
-};
 const BUILD_TIME_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim();
 const BUILD_TIME_API_TOKEN = (import.meta.env.VITE_API_TOKEN ?? '').trim();
 
@@ -355,6 +349,7 @@ export class ApiClient {
       customerBin: item.customer_bin,
       customerLegalAddress: item.customer_legal_address,
       customerBankNameRu: item.customer_bank_name_ru,
+      customerNameRu: item.customer_name_ru,
       createdAt: new Date(item.created_at),
     }));
   }
@@ -367,6 +362,7 @@ export class ApiClient {
       hasContract: item.has_contract,
       customerLegalAddress: item.customer_legal_address,
       customerBankNameRu: item.customer_bank_name_ru,
+      customerNameRu: item.customer_name_ru,
     }));
   }
 
@@ -377,6 +373,7 @@ export class ApiClient {
       hasContract: response.has_contract,
       customerLegalAddress: response.customer_legal_address,
       customerBankNameRu: response.customer_bank_name_ru,
+      customerNameRu: response.customer_name_ru,
     };
   }
 

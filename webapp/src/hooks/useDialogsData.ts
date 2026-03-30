@@ -207,7 +207,8 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
                     bin: b,
                     hasContract: true,
                     customerLegalAddress: null,
-                    customerBankNameRu: null
+                    customerBankNameRu: null,
+                    customerNameRu: null
                 }));
                 setBinDetails(fallback);
             }

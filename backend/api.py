@@ -28,14 +28,14 @@ from typing import Dict, List, Optional, Literal
 import asyncio
 
 from collections import defaultdict
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 
-from fastapi import APIRouter, Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from fastapi.security import HTTPBearer
 
@@ -743,6 +743,7 @@ class OrganizationWithoutContractResponse(BaseModel):
     customer_legal_address: str | None = None
 
     customer_bank_name_ru: str | None = None
+    customer_name_ru: str | None = None
 
     created_at: str
 
@@ -759,6 +760,7 @@ class BinDetailedResponse(BaseModel):
     customer_legal_address: str | None = None
 
     customer_bank_name_ru: str | None = None
+    customer_name_ru: str | None = None
 
 
 
@@ -1939,6 +1941,7 @@ def list_bins_detailed_endpoint(
                 customer_legal_address=contract_info.get("customer_legal_address"),
 
                 customer_bank_name_ru=contract_info.get("customer_bank_name_ru"),
+                customer_name_ru=contract_info.get("customer_name_ru"),
 
             ))
 
@@ -1955,6 +1958,7 @@ def list_bins_detailed_endpoint(
                 customer_legal_address=org_data.get("customer_legal_address"),
 
                 customer_bank_name_ru=org_data.get("customer_bank_name_ru"),
+                customer_name_ru=org_data.get("customer_name_ru"),
 
             ))
 
@@ -1982,6 +1986,8 @@ def list_bins_detailed_endpoint(
 
                     customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
 
+                    customer_name_ru=contract_data.get("customer_name_ru"),
+
                 )
 
             
@@ -1995,6 +2001,7 @@ def list_bins_detailed_endpoint(
                 customer_legal_address=contract_data.get("customer_legal_address"),
 
                 customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
+                customer_name_ru=contract_data.get("customer_name_ru"),
 
             ))
 
@@ -2027,6 +2034,7 @@ def get_bin_info_endpoint(
         customer_legal_address=contract_data.get("customer_legal_address"),
 
         customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
+        customer_name_ru=contract_data.get("customer_name_ru"),
 
     )
 
@@ -4412,6 +4420,7 @@ def create_onec_message(
             customer_bin=bin_value,
             customer_legal_address=contract_result.get("customer_legal_address"),
             customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
+            customer_name_ru=contract_result.get("customer_name_ru"),
         )
         logger.info("1C Organization %s saved as organization without contract", bin_value)
         response_message = (
@@ -5370,11 +5379,14 @@ def healthcheck() -> Dict[str, str]:
 
 app.include_router(router)
 
-app.include_router(router, prefix="/api")
-
 
 
 app.include_router(kabinet_backend.router, prefix="/kabinet")
+
+
+
+
+
 
 
 

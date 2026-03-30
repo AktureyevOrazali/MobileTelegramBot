@@ -1,0 +1,1624 @@
+/* --- Кнопки и Рнпуты --- */
+/* ===== Admin Hero Header ===== */
+
+.admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.admin-hero {
+    background: var(--hero-gradient);
+  background-size: 300% 300%;
+  animation: admin-hero-gradient 8s ease infinite;
+  border-radius: 22px;
+  padding: 24px 28px 20px;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(59, 89, 152, 0.25);
+}
+
+@keyframes admin-hero-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.admin-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 80% 20%, rgba(255, 255, 255, 0.12) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.admin-hero--loading {
+  animation: admin-hero-pulse 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes admin-hero-pulse {
+  from {
+    opacity: 0.85;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.admin-hero__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.admin-hero__title {
+  margin: 0;
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.admin-hero__sub {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+/* Stat pills */
+
+.admin-stats-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-stat-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  padding: 10px 18px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 90px;
+  font-family: inherit;
+}
+
+.admin-stat-pill:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.admin-stat-pill:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.admin-stat-pill--alert {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.admin-stat-pill--alert:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.35);
+}
+
+.admin-stat-pill__value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.admin-stat-pill__label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Hero search */
+
+.admin-hero__search {
+  position: relative;
+}
+
+.admin-hero__search-input {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.admin-hero__search-input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.admin-hero__search-input:focus {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+}
+
+/* Empty state */
+
+.admin-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+}
+
+.admin-empty-state__icon {
+  font-size: 2rem;
+}
+
+.admin-empty-state p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* Card entrance animation */
+
+.admin-user-grid .card {
+  animation: admin-card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  position: relative;
+}
+
+/* Ensure SelectPill dropdown menus inside user cards are not clipped */
+.admin-user-card .menu {
+  z-index: 1200 !important;
+}
+
+@keyframes admin-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-hero {
+    padding: 18px 16px 14px;
+    border-radius: 16px;
+  }
+
+  .admin-stats-row {
+    gap: 8px;
+  }
+
+  .admin-stat-pill {
+    padding: 8px 12px;
+    min-width: 72px;
+    border-radius: 10px;
+  }
+
+  .admin-stat-pill__value {
+    font-size: 1.15rem;
+  }
+}
+
+/* --- Inputs and Buttons --- */
+.input,
+.select {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--input-border);
+  background-color: var(--input-bg);
+  color: inherit;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--brand-color);
+  box-shadow: 0 0 0 3px var(--input-ring);
+}
+
+.button {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 18px;
+  min-height: 44px;
+  background-color: var(--brand-color);
+  color: var(--text-on-brand);
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  box-shadow: 0 8px 16px rgba(43, 92, 255, 0.18);
+}
+
+.button.small {
+  padding: 8px 14px;
+  font-size: 0.85rem;
+}
+
+.button:hover:not(:disabled) {
+  background-color: var(--brand-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(43, 92, 255, 0.22);
+}
+
+.button.secondary {
+  background-color: var(--surface-soft-color);
+  color: var(--brand-color);
+  border: 1px solid var(--brand-color);
+  box-shadow: none;
+}
+
+.button.secondary:hover:not(:disabled) {
+  background-color: var(--surface-color);
+  box-shadow: var(--ring);
+}
+
+.button.danger {
+  background-color: var(--danger-bg);
+  color: #fff;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background-color: var(--badge-bg);
+  color: var(--badge-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* --- 1. Карточка неразделенных БРН --- */
+.admin-assign-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+  align-items: stretch;
+  margin-bottom: 12px;
+}
+
+.admin-assign-grid>* {
+  width: 100%;
+}
+
+.admin-assign-grid__btn {
+  min-width: 100px;
+  height: 40px;
+  font-size: 0.85rem;
+  padding: 8px 12px;
+}
+
+/* BIN status labels */
+.bin-chip__status {
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 4px;
+  font-weight: 500;
+}
+
+.bin-chip__status--contract {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.bin-chip__status--no-contract {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.bin-chip--clickable:hover {
+  background: var(--bg-tertiary);
+  transform: translateY(-1px);
+}
+
+/* BIN info panel */
+.bin-info-panel {
+  padding: 0;
+}
+
+.bin-info-panel .btn--ghost {
+  margin-bottom: 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.bin-info-panel .btn--ghost:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--brand-color);
+  color: var(--brand-color);
+  transform: translateY(-1px);
+}
+
+.bin-info-details {
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+}
+
+.bin-info-details h4 {
+  margin: 0 0 12px 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'SF Mono', 'Roboto Mono', monospace;
+  letter-spacing: 0.5px;
+}
+
+.bin-info-details p {
+  margin: 10px 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.bin-info-details p strong {
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-right: 6px;
+}
+
+.bin-info-details .text-success,
+.bin-info-details .text-warning {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.bin-info-details .text-success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.bin-info-details .text-warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.text-success {
+  color: #10b981;
+}
+
+.text-warning {
+  color: #f59e0b;
+}
+
+/* --- 2. Карточка сотрудника --- */
+.admin-user-card { background: var(--surface-soft-color); border: 1px solid var(--border-color); border-radius: 16px; 
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+
+/* Верх: только имя и роль */
+.admin-user-card__header-minimal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-user-card__name {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+/* Разделительная линия */
+.admin-user-card__separator {
+  height: 1px;
+  background-color: var(--border-color);
+  width: 100%;
+  margin: 4px 0;
+}
+
+/* Почта и роль на одном уровне */
+.admin-user-card__info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+}
+
+.admin-user-card__email {
+  font-weight: 500;
+  color: var(--text-heading);
+  font-size: 0.95rem;
+}
+
+.admin-user-card__role-select {
+  width: 160px;
+}
+
+.admin-user-card__role-select .pill .value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-user-card__role-select .menu .opt>span:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Кнопки БРНы/Разделы во всю ширину */
+.admin-user-card__actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.admin-user-card__full-btn {
+  width: 100%;
+  justify-content: center;
+  border-color: var(--border-color);
+  color: var(--text-heading);
+  background: var(--surface-soft-color);
+}
+
+.admin-user-card__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* --- 3. Модальные окна и Регистрации --- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-overlay);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1200;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.admin-modal__container {
+  width: min(92vw, 520px);
+}
+
+.admin-modal {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--modal-surface);
+  border-radius: 18px;
+}
+
+/* Шапка модалки заявок: кнопки вверху, минимум места */
+.admin-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.admin-modal__header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.admin-modal__header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-modal__list-container {
+  background: var(--surface-soft-color);
+  padding: 12px;
+  border-radius: 12px;
+}
+
+/* Стили чипов/разделов */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.chip-x {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.05);
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.chip-x:hover {
+  background: var(--danger-bg);
+  color: #fff;
+}
+
+/* Карточка заявки */
+.pending-registration-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  margin-bottom: 8px;
+}
+
+/* --- Сетка сотрудников --- */
+.admin-user-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+
+@media (max-width: 960px) {
+  .admin-user-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .admin-assign-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-user-card__info-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-user-card__role-select {
+    width: 100%;
+  }
+}
+
+/* =========================
+   Responsive overflow fixes
+   ========================= */
+
+/* 1) Вообще запрещаем горизонтальный скролл страницы */
+html,
+body,
+#root {
+  overflow-x: hidden;
+}
+
+/* 2) Базово: любые тексты не должны вылезать из контейнеров */
+.card,
+.modal,
+.admin-modal,
+.pending-registration-card,
+.chip,
+.badge,
+.alert,
+.admin-user-card__email,
+.pending-registration-card__meta,
+.bin-chip__title,
+.bin-chip__meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* 3) Модалки: никогда не создаём горизонтальный скролл */
+.modal,
+.admin-modal {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* overlay уже имеет overflow-y:auto — добавим защиту по X */
+.modal-overlay {
+  overflow-x: hidden;
+}
+
+/* 4) Header модалки: разрешаем перенос, чтобы заголовок/бейдж не ломали ширину */
+.admin-modal__header {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.admin-modal__header h3 {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* 5) Главная причина горизонтального скролла в "Неразделенные БРНы":
+      grid с auto-кнопкой. Делаем безопасные minmax(0,1fr) */
+.admin-assign-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(120px, auto);
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  /* защита от внутренних min-width */
+}
+
+/* Кнопка не должна быть шире контейнера */
+.admin-assign-grid__btn {
+  min-width: 120px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+/* На узких экранах — всё в столбик, без вариантов */
+@media (max-width: 640px) {
+  .admin-assign-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-assign-grid__btn {
+    width: 100%;
+  }
+}
+
+/* 6) Список "чипов" внутри модалок/карточек: разрешаем перенос и ограничиваем ширину */
+.admin-section__list,
+.admin-modal__list,
+.flex-gap {
+  max-width: 100%;
+}
+
+.chip.bin-chip,
+.pending-bin-chip {
+  max-width: 100%;
+}
+
+/* 7) Карточка сотрудника: email не должен “выталкивать” select */
+.admin-user-card__info-row {
+  min-width: 0;
+}
+
+.admin-user-card__email {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* На узких — у тебя уже есть flex-direction:column, но усилим перенос */
+@media (max-width: 600px) {
+  .admin-user-card__email {
+    width: 100%;
+  }
+}
+
+/* 8) Карточки заявок: действия не должны ломать ширину */
+.pending-registration-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pending-registration-card__actions {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+
+/* 9) Внутренние элементы SelectPill/пилюль:
+      важное правило — min-width:0, иначе flex/grid ловит overflow */
+.pill,
+.pill .value,
+.pill .label {
+  min-width: 0;
+  max-width: 100%;
+}
+
+
+/* ===== BIN Cards Fix: Prevent Text Wrapping ===== */
+.bin-chip--compact .bin-chip__title {
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Улучшенные карточки БРН в модальном окне "Все БРНы" */
+.admin-section__list--grid .bin-chip--compact {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Карточки с кнопкой удаления - выравнивание flex-start */
+.admin-section__list--grid .bin-chip--deletable {
+  justify-content: flex-start;
+}
+
+.admin-section__list--grid .bin-chip--compact:hover {
+  border-color: var(--brand-color);
+  box-shadow: 0 0 0 3px var(--input-ring);
+}
+
+/* Статус договора внутри карточки БРН */
+.bin-chip__status {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.bin-chip__status--contract {
+  background: rgba(34, 197, 94, 0.15);
+  color: #15803d;
+}
+
+.bin-chip__status--no-contract {
+  background: rgba(234, 179, 8, 0.18);
+  color: #a16207;
+}
+
+[data-theme='dark'] .bin-chip__status--contract {
+  background: rgba(34, 197, 94, 0.25);
+  color: #86efac;
+}
+
+[data-theme='dark'] .bin-chip__status--no-contract {
+  background: rgba(234, 179, 8, 0.25);
+  color: #fde047;
+}
+
+/* ===== Улучшенный дизайн админ модальных окон ===== */
+.admin-modal__container {
+  width: min(95vw, 560px);
+}
+
+.admin-modal {
+  padding: 22px;
+  gap: 16px;
+}
+
+.admin-modal__header h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+/* Сетка для назначения БРН/сотрудников */
+.admin-assign-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: stretch;
+  padding: 16px;
+  background: var(--surface-soft-color);
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+}
+
+.admin-assign-grid__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-assign-grid__item .pill {
+  height: 42px;
+  font-size: 0.88rem;
+  border-radius: 10px;
+}
+
+.admin-assign-grid__btn {
+  height: 42px;
+  padding: 0 20px;
+  font-size: 0.9rem;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.admin-assign-grid__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Улучшенные выпадающие списки в модальных окнах */
+.admin-modal .pill {
+  height: 42px;
+  border-radius: 10px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-modal .pill:hover {
+  border-color: var(--brand-color);
+}
+
+.admin-modal .pill:focus-within {
+  border-color: var(--brand-color);
+  box-shadow: 0 0 0 3px var(--input-ring);
+}
+
+.admin-modal .pill__label {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.admin-modal .pill__value {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 560px) {
+  .admin-assign-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .admin-assign-grid__btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .admin-section__list--grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Улучшенный дизайн карточек пользователей ===== */
+.admin-user-card { background: var(--surface-soft-color); border: 1px solid var(--border-color); border-radius: 16px; 
+  background: var(--surface-soft-color);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.admin-user-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border-color: var(--brand-color);
+}
+
+/* Заголовок карточки */
+.admin-user-card__header {
+  margin-bottom: 4px;
+}
+
+.admin-user-card__title-row h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+/* Бейдж роли в заголовке */
+.admin-user-card__title-row .role-badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--surface-soft-color);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+/* Email пользователя */
+.admin-user-card__meta {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+/* Контролы (селект роли) */
+.admin-user-card__control .pill {
+  height: 38px;
+  font-size: 0.85rem;
+  border-radius: 10px;
+  min-width: 140px;
+}
+
+/* Статистика БРНы и Разделы */
+.admin-user-card__stat-button {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 10px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-heading);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.admin-user-card__stat-button:hover {
+  background: var(--surface-soft-color);
+  border-color: var(--brand-color);
+  box-shadow: 0 0 0 3px var(--input-ring);
+}
+
+/* Футер карточки */
+.admin-user-card__footer {
+  margin-top: 8px;
+  padding-top: 16px;
+  gap: 10px;
+}
+
+/* Кнопки в футере */
+.admin-user-card__footer .button {
+  height: 38px;
+  padding: 0 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+/* Кнопка "Сбросить пароль" */
+.admin-user-card__footer .button.secondary {
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-heading);
+}
+
+.admin-user-card__footer .button.secondary:hover {
+  background: var(--surface-soft-color);
+  border-color: var(--brand-color);
+}
+
+/* Кнопка "Удалить" */
+.admin-user-card__footer .button--danger,
+.admin-user-card__footer .button.danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: none;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+
+.admin-user-card__footer .button--danger:hover,
+.admin-user-card__footer .button.danger:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Адаптивность карточек пользователей */
+@media (max-width: 768px) {
+  .admin-user-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-user-card__footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-user-card__footer-actions {
+    margin-left: 0;
+    justify-content: stretch;
+  }
+
+  .admin-user-card__footer .button {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* ===== Компактный дизайн модалки БРНов оператора ===== */
+.admin-modal {
+  padding: 16px;
+  gap: 12px;
+}
+
+.admin-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-modal__header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.admin-modal__header .badge {
+  font-size: 0.7rem;
+  padding: 4px 8px;
+}
+
+.admin-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-modal__form .label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.admin-modal__form .pill {
+  height: 36px;
+  font-size: 0.85rem;
+}
+
+.admin-modal__list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+/* Карточки БРН в модалке оператора */
+.bin-chip--detailed {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  min-height: auto;
+}
+
+.bin-chip--detailed .bin-chip__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bin-chip--detailed .bin-chip__title {
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bin-chip--detailed .bin-chip__meta {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.bin-chip__actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.chip-action {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  transition: all 0.15s ease;
+}
+
+.chip-action:hover {
+  border-color: var(--brand-color);
+  color: var(--brand-color);
+}
+
+.bin-chip--detailed .chip-x {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.15s ease;
+}
+
+.bin-chip--detailed .chip-x:hover {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* Карточки разделов в модалке оператора */
+.section-chip--detailed {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  min-height: auto;
+  transition: border-color 0.2s ease;
+}
+
+.section-chip--detailed:hover {
+  border-color: var(--brand-color);
+}
+
+.section-chip--detailed .section-chip__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.section-chip--detailed .section-chip__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.section-chip--detailed .section-chip__meta {
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.section-chip--detailed .chip-x {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.section-chip--detailed .chip-x:hover {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* Контейнер для списка с лейблом */
+.admin-modal__list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-modal__list-container .label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Кнопки в заголовке модалки */
+.admin-modal__header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-modal__header-actions .button {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 0.75rem;
+  border-radius: 8px;
+}
+
+/* Список заявок в столбик */
+.admin-modal__list--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Поле поиска в модалках */
+.admin-modal__search {
+  margin-bottom: 4px;
+}
+
+.admin-modal__search .input {
+  width: 100%;
+  height: 36px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+}
+
+/* Карточка заявки на регистрацию */
+.pending-registration-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s ease;
+}
+
+.pending-registration-card:hover {
+  border-color: var(--brand-color);
+}
+
+.pending-registration-card__name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.pending-registration-card__meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.pending-registration-card__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pending-registration-card__actions .button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Кнопка принять (зелёная) */
+.pending-registration-card__actions .button:not(.secondary) {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 6px rgba(34, 197, 94, 0.25);
+}
+
+.pending-registration-card__actions .button:not(.secondary):hover {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  transform: translateY(-1px);
+}
+
+/* Кнопка отклонить (серая с красным hover) */
+.pending-registration-card__actions .button.secondary {
+  background: var(--surface-soft-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.pending-registration-card__actions .button.secondary:hover {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* ===== Modal scrollable content fix ===== */
+/* Prevent content from being clipped at the bottom of modals */
+.admin-modal {
+  max-height: calc(90vh - 40px);
+  overflow-y: auto;
+}
+
+.admin-modal__container {
+  max-height: 90vh;
+}
+
+/* Back button in modals */
+.admin-modal__back-btn {
+  margin-bottom: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.admin-modal__back-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--brand-color);
+  color: var(--brand-color);
+  transform: translateY(-1px);
+}
+
+/* ===== Assignment Modal ===== */
+
+.admin-assign-modal__bin-label {
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--brand-color);
+  letter-spacing: 0.5px;
+  padding: 12px 16px;
+  background: var(--surface-soft-color);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.admin-assign-modal__users {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.admin-assign-modal__user-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  font-family: inherit;
+}
+
+.admin-assign-modal__user-btn:hover {
+  border-color: var(--brand-color);
+  background: var(--bg-tertiary);
+}
+
+.admin-assign-modal__user-btn--selected {
+  border-color: var(--brand-color);
+  background: rgba(59, 130, 246, 0.08);
+  box-shadow: 0 0 0 2px var(--input-ring);
+}
+
+.admin-assign-modal__user-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-heading);
+}
+
+.admin-assign-modal__user-email {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.admin-assign-modal__duration {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.admin-assign-modal__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.admin-assign-modal__actions .button {
+  min-width: 120px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 640px) {
+  .admin-assign-modal__users {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-assign-modal__actions {
+    flex-direction: column;
+  }
+
+  .admin-assign-modal__actions .button {
+    width: 100%;
+  }
+}
+
+/* --- Dark theme overrides for admin hero --- */
+[data-theme='dark'] .admin-hero {
+  background: linear-gradient(135deg, #2d2a5e 0%, #3d3a8f 50%, #5a56b8 100%);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.2);
+}
+
+/* ===== UI Polish overrides (normalized layer) ===== */
+.admin-page {
+  gap: 18px;
+  padding-bottom: 36px;
+}
+
+.admin-page .card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 20px rgba(20, 33, 61, 0.06);
+}
+
+.admin-page .card:hover {
+  box-shadow: var(--card-shadow-hover);
+  border-color: var(--border-strong);
+}
+
+.admin-hero {
+  border-radius: var(--radius-xl);
+}
+
+.admin-hero__top {
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.admin-hero__title {
+  font-size: clamp(1.2rem, 2.2vw, 1.5rem);
+}
+
+.admin-hero__search-input {
+  border-radius: var(--radius-sm);
+}
+
+.admin-stat-pill {
+  border-radius: var(--radius-md);
+}
+
+.admin-user-card,
+.pending-registration-card,
+.admin-modal {
+  border-radius: var(--radius-md);
+}
+
+.admin-user-card__name {
+  letter-spacing: -0.01em;
+}
+
+.admin-user-card__footer {
+  border-top-color: var(--border-color);
+}
+
+.admin-user-card__footer .button {
+  border-radius: var(--radius-sm);
+}
+
+.admin-modal__header h3 {
+  letter-spacing: -0.01em;
+}
+
+.admin-assign-grid,
+.admin-modal__list-container {
+  border-radius: var(--radius-md);
+}
+
+.bin-chip--compact,
+.bin-chip--detailed,
+.section-chip--detailed {
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 640px) {
+  .admin-page {
+    gap: 14px;
+  }
+
+  .admin-hero__sub {
+    font-size: 0.8rem;
+  }
+
+  .admin-user-card__actions-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient } from '../api/ApiClient';
 import { Attachment, ChatSummary, Message, ReplyTemplate, UploadMediaResponse } from '../types';
 import { extractErrorMessage } from '../utils/errors';
@@ -46,7 +46,6 @@ const formatMessageTime = (value: Date): string => value.toLocaleTimeString('ru-
   minute: '2-digit',
 });
 
-const hasVisibleText = (value: string): boolean => value.trim().length > 0;
 
 const formatMessageDay = (value: Date): string => {
   const now = new Date();
@@ -218,11 +217,8 @@ const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ apiClient, chat, onTo
     setPendingUploads((current) => current.filter((item) => item.mediaId !== mediaId));
   }, []);
 
-  const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    if (files.length === 0) {
-      return;
-    }
+  const uploadFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
     setUploading(true);
     try {
       const uploaded: UploadMediaResponse[] = [];
@@ -235,9 +231,32 @@ const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ apiClient, chat, onTo
       setError(extractErrorMessage(err, 'Не удалось загрузить файл.'));
     } finally {
       setUploading(false);
-      event.target.value = '';
     }
   }, [apiClient]);
+
+  const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    await uploadFiles(files);
+    event.target.value = '';
+  }, [uploadFiles]);
+
+  const handlePaste = useCallback(async (event: React.ClipboardEvent) => {
+    const items = Array.from(event.clipboardData.items);
+    const imageFiles: File[] = [];
+
+    for (const item of items) {
+      if (item.type.indexOf('image') !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          imageFiles.push(file);
+        }
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      void uploadFiles(imageFiles);
+    }
+  }, [uploadFiles]);
 
   const handleSend = useCallback(async () => {
     if (!chat) return;
@@ -426,6 +445,7 @@ const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ apiClient, chat, onTo
           className="textarea chat-inline__textarea"
           placeholder={canReply ? 'Введите сообщение' : 'У вашей роли нет прав для ответа.'}
           value={input}
+          onPaste={handlePaste}
           onChange={(e) => {
             setInput(e.target.value);
             if (taRef.current) autosize(taRef.current);

@@ -44,14 +44,14 @@ class _RoleDropdownPill extends StatelessWidget {
             : (user.canReply ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant));
 
     return SizedBox(
-      width: 150, // можешь сделать 140, если нужно ещё компактнее
-      height: 34,
+      width: 156,
+      height: 40,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: badgeBg,
           borderRadius: BorderRadius.circular(AppRadii.control),
-          border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.55)),
+          border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
         ),
         alignment: Alignment.center,
         child: DropdownButtonHideUnderline(
@@ -60,7 +60,7 @@ class _RoleDropdownPill extends StatelessWidget {
             isDense: true,
             isExpanded: true,
             dropdownColor: theme.colorScheme.surface,
-            icon: Icon(Icons.expand_more, color: badgeFg),
+            icon: Icon(Icons.keyboard_arrow_down_rounded, color: badgeFg, size: 18),
             style: theme.textTheme.labelMedium?.copyWith(color: badgeFg, fontWeight: FontWeight.w700),
             items: roles.map((role) {
               return DropdownMenuItem<String>(
@@ -2668,16 +2668,30 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         if (canDelete)
                           IconButton(
                             tooltip: 'Удалить аккаунт',
-                            icon: const Icon(Icons.delete_outline),
-                            color: theme.colorScheme.error,
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                            padding: EdgeInsets.zero,
+                            style: IconButton.styleFrom(
+                              backgroundColor: theme.colorScheme.error.withValues(alpha: 0.1),
+                              foregroundColor: theme.colorScheme.error,
+                            ),
+                            icon: const Icon(Icons.delete_outline, size: 18),
                             onPressed: _logButtonPress(
                               'delete user from header',
                               (isUpdating || isDeleting) ? null : () => _deleteUser(user),
                             ),
                           ),
+                        const SizedBox(width: 8),
                         IconButton(
-                          tooltip: 'Reset password',
-                          icon: const Icon(Icons.lock_reset),
+                          tooltip: 'Сбросить пароль',
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                          padding: EdgeInsets.zero,
+                          style: IconButton.styleFrom(
+                            backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+                            foregroundColor: colorScheme.primary,
+                          ),
+                          icon: const Icon(Icons.lock_reset_rounded, size: 18),
                           onPressed: _logButtonPress(
                             'reset user password from header',
                             (isUpdating || isDeleting) ? null : () => _promptResetPassword(user),
@@ -2735,22 +2749,24 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                       const SizedBox(height: 12),
                       const LinearProgressIndicator(),
                     ],
-                    const SizedBox(height: 16),
                     if (_canManageBinsFor(user)) ...[
-                      const SizedBox(height: 10),
-
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
                             child: SizedBox(
-                              height: 36,
+                              height: 40,
                               child: OutlinedButton.icon(
-                                icon: const Icon(Icons.dashboard_customize_outlined),
+                                icon: const Icon(Icons.dashboard_customize_outlined, size: 18),
                                 label: Text('Разделы: ${user.sections.length}'),
                                 style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  foregroundColor: colorScheme.primary,
+                                  backgroundColor: colorScheme.primary.withValues(alpha: 0.05),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
                                   visualDensity: VisualDensity.compact,
+                                  alignment: Alignment.centerLeft,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.control)),
+                                  side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.28)),
                                 ),
                                 onPressed: (isUpdating || isDeleting)
                                     ? null
@@ -2770,14 +2786,18 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: SizedBox(
-                              height: 36,
+                              height: 40,
                               child: OutlinedButton.icon(
-                                icon: const Icon(Icons.apartment_outlined),
+                                icon: const Icon(Icons.apartment_outlined, size: 18),
                                 label: Text('БИНы: ${user.binAssignments.length}'),
                                 style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  foregroundColor: colorScheme.primary,
+                                  backgroundColor: colorScheme.primary.withValues(alpha: 0.05),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
                                   visualDensity: VisualDensity.compact,
+                                  alignment: Alignment.centerLeft,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.control)),
+                                  side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.28)),
                                 ),
                                 onPressed: (isUpdating || isDeleting)
                                     ? null
@@ -2797,14 +2817,16 @@ class _AdminUserManagementViewState extends State<AdminUserManagementView> {
                         ],
                       ),
                     ],
-
-                    const SizedBox(height: 8),
-                    Text(
-                      (isUpdating) ? 'Сохраняем изменения…' : '',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                    if (isUpdating && !isDeleting)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(
+                          'Сохраняем изменения…',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ),
-                    ),
                     if (isSelf)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
@@ -3154,6 +3176,8 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
             initAspectRatio: CropAspectRatioPreset.square,
             lockAspectRatio: true,
             statusBarColor: brandPrimaryGreen,
+            hideBottomControls: true,
+            cropStyle: CropStyle.circle,
           ),
           IOSUiSettings(
             title: 'Обрезать фото',
@@ -3208,14 +3232,6 @@ class _OperatorProfileViewState extends State<OperatorProfileView> {
               offset: const Offset(0, 4),
             ),
           ],
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.06),
-              AppSurfaces.dashboardCard(colorScheme),
-            ],
-          ),
         ),
         padding: const EdgeInsets.only(top: 24, bottom: 20),
         child: Column(
@@ -3984,6 +4000,14 @@ DateTime? _parseDateTime(dynamic value) {
   if (value is String) return DateTime.tryParse(value)?.toLocal();
   return null;
 }
+
+
+
+
+
+
+
+
 
 
 

@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { RoleInfo, Section, UserBinAssignment, UserProfile } from '../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BinDetailed, RoleInfo, Section, UserBinAssignment, UserProfile } from '../types';
 import { formatDateTime } from '../utils/date';
 import { extractErrorMessage } from '../utils/errors';
 import { validatePassword, validatePasswordMatch } from '../utils/validation';
@@ -14,6 +14,7 @@ export interface AdminUserCardProps {
     roles: RoleInfo[];
     sections: Section[];
     availableBins: string[];
+    binDetails: BinDetailed[];
     onRoleSave: (userId: number, role: string) => Promise<void>;
     onSectionsSave: (userId: number, sections: string[]) => Promise<void>;
     onBinsSave: (userId: number, bins: UserBinAssignment[]) => Promise<void>;
@@ -29,6 +30,7 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     roles,
     sections,
     availableBins,
+    binDetails,
     onRoleSave,
     onSectionsSave,
     onBinsSave,
@@ -52,10 +54,6 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     const [editingBin, setEditingBin] = useState<UserBinAssignment | null>(null);
     const [operatorBinsOpen, setOperatorBinsOpen] = useState(false);
     const [operatorSectionsOpen, setOperatorSectionsOpen] = useState(false);
-
-    const [savingRole, setSavingRole] = useState(false);
-    const [savingSections, setSavingSections] = useState(false);
-    const [savingBins, setSavingBins] = useState(false);
 
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -94,6 +92,26 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
         );
     }, [sections, sectionIds]);
 
+    const binNameByBin = useMemo(() => {
+        const map = new Map<string, string>();
+        binDetails.forEach((item) => {
+            if (item.customerNameRu) {
+                map.set(item.bin, item.customerNameRu);
+            }
+        });
+        return map;
+    }, [binDetails]);
+
+    const getBinMeta = (assignment: UserBinAssignment) => {
+        const parts: string[] = [];
+        const customerName = binNameByBin.get(assignment.bin);
+        if (customerName) {
+            parts.push(customerName);
+        }
+        parts.push(assignment.expiresAt ? `\u0434\u043e ${formatDateTime(assignment.expiresAt)}` : '\u0431\u0435\u0441\u0441\u0440\u043e\u0447\u043d\u043e');
+        return parts.join(' | ');
+    };
+
     const assignedSections = useMemo<Section[]>(() => {
         const mapped = sections.filter((section) => sectionIds.has(section.id));
         const knownIds = new Set(mapped.map((section) => section.id));
@@ -108,24 +126,25 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     const binOptions = useMemo(() => {
         const current = new Set(assignedBins.map((assignment) => assignment.bin));
         return [{ value: '', label: 'Выберите БИН' }].concat(
-            availableBins.filter((b) => !current.has(b)).map((b) => ({ value: b, label: b })),
+            availableBins.filter((b) => !current.has(b)).map((b) => ({
+                value: b,
+                label: b,
+                meta: binNameByBin.get(b),
+            })),
         );
-    }, [availableBins, assignedBins]);
+    }, [availableBins, assignedBins, binNameByBin]);
 
     const lastSavedRole = useRef(selectedRole);
     useEffect(() => {
         if (lastSavedRole.current === selectedRole) return;
         (async () => {
             try {
-                setSavingRole(true);
                 setError(null);
                 await onRoleSave(user.id, selectedRole);
                 setSuccessMessage('Роль обновлена');
                 lastSavedRole.current = selectedRole;
             } catch (e) {
                 setError(extractErrorMessage(e, 'Ошибка при сохранении роли'));
-            } finally {
-                setSavingRole(false);
             }
         })();
     }, [selectedRole]);
@@ -134,14 +153,11 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     useDebouncedEffect(() => {
         (async () => {
             try {
-                setSavingSections(true);
                 setError(null);
                 await onSectionsSave(user.id, Array.from(sectionIds));
                 setSuccessMessage('Разделы обновлены');
             } catch (e) {
                 setError(extractErrorMessage(e, 'Ошибка при сохранении разделов'));
-            } finally {
-                setSavingSections(false);
             }
         })();
     }, [sectionKey]);
@@ -157,7 +173,6 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     useDebouncedEffect(() => {
         (async () => {
             try {
-                setSavingBins(true);
                 setError(null);
                 await onBinsSave(
                     user.id,
@@ -166,8 +181,6 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
                 setSuccessMessage('БИНы обновлены');
             } catch (e) {
                 setError(extractErrorMessage(e, 'Ошибка при сохранении БИНов'));
-            } finally {
-                setSavingBins(false);
             }
         })();
     }, [binsKey]);
@@ -397,13 +410,11 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
                             <span
                                 key={assignment.bin}
                                 className="chip bin-chip bin-chip--detailed"
-                                title={assignment.expiresAt ? `До ${formatDateTime(assignment.expiresAt)}` : 'Бессрочно'}
+                                title={getBinMeta(assignment)}
                             >
                                 <span className="bin-chip__text">
                                     <span className="bin-chip__title">{assignment.bin}</span>
-                                    <span className="bin-chip__meta">
-                                        {assignment.expiresAt ? `до ${formatDateTime(assignment.expiresAt)}` : 'бессрочно'}
-                                    </span>
+                                    <span className="bin-chip__meta">{getBinMeta(assignment)}</span>
                                 </span>
                                 <div className="bin-chip__actions">
                                     <button

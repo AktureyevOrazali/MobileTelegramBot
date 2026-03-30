@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import signal
 import threading
-import time
 from typing import Optional
 
 import uvicorn
@@ -29,31 +28,41 @@ class BotPollingThread(threading.Thread):
     def run(self) -> None:  # pragma: no cover - long running thread
         while not self._stopping.is_set():
             try:
-                # pyTelegramBotAPI: infinity_polling блокирующий, но умеет останавливаться через .stop_polling()
-                bot.infinity_polling(skip_pending=True, timeout=20, long_polling_timeout=20)
+                try:
+                    bot.delete_webhook(drop_pending_updates=False)
+                except Exception:
+                    logger.exception("Failed to delete Telegram webhook before polling")
+
+                logger.info("Starting Telegram polling with callback_query updates enabled")
+                bot.infinity_polling(
+                    skip_pending=True,
+                    timeout=20,
+                    long_polling_timeout=20,
+                    allowed_updates=["message", "callback_query"],
+                )
             except (
                 requests_exceptions.ReadTimeout,
                 requests_exceptions.ConnectionError,
                 ReadTimeoutError,
             ) as exc:
-                # Перехватываем сетевые таймауты, чтобы не падать и перезапускать polling
+                # РџРµСЂРµС…РІР°С‚С‹РІР°РµРј СЃРµС‚РµРІС‹Рµ С‚Р°Р№РјР°СѓС‚С‹, С‡С‚РѕР±С‹ РЅРµ РїР°РґР°С‚СЊ Рё РїРµСЂРµР·Р°РїСѓСЃРєР°С‚СЊ polling
                 logger.warning("Polling interrupted by network timeout, restarting: %s", exc)
                 try:
                     bot.stop_polling()
                 except Exception:
                     pass
-                # Небольшая пауза, чтобы не попасть в бесконечный цикл при нестабильной сети
+                # РќРµР±РѕР»СЊС€Р°СЏ РїР°СѓР·Р°, С‡С‚РѕР±С‹ РЅРµ РїРѕРїР°СЃС‚СЊ РІ Р±РµСЃРєРѕРЅРµС‡РЅС‹Р№ С†РёРєР» РїСЂРё РЅРµСЃС‚Р°Р±РёР»СЊРЅРѕР№ СЃРµС‚Рё
                 self._stopping.wait(timeout=2)
                 continue
             except BaseException as exc:  # pylint: disable=broad-except
                 self._exception = exc
                 break
             else:
-                # infinity_polling завершилось без ошибок (например, при остановке)
+                # infinity_polling Р·Р°РІРµСЂС€РёР»РѕСЃСЊ Р±РµР· РѕС€РёР±РѕРє (РЅР°РїСЂРёРјРµСЂ, РїСЂРё РѕСЃС‚Р°РЅРѕРІРєРµ)
                 break
 
     def stop(self) -> None:
-        # Безопасно просим бота остановиться
+        # Р‘РµР·РѕРїР°СЃРЅРѕ РїСЂРѕСЃРёРј Р±РѕС‚Р° РѕСЃС‚Р°РЅРѕРІРёС‚СЊСЃСЏ
         try:
             bot.stop_polling()
         except Exception:
@@ -66,7 +75,7 @@ class BotPollingThread(threading.Thread):
 
 
 class CleanupThread(threading.Thread):
-    """Фоновый поток: каждый час удаляет закрытые диалоги старше 24 часов."""
+    """Р¤РѕРЅРѕРІС‹Р№ РїРѕС‚РѕРє: РєР°Р¶РґС‹Р№ С‡Р°СЃ СѓРґР°Р»СЏРµС‚ Р·Р°РєСЂС‹С‚С‹Рµ РґРёР°Р»РѕРіРё СЃС‚Р°СЂС€Рµ 24 С‡Р°СЃРѕРІ."""
 
     INTERVAL_SECONDS = 3600  # 1 hour
 
@@ -104,21 +113,21 @@ def main() -> None:
     cleanup_thread = CleanupThread()
     cleanup_thread.start()
 
-    # Конфигурируем uvicorn как управляемый сервер, чтобы перехватывать сигналы и завершаться корректно
+    # РљРѕРЅС„РёРіСѓСЂРёСЂСѓРµРј uvicorn РєР°Рє СѓРїСЂР°РІР»СЏРµРјС‹Р№ СЃРµСЂРІРµСЂ, С‡С‚РѕР±С‹ РїРµСЂРµС…РІР°С‚С‹РІР°С‚СЊ СЃРёРіРЅР°Р»С‹ Рё Р·Р°РІРµСЂС€Р°С‚СЊСЃСЏ РєРѕСЂСЂРµРєС‚РЅРѕ
     config = uvicorn.Config(
         app,
         host=host,
         port=port,
         log_level=log_level,
-        workers=1,                      # при встроенном запуске оставляем 1 процесс
+        workers=1,                      # РїСЂРё РІСЃС‚СЂРѕРµРЅРЅРѕРј Р·Р°РїСѓСЃРєРµ РѕСЃС‚Р°РІР»СЏРµРј 1 РїСЂРѕС†РµСЃСЃ
         loop="auto",
-        lifespan="on",                  # чтобы fastapi lifespan-события отрабатывали
+        lifespan="on",                  # С‡С‚РѕР±С‹ fastapi lifespan-СЃРѕР±С‹С‚РёСЏ РѕС‚СЂР°Р±Р°С‚С‹РІР°Р»Рё
         proxy_headers=True,
         forwarded_allow_ips="*",
     )
     server = uvicorn.Server(config)
 
-    # Флаги завершения по сигналам
+    # Р¤Р»Р°РіРё Р·Р°РІРµСЂС€РµРЅРёСЏ РїРѕ СЃРёРіРЅР°Р»Р°Рј
     def _handle_exit_signal(*_: object) -> None:
         server.should_exit = True
 
@@ -128,24 +137,25 @@ def main() -> None:
     try:
         server.run()
     finally:
-        # Останов бота и ожидание потока
+        # РћСЃС‚Р°РЅРѕРІ Р±РѕС‚Р° Рё РѕР¶РёРґР°РЅРёРµ РїРѕС‚РѕРєР°
         try:
             bot_thread.stop()
         except Exception:
             pass
         bot_thread.join(timeout=10)
 
-        # Останов фонового очистителя
+        # РћСЃС‚Р°РЅРѕРІ С„РѕРЅРѕРІРѕРіРѕ РѕС‡РёСЃС‚РёС‚РµР»СЏ
         try:
             cleanup_thread.stop()
         except Exception:
             pass
         cleanup_thread.join(timeout=5)
 
-        # Если в потоке бота была ошибка — пробрасываем её наверх
+        # Р•СЃР»Рё РІ РїРѕС‚РѕРєРµ Р±РѕС‚Р° Р±С‹Р»Р° РѕС€РёР±РєР° вЂ” РїСЂРѕР±СЂР°СЃС‹РІР°РµРј РµС‘ РЅР°РІРµСЂС…
         if bot_thread.exception:
             raise bot_thread.exception
 
 
 if __name__ == "__main__":
     main()
+

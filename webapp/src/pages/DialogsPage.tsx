@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient } from '../api/ApiClient';
 import { AuthSession, ChatSummary } from '../types';
 import SelectPill from '../components/SelectPill';
@@ -271,7 +271,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                   options={sectionOptions}
                   value={selectedSection ?? ''}
                   onChange={(value) => setSelectedSection(value || null)}
-                  style={{ minWidth: 0, flex: '1 1 120px' }}
+                  style={{ minWidth: 0, flex: '1 1 140px' }}
                 />
                 <SelectPill
                   label=""
@@ -280,7 +280,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                   value={selectedBin ?? ''}
                   onChange={(value) => setSelectedBin(value || null)}
                   searchable
-                  style={{ minWidth: 0, flex: '1.15 1 132px' }}
+                  style={{ minWidth: 0, flex: '1.2 1 150px' }}
                 />
                 <button
                   type="button"

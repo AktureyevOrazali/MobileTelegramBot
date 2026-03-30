@@ -438,6 +438,7 @@ def _init_db() -> None:
             customer_bin TEXT NOT NULL UNIQUE,
             customer_legal_address TEXT,
             customer_bank_name_ru TEXT,
+            customer_name_ru TEXT,
             created_at TEXT NOT NULL
         )
         """,
@@ -512,6 +513,7 @@ def _init_db() -> None:
     _ensure_column("users", "is_approved", "INTEGER DEFAULT 1")
     _ensure_column("user_bins", "expires_at", "TEXT")
     _ensure_column("user_bins", "assigned_by", "BIGINT")
+    _ensure_column("organizations_without_contracts", "customer_name_ru", "TEXT")
 
     # dialog_stats migration (extend existing table with new metric columns)
     _ensure_column("dialog_stats", "msg_total", "INTEGER DEFAULT 0")
@@ -4633,6 +4635,7 @@ def add_organization_without_contract(
     customer_bin: str,
     customer_legal_address: str | None = None,
     customer_bank_name_ru: str | None = None,
+    customer_name_ru: str | None = None,
 ) -> Dict[str, Any] | None:
     """Добавляет организацию без договора в базу."""
     normalized_bin = (customer_bin or "").strip()
@@ -4645,18 +4648,20 @@ def add_organization_without_contract(
     execute(
         """
         INSERT INTO organizations_without_contracts
-            (customer_bin, customer_legal_address, customer_bank_name_ru, created_at)
-        VALUES (%s, %s, %s, %s)
+            (customer_bin, customer_legal_address, customer_bank_name_ru, customer_name_ru, created_at)
+        VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT (customer_bin) DO UPDATE
         SET customer_legal_address = COALESCE(EXCLUDED.customer_legal_address, organizations_without_contracts.customer_legal_address),
-            customer_bank_name_ru = COALESCE(EXCLUDED.customer_bank_name_ru, organizations_without_contracts.customer_bank_name_ru)
+            customer_bank_name_ru = COALESCE(EXCLUDED.customer_bank_name_ru, organizations_without_contracts.customer_bank_name_ru),
+            customer_name_ru = COALESCE(EXCLUDED.customer_name_ru, organizations_without_contracts.customer_name_ru)
         """,
-        (normalized_bin, customer_legal_address, customer_bank_name_ru, now),
+        (normalized_bin, customer_legal_address, customer_bank_name_ru, customer_name_ru, now),
     )
     return {
         "customer_bin": normalized_bin,
         "customer_legal_address": customer_legal_address,
         "customer_bank_name_ru": customer_bank_name_ru,
+        "customer_name_ru": customer_name_ru,
         "created_at": now,
     }
 
@@ -4666,7 +4671,7 @@ def list_organizations_without_contracts() -> List[Dict[str, Any]]:
     with _lock:
         rows = execute(
             """
-            SELECT customer_bin, customer_legal_address, customer_bank_name_ru, created_at
+            SELECT customer_bin, customer_legal_address, customer_bank_name_ru, customer_name_ru, created_at
             FROM organizations_without_contracts
             ORDER BY created_at DESC
             """
@@ -4676,6 +4681,7 @@ def list_organizations_without_contracts() -> List[Dict[str, Any]]:
             "customer_bin": row["customer_bin"],
             "customer_legal_address": row["customer_legal_address"],
             "customer_bank_name_ru": row["customer_bank_name_ru"],
+            "customer_name_ru": row["customer_name_ru"],
             "created_at": row["created_at"],
         }
         for row in rows
@@ -4739,6 +4745,7 @@ def sync_bins_with_contracts() -> Dict[str, Any]:
                     bin_value,
                     customer_legal_address=contract_data.get("customer_legal_address"),
                     customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
+                    customer_name_ru=contract_data.get("customer_name_ru"),
                 )
                 added += 1
     

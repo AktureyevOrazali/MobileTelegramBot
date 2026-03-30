@@ -28,6 +28,26 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('scheduler')) {
+                return 'react-vendor';
+              }
+              if (id.includes('echarts')) {
+                return 'charts-vendor';
+              }
+              if (id.includes('d3') || id.includes('topojson')) {
+                return 'map-vendor';
+              }
+            }
+            return undefined;
+          },
+        },
+      },
+    },
     server: {
       host: devHost,
       port: devPort,

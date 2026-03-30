@@ -174,7 +174,7 @@
 }
 
 .profile-button:hover {
-  box-shadow: 0 4px 16px rgba(30, 40, 120, 0.1), 0 1px 4px rgba(30, 40, 120, 0.06);
+  box-shadow: var(--button-shadow);
   border-color: var(--profile-button-hover-border);
   transform: translateY(-1px);
 }
@@ -264,7 +264,7 @@
 /* -- Gradient hero -- */
 
 .profile-hero {
-  background: linear-gradient(135deg, #3b5998 0%, #5a7ab8 25%, #7c9fd6 50%, #5a7ab8 75%, #3b5998 100%);
+    background: var(--hero-gradient);
   background-size: 300% 300%;
   animation: profile-hero-gradient 8s ease infinite, profile-hero-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   border-radius: 22px;
@@ -275,7 +275,7 @@
   gap: 20px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 6px 24px rgba(59, 89, 152, 0.25);
+  box-shadow: var(--button-shadow);
 }
 
 @keyframes profile-hero-gradient {

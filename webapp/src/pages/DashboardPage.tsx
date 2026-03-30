@@ -1,11 +1,18 @@
-﻿import React from 'react';
+import React from 'react';
 import * as echarts from 'echarts';
 import EChartsWrapper from '../components/EChartsWrapper';
 import { ApiClient } from '../api/ApiClient';
-import RegionActivityMap, { GEOJSON_FEATURES, detectRegionFromAddress } from '../components/RegionActivityMap';
+import RegionActivityMap, {
+  GEOJSON_FEATURES,
+  SVG_ID_TO_REGION_KEY,
+  detectRayonFromAddress,
+  detectRegionFromAddress,
+  useIsDarkTheme,
+} from '../components/RegionActivityMap';
+import { OBLAST_RAYONS } from '../data/kzMapData';
 import { BinDetailed, ChatSummary } from '../types';
 import { formatDate, formatDateTime } from '../utils/date';
-import { formatMinutes, getInitials, parseQuestion, speedLabel, toInputDate } from '../utils/dashboard-helpers';
+import { formatMinutes, parseQuestion, speedLabel } from '../utils/dashboard-helpers';
 import SelectPill from '../components/SelectPill';
 import { DashboardTab, OperatorMetricKey, TimePreset, useDashboardData } from '../hooks/useDashboardData';
 
@@ -15,7 +22,8 @@ interface DashboardPageProps {
 
 /* ── Color palettes ── */
 
-const SECTION_COLORS = ['#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+const SECTION_COLORS_LIGHT = ['#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#3b82f6'];
+const SECTION_COLORS_DARK = ['#818cf8', '#60a5fa', '#22d3ee', '#34d399', '#fbbf24', '#f87171', '#818cf8', '#60a5fa'];
 const HEATMAP_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const HEATMAP_HOURS = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
 const DASHBOARD_TABS: ReadonlyArray<{ key: DashboardTab; icon: string; label: string }> = [
@@ -72,6 +80,8 @@ const ExportButton: React.FC<{
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   const d = useDashboardData(apiClient);
+  const isDark = useIsDarkTheme();
+  const sectionColors = isDark ? SECTION_COLORS_DARK : SECTION_COLORS_LIGHT;
   const [topBinFilter, setTopBinFilter] = React.useState<'without_contract' | 'with_contract'>('without_contract');
   const [mapBins, setMapBins] = React.useState<BinDetailed[]>([]);
   const [mapChats, setMapChats] = React.useState<ChatSummary[]>([]);
@@ -115,6 +125,40 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     [dashboardRegionCounts],
   );
 
+  const dashboardRayonCounts = React.useMemo(() => {
+    const result: Record<string, Record<number, number>> = {};
+    const regionKeyToSvgId: Record<string, string> = {};
+
+    for (const svgId of Object.keys(SVG_ID_TO_REGION_KEY)) {
+      regionKeyToSvgId[SVG_ID_TO_REGION_KEY[svgId]] = svgId;
+    }
+
+    mapBins.forEach((detail) => {
+      const regionKey = detectRegionFromAddress(detail.customerLegalAddress);
+      if (!regionKey) return;
+
+      const oblastId = regionKeyToSvgId[regionKey];
+      if (oblastId && OBLAST_RAYONS[oblastId]) {
+        const rayonIdx = detectRayonFromAddress(detail.customerLegalAddress, oblastId);
+        if (rayonIdx !== null) {
+          if (!result[oblastId]) result[oblastId] = {};
+          result[oblastId][rayonIdx] = (result[oblastId][rayonIdx] ?? 0) + 1;
+        }
+      }
+
+      if (regionKey === 'Shymkent (city)') {
+        const turkestanOblastId = 'turkistanOblast';
+        const rayonIdx = detectRayonFromAddress(detail.customerLegalAddress, turkestanOblastId);
+        if (rayonIdx !== null) {
+          if (!result[turkestanOblastId]) result[turkestanOblastId] = {};
+          result[turkestanOblastId][rayonIdx] = (result[turkestanOblastId][rayonIdx] ?? 0) + 1;
+        }
+      }
+    });
+
+    return result;
+  }, [mapBins]);
+
   const lastUpdated = d.hasData ? formatDateTime(d.data.updatedAt) : '';
 
   const renderRatingCard = (
@@ -156,10 +200,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                   tooltip: {
                     trigger: 'axis',
                     axisPointer: { type: 'none' },
-                    backgroundColor: 'var(--surface-color, #ffffff)',
-                    borderColor: 'var(--border-color, #e2e8f0)',
+                    backgroundColor: isDark ? '#182538' : '#ffffff',
+                    borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                     borderWidth: 1,
-                    textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                    textStyle: { color: isDark ? '#edf3fb' : '#1d2940', fontSize: 12 },
                     formatter: '{b} ★: <b>{c}</b>',
                   },
                   grid: { top: 8, right: 8, bottom: 4, left: 8, containLabel: true },
@@ -168,7 +212,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                     data: ['1', '2', '3', '4', '5'],
                     axisLine: { show: false },
                     axisTick: { show: false },
-                    axisLabel: { fontSize: 13, color: 'var(--text-color, #334155)', margin: 12 },
+                    axisLabel: { fontSize: 13, color: isDark ? '#edf3fb' : '#1d2940', margin: 12 },
                   },
                   yAxis: {
                     type: 'value',
@@ -186,23 +230,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                         borderRadius: [6, 6, 0, 0],
                         color: (params: any) => {
                           const rating = Number(params.name);
-                          if (rating <= 2) return '#ef4444';
-                          if (rating === 3) return '#f59e0b';
-                          return '#22c55e';
+                          if (rating <= 2) return isDark ? '#e17c7c' : '#d96565';
+                          if (rating === 3) return isDark ? '#fbbf24' : '#f59e0b';
+                          if (rating === 4) return isDark ? '#34d399' : '#10b981';
+                          if (rating === 5) return isDark ? '#4ade80' : '#22c55e';
+                          return isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)';
                         },
                       },
-                       label: {
-                         show: true,
-                         position: 'top',
-                         color: 'var(--text-muted, #64748b)',
-                         fontSize: 12,
-                         fontWeight: 700,
-                         formatter: (params: any) => `${Number(params?.value ?? 0)}`,
-                       },
-                     },
-                   ],
-                 }}
-               />
+                      label: {
+                        show: true,
+                        position: 'top',
+                        color: isDark ? '#edf3fb' : '#1d2940',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        formatter: (params: any) => `${Number(params?.value ?? 0)}`,
+                      },
+                    },
+                  ],
+                }}
+              />
             </div>
           </div>
         )}
@@ -363,6 +409,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                     ) : (
                       <RegionActivityMap
                         counts={dashboardRegionCounts}
+                        rayonCounts={dashboardRayonCounts}
                         binDetails={mapBins}
                         chats={mapChats}
                       />
@@ -389,10 +436,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                           option={{
                             tooltip: {
                               trigger: 'item',
-                              backgroundColor: 'var(--surface-color, #ffffff)',
-                              borderColor: 'var(--border-color, #e2e8f0)',
+                              backgroundColor: isDark ? '#182538' : '#ffffff',
+                              borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                               borderWidth: 1,
-                              textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                              textStyle: { color: isDark ? '#edf3fb' : '#1d2940', fontSize: 12 },
                               formatter: (params: any) => {
                                 if (params.name === 'empty') return '';
                                 const seg = d.responseSegments.find((s) => s.key === params.name);
@@ -416,17 +463,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                   d.responseSegments.filter(s => s.count > 0).map(seg => ({
                                     value: seg.count,
                                     name: seg.key,
-                                    itemStyle: { color: seg.key === 'fast' ? '#22c55e' : seg.key === 'medium' ? '#f59e0b' : '#ef4444' }
+                                    itemStyle: { color: seg.key === 'fast' ? (isDark ? '#34d399' : '#10b981') : seg.key === 'medium' ? (isDark ? '#fbbf24' : '#f59e0b') : (isDark ? '#e17c7c' : '#d96565') }
                                   }))
                               }
                             ]
                           }}
                         />
                         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
-                          <span style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: 1, color: 'var(--text-color, #1e293b)' }}>
+                          <span style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: 1, color: 'var(--text-color)' }}>
                             {d.numberFormatter.format(d.responseSegments.reduce((sum, seg) => sum + seg.count, 0))}
                           </span>
-                          <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--text-muted, #64748b)', marginTop: 2 }}>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--text-muted)', marginTop: 2 }}>
                             {d.activeOperatorId === null ? 'операторов' : 'обращений'}
                           </span>
                         </div>
@@ -521,10 +568,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                 tooltip: {
                                   trigger: 'axis',
                                   axisPointer: { type: 'none' },
-                                  backgroundColor: 'var(--surface-color, #ffffff)',
-                                  borderColor: 'var(--border-color, #e2e8f0)',
+                                  backgroundColor: isDark ? '#182538' : '#ffffff',
+                                  borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                                   borderWidth: 1,
-                                  textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                                  textStyle: { color: isDark ? '#edf3fb' : '#1d2940', fontSize: 12 },
                                   formatter: (params: any) => {
                                     if (total === 0) return 'Нет данных';
                                     return params.map((p: any) => `${p.seriesName}: <b>${p.value}</b>`).join('<br/>');
@@ -534,7 +581,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                 xAxis: { type: 'value', show: false, max: total > 0 ? total : 1 },
                                 yAxis: { type: 'category', data: ['AI'], show: false },
                                 series: total === 0 ? [
-                                  { type: 'bar', data: [1], barWidth: 14, itemStyle: { color: '#e2e8f0' }, animation: false }
+                                  { type: 'bar', data: [1], barWidth: 14, itemStyle: { color: isDark ? '#2d3748' : '#e2e8f0' }, animation: false }
                                 ] : [
                                   {
                                     name: 'Решено ботом',
@@ -542,7 +589,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                     stack: 'total',
                                     data: [d.data.aiClosedDialogs],
                                     barWidth: 14,
-                                    itemStyle: { color: '#3b82f6', borderRadius: [8, 0, 0, 8] }
+                                    itemStyle: { color: isDark ? '#60a5fa' : '#3b82f6', borderRadius: [8, 0, 0, 8] }
                                   },
                                   {
                                     name: 'Переведено оператору',
@@ -550,7 +597,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                     stack: 'total',
                                     data: [d.data.transferredToOperatorDialogs],
                                     barWidth: 14,
-                                    itemStyle: { color: '#cbd5e1', borderRadius: [0, 8, 8, 0] }
+                                    itemStyle: { color: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)', borderRadius: [0, 8, 8, 0] }
                                   }
                                 ]
                               }}
@@ -560,7 +607,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                           <div className="dashboard-legend" style={{ marginTop: 12 }}>
                             <div className="dashboard-legend-row">
                               <div className="dashboard-legend-left">
-                                <span className="dashboard-legend-dot" style={{ background: '#3b82f6' }} />
+                                <span className="dashboard-legend-dot" style={{ background: 'var(--chart-color-2)' }} />
                                 <span className="dashboard-legend-label">Решено ботом</span>
                               </div>
                               <div className="dashboard-legend-right">
@@ -569,7 +616,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                             </div>
                             <div className="dashboard-legend-row">
                               <div className="dashboard-legend-left">
-                                <span className="dashboard-legend-dot" style={{ background: '#cbd5e1' }} />
+                                <span className="dashboard-legend-dot" style={{ background: 'var(--border-color)' }} />
                                 <span className="dashboard-legend-label">Переведено оператору</span>
                               </div>
                               <div className="dashboard-legend-right">
@@ -610,12 +657,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                     <div className="dashboard-donut-col">
                       {(() => {
                         const slaValue = d.data.slaCompliancePercentage ?? 0;
-                        const gaugeColor = slaValue >= 80 ? '#22c55e' : '#ef4444';
+                        const gaugeColor = slaValue >= 80 ? (isDark ? '#34d399' : '#10b981') : (isDark ? '#e17c7c' : '#d96565');
                         // SVG semicircle: radius 48, using full circumference for correct dasharray
-                        const radius = 48;
-                        const fullCirc = Math.PI * 2 * radius;
-                        const halfCirc = fullCirc / 2;
-                        const filled = (slaValue / 100) * halfCirc;
                         return (
                           <div style={{ position: 'relative', width: 200, height: 110, margin: '0 auto', top: -10 }}>
                             <EChartsWrapper
@@ -642,7 +685,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                       roundCap: true,
                                       lineStyle: {
                                         width: 10,
-                                        color: [[1, '#e2e8f0']]
+                                        color: [[1, isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)']]
                                       }
                                     },
                                     pointer: { show: false },
@@ -668,7 +711,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                       <div className="dashboard-legend">
                         <div className="dashboard-legend-row">
                           <div className="dashboard-legend-left">
-                            <span className="dashboard-legend-dot" style={{ background: '#ef4444' }} />
+                            <span className="dashboard-legend-dot" style={{ background: 'var(--danger-bg)' }} />
                             <span className="dashboard-legend-label">Ответов с задержкой</span>
                           </div>
                           <div className="dashboard-legend-right">
@@ -751,10 +794,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                         tooltip: {
                           trigger: 'axis',
                           axisPointer: { type: 'none' },
-                          backgroundColor: 'var(--surface-color, #ffffff)',
-                          borderColor: 'var(--border-color, #e2e8f0)',
+                          backgroundColor: isDark ? '#182538' : '#ffffff',
+                          borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                           borderWidth: 1,
-                          textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                          textStyle: { color: isDark ? '#edf3fb' : '#1d2940', fontSize: 12 },
                           formatter: (params: any) => {
                             const data = params[0].data;
                             return `${params[0].name}<br/>${d.activeMetricConfig.label}: <b>${data.formattedLabel}</b>`;
@@ -767,7 +810,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                           data: d.topOperators.map(a => a.name || 'Без имени'),
                           axisLine: { show: false },
                           axisTick: { show: false },
-                          axisLabel: { fontSize: 12, color: 'var(--text-color, #334155)', margin: 12 },
+                          axisLabel: { fontSize: 12, color: isDark ? '#edf3fb' : '#1d2940', margin: 12 },
                           inverse: true
                         },
                         series: [
@@ -780,14 +823,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                               formatter: (params: any) => params.data.formattedLabel,
                               fontSize: 12,
                               fontWeight: 'bold',
-                              color: 'var(--text-color, #334155)'
+                              color: 'var(--text-color)'
                             },
                             itemStyle: {
                               borderRadius: [0, 6, 6, 0],
                               color: (params: any) => {
-                                if (params.dataIndex === 0) return '#6366f1';
-                                if (params.dataIndex < 3) return '#818cf8';
-                                return '#c7d2fe';
+                                if (params.dataIndex === 0) return isDark ? '#818cf8' : '#6366f1';
+                                if (params.dataIndex < 3) return isDark ? '#60a5fa' : '#3b82f6';
+                                return isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)';
                               }
                             },
                             data: d.topOperators.map(agent => {
@@ -843,9 +886,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                             type: 'bar',
                                             data: [agent.dialogs],
                                             barWidth: '100%',
-                                            itemStyle: { color: '#6366f1', borderRadius: 4 },
+                                            itemStyle: { color: isDark ? '#818cf8' : '#6366f1', borderRadius: 4 },
                                             showBackground: true,
-                                            backgroundStyle: { color: '#e2e8f0', borderRadius: 4 }
+                                            backgroundStyle: { color: isDark ? '#1e2d44' : '#f6faff', borderRadius: 4 }
                                           }
                                         ],
                                         tooltip: { show: false }
@@ -884,10 +927,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                           option={{
                             tooltip: {
                               trigger: 'item',
-                              backgroundColor: 'var(--surface-color, #ffffff)',
-                              borderColor: 'var(--border-color, #e2e8f0)',
+                              backgroundColor: isDark ? '#182538' : '#ffffff',
+                              borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                               borderWidth: 1,
-                              textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                              textStyle: { color: isDark ? '#edf3fb' : '#1d2940', fontSize: 12 },
                               formatter: '{b}: <b>{c}</b> ({d}%)'
                             },
                             series: [
@@ -905,18 +948,18 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                   formatter: '{d}%',
                                   fontWeight: 'bold',
                                   fontSize: 11,
-                                  color: 'var(--text-color, #334155)'
+                                  color: isDark ? '#edf3fb' : '#1d2940'
                                 },
                                 labelLine: {
                                   show: true,
                                   length: 10,
                                   length2: 10,
-                                  lineStyle: { color: 'var(--text-muted, #94a3b8)' }
+                                  lineStyle: { color: isDark ? '#91a1b8' : '#72829a' }
                                 },
                                 data: d.data.sectionBreakdown.map((s, idx) => ({
                                   name: s.title.length > 20 ? s.title.slice(0, 18) + '…' : s.title,
                                   value: s.dialogs,
-                                  itemStyle: { color: SECTION_COLORS[idx % SECTION_COLORS.length] }
+                                  itemStyle: { color: sectionColors[idx % sectionColors.length] }
                                 }))
                               }
                             ]
@@ -927,7 +970,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                       <div className="dashboard-section-legend">
                         {d.data.sectionBreakdown.map((section, idx) => (
                           <div key={section.section ?? section.title} className="dashboard-section-legend__item">
-                            <span className="dashboard-legend-dot" style={{ background: SECTION_COLORS[idx % SECTION_COLORS.length] }} />
+                            <span className="dashboard-legend-dot" style={{ background: sectionColors[idx % sectionColors.length] }} />
                             <span>{section.title}</span>
                             <span className="text-muted" style={{ marginLeft: 'auto', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{d.numberFormatter.format(section.dialogs)}</span>
                           </div>
@@ -963,10 +1006,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                           tooltip: {
                             trigger: 'axis',
                             axisPointer: { type: 'none' },
-                            backgroundColor: 'var(--surface-color, #ffffff)',
-                            borderColor: 'var(--border-color, #e2e8f0)',
+                            backgroundColor: isDark ? '#182538' : '#ffffff',
+                            borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                             borderWidth: 1,
-                            textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                            textStyle: { color: isDark ? '#edf3fb' : '#1d2940', fontSize: 12 },
                             formatter: (params: any) => {
                               const data = params[0].data;
                               return `${data.fullName}<br/>Обращений: <b>${params[0].value}</b>`;
@@ -982,7 +1025,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                             }),
                             axisLine: { show: false },
                             axisTick: { show: false },
-                            axisLabel: { fontSize: 11, color: 'var(--text-color, #334155)', margin: 12 },
+                            axisLabel: { fontSize: 11, color: isDark ? '#edf3fb' : '#1d2940', margin: 12 },
                             inverse: true
                           },
                           series: [
@@ -995,14 +1038,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                 formatter: '{c}',
                                 fontSize: 11,
                                 fontWeight: 'bold',
-                                color: 'var(--text-color, #334155)'
+                                color: isDark ? '#edf3fb' : '#1d2940'
                               },
                               itemStyle: {
                                 borderRadius: [0, 6, 6, 0],
                                 color: (params: any) => {
-                                  if (params.dataIndex === 0) return '#6366f1';
-                                  if (params.dataIndex < 3) return '#818cf8';
-                                  return '#a5b4fc';
+                                  if (params.dataIndex === 0) return isDark ? '#818cf8' : '#6366f1';
+                                  if (params.dataIndex < 3) return isDark ? '#60a5fa' : '#3b82f6';
+                                  return isDark ? '#22d3ee' : '#06b6d4';
                                 }
                               },
                               data: d.selectedQuestions.map(item => {
@@ -1060,7 +1103,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                             data: ['dialogs', 'messages'],
                             formatter: (name: string) => name === 'dialogs' ? 'Новых обращений' : 'Входящих сообщений',
                             bottom: 0,
-                            textStyle: { fontSize: 13, color: 'var(--text-color, #334155)' }
+                            textStyle: { fontSize: 13, color: isDark ? '#edf3fb' : '#1d2940' }
                           },
                           grid: { top: 10, right: 20, bottom: 40, left: 10, containLabel: true },
                           xAxis: {
@@ -1068,17 +1111,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                             boundaryGap: false,
                             axisLine: { show: false },
                             axisTick: { show: false },
-                            axisLabel: { color: 'var(--text-muted, #64748b)', fontSize: 12 }
+                            axisLabel: { color: isDark ? '#91a1b8' : '#72829a', fontSize: 12 }
                           },
                           yAxis: {
                             type: 'value',
                             axisLine: { show: false },
                             axisTick: { show: false },
                             splitLine: { show: false },
-                            axisLabel: { color: 'var(--text-muted, #64748b)', fontSize: 12 },
+                            axisLabel: { color: isDark ? '#91a1b8' : '#72829a', fontSize: 12 },
                             minInterval: 1 // allowDecimals={false} equivalent
                           },
-                          color: ['#5a7ab8', '#22c55e'],
+                          color: [isDark ? '#60a5fa' : '#3b82f6', isDark ? '#34d399' : '#10b981'],
                           series: [
                             {
                               type: 'line',
@@ -1088,7 +1131,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                               symbolSize: 8,
                               showSymbol: false,
                               lineStyle: { width: 2.5 },
-                              itemStyle: { color: '#5a7ab8', borderColor: '#fff', borderWidth: 2 },
+                              itemStyle: { color: isDark ? '#60a5fa' : '#3b82f6', borderColor: isDark ? '#182538' : '#ffffff', borderWidth: 2 },
                               areaStyle: {
                                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                                   { offset: 0.05, color: 'rgba(90, 122, 184, 0.3)' },
@@ -1105,7 +1148,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                               symbolSize: 8,
                               showSymbol: false,
                               lineStyle: { width: 2.5 },
-                              itemStyle: { color: '#22c55e', borderColor: '#fff', borderWidth: 2 },
+                              itemStyle: { color: isDark ? '#34d399' : '#10b981', borderColor: isDark ? '#182538' : '#ffffff', borderWidth: 2 },
                               areaStyle: {
                                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                                   { offset: 0.05, color: 'rgba(34, 197, 94, 0.3)' },
@@ -1134,10 +1177,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                         option={{
                           tooltip: {
                             trigger: 'item',
-                            backgroundColor: 'var(--surface-color, #ffffff)',
-                            borderColor: 'var(--border-color, #e2e8f0)',
+                            backgroundColor: isDark ? '#182538' : '#ffffff',
+                            borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                             borderWidth: 1,
-                            textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                            textStyle: { color: isDark ? '#edf3fb' : '#1d2940', fontSize: 12 },
                             formatter: '{b}: <b>{c}</b> ({d}%)'
                           },
                           series: [
@@ -1163,10 +1206,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                         }}
                       />
                       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: 1, color: 'var(--text-color, #1e293b)' }}>
+                        <span style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: 1, color: isDark ? '#edf3fb' : '#1d2940' }}>
                           {d.data.requestsWithContract + d.data.requestsWithoutContract > 0 ? ((d.data.requestsWithContract / (d.data.requestsWithContract + d.data.requestsWithoutContract)) * 100).toFixed(0) + '%' : '—'}
                         </span>
-                        <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--text-muted, #64748b)', marginTop: 2 }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--text-muted)', marginTop: 2 }}>
                           с договором
                         </span>
                       </div>
@@ -1226,7 +1269,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                   </div>
                   {(() => {
                     const activeBins = topBinFilter === 'without_contract' ? d.data.topBinsWithoutContract : d.data.topBinsWithContract;
-                    const chartColor = topBinFilter === 'without_contract' ? '#f43f5e' : '#10b981'; // red for without, green for with
                     const chartRgba = topBinFilter === 'without_contract' ? '225, 29, 72' : '16, 185, 129';
 
                     if (activeBins.length === 0) {
@@ -1244,10 +1286,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                             tooltip: {
                               trigger: 'axis',
                               axisPointer: { type: 'none' },
-                              backgroundColor: 'var(--surface-color, #ffffff)',
-                              borderColor: 'var(--border-color, #e2e8f0)',
+                              backgroundColor: 'var(--surface-color)',
+                              borderColor: 'var(--border-color)',
                               borderWidth: 1,
-                              textStyle: { color: 'var(--text-color, #334155)', fontSize: 12 },
+                              textStyle: { color: 'var(--text-color)', fontSize: 12 },
                               formatter: (params: any) => {
                                 return `${params[0].name}<br/>Обращений: <b>${params[0].value}</b>`;
                               }
@@ -1259,7 +1301,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                               data: activeBins.map(item => item.bin || 'Анонимно'),
                               axisLine: { show: false },
                               axisTick: { show: false },
-                              axisLabel: { fontSize: 11, fontFamily: 'monospace', color: 'var(--text-color, #334155)', margin: 12 },
+                              axisLabel: { fontSize: 11, fontFamily: 'monospace', color: 'var(--text-color)', margin: 12 },
                               inverse: true
                             },
                             series: [
@@ -1272,7 +1314,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                                   formatter: '{c}',
                                   fontSize: 11,
                                   fontWeight: 'bold',
-                                  color: 'var(--text-color, #334155)'
+                                  color: 'var(--text-color)'
                                 },
                                 itemStyle: {
                                   borderRadius: [0, 6, 6, 0],
@@ -1300,7 +1342,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                       <p className="dashboard-empty__text">Нет данных о потоке сообщений.</p>
                     </div>
                   ) : (() => {
-                    const maxCount = Math.max(...d.data.peakLoadHeatmap.map(s => s.count), 1);
                     // Aggregate 2-hour blocks for finding the overall max
                     let maxCellCount = 1;
                     for (const dayIdx of [0, 1, 2, 3, 4, 5, 6]) {

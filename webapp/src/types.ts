@@ -28,6 +28,7 @@ export interface OrganizationWithoutContractRaw {
   customer_bin: string;
   customer_legal_address: string | null;
   customer_bank_name_ru: string | null;
+  customer_name_ru: string | null;
   created_at: string;
 }
 
@@ -35,6 +36,7 @@ export interface OrganizationWithoutContract {
   customerBin: string;
   customerLegalAddress: string | null;
   customerBankNameRu: string | null;
+  customerNameRu: string | null;
   createdAt: Date;
 }
 
@@ -43,6 +45,7 @@ export interface BinDetailedRaw {
   has_contract: boolean;
   customer_legal_address: string | null;
   customer_bank_name_ru: string | null;
+  customer_name_ru: string | null;
 }
 
 export interface BinDetailed {
@@ -50,6 +53,7 @@ export interface BinDetailed {
   hasContract: boolean;
   customerLegalAddress: string | null;
   customerBankNameRu: string | null;
+  customerNameRu: string | null;
 }
 
 export interface UserProfileRaw {

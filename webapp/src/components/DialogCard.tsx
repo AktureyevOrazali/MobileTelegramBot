@@ -1,6 +1,7 @@
 ﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatSummary } from '../types';
 import { getAttachmentKindLabel, sanitizeMessageText } from '../utils/text';
+import { getChatAvatarGradient, getChatAvatarLabel, sanitizeChatAuthorLabel } from '../utils/chatParticipantAvatar';
 
 interface StatusBadgeInfo {
   canClick: boolean;
@@ -19,45 +20,6 @@ interface DialogCardProps {
   onToggleFavorite: (dialogId: number, currentIsFavorite: boolean) => void;
   onDeleteRequest: (chat: ChatSummary) => void;
 }
-
-const sanitizeAuthorLabel = (value: string | null | undefined): string | null => {
-  if (!value) return null;
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  if (!normalized) return null;
-  if (normalized.includes('\uFFFD')) return null;
-  if (!/[\p{L}\p{N}]/u.test(normalized)) return null;
-  return normalized;
-};
-
-const getAvatarLabel = (chat: ChatSummary): string => {
-  const base = sanitizeAuthorLabel(chat.title) ?? chat.username ?? '\u041a\u043b\u0438\u0435\u043d\u0442';
-  const parts = base.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
-};
-
-const AVATAR_GRADIENTS = [
-  'linear-gradient(135deg, #f2a23a, #ef7c45)',
-  'linear-gradient(135deg, #6366f1, #818cf8)',
-  'linear-gradient(135deg, #10b981, #34d399)',
-  'linear-gradient(135deg, #f43f5e, #fb7185)',
-  'linear-gradient(135deg, #3b82f6, #60a5fa)',
-  'linear-gradient(135deg, #8b5cf6, #a78bfa)',
-  'linear-gradient(135deg, #f59e0b, #fbbf24)',
-  'linear-gradient(135deg, #ec4899, #f472b6)',
-  'linear-gradient(135deg, #14b8a6, #5eead4)',
-  'linear-gradient(135deg, #ef4444, #f87171)',
-];
-
-const getAvatarColor = (name: string): string => {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-  }
-  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
-};
 
 const formatDialogTimestamp = (value: Date): string => {
   const now = new Date();
@@ -124,13 +86,13 @@ const DialogCard: React.FC<DialogCardProps> = ({
     ?? (chat.lastMessageHasAttachments ? getAttachmentKindLabel(chat.lastMessageAttachmentKind) : null);
   const previewPrefix = (() => {
     if (!previewContent) return null;
-    if (chat.lastMessageDirection === 'outgoing') return sanitizeAuthorLabel(chat.lastMessageAuthor) ?? '\u0412\u044b';
-    return sanitizeAuthorLabel(chat.lastMessageAuthor) ?? '\u041a\u043b\u0438\u0435\u043d\u0442';
+    if (chat.lastMessageDirection === 'outgoing') return sanitizeChatAuthorLabel(chat.lastMessageAuthor) ?? '\u0412\u044b';
+    return sanitizeChatAuthorLabel(chat.lastMessageAuthor) ?? '\u041a\u043b\u0438\u0435\u043d\u0442';
   })();
   const previewText = previewContent ? `${previewPrefix ? `${previewPrefix}: ` : ''}${previewContent}` : '\u041d\u0435\u0442 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0439';
 
   const isClosed = Boolean(chat.dialogClosedAt);
-  const avatarBg = getAvatarColor(chat.title || chat.username || '\u041a\u043b\u0438\u0435\u043d\u0442');
+  const avatarBg = getChatAvatarGradient(chat);
   const contextTags = [
     chat.sectionTitle ? { label: chat.sectionTitle, className: 'dialog-card__tag dialog-card__tag--neutral' } : null,
     chat.bin ? { label: `BIN ${chat.bin}`, className: 'dialog-card__tag dialog-card__tag--neutral' } : null,
@@ -151,7 +113,7 @@ const DialogCard: React.FC<DialogCardProps> = ({
       }}
     >
       <div className="dialog-card__minimal-shell">
-        <div className="dialog-card__minimal-avatar">{getAvatarLabel(chat)}</div>
+        <div className="dialog-card__minimal-avatar">{getChatAvatarLabel(chat)}</div>
 
         <div className="dialog-card__minimal-body">
           <div className="dialog-card__minimal-top">

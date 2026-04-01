@@ -1,4 +1,4 @@
-﻿"""FastAPI routes serving chat data for the mobile client."""
+"""FastAPI routes serving chat data for the mobile client."""
 
 from __future__ import annotations
 
@@ -79,22 +79,25 @@ ONEC_SHARED_SECRET = os.getenv("ONEC_SHARED_SECRET", "")
 
 
 
-CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
-
-
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+if not CORS_ORIGINS:
+    CORS_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
 
 app = FastAPI(title="MobileBot Companion API")
 
 app.add_middleware(
-
     CORSMiddleware,
-
     allow_origins=CORS_ORIGINS,
-
+    # When using withCredentials: true on the client, allow_credentials MUST be True,
+    # and allow_origins cannot be ["*"].
+    allow_credentials=True,
     allow_methods=["*"],
-
     allow_headers=["*"],
-
 )
 
 
@@ -1200,7 +1203,15 @@ async def sse_endpoint(request: Request, current_user: Dict[str, object] = Depen
 
 
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(), 
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Prevents Nginx/proxies from buffering SSE
+        }
+    )
 
 
 
@@ -3442,7 +3453,6 @@ def get_media(
     api_token_header = request.headers.get("X-Api-Token") or request.query_params.get("api_token")
     session_token = request.headers.get("X-Session-Token") or request.query_params.get("session_token")
     has_session = api_token_header == API_TOKEN and session_token and database.get_user_by_session(session_token) is not None
-    has_session = api_token_header == API_TOKEN and session_token and database.get_user_by_session(session_token) is not None
     if not signed_ok and not has_session:
         raise HTTPException(status_code=403, detail="Media access denied")
 
@@ -4424,7 +4434,7 @@ def create_onec_message(
         )
         logger.info("1C Organization %s saved as organization without contract", bin_value)
         response_message = (
-            "No active 2026 contract was found for this organization.\n"
+            f"No active {contract_checker.ACTIVE_CONTRACT_YEAR} contract was found for this organization.\n"
             "Contact our office to sign a contract."
         )
 
@@ -4641,7 +4651,7 @@ def create_onec_message(
     }
 
 
-# ------------------ ??????? ??? 1? ------------------
+# ------------------ 1C history ------------------
 
 def _onec_history_core(
     external_chat_id: str,

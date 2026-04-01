@@ -1,12 +1,9 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-const requireEnv = (env: Record<string, string>, key: string): string => {
+const getEnv = (env: Record<string, string>, key: string, fallback: string): string => {
   const value = env[key];
-  if (!value) {
-    throw new Error(`Environment variable ${key} is required for Vite config`);
-  }
-  return value;
+  return value || fallback;
 };
 
 const parsePort = (value: string, key: string): number => {
@@ -21,10 +18,10 @@ const parsePort = (value: string, key: string): number => {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
-  const devHost = requireEnv(env, 'DEV_SERVER_HOST');
-  const devPort = parsePort(requireEnv(env, 'DEV_SERVER_PORT'), 'DEV_SERVER_PORT');
-  const previewHost = requireEnv(env, 'PREVIEW_HOST');
-  const previewPort = parsePort(requireEnv(env, 'PREVIEW_PORT'), 'PREVIEW_PORT');
+  const devHost = getEnv(env, 'DEV_SERVER_HOST', 'localhost');
+  const devPort = parsePort(getEnv(env, 'DEV_SERVER_PORT', '5173'), 'DEV_SERVER_PORT');
+  const previewHost = getEnv(env, 'PREVIEW_HOST', 'localhost');
+  const previewPort = parsePort(getEnv(env, 'PREVIEW_PORT', '4173'), 'PREVIEW_PORT');
 
   return {
     plugins: [react()],

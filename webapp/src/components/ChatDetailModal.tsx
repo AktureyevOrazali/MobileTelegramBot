@@ -1,240 +1,172 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback } from 'react';
+
 import { ApiClient } from '../api/ApiClient';
-import { ChatSummary, Message, ReplyTemplate } from '../types';
+import { ChatSummary } from '../types';
+import { useChatConversation } from '../hooks/useChatConversation';
 import { formatDateTime } from '../utils/date';
-import { extractErrorMessage } from '../utils/errors';
 import Modal from './Modal';
 
 interface ChatDetailModalProps {
-    apiClient: ApiClient;
-    chat: ChatSummary;
-    onToggleStatus: (chat: ChatSummary) => void;
-    onClose: () => void;
+  apiClient: ApiClient;
+  chat: ChatSummary;
+  onToggleStatus: (chat: ChatSummary) => void;
+  onClose: () => void;
 }
 
+const TEXT = {
+  binPrefix: 'БИН:',
+  close: 'Закрыть',
+  closed: 'Закрыт',
+  empty: 'Нет сообщений в этом диалоге.',
+  loading: 'Загружаем сообщения...',
+  noReplyRights: 'У вашей роли нет прав для ответа.',
+  open: 'Открыт',
+  openDialog: 'Открыть диалог',
+  replyPlaceholder: 'Ваш ответ клиенту…',
+  sectionPrefix: 'Раздел:',
+  send: 'Отправить',
+  sending: 'Отправляем…',
+  started: 'Начат:',
+  updated: 'Обновлён:',
+};
+
 const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
-    apiClient,
-    chat,
-    onToggleStatus,
-    onClose,
+  apiClient,
+  chat,
+  onToggleStatus,
+  onClose,
 }) => {
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [input, setInput] = useState('');
-    const [sending, setSending] = useState(false);
-    const [templates, setTemplates] = useState<ReplyTemplate[]>([]);
+  const {
+    autosizeTextarea,
+    canReply,
+    error,
+    handlePresetClick,
+    input,
+    loading,
+    messages,
+    scrollRef,
+    sendMessage,
+    sending,
+    setInput,
+    templates,
+    textareaRef,
+  } = useChatConversation({ apiClient, chat });
 
-    // ВАЖНО: реф именно на прокручиваемый контейнер (modal__scroll), а не на внутренний список
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const lastCountRef = useRef<number>(0);
-    const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const isClosed = Boolean(chat.dialogClosedAt);
+  const statusLabel = isClosed ? TEXT.closed : TEXT.open;
+  const statusClassName = `status-badge ${isClosed ? 'status-badge--closed' : 'status-badge--open'}`;
+  const statusBadge = canReply ? (
+    <button
+      type="button"
+      className={`${statusClassName} status-badge-btn status-badge--clickable`}
+      onClick={() => onToggleStatus(chat)}
+      title={isClosed ? TEXT.openDialog : TEXT.close}
+    >
+      {statusLabel}
+    </button>
+  ) : (
+    <span className={statusClassName}>{statusLabel}</span>
+  );
 
-    const currentUser = apiClient.currentUser;
-    const canReply = Boolean(currentUser?.canReply);
-    const isClosed = Boolean(chat.dialogClosedAt);
-    const statusLabel = isClosed ? 'Закрыт' : 'Открыт';
-    const statusClassName = `status-badge ${isClosed ? 'status-badge--closed' : 'status-badge--open'}`;
-    const statusBadge = canReply ? (
-        <button
-            type="button"
-            className={`${statusClassName} status-badge-btn status-badge--clickable`}
-            onClick={() => onToggleStatus(chat)}
-            title={isClosed ? 'Открыть диалог' : 'Закрыть диалог'}
-        >
-            {statusLabel}
+  const handleSend = useCallback(async () => {
+    await sendMessage();
+  }, [sendMessage]);
+
+  return (
+    <Modal open onClose={onClose} className="modal--dialog">
+      <div className="modal__content">
+        <button className="modal__close" type="button" aria-label={TEXT.close} onClick={onClose} title={TEXT.close}>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.41Z" fill="currentColor" />
+          </svg>
         </button>
-    ) : (
-        <span className={statusClassName}>{statusLabel}</span>
-    );
-
-    const scrollToBottom = useCallback((smooth = false) => {
-        const el = scrollRef.current;
-        if (!el) return;
-        const top = el.scrollHeight;
-        if (smooth) el.scrollTo({ top, behavior: 'smooth' });
-        else el.scrollTop = top;
-    }, []);
-
-    const autosize = useCallback((el: HTMLTextAreaElement) => {
-        el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 176) + 'px';
-    }, []);
-
-    const loadMessages = useCallback(async () => {
-        try {
-            setLoading(true);
-            const data = await apiClient.fetchMessages(chat.chatId, 200, chat.dialogId);
-            setMessages(data);
-            lastCountRef.current = data.length;
-            setError(null);
-        } catch (err) {
-            setError(extractErrorMessage(err, 'Не удалось загрузить сообщения.'));
-        } finally {
-            setLoading(false);
-            // после первой подгрузки — сразу в самый низ
-            requestAnimationFrame(() => scrollToBottom(false));
-        }
-    }, [apiClient, chat.chatId, chat.dialogId, scrollToBottom]);
-
-    useEffect(() => { loadMessages(); }, [loadMessages]);
-
-    // загрузка шаблонов быстрых ответов
-    useEffect(() => {
-        if (!canReply) return;
-        apiClient.fetchReplyTemplates(chat.section).then(setTemplates).catch(() => {
-            // тихо игнорируем — шаблоны не критичны
-        });
-    }, [apiClient, chat.section, canReply]);
-
-    // каждый раз при изменении массива сообщений — опускаем вниз (плавно)
-    useEffect(() => {
-        // небольшой кадр для корректной высоты после рендера
-        const id = requestAnimationFrame(() => scrollToBottom(true));
-        return () => cancelAnimationFrame(id);
-    }, [messages, scrollToBottom]);
-
-    // фоновая подтяжка новых сообщений (через SSE)
-    useEffect(() => {
-        const cleanup = apiClient.connectToStream({
-            onMessage: (messageRaw: any) => {
-                if (messageRaw.chat_id === chat.chatId) {
-                    loadMessages();
-                }
-            }
-        });
-        return cleanup;
-    }, [apiClient, chat.chatId, loadMessages]);
-
-    useEffect(() => {
-        if (taRef.current) autosize(taRef.current);
-    }, [input, autosize]);
-
-    const handlePresetClick = useCallback(
-        (text: string) => {
-            setInput(text);
-            if (taRef.current) {
-                taRef.current.focus();
-                requestAnimationFrame(() => autosize(taRef.current!));
-            }
-        },
-        [autosize],
-    );
-
-    const handleSend = async () => {
-        if (!input.trim()) return;
-        setSending(true);
-        try {
-            await apiClient.sendMessage(chat.chatId, input.trim(), chat.dialogId);
-            setInput('');
-            await loadMessages();           // загрузим актуальный список
-            requestAnimationFrame(() => scrollToBottom(true)); // и прокрутим
-        } catch (err) {
-            setError(extractErrorMessage(err, 'Не удалось отправить сообщение.'));
-        } finally {
-            setSending(false);
-        }
-    };
-
-    return (
-        <Modal open onClose={onClose} className="modal--dialog">
-            <div className="modal__content">
-                <button className="modal__close" type="button" aria-label="Закрыть" onClick={onClose} title="Закрыть">
-                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                        <path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.41Z" fill="currentColor" />
-                    </svg>
-                </button>
-                {/* Header */}
-                <div className="modal__header-row">
-                    <div>
-                        <h2 className="heading">{chat.title}</h2>
-                        <div className="dialog-status-row" style={{ marginTop: 4 }}>
-                            <span className="text-muted" style={{ fontSize: '0.82rem' }}>
-                                {chat.username ? `@${chat.username}` : chat.type}
-                            </span>
-                            {statusBadge}
-                        </div>
-                        <div className="dialog-meta" style={{ marginTop: 8 }}>
-                            {chat.sectionTitle && <span className="dialog-card__chip">Раздел: {chat.sectionTitle}</span>}
-                            {chat.bin && <span className="dialog-card__chip">БИН: {chat.bin}</span>}
-                            <span className="dialog-card__chip">Начат: {formatDateTime(chat.dialogStartedAt)}</span>
-                            <span className="dialog-card__chip">Обновлён: {formatDateTime(chat.updatedAt)}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {error && <div className="alert" style={{ marginTop: 8 }}>{error}</div>}
-
-                {/* ПРОКРУЧИВАЕМЫЙ контейнер */}
-                <div className="modal__scroll" ref={scrollRef}>
-                    {loading ? (
-                        <div style={{ padding: '24px 0', textAlign: 'center' }}>Загружаем сообщения...</div>
-                    ) : (
-                        <div className="message-list">
-                            {messages.length === 0 && <div className="text-muted">Нет сообщений в этом диалоге.</div>}
-                            {messages.map((message) => (
-                                <div
-                                    key={message.id}
-                                    className={`message-bubble ${message.direction}`}
-                                >
-                                    {message.author && <div className="message-bubble__author">{message.author}</div>}
-                                    <div className="message-bubble__text">{message.text}</div>
-                                    <div className="message-bubble__time">{formatDateTime(message.createdAt)}</div>
-                                    {message.sectionTitle && (
-                                        <div className="message-bubble__section">Раздел: {message.sectionTitle}</div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                <div className="separator" />
-
-                {/* Шаблоны быстрых ответов */}
-                {canReply && templates.length > 0 && (
-                    <div className="preset-replies">
-                        {templates.map((tpl) => (
-                            <button
-                                key={tpl.id}
-                                type="button"
-                                className="preset-reply"
-                                onClick={() => handlePresetClick(tpl.text)}
-                                title={tpl.text}
-                            >
-                                {tpl.title}
-                            </button>
-                        ))}
-                    </div>
-                )}
-                <div className="dialog-composer">
-                    <textarea
-                        ref={taRef}
-                        className="textarea"
-                        placeholder={canReply ? 'Ваш ответ клиенту…' : 'У вашей роли нет прав для ответа.'}
-                        value={input}
-                        onChange={(e) => {
-                            setInput(e.target.value);
-                            if (taRef.current) autosize(taRef.current);
-                        }}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSend();
-                            }
-                        }}
-                        disabled={!canReply || sending}
-                        rows={1}
-                    />
-                    <div className="dialog-composer__actions">
-                        <button className="button" type="button" onClick={handleSend} disabled={!canReply || sending || !input.trim()}>
-                            {sending ? 'Отправляем…' : 'Отправить'}
-                        </button>
-                    </div>
-                </div>
+        <div className="modal__header-row">
+          <div>
+            <h2 className="heading">{chat.title}</h2>
+            <div className="dialog-status-row" style={{ marginTop: 4 }}>
+              <span className="text-muted" style={{ fontSize: '0.82rem' }}>
+                {chat.username ? `@${chat.username}` : chat.type}
+              </span>
+              {statusBadge}
             </div>
-        </Modal>
-    );
+            <div className="dialog-meta" style={{ marginTop: 8 }}>
+              {chat.sectionTitle && <span className="dialog-card__chip">{TEXT.sectionPrefix} {chat.sectionTitle}</span>}
+              {chat.bin && <span className="dialog-card__chip">{TEXT.binPrefix} {chat.bin}</span>}
+              <span className="dialog-card__chip">{TEXT.started} {formatDateTime(chat.dialogStartedAt)}</span>
+              <span className="dialog-card__chip">{TEXT.updated} {formatDateTime(chat.updatedAt)}</span>
+            </div>
+          </div>
+        </div>
+
+        {error && <div className="alert" style={{ marginTop: 8 }}>{error}</div>}
+
+        <div className="modal__scroll" ref={scrollRef}>
+          {loading ? (
+            <div style={{ padding: '24px 0', textAlign: 'center' }}>{TEXT.loading}</div>
+          ) : (
+            <div className="message-list">
+              {messages.length === 0 && <div className="text-muted">{TEXT.empty}</div>}
+              {messages.map((message) => (
+                <div key={message.id} className={`message-bubble ${message.direction}`}>
+                  {message.author && <div className="message-bubble__author">{message.author}</div>}
+                  <div className="message-bubble__text">{message.text}</div>
+                  <div className="message-bubble__time">{formatDateTime(message.createdAt)}</div>
+                  {message.sectionTitle && (
+                    <div className="message-bubble__section">{TEXT.sectionPrefix} {message.sectionTitle}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="separator" />
+
+        {canReply && templates.length > 0 && (
+          <div className="preset-replies">
+            {templates.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                className="preset-reply"
+                onClick={() => handlePresetClick(template.text)}
+                title={template.text}
+              >
+                {template.title}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="dialog-composer">
+          <textarea
+            ref={textareaRef}
+            className="textarea"
+            placeholder={canReply ? TEXT.replyPlaceholder : TEXT.noReplyRights}
+            value={input}
+            onChange={(event) => {
+              setInput(event.target.value);
+              if (textareaRef.current) {
+                autosizeTextarea(textareaRef.current);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void handleSend();
+              }
+            }}
+            disabled={!canReply || sending}
+            rows={1}
+          />
+          <div className="dialog-composer__actions">
+            <button className="button" type="button" onClick={() => void handleSend()} disabled={!canReply || sending || !input.trim()}>
+              {sending ? TEXT.sending : TEXT.send}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
 };
 
 export default ChatDetailModal;

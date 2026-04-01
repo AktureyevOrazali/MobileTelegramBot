@@ -150,12 +150,12 @@ export class ApiClient {
     }
 
     if (!expectJson) {
-      // РЎР±СЂР°СЃС‹РІР°РµРј С‚РµР»Рѕ РѕС‚РІРµС‚Р°, С‡С‚РѕР±С‹ СЃРѕРµРґРёРЅРµРЅРёРµ РјРѕРіР»Рѕ Р±С‹С‚СЊ РїРµСЂРµРёСЃРїРѕР»СЊР·РѕРІР°РЅРѕ.
+      // Discard the response body so the connection can be reused.
       if (response.body) {
         try {
           await response.body.cancel();
         } catch (error) {
-          // РРіРЅРѕСЂРёСЂСѓРµРј РѕС€РёР±РєРё РїСЂРё РѕС‚РјРµРЅРµ С‡С‚РµРЅРёСЏ С‚РµР»Р° РѕС‚РІРµС‚Р°.
+          // Ignore body cancellation errors.
         }
       }
       return undefined as T;

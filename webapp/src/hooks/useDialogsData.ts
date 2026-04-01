@@ -8,7 +8,7 @@ import {
     detectRegionFromAddress,
     detectRayonFromAddress,
     SVG_ID_TO_REGION_KEY,
-} from '../components/RegionActivityMap';
+} from '../utils/kazakhstanGeo';
 import { OBLAST_RAYONS } from '../data/kzMapData';
 
 /** Per-region/rayon aggregated statistics. */

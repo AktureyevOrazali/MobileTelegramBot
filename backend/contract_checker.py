@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -24,6 +25,20 @@ _contract_cache_expiry: Dict[str, float] = {}
 
 _all_contracts_cache: List[Dict[str, Any]] | None = None
 _all_contracts_cache_expiry: float | None = None
+
+
+def _resolve_active_contract_year() -> int:
+    raw = os.getenv("ACTIVE_CONTRACT_YEAR", "").strip()
+    if not raw:
+        return date.today().year
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise RuntimeError("ACTIVE_CONTRACT_YEAR must be a four-digit year") from exc
+
+
+ACTIVE_CONTRACT_YEAR = _resolve_active_contract_year()
+ACTIVE_CONTRACT_YEAR_PREFIX = str(ACTIVE_CONTRACT_YEAR)
 
 
 def get_supplier_bins() -> List[str]:
@@ -131,7 +146,7 @@ def _get_all_contracts() -> List[Dict[str, Any]]:
 
 def get_all_customer_bins_with_contracts() -> Dict[str, Dict[str, Any]]:
     """
-    Return customer BINs with active 2026 contracts.
+    Return customer BINs with active contracts for the configured year.
 
     Key is customer BIN, value is info from the first matched contract.
     """
@@ -145,7 +160,7 @@ def get_all_customer_bins_with_contracts() -> Dict[str, Dict[str, Any]]:
         if not customer_bin:
             continue
 
-        if sign_date and sign_date.startswith("2026") and customer_bin not in result:
+        if sign_date and sign_date.startswith(ACTIVE_CONTRACT_YEAR_PREFIX) and customer_bin not in result:
             result[customer_bin] = {
                 "has_contract": True,
                 "customer_legal_address": contract.get("customerLegalAddress"),
@@ -158,7 +173,7 @@ def get_all_customer_bins_with_contracts() -> Dict[str, Dict[str, Any]]:
 
 def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
     """
-    Check whether a customer BIN has active 2026 contracts.
+    Check whether a customer BIN has active contracts for the configured year.
 
     The customer is treated as having a contract if it is found under at least
     one configured supplier BIN.
@@ -190,7 +205,7 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
             if contract_customer_bin != customer_bin:
                 continue
 
-            if sign_date and sign_date.startswith("2026"):
+            if sign_date and sign_date.startswith(ACTIVE_CONTRACT_YEAR_PREFIX):
                 matching_contracts.append(contract)
 
         if matching_contracts:
@@ -208,7 +223,11 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
                     result["customer_bank_name_ru"] = contract.get("customerBankNameRu")
                     result["customer_name_ru"] = _get_customer_name_ru(contract)
                     break
-            logger.info("No 2026 contracts found for customer %s", customer_bin)
+            logger.info(
+                "No active %s contracts found for customer %s",
+                ACTIVE_CONTRACT_YEAR,
+                customer_bin,
+            )
 
     except Exception as exc:
         logger.error("Unexpected error checking contracts for %s: %s", customer_bin, exc)

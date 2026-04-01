@@ -7,6 +7,7 @@ import DialogCard from '../components/DialogCard';
 import InlineChatPanel from '../components/InlineChatPanel';
 import Modal from '../components/Modal';
 import { useDialogsData } from '../hooks/useDialogsData';
+import { getChatAvatarGradient, getChatAvatarLabel } from '../utils/chatParticipantAvatar';
 
 interface DialogsPageProps {
   apiClient: ApiClient;
@@ -14,36 +15,6 @@ interface DialogsPageProps {
 }
 
 const LIST_PANEL_COLLAPSE_STORAGE_KEY = 'mobilebot-dialogs-list-collapsed';
-
-const getCollapsedRailLabel = (chat: ChatSummary): string => {
-  const base = chat.title?.trim() || chat.username?.trim() || 'Клиент';
-  const parts = base.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
-};
-
-const AVATAR_GRADIENTS = [
-  'linear-gradient(135deg, #f2a23a, #ef7c45)',
-  'linear-gradient(135deg, #6366f1, #818cf8)',
-  'linear-gradient(135deg, #10b981, #34d399)',
-  'linear-gradient(135deg, #f43f5e, #fb7185)',
-  'linear-gradient(135deg, #3b82f6, #60a5fa)',
-  'linear-gradient(135deg, #8b5cf6, #a78bfa)',
-  'linear-gradient(135deg, #f59e0b, #fbbf24)',
-  'linear-gradient(135deg, #ec4899, #f472b6)',
-  'linear-gradient(135deg, #14b8a6, #5eead4)',
-  'linear-gradient(135deg, #ef4444, #f87171)',
-];
-
-const getAvatarColor = (name: string): string => {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-  }
-  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
-};
 
 const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -377,12 +348,12 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
                     key={`${chat.chatId}-${chat.dialogId}`}
                     type="button"
                     className={`dialogs-list-panel__rail-avatar ${activeChat?.dialogId === chat.dialogId ? 'dialogs-list-panel__rail-avatar--active' : ''}`}
-                    style={{ "--avatar-bg": getAvatarColor(chat.title || chat.username || "Клиент") } as React.CSSProperties}
+                    style={{ "--avatar-bg": getChatAvatarGradient(chat) } as React.CSSProperties}
                     onClick={() => handleOpenChat(chat)}
                     aria-label={`Открыть чат ${chat.title}`}
                     title={chat.title}
                   >
-                    {getCollapsedRailLabel(chat)}
+                    {getChatAvatarLabel(chat)}
                     {chat.unreadCount > 0 && <span className="dialogs-list-panel__rail-chat-badge">{chat.unreadCount}</span>}
                   </button>
                 ))}

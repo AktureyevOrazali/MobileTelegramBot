@@ -1,4 +1,4 @@
-﻿import {
+import {
   Attachment,
   AttachmentRaw,
   AuthSession,
@@ -416,6 +416,8 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
         responseTimeMinutes: typeof item.response_time_minutes === 'number' ? item.response_time_minutes : null,
         csatRating: typeof item.csat_rating === 'number' ? item.csat_rating : null,
         aiCsatRating: typeof item.ai_csat_rating === 'number' ? item.ai_csat_rating : null,
+        ratedBy: typeof item.rated_by === 'string' ? item.rated_by : null,
+        operatorName: typeof item.operator_name === 'string' ? item.operator_name : null,
       }))
     : [];
 
@@ -473,6 +475,7 @@ export function mapDashboardSummary(raw: DashboardSummaryRaw): DashboardSummary 
     updatedAt: raw.updated_at ? new Date(raw.updated_at) : new Date(),
   };
 }
+
 
 
 

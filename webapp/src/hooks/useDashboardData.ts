@@ -223,6 +223,11 @@ export function useDashboardData(apiClient: ApiClient) {
         return names;
     }, [activeOperatorId, normalizeName, operators]);
 
+    const selectedOperatorAliases = useMemo(
+        () => (selectedOperatorNames ? Array.from(selectedOperatorNames) : null),
+        [selectedOperatorNames],
+    );
+
     // ── Agent stats ──
 
     const agentStats = useMemo(() => {
@@ -594,6 +599,7 @@ export function useDashboardData(apiClient: ApiClient) {
         operatorOptions,
         operatorSelectValue,
         selectedOperatorLabel,
+        selectedOperatorAliases,
         operatorMetaByName,
         operatorCount,
 

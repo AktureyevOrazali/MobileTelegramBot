@@ -214,7 +214,7 @@ const DialogCard: React.FC<DialogCardProps> = ({
             </div>
           </div>
 
-          <p className="dialog-card__minimal-preview" title={previewContent ?? undefined}>{previewText}</p>
+          <p className="dialog-card__minimal-preview">{previewText}</p>
           <div className="dialog-card__tags">
             <span className={`dialog-card__tag ${isClosed ? 'dialog-card__tag--closed' : 'dialog-card__tag--open'}`}>
               {isClosed ? '\u0417\u0430\u043a\u0440\u044b\u0442' : '\u041e\u0442\u043a\u0440\u044b\u0442'}
@@ -233,6 +233,7 @@ const DialogCard: React.FC<DialogCardProps> = ({
 };
 
 export default DialogCard;
+
 
 
 

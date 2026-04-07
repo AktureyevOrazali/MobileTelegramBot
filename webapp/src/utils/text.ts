@@ -1,6 +1,8 @@
 ﻿const MEDIA_PLACEHOLDER_RE = /^\[?(photo|image|video|document|file|attachment)(?:\s+message)?\]?$/i;
 const ONLY_BROKEN_SYMBOLS_RE = /^[\s\uFFFD.,:;!?()[\]{}\-_'"`~]+$/;
 const MOJIBAKE_HINT_RE = /(?:Р.|С.|Ð.|Ñ.){2,}/;
+const UNICODE_ESCAPE_RE = /\\u([0-9a-fA-F]{4})/g;
+const SIMPLE_ESCAPE_RE = /\\([nrt])/g;
 const CP1251_DECODER = new TextDecoder('windows-1251');
 const CP1251_REVERSE = new Map<string, number>();
 
@@ -49,10 +51,34 @@ function repairMojibake(value: string): string | null {
   }
 }
 
+function decodeEscapedSequences(value: string): string | null {
+  if (!value.includes('\\')) {
+    return null;
+  }
+
+  let decoded = value.replace(UNICODE_ESCAPE_RE, (_, hex: string) =>
+    String.fromCharCode(Number.parseInt(hex, 16)));
+
+  decoded = decoded.replace(SIMPLE_ESCAPE_RE, (_, escapeChar: string) => {
+    switch (escapeChar) {
+      case 'n':
+        return '\n';
+      case 'r':
+        return '\r';
+      case 't':
+        return '\t';
+      default:
+        return `\\${escapeChar}`;
+    }
+  });
+
+  return decoded === value ? null : decoded;
+}
+
 export function sanitizeUiText(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
 
-  const normalized = value.replace(/\s+/g, ' ').trim();
+  const normalized = (decodeEscapedSequences(value) ?? value).replace(/\s+/g, ' ').trim();
   if (!normalized) return null;
 
   const repaired = repairMojibake(normalized) ?? normalized;
@@ -74,8 +100,8 @@ export function sanitizeMessageText(value: string | null | undefined): string | 
     lower.includes('[image') ||
     lower.includes('[video') ||
     lower.includes('photo message') ||
-    lower.includes('\u0444\u043e\u0442\u043e \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435') ||
-    lower.includes('\u0432\u0438\u0434\u0435\u043e \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435')
+    lower.includes('фото сообщение') ||
+    lower.includes('видео сообщение')
   ) {
     return null;
   }
@@ -84,7 +110,7 @@ export function sanitizeMessageText(value: string | null | undefined): string | 
 }
 
 export function getAttachmentKindLabel(kind: string | null | undefined): string {
-  if (kind === 'image') return '\u0424\u043e\u0442\u043e';
-  if (kind === 'video') return '\u0412\u0438\u0434\u0435\u043e';
-  return '\u0424\u0430\u0439\u043b';
+  if (kind === 'image') return 'Фото';
+  if (kind === 'video') return 'Видео';
+  return 'Файл';
 }

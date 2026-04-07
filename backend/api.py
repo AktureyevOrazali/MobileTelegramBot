@@ -31,7 +31,7 @@ from collections import defaultdict
 from urllib.parse import urlsplit, urlunsplit
 
 
-from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -73,7 +73,7 @@ ONEC_CHAT_ID_SPACE = 1_000_000_000_000
 
 
 
-# РћРїС†РёРѕРЅР°Р»СЊРЅС‹Р№ РѕР±С‰РёР№ СЃРµРєСЂРµС‚ РґР»СЏ РїРѕРґРїРёСЃРё HMAC РЅР°РіСЂСѓР·РєРё, РєРѕС‚РѕСЂСѓСЋ 1РЎ Р·Р°Р±РёСЂР°РµС‚ РёР· outbox
+# Опциональный общий секрет для подписи HMAC нагрузки, которую 1С забирает из outbox
 
 ONEC_SHARED_SECRET = os.getenv("ONEC_SHARED_SECRET", "")
 
@@ -88,13 +88,18 @@ if not CORS_ORIGINS:
         "http://127.0.0.1:4173",
     ]
 
+CORS_ORIGIN_REGEX = (
+    os.getenv("CORS_ORIGIN_REGEX", "").strip()
+    or r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})(?::\d+)?$"
+)
+
 app = FastAPI(title="MobileBot Companion API")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    # When using withCredentials: true on the client, allow_credentials MUST be True,
-    # and allow_origins cannot be ["*"].
+    allow_origin_regex=CORS_ORIGIN_REGEX,
+    # The frontend sends custom auth headers, so credentials must stay enabled.
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -112,7 +117,7 @@ security = HTTPBearer()
 
 
 
-# в”Ђв”Ђ SSE Event Bus в”Ђв”Ђ
+# ── SSE Event Bus ──
 
 class EventBus:
 
@@ -170,7 +175,7 @@ ROLE_LABELS: Dict[str, str] = {
 
 def _sign_payload(payload: dict) -> str:
 
-    """HMAC-SHA256 РїРѕРґРїРёСЃСЊ РєРѕРјРїР°РєС‚РЅРѕРіРѕ JSON. Р•СЃР»Рё СЃРµРєСЂРµС‚ РїСѓСЃС‚ вЂ” РІРѕР·РІСЂР°С‰Р°РµС‚ РїСѓСЃС‚СѓСЋ СЃС‚СЂРѕРєСѓ."""
+    """HMAC-SHA256 signature for a compact JSON payload. Returns an empty string when the shared secret is missing."""
 
     if not ONEC_SHARED_SECRET:
 
@@ -995,6 +1000,8 @@ class DashboardDialogMetric(BaseModel):
     csat_rating: int | None = None
 
     ai_csat_rating: int | None = None
+    rated_by: str | None = None
+    operator_name: str | None = None
 
 
 
@@ -1875,13 +1882,13 @@ def delete_bin_endpoint(
 
 ):
 
-    """Удаляет БИН из базы."""
+    """Delete a BIN from the database."""
 
     removed = database.remove_bin(bin_value)
 
     if not removed:
 
-        raise HTTPException(status_code=404, detail="БИН не найден")
+        raise HTTPException(status_code=404, detail="\u0411\u0418\u041d \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d")
 
     return {"status": "ok"}
 
@@ -1899,7 +1906,7 @@ def list_bins_detailed_endpoint(
 
 ):
 
-    """Возвращает список БИНов с информацией о наличии договора."""
+    """Return BINs enriched with contract-availability information."""
 
     bins = database.list_bins(query)
 
@@ -1935,7 +1942,7 @@ def list_bins_detailed_endpoint(
 
             # Has contract - use preloaded data
 
-            # Если БИН был в без договора, но теперь есть договор — удаляем
+            # If a BIN was previously marked as contractless but now has a contract, remove it.
 
             if org_data:
 
@@ -2032,7 +2039,7 @@ def get_bin_info_endpoint(
 
 ):
 
-    """Возвращает информацию о БИНе с проверкой договора через GraphQL."""
+    """Return BIN details together with the GraphQL contract check result."""
 
     contract_data = contract_checker.check_customer_contracts(bin_value)
 
@@ -2075,7 +2082,7 @@ def sync_bins_with_contracts_endpoint(
 
 ):
 
-    """Синхронизирует все БИНы с информацией о договорах."""
+    """Synchronize all BINs with the latest contract information."""
 
     result = database.sync_bins_with_contracts()
 
@@ -2525,7 +2532,7 @@ def _build_xlsx_report(summary: dict, _fmt, now_str: str):
 
         ("Входящих", summary.get("total_incoming_messages", 0)),
 
-        ("Исходящих", summary.get("total_outgoing_messages", 0)),
+        ("\u0418\u0441\u0445\u043e\u0434\u044f\u0449\u0438\u0445", summary.get("total_outgoing_messages", 0)),
 
         ("Ср. сообщений/диалог", _fmt(summary.get("average_messages_per_dialog"))),
 
@@ -2597,7 +2604,7 @@ def _build_xlsx_report(summary: dict, _fmt, now_str: str):
 
     # ── Sheet 3: Разделы ──
 
-    ws3 = wb.create_sheet("Разделы")
+    ws3 = wb.create_sheet("\u0420\u0430\u0437\u0434\u0435\u043b\u044b")
 
     headers3 = ["Раздел", "Диалогов", "Доля (%)"]
 
@@ -2643,11 +2650,11 @@ def _build_xlsx_report(summary: dict, _fmt, now_str: str):
 
 
 
-    # ── Sheet 5: БИНы (с договорами) ──
+    # -- Sheet 5: BINs with contracts --
 
-    ws5 = wb.create_sheet("БИНы (с договорами)")
+    ws5 = wb.create_sheet("\u0411\u0418\u041d\u044b (\u0441 \u0434\u043e\u0433\u043e\u0432\u043e\u0440\u0430\u043c\u0438)")
 
-    headers5 = ["БИН", "Обращений"]
+    headers5 = ["\u0411\u0418\u041d", "\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0439"]
 
     _style_header(ws5, headers5)
 
@@ -2665,11 +2672,11 @@ def _build_xlsx_report(summary: dict, _fmt, now_str: str):
 
 
 
-    # ── Sheet 6: БИНы (без договоров) ──
+    # -- Sheet 6: BINs without contracts --
 
-    ws6 = wb.create_sheet("БИНы (без договоров)")
+    ws6 = wb.create_sheet("\u0411\u0418\u041d\u044b (\u0431\u0435\u0437 \u0434\u043e\u0433\u043e\u0432\u043e\u0440\u043e\u0432)")
 
-    headers6 = ["БИН", "Обращений"]
+    headers6 = ["\u0411\u0418\u041d", "\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0439"]
 
     _style_header(ws6, headers6)
 
@@ -2889,7 +2896,8 @@ def _build_pdf_report(summary: dict, _fmt, now_str: str):
 
             import matplotlib.pyplot as plt
 
-            if not sections: return None
+            if not sections:
+                return None
 
             fig, ax = plt.subplots(figsize=(5, 3.5))
 
@@ -2907,13 +2915,14 @@ def _build_pdf_report(summary: dict, _fmt, now_str: str):
 
             if other_sum > 0:
 
-                labels.append("Остальные")
+                labels.append("\u041e\u0441\u0442\u0430\u043b\u044c\u043d\u044b\u0435")
 
                 sizes.append(other_sum)
 
             
 
-            if sum(sizes) == 0: return None
+            if sum(sizes) == 0:
+                return None
 
             
 
@@ -2921,7 +2930,7 @@ def _build_pdf_report(summary: dict, _fmt, now_str: str):
 
             ax.axis('equal')
 
-            plt.title("Разделы (доля обращений)")
+            plt.title("\u0420\u0430\u0437\u0434\u0435\u043b\u044b (\u0434\u043e\u043b\u044f \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0439)")
 
             
 
@@ -2971,7 +2980,7 @@ def _build_pdf_report(summary: dict, _fmt, now_str: str):
 
         ["Входящих", str(summary.get("total_incoming_messages", 0))],
 
-        ["Исходящих", str(summary.get("total_outgoing_messages", 0))],
+        ["\u0418\u0441\u0445\u043e\u0434\u044f\u0449\u0438\u0445", str(summary.get("total_outgoing_messages", 0))],
 
         ["Ср. время ответа", _fmt(summary.get("avg_response_time_minutes"), " мин")],
 
@@ -3035,7 +3044,7 @@ def _build_pdf_report(summary: dict, _fmt, now_str: str):
 
     if sections:
 
-        elements.append(Paragraph("Разделы", section_style))
+        elements.append(Paragraph("\u0420\u0430\u0437\u0434\u0435\u043b\u044b", section_style))
 
         chart_buf = _create_pie_chart(sections)
 
@@ -3079,13 +3088,13 @@ def _build_pdf_report(summary: dict, _fmt, now_str: str):
 
 
 
-    # ── 5. БИНы (с договорами) ──
+    # -- 5. BINs with contracts --
 
     bins_with = summary.get("top_bins_with_contract", [])
 
     if bins_with:
 
-        elements.append(Paragraph("БИНы (с договорами)", section_style))
+        elements.append(Paragraph("\u0411\u0418\u041d\u044b (\u0441 \u0434\u043e\u0433\u043e\u0432\u043e\u0440\u0430\u043c\u0438)", section_style))
 
         bin_rows = [
 
@@ -3095,17 +3104,17 @@ def _build_pdf_report(summary: dict, _fmt, now_str: str):
 
         ]
 
-        elements.append(_pdf_table(["БИН", "Обращений"], bin_rows))
+        elements.append(_pdf_table(["\u0411\u0418\u041d", "\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0439"], bin_rows))
 
 
 
-    # ── 6. БИНы (без договоров) ──
+    # -- 6. BINs without contracts --
 
     bins_without = summary.get("top_bins_without_contract", [])
 
     if bins_without:
 
-        elements.append(Paragraph("БИНы (без договоров)", section_style))
+        elements.append(Paragraph("\u0411\u0418\u041d\u044b (\u0431\u0435\u0437 \u0434\u043e\u0433\u043e\u0432\u043e\u0440\u043e\u0432)", section_style))
 
         bin_rows2 = [
 
@@ -3115,7 +3124,7 @@ def _build_pdf_report(summary: dict, _fmt, now_str: str):
 
         ]
 
-        elements.append(_pdf_table(["БИН", "Обращений"], bin_rows2))
+        elements.append(_pdf_table(["\u0411\u0418\u041d", "\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0439"], bin_rows2))
 
 
 
@@ -4391,11 +4400,184 @@ def open_dialog(
 
 
 
+def _publish_new_message_event(
+    *,
+    chat_id: int,
+    dialog_id: int | None,
+    message_id: int,
+    text: str,
+    direction: Literal["incoming", "outgoing"],
+    author: str | None,
+    attachments: list[dict] | None = None,
+) -> None:
+    if event_bus.loop:
+        asyncio.run_coroutine_threadsafe(
+            event_bus.publish_all(
+                "new_message",
+                {
+                    "chat_id": chat_id,
+                    "dialog_id": dialog_id,
+                    "message_id": message_id,
+                    "text": text,
+                    "direction": direction,
+                    "author": author,
+                    "attachments": attachments or [],
+                },
+            ),
+            event_bus.loop,
+        )
+
+
+def _store_onec_outgoing_text_message(
+    *,
+    chat_id: int,
+    dialog_id: int | None,
+    external_chat_id: str,
+    bin_value: str | None,
+    text: str,
+    author: str | None,
+    chat_title: str,
+    section: str | None,
+) -> int:
+    message_id = database.save_message(
+        chat_id=chat_id,
+        direction="outgoing",
+        text=text,
+        message_id=None,
+        author=author,
+        chat_title=chat_title,
+        username=None,
+        chat_type="onec",
+        section=section,
+        dialog_id=dialog_id,
+    )
+    _enqueue_onec_outgoing_message(
+        message_id=message_id,
+        chat_id=chat_id,
+        dialog_id=dialog_id,
+        external_chat_id=external_chat_id,
+        bin_value=bin_value,
+        text=text,
+        author=author,
+        section=section,
+    )
+    _publish_new_message_event(
+        chat_id=chat_id,
+        dialog_id=dialog_id,
+        message_id=message_id,
+        text=text,
+        direction="outgoing",
+        author=author,
+    )
+    return message_id
+
+
+def _process_onec_incoming_message(
+    *,
+    chat_id: int,
+    dialog_id: int,
+    external_chat_id: str,
+    bin_value: str,
+    message_text: str,
+    normalized_text: str,
+    author: str | None,
+    chat_title: str,
+    section_id: str | None,
+) -> None:
+    try:
+        chat_record = database.get_chat(chat_id)
+        chat_section = section_id or (chat_record.get("section") if chat_record else None)
+        chat_bin = (chat_record.get("bin") if chat_record else None) or bin_value
+
+        if normalized_text == "operator":
+            database.set_dialog_operator_mode(dialog_id, True)
+            operator_notice = "\u0412\u0430\u0448 \u0437\u0430\u043f\u0440\u043e\u0441 \u043f\u0435\u0440\u0435\u0434\u0430\u043d \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0443..."
+            _store_onec_outgoing_text_message(
+                chat_id=chat_id,
+                dialog_id=dialog_id,
+                external_chat_id=external_chat_id,
+                bin_value=chat_bin,
+                text=operator_notice,
+                author="System",
+                chat_title=chat_title,
+                section=chat_section,
+            )
+            database.create_operator_request_notifications(
+                chat_id,
+                dialog_id=dialog_id,
+                chat_title=chat_title,
+                section=chat_section,
+                bin_value=chat_bin,
+            )
+            return
+
+        if database.is_dialog_in_operator_mode(dialog_id):
+            return
+
+        faq_entry = database.find_faq_entry_by_keywords(message_text, chat_section)
+        if faq_entry:
+            response_section = faq_entry.get("section") or chat_section
+            response_text = faq_entry.get("answer", "").strip()
+            response_question = faq_entry.get("question", "").strip()
+            if response_question:
+                response_text = f"FAQ:\\n{response_question}\\n\\n{response_text}" if response_text else response_question
+            if not response_text:
+                response_text = "No ready answer was found. Send 'operator' to contact a specialist."
+            if response_section and response_section != chat_section:
+                database.set_chat_section(chat_id, response_section, dialog_id=dialog_id)
+                chat_section = response_section
+            database.set_dialog_operator_mode(dialog_id, False)
+            _store_onec_outgoing_text_message(
+                chat_id=chat_id,
+                dialog_id=dialog_id,
+                external_chat_id=external_chat_id,
+                bin_value=chat_bin,
+                text=response_text,
+                author="AutoBot",
+                chat_title=chat_title,
+                section=chat_section,
+            )
+            return
+
+        history = database.get_messages(chat_id, limit=6, dialog_id=dialog_id)
+        if ai_manager is not None:
+            ai_reply = ai_manager.generate_response(message_text, history)
+        else:
+            ai_reply = (
+                "AI assistant is temporarily unavailable. Please send 'operator' "
+                "to contact a specialist."
+            )
+
+        ai_reply = (ai_reply or "").strip()
+        if not ai_reply:
+            return
+
+        database.set_dialog_operator_mode(dialog_id, False)
+        _store_onec_outgoing_text_message(
+            chat_id=chat_id,
+            dialog_id=dialog_id,
+            external_chat_id=external_chat_id,
+            bin_value=chat_bin,
+            text=ai_reply,
+            author="AI Assistant",
+            chat_title=chat_title,
+            section=chat_section,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to post-process 1C message: ext_id=%s chat_id=%s dialog_id=%s",
+            external_chat_id,
+            chat_id,
+            dialog_id,
+        )
+
+
 @app.post("/integrations/1c/messages")
 @router.post("/integrations/1c/messages")
 def create_onec_message(
     request: OneCIncomingMessageRequest,
     http_request: Request,
+    background_tasks: BackgroundTasks,
     _: None = Depends(require_onec_token),
 ):
     section_id = _normalize_optional(request.section)
@@ -4418,25 +4600,6 @@ def create_onec_message(
 
     title_candidate = _normalize_optional(request.title)
     chat_title = title_candidate or f"1C client {external_chat_id}"
-
-    logger.info("Checking contract for 1C customer BIN: %s", bin_value)
-    contract_result = contract_checker.check_customer_contracts(bin_value)
-    has_contract = contract_result.get("has_contract", False)
-    logger.info("Contract check result for %s: has_contract=%s", bin_value, has_contract)
-    response_message = None
-
-    if not has_contract:
-        database.add_organization_without_contract(
-            customer_bin=bin_value,
-            customer_legal_address=contract_result.get("customer_legal_address"),
-            customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
-            customer_name_ru=contract_result.get("customer_name_ru"),
-        )
-        logger.info("1C Organization %s saved as organization without contract", bin_value)
-        response_message = (
-            f"No active {contract_checker.ACTIVE_CONTRACT_YEAR} contract was found for this organization.\n"
-            "Contact our office to sign a contract."
-        )
 
     database.upsert_chat(chat_id, chat_title, None, "onec", external_chat_id=external_chat_id)
     try:
@@ -4471,57 +4634,54 @@ def create_onec_message(
     incoming_attachments_payload = [
         item.dict() for item in [_attachment_response_from_record(record, http_request) for record in incoming_attachment_records]
     ]
-
-    if event_bus.loop:
-        asyncio.run_coroutine_threadsafe(
-            event_bus.publish_all("new_message", {
-                "chat_id": chat_id,
-                "dialog_id": dialog_id,
-                "message_id": message_id,
-                "text": stored_text,
-                "direction": "incoming",
-                "author": author,
-                "attachments": incoming_attachments_payload,
-            }),
-            event_bus.loop,
-        )
+    _publish_new_message_event(
+        chat_id=chat_id,
+        dialog_id=dialog_id,
+        message_id=message_id,
+        text=stored_text,
+        direction="incoming",
+        author=author,
+        attachments=incoming_attachments_payload,
+    )
 
     if section_id:
         database.set_chat_section(chat_id, section_id, dialog_id=dialog_id)
 
-    chat_record = database.get_chat(chat_id)
-    chat_section = section_id or (chat_record.get("section") if chat_record else None)
-    chat_bin = chat_record.get("bin") if chat_record else None
-    dialog_external_id = ((chat_record.get("external_chat_id") if chat_record else None) or external_chat_id)
+    existing_messages = database.get_messages(chat_id, limit=2, dialog_id=dialog_id)
+    is_first_message_in_dialog = len(existing_messages) <= 1
+    has_contract = not database.has_organization_without_contract(bin_value)
+    response_message = None
 
-    if response_message:
-        existing_messages = database.get_messages(chat_id, limit=5, dialog_id=dialog_id)
-        if len(existing_messages) <= 1:
-            contract_notice_id = database.save_message(
+    if is_first_message_in_dialog:
+        logger.info("Checking contract for 1C customer BIN: %s", bin_value)
+        contract_result = contract_checker.check_customer_contracts(bin_value)
+        has_contract = contract_result.get("has_contract", False)
+        logger.info("Contract check result for %s: has_contract=%s", bin_value, has_contract)
+
+        if has_contract:
+            database.remove_organization_without_contract(bin_value)
+        else:
+            database.add_organization_without_contract(
+                customer_bin=bin_value,
+                customer_legal_address=contract_result.get("customer_legal_address"),
+                customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
+                customer_name_ru=contract_result.get("customer_name_ru"),
+            )
+            logger.info("1C Organization %s saved as organization without contract", bin_value)
+            response_message = (
+                f"No active {contract_checker.ACTIVE_CONTRACT_YEAR} contract was found for this organization.\\n"
+                "Contact our office to sign a contract."
+            )
+            _store_onec_outgoing_text_message(
                 chat_id=chat_id,
-                direction="outgoing",
+                dialog_id=dialog_id,
+                external_chat_id=external_chat_id,
+                bin_value=bin_value,
                 text=response_message,
-                message_id=None,
                 author="System",
                 chat_title=chat_title,
-                username=None,
-                chat_type="onec",
-                section=chat_section,
-                dialog_id=dialog_id,
+                section=section_id,
             )
-            if dialog_external_id:
-                _enqueue_onec_outgoing_message(
-                    message_id=contract_notice_id,
-                    chat_id=chat_id,
-                    dialog_id=dialog_id,
-                    external_chat_id=dialog_external_id,
-                    bin_value=chat_bin or bin_value,
-                    text=response_message,
-                    author="System",
-                    section=chat_section,
-                )
-
-    auto_reply_sent = False
 
     if not message_text:
         return {
@@ -4532,115 +4692,18 @@ def create_onec_message(
             "dialog_id": dialog_id,
         }
 
-    if normalized_text == "operator":
-        database.set_dialog_operator_mode(dialog_id, True)
-        operator_notice = "\u0412\u0430\u0448 \u0437\u0430\u043f\u0440\u043e\u0441 \u043f\u0435\u0440\u0435\u0434\u0430\u043d \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0443..."
-        notice_message_id = database.save_message(
-            chat_id=chat_id,
-            direction="outgoing",
-            text=operator_notice,
-            message_id=None,
-            author="System",
-            chat_title=chat_title,
-            username=None,
-            chat_type="onec",
-            section=chat_section,
-            dialog_id=dialog_id,
-        )
-        if dialog_external_id:
-            _enqueue_onec_outgoing_message(
-                message_id=notice_message_id,
-                chat_id=chat_id,
-                dialog_id=dialog_id,
-                external_chat_id=dialog_external_id,
-                bin_value=chat_bin,
-                text=operator_notice,
-                author="System",
-                section=chat_section,
-            )
-        auto_reply_sent = True
-        database.create_operator_request_notifications(
-            chat_id,
-            dialog_id=dialog_id,
-            chat_title=chat_title,
-            section=chat_section,
-            bin_value=chat_bin,
-        )
-    elif not database.is_dialog_in_operator_mode(dialog_id):
-        faq_entry = database.find_faq_entry_by_keywords(message_text, chat_section)
-        if faq_entry:
-            response_section = faq_entry.get("section") or chat_section
-            response_text = faq_entry.get("answer", "").strip()
-            response_question = faq_entry.get("question", "").strip()
-            if response_question:
-                response_text = f"FAQ:\n{response_question}\n\n{response_text}" if response_text else response_question
-            if not response_text:
-                response_text = "No ready answer was found. Send 'operator' to contact a specialist."
-            if response_section and response_section != chat_section:
-                database.set_chat_section(chat_id, response_section, dialog_id=dialog_id)
-                chat_section = response_section
-            database.set_dialog_operator_mode(dialog_id, False)
-            faq_message_id = database.save_message(
-                chat_id=chat_id,
-                direction="outgoing",
-                text=response_text,
-                message_id=None,
-                author="AutoBot",
-                chat_title=chat_title,
-                username=None,
-                chat_type="onec",
-                section=chat_section,
-                dialog_id=dialog_id,
-            )
-            if dialog_external_id:
-                _enqueue_onec_outgoing_message(
-                    message_id=faq_message_id,
-                    chat_id=chat_id,
-                    dialog_id=dialog_id,
-                    external_chat_id=dialog_external_id,
-                    bin_value=chat_bin,
-                    text=response_text,
-                    author="AutoBot",
-                    section=chat_section,
-                )
-            auto_reply_sent = True
-
-        if not auto_reply_sent:
-            history = database.get_messages(chat_id, limit=6, dialog_id=dialog_id)
-            if ai_manager is not None:
-                ai_reply = ai_manager.generate_response(message_text, history)
-            else:
-                ai_reply = (
-                    "AI assistant is temporarily unavailable. Please send 'operator' "
-                    "to contact a specialist."
-                )
-            ai_reply = (ai_reply or "").strip()
-            if ai_reply:
-                database.set_dialog_operator_mode(dialog_id, False)
-                ai_message_id = database.save_message(
-                    chat_id=chat_id,
-                    direction="outgoing",
-                    text=ai_reply,
-                    message_id=None,
-                    author="AI Assistant",
-                    chat_title=chat_title,
-                    username=None,
-                    chat_type="onec",
-                    section=chat_section,
-                    dialog_id=dialog_id,
-                )
-                if dialog_external_id:
-                    _enqueue_onec_outgoing_message(
-                        message_id=ai_message_id,
-                        chat_id=chat_id,
-                        dialog_id=dialog_id,
-                        external_chat_id=dialog_external_id,
-                        bin_value=chat_bin,
-                        text=ai_reply,
-                        author="AI Assistant",
-                        section=chat_section,
-                    )
-                auto_reply_sent = True
+    background_tasks.add_task(
+        _process_onec_incoming_message,
+        chat_id=chat_id,
+        dialog_id=dialog_id,
+        external_chat_id=external_chat_id,
+        bin_value=bin_value,
+        message_text=message_text,
+        normalized_text=normalized_text,
+        author=author,
+        chat_title=chat_title,
+        section_id=section_id,
+    )
 
     return {
         "status": "ok",
@@ -4815,7 +4878,7 @@ def onec_outbox(
 
 ):
 
-    """1РЎ Р·Р°Р±РёСЂР°РµС‚ СЃРѕРѕР±С‰РµРЅРёСЏ РѕРїРµСЂР°С‚РѕСЂР° (Web->Backend) РґР»СЏ СѓРєР°Р·Р°РЅРЅРѕРіРѕ external_chat_id."""
+    """1C pulls operator messages (Web->Backend) for the specified external_chat_id."""
 
     items = []
 
@@ -4847,7 +4910,7 @@ def onec_ack(
 
 ):
 
-    """1РЎ РїРѕРґС‚РІРµСЂР¶РґР°РµС‚ РґРѕСЃС‚Р°РІРєСѓ (delivered_ids) Рё/РёР»Рё СЃРѕРѕР±С‰Р°РµС‚ failed_ids СЃ РѕС€РёР±РєРѕР№."""
+    """1С подтверждает доставку (delivered_ids) и/или сообщает failed_ids с ошибкой."""
 
     try:
 
@@ -4909,7 +4972,7 @@ def onec_close_dialog(
 
 ):
 
-    """1РЎ Р·Р°РєСЂС‹РІР°РµС‚ Р°РєС‚РёРІРЅС‹Р№ РґРёР°Р»РѕРі (РѕР±СЂР°С‰РµРЅРёРµ) РєР»РёРµРЅС‚Р°."""
+    """1С закрывает активный диалог (обращение) клиента."""
 
     external_chat_id = body.external_chat_id.strip()
 
@@ -5021,7 +5084,7 @@ def onec_submit_rating(
 
 ):
 
-    """1РЎ СЃРѕС…СЂР°РЅСЏРµС‚ РѕС†РµРЅРєСѓ РєР°С‡РµСЃС‚РІР° РѕР±СЃР»СѓР¶РёРІР°РЅРёСЏ (РѕРїРµСЂР°С‚РѕСЂ РёР»Рё AI)."""
+    """1С сохраняет оценку качества обслуживания (оператор или AI)."""
 
     external_chat_id = body.external_chat_id.strip()
 
@@ -5392,6 +5455,8 @@ app.include_router(router)
 
 
 app.include_router(kabinet_backend.router, prefix="/kabinet")
+
+
 
 
 

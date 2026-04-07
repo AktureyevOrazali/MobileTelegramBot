@@ -32,24 +32,27 @@ const EChartsWrapper: React.FC<EChartsWrapperProps> = ({
         }
         chartInstance.current = currentInstance;
 
-        if (onEvents) {
-            Object.entries(onEvents).forEach(([eventName, handler]) => {
-                chartInstance.current?.on(eventName, handler as any);
-            });
-        }
-
         return () => {
             if (chartInstance.current) {
-                if (onEvents) {
-                    Object.entries(onEvents).forEach(([eventName, handler]) => {
-                        chartInstance.current?.off(eventName, handler as any);
-                    });
-                }
                 chartInstance.current.dispose();
                 chartInstance.current = null;
             }
         };
     }, [theme]);
+
+    useEffect(() => {
+        if (!chartInstance.current || !onEvents) return;
+
+        Object.entries(onEvents).forEach(([eventName, handler]) => {
+            chartInstance.current?.on(eventName, handler as any);
+        });
+
+        return () => {
+            Object.entries(onEvents).forEach(([eventName, handler]) => {
+                chartInstance.current?.off(eventName, handler as any);
+            });
+        };
+    }, [onEvents]);
 
     // Update chart when option changes
     useEffect(() => {

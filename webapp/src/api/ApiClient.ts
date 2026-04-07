@@ -49,6 +49,31 @@ export class ApiError extends Error {
 
 const BUILD_TIME_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim();
 const BUILD_TIME_API_TOKEN = (import.meta.env.VITE_API_TOKEN ?? '').trim();
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]']);
+
+function isLoopbackHost(hostname: string): boolean {
+  return LOOPBACK_HOSTS.has(hostname.trim().toLowerCase());
+}
+
+function resolveRuntimeBaseUrl(configuredBaseUrl: string): string {
+  const normalizedBaseUrl = configuredBaseUrl.trim();
+  if (!normalizedBaseUrl || typeof window === 'undefined') {
+    return normalizedBaseUrl;
+  }
+
+  try {
+    const apiUrl = new URL(normalizedBaseUrl);
+    const browserHostname = window.location.hostname.trim().toLowerCase();
+    if (!browserHostname || isLoopbackHost(browserHostname) || !isLoopbackHost(apiUrl.hostname)) {
+      return normalizedBaseUrl;
+    }
+
+    apiUrl.hostname = browserHostname;
+    return apiUrl.toString();
+  } catch {
+    return normalizedBaseUrl;
+  }
+}
 
 export interface ApiClientOptions {
   baseUrl?: string;
@@ -65,7 +90,7 @@ export class ApiClient {
   private currentUserProfile: UserProfile | null = null;
 
   constructor(options: ApiClientOptions = {}) {
-    const resolvedBaseUrl = (options.baseUrl ?? BUILD_TIME_BASE_URL).replace(/\/$/, '');
+    const resolvedBaseUrl = resolveRuntimeBaseUrl(options.baseUrl ?? BUILD_TIME_BASE_URL).replace(/\/$/, '');
     if (!resolvedBaseUrl) {
       throw new Error('API base URL is required. Set VITE_API_BASE_URL or pass it via ApiClient options.');
     }

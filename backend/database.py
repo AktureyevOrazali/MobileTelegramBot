@@ -162,6 +162,36 @@ def _execute_with_retry(conn, query: str, params: Sequence[Any] | None):
         cursor.execute(query, params or ())
         return cursor
 
+
+def _as_optional_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolved_rating_operator_join(ds_alias: str = "ds") -> str:
+    return f"""
+        LEFT JOIN LATERAL (
+            SELECT dos.operator_name
+            FROM dialog_operator_stats dos
+            WHERE (
+                {ds_alias}.appeal_id IS NOT NULL AND dos.appeal_id = {ds_alias}.appeal_id
+            ) OR (
+                {ds_alias}.appeal_id IS NULL
+                AND dos.appeal_id IS NULL
+                AND dos.dialog_id = {ds_alias}.dialog_id
+            )
+            ORDER BY dos.messages_sent DESC NULLS LAST,
+                     dos.response_count DESC NULLS LAST,
+                     dos.operator_name ASC
+            LIMIT 1
+        ) resolved_operator ON TRUE
+    """
+
+
 USER_COLUMN_NAMES = (
     "id",
     "email",
@@ -3656,17 +3686,19 @@ def get_dashboard_summary(
 
     # ── Operator filtering ──
     operator_assigned_bins: List[str] | None = None
-    target_operator_name: str | None = None
+    target_operator_names: List[str] = []
     operator_bin_filter_sql = ""
     operator_bin_filter_params: List[str] = []
+    rating_operator_join_sql = _resolved_rating_operator_join("ds")
 
     if operator_id is not None:
         target = get_user_by_id(operator_id)
         if not target:
             return _empty_summary()
-        target_operator_name = str(target.get("name") or "").strip()
-        if not target_operator_name:
-            target_operator_name = str(target.get("login") or "").strip()
+        for candidate in (target.get("name"), target.get("login")):
+            normalized = str(candidate or "").strip()
+            if normalized and normalized not in target_operator_names:
+                target_operator_names.append(normalized)
         operator_assigned_bins = get_user_bins(operator_id)
         if not operator_assigned_bins:
             return _empty_summary()
@@ -3726,22 +3758,19 @@ def get_dashboard_summary(
         # ══════════════════════════════════════════════════════
         # 1.5 CSAT METRICS (Separated for precise operator mapping)
         # ══════════════════════════════════════════════════════
-        csat_op_cond = ""
-        csat_op_params: List[str] = []
-        if operator_id is not None and target:
-            csat_op_cond = """
-              AND EXISTS (
-                  SELECT 1 FROM dialog_operator_stats dos 
-                  WHERE dos.dialog_id = ds.dialog_id 
-                    AND dos.operator_name = %s
-              )
-            """
-            csat_op_params.append(target["name"])
+        csat_operator_filter_sql = ""
+        csat_operator_filter_params: List[str] = []
+        if target_operator_names:
+            _operator_placeholders = ", ".join("%s" for _ in target_operator_names)
+            csat_operator_filter_sql = (
+                f" AND resolved_operator.operator_name IN ({_operator_placeholders})"
+            )
+            csat_operator_filter_params = list(target_operator_names)
 
         csat_row = execute(
             """
             SELECT
-                AVG(ds.csat_rating) AS csat_avg,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ds.csat_rating) AS csat_median,
                 COUNT(ds.csat_rating) AS csat_count,
                 COALESCE(SUM(CASE WHEN ds.csat_rating = 1 THEN 1 ELSE 0 END), 0) AS csat_1,
                 COALESCE(SUM(CASE WHEN ds.csat_rating = 2 THEN 1 ELSE 0 END), 0) AS csat_2,
@@ -3749,17 +3778,27 @@ def get_dashboard_summary(
                 COALESCE(SUM(CASE WHEN ds.csat_rating = 4 THEN 1 ELSE 0 END), 0) AS csat_4,
                 COALESCE(SUM(CASE WHEN ds.csat_rating = 5 THEN 1 ELSE 0 END), 0) AS csat_5
             FROM dialog_stats ds
+            """
+            + rating_operator_join_sql
+            + """
             WHERE ds.started_at >= %s AND ds.started_at < %s
               AND COALESCE(ds.is_ai_closed, FALSE) = FALSE
+              AND ds.csat_rating IS NOT NULL
+              AND resolved_operator.operator_name IS NOT NULL
             """
             + operator_bin_filter_sql
-            + csat_op_cond,
-            (start_iso, end_exclusive_iso, *operator_bin_filter_params, *csat_op_params),
+            + csat_operator_filter_sql,
+            (
+                start_iso,
+                end_exclusive_iso,
+                *operator_bin_filter_params,
+                *csat_operator_filter_params,
+            ),
         ).fetchone()
 
         csat_average = (
-            round(float(csat_row["csat_avg"]), 2)
-            if csat_row["csat_avg"] is not None else None
+            round(_as_optional_float(csat_row["csat_median"]), 2)
+            if csat_row["csat_median"] is not None else None
         )
         csat_count = int(csat_row["csat_count"] or 0)
         csat_distribution = [
@@ -3770,7 +3809,7 @@ def get_dashboard_summary(
         ai_csat_row = execute(
             """
             SELECT
-                AVG(ds.ai_csat_rating) AS ai_csat_avg,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ds.ai_csat_rating) AS ai_csat_median,
                 COUNT(ds.ai_csat_rating) AS ai_csat_count,
                 COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 1 THEN 1 ELSE 0 END), 0) AS ai_csat_1,
                 COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 2 THEN 1 ELSE 0 END), 0) AS ai_csat_2,
@@ -3786,8 +3825,8 @@ def get_dashboard_summary(
         ).fetchone()
 
         ai_csat_average = (
-            round(float(ai_csat_row["ai_csat_avg"]), 2)
-            if ai_csat_row["ai_csat_avg"] is not None else None
+            round(_as_optional_float(ai_csat_row["ai_csat_median"]), 2)
+            if ai_csat_row["ai_csat_median"] is not None else None
         )
         ai_csat_count = int(ai_csat_row["ai_csat_count"] or 0)
         ai_csat_distribution = [
@@ -4024,12 +4063,13 @@ def get_dashboard_summary(
                 )
             """
             sq_params.extend(operator_bin_filter_params)
-        if target_operator_name:
-            sq_bin_filter += """
+        if target_operator_names:
+            _sq_operator_ph = ", ".join("%s" for _ in target_operator_names)
+            sq_bin_filter += f"""
                 AND EXISTS (
                     SELECT 1
                     FROM dialog_operator_stats dos2
-                    WHERE dos2.operator_name = %s
+                    WHERE dos2.operator_name IN ({_sq_operator_ph})
                       AND (
                           (sq.appeal_id IS NOT NULL AND dos2.appeal_id = sq.appeal_id)
                           OR
@@ -4037,7 +4077,7 @@ def get_dashboard_summary(
                       )
                 )
             """
-            sq_params.append(target_operator_name)
+            sq_params.extend(target_operator_names)
 
         question_rows = execute(
             """
@@ -4104,45 +4144,59 @@ def get_dashboard_summary(
         # ══════════════════════════════════════════════════════
         # 6. AGENT BREAKDOWN (from dialog_operator_stats)
         # ══════════════════════════════════════════════════════
-        if operator_bin_filter_params:
-            agent_rows = execute(
-                """
-                SELECT dos.operator_name,
-                       SUM(dos.messages_sent) AS message_count,
-                       COUNT(DISTINCT dos.dialog_id) AS dialog_count,
-                       SUM(dos.avg_response_seconds * dos.response_count) / NULLIF(SUM(dos.response_count), 0) AS avg_response_time,
-                       AVG(ds.csat_rating) AS avg_csat
-                FROM dialog_operator_stats dos
-                JOIN dialog_stats ds ON ds.dialog_id = dos.dialog_id
-                WHERE dos.started_at >= %s AND dos.started_at < %s
-                """
-                + operator_bin_filter_sql
-                + """
-                GROUP BY dos.operator_name
-                ORDER BY dialog_count DESC
-                """,
-                (start_iso, end_exclusive_iso, *operator_bin_filter_params),
-            ).fetchall()
-        else:
-            agent_rows = execute(
-                """
-                SELECT dos.operator_name,
-                       SUM(dos.messages_sent) AS message_count,
-                       COUNT(DISTINCT dos.dialog_id) AS dialog_count,
-                       SUM(dos.avg_response_seconds * dos.response_count) / NULLIF(SUM(dos.response_count), 0) AS avg_response_time,
-                       AVG(ds.csat_rating) AS avg_csat
-                FROM dialog_operator_stats dos
-                JOIN dialog_stats ds ON ds.dialog_id = dos.dialog_id
-                WHERE dos.started_at >= %s AND dos.started_at < %s
-                GROUP BY dos.operator_name
-                ORDER BY dialog_count DESC
-                """,
-                (start_iso, end_exclusive_iso),
-            ).fetchall()
+        agent_rows = execute(
+            """
+            SELECT dos.operator_name,
+                   SUM(dos.messages_sent) AS message_count,
+                   COUNT(DISTINCT dos.dialog_id) AS dialog_count,
+                   SUM(dos.avg_response_seconds * dos.response_count) / NULLIF(SUM(dos.response_count), 0) AS avg_response_time
+            FROM dialog_operator_stats dos
+            JOIN dialog_stats ds ON (
+                (dos.appeal_id IS NOT NULL AND ds.appeal_id = dos.appeal_id)
+                OR (
+                    dos.appeal_id IS NULL
+                    AND ds.appeal_id IS NULL
+                    AND ds.dialog_id = dos.dialog_id
+                )
+            )
+            WHERE dos.started_at >= %s AND dos.started_at < %s
+            """
+            + operator_bin_filter_sql
+            + """
+            GROUP BY dos.operator_name
+            ORDER BY dialog_count DESC
+            """,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchall()
+
+        agent_csat_rows = execute(
+            """
+            SELECT resolved_operator.operator_name,
+                   PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ds.csat_rating) AS median_csat
+            FROM dialog_stats ds
+            """
+            + rating_operator_join_sql
+            + """
+            WHERE ds.started_at >= %s AND ds.started_at < %s
+              AND COALESCE(ds.is_ai_closed, FALSE) = FALSE
+              AND ds.csat_rating IS NOT NULL
+              AND resolved_operator.operator_name IS NOT NULL
+            """
+            + operator_bin_filter_sql
+            + """
+            GROUP BY resolved_operator.operator_name
+            """,
+            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+        ).fetchall()
+        agent_csat_map = {
+            str(row["operator_name"]): _as_optional_float(row["median_csat"])
+            for row in agent_csat_rows
+            if row.get("operator_name")
+        }
 
         agent_breakdown: List[dict] = []
         for row in agent_rows:
-            agent_name = row["operator_name"] or "Без имени"
+            agent_name = row["operator_name"] or "\u0411\u0435\u0437 \u0438\u043c\u0435\u043d\u0438"
             messages_sent = int(row["message_count"] or 0)
             dialogs_handled = int(row["dialog_count"] or 0)
             avg_msgs = messages_sent / dialogs_handled if dialogs_handled else 0.0
@@ -4150,9 +4204,7 @@ def get_dashboard_summary(
                 float(row["avg_response_time"]) / 60.0
                 if row["avg_response_time"] is not None else None
             )
-            avg_csat = (
-                float(row["avg_csat"]) if row["avg_csat"] is not None else None
-            )
+            avg_csat = agent_csat_map.get(str(agent_name))
             agent_breakdown.append({
                 "name": agent_name,
                 "messages": messages_sent,
@@ -4163,7 +4215,6 @@ def get_dashboard_summary(
                 "avg_csat": avg_csat,
             })
 
-        # ══════════════════════════════════════════════════════
         # 7. RECENT ACTIVITY (by day)
         # ══════════════════════════════════════════════════════
         activity_rows = execute(
@@ -4318,8 +4369,34 @@ def get_dashboard_summary(
         # ══════════════════════════════════════════════════════
         dm_rows = execute(
             """
-            SELECT dialog_id, bin, is_ai_closed, avg_response_time_seconds, csat_rating, ai_csat_rating
+            SELECT ds.dialog_id,
+                   ds.bin,
+                   ds.is_ai_closed,
+                   ds.avg_response_time_seconds,
+                   ds.csat_rating,
+                   ds.ai_csat_rating,
+                   resolved_operator.operator_name,
+                   COALESCE(
+                       NULLIF(TRIM((
+                           SELECT m.author
+                           FROM messages m
+                           WHERE m.dialog_id = ds.dialog_id
+                             AND m.direction = 'incoming'
+                             AND NULLIF(TRIM(COALESCE(m.author, '')), '') IS NOT NULL
+                             AND (ds.started_at IS NULL OR m.created_at >= ds.started_at)
+                             AND (ds.ended_at IS NULL OR m.created_at <= ds.ended_at)
+                           ORDER BY m.created_at DESC
+                           LIMIT 1
+                       )), ''),
+                       NULLIF(TRIM(c.title), ''),
+                       NULLIF(TRIM(c.username), ''),
+                       NULLIF(TRIM(c.external_chat_id), '')
+                   ) AS rated_by
             FROM dialog_stats ds
+            """
+            + rating_operator_join_sql
+            + """
+            LEFT JOIN chats c ON c.chat_id = ds.chat_id
             WHERE ds.started_at >= %s AND ds.started_at < %s
             """
             + operator_bin_filter_sql,
@@ -4340,6 +4417,8 @@ def get_dashboard_summary(
                 "response_time_minutes": rt_min,
                 "csat_rating": int(row["csat_rating"]) if row["csat_rating"] is not None else None,
                 "ai_csat_rating": int(row["ai_csat_rating"]) if row["ai_csat_rating"] is not None else None,
+                "rated_by": row["rated_by"],
+                "operator_name": row["operator_name"],
             })
 
         # Add open dialogs to dialog_metrics
@@ -4364,6 +4443,8 @@ def get_dashboard_summary(
                 "response_time_minutes": None,
                 "csat_rating": None,
                 "ai_csat_rating": None,
+                "rated_by": None,
+                "operator_name": None,
             })
 
     return {

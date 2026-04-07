@@ -318,7 +318,7 @@ const RegionActivityMap: React.FC<{
                 unreadCount: rStats?.unreadCount ?? 0,
                 withContract,
                 withoutContract,
-                breakdownLabel: 'Районы по БИН',
+                breakdownLabel: '\u0420\u0430\u0439\u043e\u043d\u044b \u043f\u043e \u0411\u0418\u041d',
                 breakdownList: rayonBreakdown.map(r => ({ name: r.name, value: r.bins })),
                 rayonBreakdown, // needed for Top 5 charts in oblast mode
                 stats: rStats,
@@ -384,7 +384,7 @@ const RegionActivityMap: React.FC<{
                 unreadCount: rStats?.unreadCount ?? 0,
                 withContract,
                 withoutContract,
-                breakdownLabel: 'Топ БИН по обращениям',
+                breakdownLabel: '\u0422\u043e\u043f \u0411\u0418\u041d \u043f\u043e \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u044f\u043c',
                 breakdownList: topBinsList,
                 rayonBreakdown: [],
                 stats: rStats,
@@ -420,6 +420,32 @@ const RegionActivityMap: React.FC<{
         [expandedPanels, handlePanelToggle],
     );
 
+    const medianFromDistribution = (distribution: number[], count: number): number | null => {
+        if (count <= 0) return null;
+
+        const leftIndex = Math.floor((count - 1) / 2);
+        const rightIndex = Math.floor(count / 2);
+        let cumulative = 0;
+        let leftValue: number | null = null;
+        let rightValue: number | null = null;
+
+        for (let index = 0; index < distribution.length; index += 1) {
+            cumulative += distribution[index] ?? 0;
+            if (leftValue === null && cumulative > leftIndex) {
+                leftValue = index + 1;
+            }
+            if (rightValue === null && cumulative > rightIndex) {
+                rightValue = index + 1;
+            }
+            if (leftValue !== null && rightValue !== null) {
+                break;
+            }
+        }
+
+        if (leftValue === null || rightValue === null) return null;
+        return (leftValue + rightValue) / 2;
+    };
+
     const renderRatingCard = (
         title: string,
         average: number | null,
@@ -451,7 +477,7 @@ const RegionActivityMap: React.FC<{
                             <div className="dashboard-rating__score">
                                 {average !== null ? average.toFixed(1) : '—'}
                             </div>
-                            <div className="dashboard-rating__caption">Средняя оценка</div>
+                            <div className="dashboard-rating__caption">{'\u041c\u0435\u0434\u0438\u0430\u043d\u043d\u0430\u044f \u043e\u0446\u0435\u043d\u043a\u0430'}</div>
                             <div className="dashboard-rating__count">
                                 {count} отзывов
                             </div>
@@ -466,7 +492,7 @@ const RegionActivityMap: React.FC<{
                                         borderColor: isDark ? 'rgba(137, 152, 176, 0.18)' : 'rgba(137, 152, 176, 0.22)',
                                         borderWidth: 1,
                                         textStyle: { color: isDark ? '#edf3fb' : '#1d2940', fontSize: 12 },
-                                        formatter: '{b} ★: <b>{c}</b>',
+                                        formatter: '{b} \u2605: <b>{c}</b>',
                                     },
                                     grid: { top: 8, right: 8, bottom: 4, left: 8, containLabel: true },
                                     xAxis: {
@@ -548,7 +574,7 @@ const RegionActivityMap: React.FC<{
                         <span className="kz-map__district-title">
                             {activeAnalytics?.title || selectedOblastName}
                             {activeAnalytics && activeAnalytics.totalBins > 0 && (
-                                <span className="kz-map__district-count"> — {activeAnalytics.totalBins} БИН</span>
+                                <span className="kz-map__district-count">{'\u2014'} {activeAnalytics.totalBins} {'\u0411\u0418\u041d'}</span>
                             )}
                         </span>
                     )}
@@ -672,7 +698,7 @@ const RegionActivityMap: React.FC<{
                                 <div className="kz-panel__stats">
                                     <div className="kz-panel__stat">
                                         <span className="kz-panel__stat-value">{activeAnalytics.totalBins}</span>
-                                        <span className="kz-panel__stat-label">БИН</span>
+                                        <span className="kz-panel__stat-label">{'\u0411\u0418\u041d'}</span>
                                     </div>
                                     <div className="kz-panel__stat">
                                         <span className="kz-panel__stat-value">{activeAnalytics.totalDialogs}</span>
@@ -732,7 +758,7 @@ const RegionActivityMap: React.FC<{
                                         </span>
                                         <span className="kz-panel__legend-item">
                                             <span className="kz-panel__legend-dot kz-panel__legend-dot--no-contract" />
-                                            Без: {activeAnalytics.withoutContract}
+                                            {'\u0411\u0435\u0437'}: {activeAnalytics.withoutContract}
                                         </span>
                                     </div>
                                 </details>
@@ -1012,13 +1038,13 @@ const RegionActivityMap: React.FC<{
                                 {/* Average customer rating (SCAT + AI) */}
                                 {(() => {
                                     const stats = activeAnalytics.stats;
-                                    const csatAvg = stats && stats.csatCount > 0 ? stats.csatSum / stats.csatCount : null;
-                                    const aiCsatAvg = stats && stats.aiCsatCount > 0 ? stats.aiCsatSum / stats.aiCsatCount : null;
+                                    const csatAvg = stats ? medianFromDistribution(stats.csatDistribution ?? [0, 0, 0, 0, 0], stats.csatCount ?? 0) : null;
+                                    const aiCsatAvg = stats ? medianFromDistribution(stats.aiCsatDistribution ?? [0, 0, 0, 0, 0], stats.aiCsatCount ?? 0) : null;
                                     const csatDistribution = stats?.csatDistribution ?? [0, 0, 0, 0, 0];
                                     const aiCsatDistribution = stats?.aiCsatDistribution ?? [0, 0, 0, 0, 0];
                                     return (
                                         <details className="kz-panel__section kz-panel__collapsible" open={expandedPanels.ratings} onClick={(event) => handlePanelContainerClick(event, 'ratings')}>
-                                            <summary className="kz-panel__section-title" onClick={(event) => handlePanelSummaryClick(event, 'ratings')}>Средняя оценка клиентов</summary>
+                                            <summary className="kz-panel__section-title" onClick={(event) => handlePanelSummaryClick(event, 'ratings')}>{'\u041c\u0435\u0434\u0438\u0430\u043d\u043d\u0430\u044f \u043e\u0446\u0435\u043d\u043a\u0430 \u043a\u043b\u0438\u0435\u043d\u0442\u043e\u0432'}</summary>
                                             <div style={{ display: 'grid', gap: 12, marginTop: 10 }}>
                                                 {renderRatingCard(
                                                     'Удовлетворенность (SCAT)',
@@ -1063,7 +1089,7 @@ const RegionActivityMap: React.FC<{
                                                 {rayon?.name || 'Район'}
                                             </div>
                                             <div className="kz-map__tooltip-value">
-                                                {rayonValue} БИН
+                                                {rayonValue} {'\u0411\u0418\u041d'}
                                             </div>
                                             {rs && (
                                                 <div className="kz-map__tooltip-stats">
@@ -1086,7 +1112,7 @@ const RegionActivityMap: React.FC<{
                                                 {REGION_LABELS[regionKey] ?? hovered.key}
                                             </div>
                                             <div className="kz-map__tooltip-value">
-                                                {counts[regionKey] ?? 0} БИН
+                                                {counts[regionKey] ?? 0} {'\u0411\u0418\u041d'}
                                             </div>
                                             {rs && (
                                                 <div className="kz-map__tooltip-stats">
@@ -1115,5 +1141,7 @@ const RegionActivityMap: React.FC<{
 });
 
 export default RegionActivityMap;
+
+
 
 

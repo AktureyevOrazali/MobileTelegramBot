@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import type { ApiClient } from '../api/ApiClient';
@@ -38,6 +38,8 @@ interface UseChatConversationResult {
 
 const DEFAULT_FETCH_ERROR = 'Не удалось загрузить сообщения.';
 const DEFAULT_SEND_ERROR = 'Не удалось отправить сообщение.';
+const MESSAGE_FETCH_LIMIT = 100;
+const MESSAGE_RELOAD_DEBOUNCE_MS = 120;
 
 export const useChatConversation = ({
   apiClient,
@@ -53,6 +55,8 @@ export const useChatConversation = ({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inflightLoadRef = useRef<Promise<void> | null>(null);
+  const reloadTimerRef = useRef<number | null>(null);
 
   const canReply = Boolean(apiClient.currentUser?.canReply);
 
@@ -83,22 +87,57 @@ export const useChatConversation = ({
       return;
     }
 
+    if (inflightLoadRef.current) {
+      await inflightLoadRef.current;
+      return;
+    }
+
+    const task = (async () => {
+      try {
+        setLoading(true);
+        const data = await apiClient.fetchMessages(chat.chatId, MESSAGE_FETCH_LIMIT, chat.dialogId);
+        setMessages(data);
+        setError(null);
+      } catch (err) {
+        setError(extractErrorMessage(err, DEFAULT_FETCH_ERROR));
+      } finally {
+        setLoading(false);
+        requestAnimationFrame(() => scrollToBottom(false));
+      }
+    })();
+
+    inflightLoadRef.current = task;
     try {
-      setLoading(true);
-      const data = await apiClient.fetchMessages(chat.chatId, 200, chat.dialogId);
-      setMessages(data);
-      setError(null);
-    } catch (err) {
-      setError(extractErrorMessage(err, DEFAULT_FETCH_ERROR));
+      await task;
     } finally {
-      setLoading(false);
-      requestAnimationFrame(() => scrollToBottom(false));
+      inflightLoadRef.current = null;
     }
   }, [apiClient, chat, scrollToBottom]);
+
+  const scheduleLoadMessages = useCallback((delay = MESSAGE_RELOAD_DEBOUNCE_MS) => {
+    if (!chat || reloadTimerRef.current !== null) {
+      return;
+    }
+
+    reloadTimerRef.current = window.setTimeout(() => {
+      reloadTimerRef.current = null;
+      void loadMessages();
+    }, delay);
+  }, [chat, loadMessages]);
+
+  useEffect(() => () => {
+    if (reloadTimerRef.current !== null) {
+      window.clearTimeout(reloadTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     setInput('');
     setTemplates([]);
+    if (reloadTimerRef.current !== null) {
+      window.clearTimeout(reloadTimerRef.current);
+      reloadTimerRef.current = null;
+    }
   }, [chat?.chatId, chat?.dialogId]);
 
   useEffect(() => {
@@ -153,12 +192,12 @@ export const useChatConversation = ({
         if (typeof message.dialog_id === 'number' && message.dialog_id !== chat.dialogId) {
           return;
         }
-        void loadMessages();
+        scheduleLoadMessages();
       },
     });
 
     return cleanup;
-  }, [apiClient, chat, loadMessages]);
+  }, [apiClient, chat, scheduleLoadMessages]);
 
   const handlePresetClick = useCallback((text: string) => {
     setInput(text);
@@ -188,8 +227,7 @@ export const useChatConversation = ({
       await apiClient.sendMessage(chat.chatId, trimmed, chat.dialogId, attachmentIds);
       setInput('');
       options.onSent?.();
-      await loadMessages();
-      requestAnimationFrame(() => scrollToBottom(true));
+      scheduleLoadMessages(80);
       setError(null);
       return true;
     } catch (err) {
@@ -198,7 +236,7 @@ export const useChatConversation = ({
     } finally {
       setSending(false);
     }
-  }, [apiClient, chat, input, loadMessages, scrollToBottom]);
+  }, [apiClient, chat, input, scheduleLoadMessages]);
 
   return {
     canReply,

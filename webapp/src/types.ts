@@ -355,6 +355,8 @@ export interface DashboardDialogMetricRaw {
   response_time_minutes: number | null;
   csat_rating?: number | null;
   ai_csat_rating?: number | null;
+  rated_by?: string | null;
+  operator_name?: string | null;
 }
 
 export interface DashboardSummaryRaw {
@@ -459,6 +461,8 @@ export interface DashboardDialogMetric {
   responseTimeMinutes: number | null;
   csatRating: number | null;
   aiCsatRating: number | null;
+  ratedBy: string | null;
+  operatorName: string | null;
 }
 
 export interface DashboardSummary {
@@ -523,6 +527,7 @@ export interface ReplyTemplate {
   createdBy?: number | null;
   createdAt: Date;
 }
+
 
 
 

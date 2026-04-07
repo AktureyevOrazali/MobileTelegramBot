@@ -8,7 +8,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-# Загружаем .env из текущей папки (backend/.env)
+# Load .env from the backend package or next to the bundled executable.
 def _load_env() -> None:
     """Load environment variables for the backend.
 
@@ -27,7 +27,7 @@ def _load_env() -> None:
 
     for path in candidates:
         if path.exists():
-            load_dotenv(dotenv_path=path)
+            load_dotenv(dotenv_path=path, override=True)
             break
 
 

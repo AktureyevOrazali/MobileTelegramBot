@@ -2412,7 +2412,7 @@ function handlePaste(e) {
         if (!clipData) return; // Нет данных — пусть работает стандартно
 
         // Способ 1: Современный API (clipboardData.items)
-        if (clipData.items && clipData.items.length > 0) {
+        if (clipData.items) {
             for (var i = 0; i < clipData.items.length; i++) {
                 if (clipData.items[i].type && clipData.items[i].type.indexOf('image') !== -1) {
                     if (e.preventDefault) e.preventDefault();
@@ -2431,72 +2431,24 @@ function handlePaste(e) {
             }
         }
 
-        // Способ 2: Проверяем наличие текста в буфере
-        var hasText = false;
-        try {
-            var txt1 = clipData.getData('Text');
-            var txt2 = clipData.getData('text/plain');
-            if ((txt1 && txt1.length > 0) || (txt2 && txt2.length > 0)) {
-                hasText = true;
-            }
-        } catch (ex) {}
-
-        // Если это не текст и современные API не нашли картинку - 
-        // используем запасной механизм IE через скрытый div
-        if (!hasText) {
-            if (e.preventDefault) e.preventDefault();
-            e.returnValue = false;
-            
-            // Запускаем асинхронно, чтобы избежать зависания MSHTML при смене фокуса
-            window.setTimeout(function() {
-                triggerIEPaste();
-            }, 10);
-        }
-
-    } catch (err) {}
-}
-
-/* Вызов ручной вставки из буфера 1С-кнопкой */
-function trigger1CPaste() {
-    triggerIEPaste();
-}
-
-/**
- * Вставляет изображение через hidden contenteditable div (fallback для старых IE/MSHTML).
- * Выполняется асинхронно, чтобы не "повесить" движок 1С.
- */
-function triggerIEPaste() {
-    var pasteDiv = document.getElementById('pasteTarget');
-    var input = document.getElementById('messageInput');
-    if (!pasteDiv) return;
-
-    try {
-        pasteDiv.innerHTML = '';
-        pasteDiv.focus();
-        
-        // Программно вызываем вставку (в IE сработает для картинок)
-        document.execCommand('paste');
-
-        // Ждем пока IE отрендерит <img>
-        window.setTimeout(function() {
+        // Способ 2: IE — ищем data:image в HTML-данных clipboard
+        if (clipData.getData) {
             try {
-                var imgs = pasteDiv.getElementsByTagName('img');
-                for (var i = 0; i < imgs.length; i++) {
-                    var src = imgs[i].src || imgs[i].getAttribute('src') || '';
-                    // IE вставляет картинки в виде base64 данных
-                    if (src.indexOf('data:image') === 0) {
-                        _sendPastedImage(src);
-                        break;
+                var htmlData = clipData.getData('text/html');
+                if (htmlData) {
+                    var imgMatch = htmlData.match(/<img[^>]+src\s*=\s*["'](data:image\/[^"']+)["']/i);
+                    if (imgMatch && imgMatch[1]) {
+                        if (e.preventDefault) e.preventDefault();
+                        e.returnValue = false;
+                        _sendPastedImage(imgMatch[1]);
+                        return;
                     }
                 }
             } catch (ex) {}
+        }
 
-            pasteDiv.innerHTML = '';
-            if (input) input.focus();
-        }, 100);
-    } catch (e) {
-        if (input) input.focus();
-    }
+        // Если дошли сюда — это текстовая вставка, не мешаем
+    } catch (err) {}
 }
 
 /* Извлекает base64 и mime из data-URL и отправляет в 1С */
@@ -2607,10 +2559,7 @@ function openFullImage(imageId) {
 
 
 
-  <!-- Скрытый div для перехвата вставки изображений из буфера обмена (Без зависаний MSHTML) -->
-  <div id="pasteTarget" contenteditable="true"
-       style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;opacity:0;filter:alpha(opacity=0);"></div>
-
+  
   <div class="input-row-outer">
     <div class="input-container">
       {{PENDING_UPLOADS}}
@@ -2661,8 +2610,11 @@ function openFullImage(imageId) {
                    onfocus="closeEmojiPanel()">
           </div>
           <div class="attach-button-cell">
-            <a href="#" class="attach-button" title="Вставить из буфера" style="margin-right: 5px; background: none; border: 1px dashed #ccc;" onclick="trigger1CPaste(); return false;">📋</a>
-            <a href="#" class="attach-button" title="Прикрепить файл" data-button-id="AttachFile" onclick="return false;">Файл</a>
+            <a href="#"
+               class="attach-button"
+               title="Прикрепить файл"
+               data-button-id="AttachFile"
+               onclick="return false;">Файл</a>
           </div>
           <div class="button-cell">
             <a href="#"

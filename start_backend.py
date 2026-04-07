@@ -1,19 +1,16 @@
 import ctypes
 import logging
-import os
 import sys
 import traceback
 from pathlib import Path
 
 
-def _log_path() -> Path:
-    """Return a writable path for the error log next to the executable.
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+LOG_LEVEL = logging.INFO
 
-    When bundled with PyInstaller ``sys.executable`` points to the built
-    ``backend_server.exe``; in source runs we fall back to the directory of
-    this script. Using an absolute path avoids surprises with the current
-    working directory when the one-file bundle unpacks to a temp folder.
-    """
+
+def _log_path() -> Path:
+    """Return a writable path for the log file next to the executable."""
 
     if getattr(sys, "frozen", False):  # PyInstaller one-file/one-dir
         base_dir = Path(sys.executable).resolve().parent
@@ -25,35 +22,40 @@ def _log_path() -> Path:
 LOG_FILE = _log_path()
 
 
-def show_error_box(message: str):
-    """
-    Показать Windows MessageBox с текстом ошибки.
-    На других ОС выводит ошибку в stderr.
-    """
+def show_error_box(message: str) -> None:
+    """Show a Windows error message box or print to stderr on other OSes."""
+
     try:
         ctypes.windll.user32.MessageBoxW(
             0,
             message,
             "Backend error",
-            0x10  # MB_ICONERROR
+            0x10,  # MB_ICONERROR
         )
     except (AttributeError, OSError):
-        # windll недоступен на Linux/macOS — выводим в stderr
         print(f"[FATAL] {message}", file=sys.stderr)
+
+
+def configure_logging() -> None:
+    """Configure root logging for both file and stdout.
+
+    The log file is recreated on every launch so each run has a clean log.
+    """
+
+    logging.basicConfig(
+        level=LOG_LEVEL,
+        format=LOG_FORMAT,
+        handlers=[
+            logging.FileHandler(LOG_FILE, mode="w", encoding="utf-8"),
+            logging.StreamHandler(sys.stdout),
+        ],
+        force=True,
+    )
 
 
 if __name__ == "__main__":
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    # Логируем и в файл, и в консоль
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_FILE, encoding="utf-8"),
-            logging.StreamHandler(sys.stdout),
-        ],
-    )
+    configure_logging()
 
     try:
         logging.info("Starting backend...")
@@ -62,20 +64,9 @@ if __name__ == "__main__":
         backend_main()
     except Exception:
         err_text = traceback.format_exc()
+        logging.critical("Fatal error during backend startup:\n%s", err_text)
 
-        # Пишем ошибку в лог
-        logging.error("Fatal error:\n%s", err_text)
-
-        # На всякий случай ещё раз явно допишем в файл
-        try:
-            with LOG_FILE.open("a", encoding="utf-8") as f:
-                f.write("\n===== FATAL ERROR =====\n")
-                f.write(err_text)
-        except Exception:
-            pass
-
-        # Показываем пользователю окно
-        short_err = err_text[-1000:]  # чтобы не заспамить слишком длинным текстом
+        short_err = err_text[-2000:]
         full_log_path = str(LOG_FILE.resolve())
         message = (
             "Произошла критическая ошибка при запуске backend.\n\n"
@@ -83,3 +74,4 @@ if __name__ == "__main__":
             f"{short_err}"
         )
         show_error_box(message)
+        raise

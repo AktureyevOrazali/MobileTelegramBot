@@ -1,11 +1,13 @@
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+﻿import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useApi } from './context/ApiContext';
 import AuthPage from './pages/AuthPage';
+import { sanitizeUiText } from './utils/text';
 
 const DialogsPage = React.lazy(() => import('./pages/DialogsPage'));
 const DashboardPage = React.lazy(() => import('./pages/DashboardPage'));
 const AdminPage = React.lazy(() => import('./pages/AdminPage'));
+const SurveysPage = React.lazy(() => import('./pages/SurveysPage'));
 const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
 
 type ThemeMode = 'light' | 'dark';
@@ -57,6 +59,10 @@ const App: React.FC = () => {
       : currentUser?.role === 'moderator'
         ? 'Модератор'
         : 'Оператор';
+  const safeCurrentUserName = useMemo(
+    () => sanitizeUiText(currentUser?.name) || sanitizeUiText(currentUser?.login) || 'Пользователь',
+    [currentUser?.login, currentUser?.name],
+  );
 
   const navigationTabs = useMemo(() => {
     if (!currentUser) return [] as { path: string; label: string; icon: React.ReactNode }[];
@@ -94,24 +100,36 @@ const App: React.FC = () => {
           </svg>
         ),
       });
+      tabs.push({
+        path: '/surveys',
+        label: '\u041E\u043F\u0440\u043E\u0441\u044B',
+        icon: (
+          <svg className="app-sidebar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 11h6" />
+            <path d="M9 15h6" />
+            <path d="M17 3H7a2 2 0 0 0-2 2v14l4-2 4 2 4-2 4 2V5a2 2 0 0 0-2-2z" />
+          </svg>
+        ),
+      });
     }
     return tabs;
   }, [currentUser, isAdmin]);
 
   const profileInitials = useMemo(() => {
-    const source = currentUser?.name?.trim() || currentUser?.login || 'MB';
+    const source = safeCurrentUserName.trim() || 'MB';
     return source
       .split(/\s+/)
       .filter(Boolean)
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase() ?? '')
       .join('');
-  }, [currentUser]);
+  }, [safeCurrentUserName]);
 
 
   const isDashboardRoute = location.pathname.startsWith('/dashboard');
   const isAdminRoute = location.pathname.startsWith('/admin');
   const isProfileRoute = location.pathname.startsWith('/profile');
+  const isSurveysRoute = location.pathname.startsWith('/surveys');
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -158,7 +176,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className={`app-shell app-shell--sidebar ${isSidebarCollapsed ? 'app-shell--sidebar-collapsed' : ''} ${isDashboardRoute ? 'app-shell--dashboard' : ''} ${isAdminRoute ? 'app-shell--admin' : ''} ${isProfileRoute ? 'app-shell--profile' : ''}`}>
+    <div className={`app-shell app-shell--sidebar ${isSidebarCollapsed ? 'app-shell--sidebar-collapsed' : ''} ${isDashboardRoute ? 'app-shell--dashboard' : ''} ${isAdminRoute ? 'app-shell--admin' : ''} ${isProfileRoute ? 'app-shell--profile' : ''} ${isSurveysRoute ? 'app-shell--surveys' : ''}`}>
       <div className="app-shell__ambient app-shell__ambient--one" aria-hidden="true" />
       <div className="app-shell__ambient app-shell__ambient--two" aria-hidden="true" />
 
@@ -207,9 +225,9 @@ const App: React.FC = () => {
               className="profile-button profile-button--sidebar"
               title="Открыть профиль"
             >
-              <span className="profile-button__avatar">{profileInitials}</span>
+              <span className="profile-button__avatar profile-button__avatar--sidebar">{profileInitials}</span>
               <span className="profile-button__body">
-                <span className="profile-button__name">{currentUser?.name}</span>
+                <span className="profile-button__name">{safeCurrentUserName}</span>
                 <span className="profile-button__role">{currentRoleLabel}</span>
               </span>
             </button>
@@ -267,6 +285,10 @@ const App: React.FC = () => {
                   <Route
                     path="/admin"
                     element={isAdmin ? <AdminPage apiClient={apiClient} currentUser={currentUser!} /> : <Navigate to="/dialogs" replace />}
+                  />
+                  <Route
+                    path="/surveys/*"
+                    element={isAdmin ? <SurveysPage apiClient={apiClient} /> : <Navigate to="/dialogs" replace />}
                   />
                   <Route
                     path="/profile"

@@ -193,6 +193,9 @@ export function mapChatSummary(raw: ChatSummaryRaw): ChatSummary {
     lastMessageAuthor: typeof raw.last_message_author === 'string' ? sanitizeUiText(raw.last_message_author) : null,
     lastMessageHasAttachments: Boolean(raw.last_message_has_attachments),
     lastMessageAttachmentKind: typeof raw.last_message_attachment_kind === 'string' ? raw.last_message_attachment_kind : null,
+    employeeAssessmentId: typeof raw.employee_assessment_id === 'number' ? raw.employee_assessment_id : null,
+    employeeAssessmentPending: Boolean(raw.employee_assessment_pending),
+    employeeAssessmentCreatedAt: raw.employee_assessment_created_at ? new Date(raw.employee_assessment_created_at) : null,
   };
 }
 

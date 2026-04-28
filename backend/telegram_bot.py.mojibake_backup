@@ -1,0 +1,1444 @@
+"""Telegram bot that writes incoming messages into the database."""
+from __future__ import annotations
+
+import io
+import logging
+import os
+import re
+from datetime import datetime, timezone
+from typing import Optional
+
+import telebot
+from telebot import types
+
+from . import database
+from .customer_ratings import (
+    OPERATOR_CSAT_PREFIX,
+    build_operator_csat_callback,
+    parse_operator_csat_callback,
+)
+from .customer_surveys import (
+    QUESTION_EMPLOYEE,
+    SURVEY_TRIGGER_AFTER_CSAT,
+    SURVEY_TRIGGER_MANUAL,
+    SURVEY_TRIGGER_PERIODIC,
+    format_survey_question_message,
+    parse_survey_answer,
+)
+from .ai_manager import ai_manager
+from .media import MediaValidationError, media_service
+from . import contract_checker
+import asyncio
+
+logger = logging.getLogger(__name__)
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TELEGRAM_BOT_TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is required")
+
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode=None, threaded=True)
+
+SECTION_COMMANDS = {section["id"]: section for section in database.SECTIONS}
+FAQ_BY_SECTION = {section["id"]: database.list_faq(section["id"]) for section in database.SECTIONS}
+FAQ_TRIGGER = "С‡Р°СЃС‚С‹Рµ РІРѕРїСЂРѕСЃС‹"
+OPERATOR_TRIGGER = "СЃРІСЏР·Р°С‚СЊСЃСЏ СЃ РѕРїРµСЂР°С‚РѕСЂРѕРј"
+MOJIBAKE_HINT_RE = re.compile("(?:\u0420.|\u0421.|\u00d0.|\u00d1.){2,}")
+BIN_PATTERN = re.compile(r"^\d{12}$")
+START_BUTTON = "в–¶пёЏ РЎС‚Р°СЂС‚"
+NEW_BIN_BUTTON = "вћ• Р”РѕР±Р°РІРёС‚СЊ Р‘РРќ"
+SELECT_BIN_BUTTON = "рџ“‚ Р’С‹Р±СЂР°С‚СЊ Р‘РРќ"
+FINISH_BUTTON = "вЏ№ Р—Р°РІРµСЂС€РёС‚СЊ"
+FAQ_BUTTON = "Р§Р°СЃС‚С‹Рµ РІРѕРїСЂРѕСЃС‹"
+OPERATOR_BUTTON = "рџ‘ЁвЂЌрџ’ј РћРїРµСЂР°С‚РѕСЂ"
+SWITCH_BIN_CALLBACK = "switch_bin"
+SECTION_ICONS = {
+    "general": "рџ’¬",
+    "finance": "рџ’°",
+    "support": "рџ› ",
+    "hr": "рџ‘Ґ",
+}
+
+def _count_cyrillic(value: str) -> int:
+    return sum(1 for ch in value if "\u0400" <= ch <= "\u04ff")
+
+def _repair_mojibake(value: str) -> str | None:
+    if not value:
+        return None
+    suspicious = "\ufffd" in value or bool(MOJIBAKE_HINT_RE.search(value)) or _count_cyrillic(value) == 0
+    if not suspicious:
+        return None
+    for encoding in ("cp1251", "latin1"):
+        try:
+            repaired = value.encode(encoding).decode("utf-8").strip()
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
+        if repaired and repaired != value:
+            repaired_cyrillic = _count_cyrillic(repaired)
+            original_cyrillic = _count_cyrillic(value)
+            if repaired_cyrillic >= max(3, original_cyrillic // 2) or (
+                repaired_cyrillic >= 3 and len(repaired) < len(value)
+            ):
+                return repaired
+    return None
+
+def _sanitize_telegram_text(value: str | None, fallback: str = "") -> str:
+    normalized = re.sub(r"\s+", " ", value or "").strip()
+    if not normalized:
+        return fallback
+    repaired = _repair_mojibake(normalized) or normalized
+    cleaned = repaired.replace("\ufffd", "").strip()
+    return cleaned or fallback
+
+def _compact_button_text(value: str | None, max_len: int = 28) -> str:
+    text = _sanitize_telegram_text(value)
+    text = text.replace("%s", "").strip()
+    if len(text) <= max_len:
+        return text
+    trimmed = text[: max_len - 3].rstrip(" .,:;!?-")
+    return f"{trimmed}..."
+
+def _section_button_text(section: dict) -> str:
+    title = _sanitize_telegram_text(section.get("title"), "Р Р°Р·РґРµР»")
+    icon = SECTION_ICONS.get(section.get("id"), "")
+    return f"{icon} {title}".strip()
+
+SECTION_TITLES = {
+    _sanitize_telegram_text(section["title"]).lower(): section for section in database.SECTIONS
+}
+SECTION_TITLES.update({
+    _section_button_text(section).lower(): section for section in database.SECTIONS
+})
+
+# Global AI session state
+AI_SESSIONS = {}  # {chat_id: {'ai_enabled': True, 'operator_requested': False, 'waiting_message_id': None}}
+
+def get_ai_session(chat_id: int) -> dict:
+    """Р СџР С•Р В»РЎС“РЎвЂЎР В°Р ВµРЎвЂљ Р С‘Р В»Р С‘ РЎРѓР С•Р В·Р Т‘Р В°Р ВµРЎвЂљ AI РЎРѓР ВµРЎРѓРЎРѓР С‘РЎР‹ Р Т‘Р В»РЎРЏ РЎвЂЎР В°РЎвЂљР В°"""
+    if chat_id not in AI_SESSIONS:
+        AI_SESSIONS[chat_id] = {
+            'ai_enabled': True,  # Р ВР вЂ”Р СњР С’Р В§Р С’Р вЂєР В¬Р СњР С› Р вЂ™Р С™Р вЂєР В®Р В§Р вЂўР Сњ
+            'operator_requested': False,
+            'waiting_message_id': None  # ID РЎРѓР С•Р С•Р В±РЎвЂ°Р ВµР Р…Р С‘РЎРЏ "Р СџР С•Р Т‘Р С•Р В¶Р Т‘Р С‘РЎвЂљР Вµ..."
+        }
+    return AI_SESSIONS[chat_id]
+
+def enable_ai_session(chat_id: int) -> None:
+    """Р РЋР В±РЎР‚Р В°РЎРѓРЎвЂ№Р Р†Р В°Р ВµРЎвЂљ РЎвЂћР В»Р В°Р С–Р С‘ Р С‘ Р Р†Р С”Р В»РЎР‹РЎвЂЎР В°Р ВµРЎвЂљ AI Р Т‘Р В»РЎРЏ РЎС“Р С”Р В°Р В·Р В°Р Р…Р Р…Р С•Р С–Р С• РЎвЂЎР В°РЎвЂљР В°."""
+    session = get_ai_session(chat_id)
+    session['ai_enabled'] = True
+    session['operator_requested'] = False
+
+    if session.get('waiting_message_id'):
+        try:
+            bot.delete_message(chat_id, session['waiting_message_id'])
+        except Exception:
+            pass
+        session['waiting_message_id'] = None
+        
+def _section_keyboard() -> types.ReplyKeyboardMarkup:
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=2)
+    keyboard.row(
+        types.KeyboardButton(START_BUTTON),
+        types.KeyboardButton(FINISH_BUTTON),
+    )
+    keyboard.row(
+        types.KeyboardButton(NEW_BIN_BUTTON),
+        types.KeyboardButton(SELECT_BIN_BUTTON),
+    )
+    section_buttons = [types.KeyboardButton(_section_button_text(section)) for section in database.SECTIONS]
+    for index in range(0, len(section_buttons), 2):
+        keyboard.row(*section_buttons[index:index + 2])
+    keyboard.row(
+        types.KeyboardButton(FAQ_BUTTON),
+        types.KeyboardButton(OPERATOR_BUTTON),
+    )
+    keyboard.row(types.KeyboardButton("\U0001f916 \u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c AI"))
+    return keyboard
+
+def _generate_ai_response(message: telebot.types.Message, section: str) -> None:
+    """Generate and send AI response with typing indicator."""
+    chat_id = message.chat.id
+    ai_session = get_ai_session(chat_id)
+
+    if not ai_session['ai_enabled'] or ai_session['operator_requested']:
+        return
+
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        waiting_msg = bot.send_message(chat_id, "рџ¤– РџРѕРґРѕР¶РґРёС‚Рµ, AI РґСѓРјР°РµС‚...")
+        ai_session['waiting_message_id'] = waiting_msg.message_id
+
+        chat_history = database.get_messages(chat_id, limit=6)
+
+        if not ai_session['ai_enabled'] or ai_session['operator_requested']:
+            try:
+                bot.delete_message(chat_id, waiting_msg.message_id)
+            except Exception:
+                pass
+            ai_session['waiting_message_id'] = None
+            return
+
+        ai_response = ai_manager.generate_response(message.text, chat_history)
+
+        if not ai_session['ai_enabled'] or ai_session['operator_requested']:
+            try:
+                bot.delete_message(chat_id, waiting_msg.message_id)
+            except Exception:
+                pass
+            ai_session['waiting_message_id'] = None
+            return
+
+        try:
+            bot.delete_message(chat_id, waiting_msg.message_id)
+        except Exception:
+            pass
+        ai_session['waiting_message_id'] = None
+
+        _send_and_store_message(
+            chat_id,
+            f"рџ¤– {ai_response}",
+            stored_text=ai_response,
+            section=section,
+            author="AI Assistant",
+        )
+        logger.info("AI response sent to chat %s", chat_id)
+
+    except Exception as e:
+        logger.error("Failed to generate AI response for chat %s: %s", chat_id, e)
+        if ai_session['waiting_message_id']:
+            try:
+                bot.delete_message(chat_id, ai_session['waiting_message_id'])
+            except Exception:
+                pass
+            ai_session['waiting_message_id'] = None
+
+        _send_and_store_message(
+            chat_id,
+            "вќЊ Р’СЂРµРјРµРЅРЅР°СЏ РѕС€РёР±РєР° AI РїРѕРјРѕС‰РЅРёРєР°. РџСЂРё РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё РЅР°РїРёС€РёС‚Рµ 'РѕРїРµСЂР°С‚РѕСЂ'",
+            section=section,
+            author="System",
+        )
+
+# Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµР С Р С•Р В±РЎР‚Р В°Р В±Р С•РЎвЂљРЎвЂЎР С‘Р С”Р С‘ Р С”Р С•Р СР В°Р Р…Р Т‘ AI
+@bot.message_handler(commands=['ai_on', 'ai_off', 'operator', 'ai'])
+def handle_ai_commands(message: telebot.types.Message) -> None:
+    """Handle AI control commands."""
+    chat_id = message.chat.id
+    session = get_ai_session(chat_id)
+    command = message.text.split('@')[0].lower()
+    
+    if command == '/ai_on' or command == '/ai':
+        session['ai_enabled'] = True
+        session['operator_requested'] = False
+        bot.send_message(
+            chat_id, 
+            "вњ… AI РїРѕРјРѕС‰РЅРёРє РІРєР»СЋС‡РµРЅ. Р—Р°РґР°РІР°Р№С‚Рµ РІРѕРїСЂРѕСЃС‹ РїРѕ Р±СѓС…РіР°Р»С‚РµСЂРёРё Рё РЅР°Р»РѕРіР°Рј Р Рљ!\n\n"
+            "Р§С‚РѕР±С‹ РѕС‚РєР»СЋС‡РёС‚СЊ AI РЅР°РїРёС€РёС‚Рµ /ai_off РёР»Рё 'РѕРїРµСЂР°С‚РѕСЂ'"
+        )
+        logger.info("AI Р Р†Р С”Р В»РЎР‹РЎвЂЎР ВµР Р… Р Т‘Р В»РЎРЏ РЎвЂЎР В°РЎвЂљР В° %s", chat_id)
+        
+    elif command == '/ai_off':
+        session['ai_enabled'] = False
+        bot.send_message(
+            chat_id,
+            "вќЊ AI РїРѕРјРѕС‰РЅРёРє РІС‹РєР»СЋС‡РµРЅ. Р’Р°С€Рё СЃРѕРѕР±С‰РµРЅРёСЏ Р±СѓРґСѓС‚ РЅР°РїСЂР°РІР»РµРЅС‹ РѕРїРµСЂР°С‚РѕСЂСѓ.\n\n"
+            "Р§С‚РѕР±С‹ РІРєР»СЋС‡РёС‚СЊ AI РЅР°РїРёС€РёС‚Рµ /ai_on"
+        )
+        logger.info("AI Р Р†РЎвЂ№Р С”Р В»РЎР‹РЎвЂЎР ВµР Р… Р Т‘Р В»РЎРЏ РЎвЂЎР В°РЎвЂљР В° %s", chat_id)
+        
+    elif command == '/operator':
+        # Р вЂ™Р С™Р вЂєР В®Р В§Р С’Р вЂўР Сљ Р В Р вЂўР вЂ“Р ВР Сљ Р С›Р СџР вЂўР В Р С’Р СћР С›Р В Р С’ Р В Р С›Р СћР С™Р вЂєР В®Р В§Р С’Р вЂўР Сљ AI
+        session['operator_requested'] = True
+        session['ai_enabled'] = False  # Р С’Р вЂ™Р СћР С›Р СљР С’Р СћР ВР В§Р вЂўР РЋР С™Р С›Р вЂў Р С›Р СћР С™Р вЂєР В®Р В§Р вЂўР СњР ВР вЂў
+        
+        # Р Р€Р вЂќР С’Р вЂєР Р‡Р вЂўР Сљ Р РЋР С›Р С›Р вЂР В©Р вЂўР СњР ВР вЂў "Р СџР С›Р вЂќР С›Р вЂ“Р вЂќР ВР СћР вЂў" Р вЂўР РЋР вЂєР В Р С›Р СњР С› Р вЂўР РЋР СћР В¬
+        if session['waiting_message_id']:
+            try:
+                bot.delete_message(chat_id, session['waiting_message_id'])
+            except:
+                pass
+            session['waiting_message_id'] = None
+        
+        bot.send_message(
+            chat_id,
+            "рџ‘ЁвЂЌрџ’ј РџРѕРґРєР»СЋС‡Р°СЋ РѕРїРµСЂР°С‚РѕСЂР°... AI РїРѕРјРѕС‰РЅРёРє РѕС‚РєР»СЋС‡РµРЅ.\n"
+            "РћРїРµСЂР°С‚РѕСЂ РѕС‚РІРµС‚РёС‚ РІ Р±Р»РёР¶Р°Р№С€РµРµ РІСЂРµРјСЏ."
+        )
+        logger.info("Р вЂ”Р В°Р С—РЎР‚Р С•РЎв‚¬Р ВµР Р… Р С•Р С—Р ВµРЎР‚Р В°РЎвЂљР С•РЎР‚ Р Т‘Р В»РЎРЏ РЎвЂЎР В°РЎвЂљР В° %s, AI Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР ВµР Р…", chat_id)
+        
+        # Р РЋР С•РЎвЂ¦РЎР‚Р В°Р Р…РЎРЏР ВµР С Р В·Р В°Р С—РЎР‚Р С•РЎРѓ Р С•Р С—Р ВµРЎР‚Р В°РЎвЂљР С•РЎР‚Р В° Р Р† Р С‘РЎРѓРЎвЂљР С•РЎР‚Р С‘РЎР‹
+        _persist_message(
+            message,
+            direction="incoming",
+            override_text="[Р—РђРџР РћРЎ РћРџР•Р РђРўРћР Рђ]",
+            section=None
+        )
+
+
+@bot.message_handler(commands=["start"])
+def handle_start(message: telebot.types.Message) -> None:
+    chat = message.chat
+    database.upsert_chat(chat.id, chat.title or chat.username or str(chat.id), chat.username, chat.type)
+    database.close_active_chat_dialog(chat.id)
+
+    # Р ВР Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р С‘РЎР‚РЎС“Р ВµР С AI РЎРѓР ВµРЎРѓРЎРѓР С‘РЎР‹ (Р В°Р Р†РЎвЂљР С•Р СР В°РЎвЂљР С‘РЎвЂЎР ВµРЎРѓР С”Р С‘ Р Р†Р С”Р В»РЎР‹РЎвЂЎР ВµР Р…)
+    get_ai_session(chat.id)
+
+    bot.send_message(
+        chat.id,
+        "Р—РґСЂР°РІСЃС‚РІСѓР№С‚Рµ! РЇ РїРѕРјРѕРіСѓ СЃРІСЏР·Р°С‚СЊСЃСЏ СЃ РѕРїРµСЂР°С‚РѕСЂРѕРј.",
+    )
+    bot.send_message(
+        chat.id,
+        "рџ¤– AI РїРѕРјРѕС‰РЅРёРє Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РІРєР»СЋС‡РµРЅ Рё РіРѕС‚РѕРІ РѕС‚РІРµС‡Р°С‚СЊ РЅР° РІРѕРїСЂРѕСЃС‹ РїРѕ Р±СѓС…РіР°Р»С‚РµСЂРёРё Рё РЅР°Р»РѕРіР°Рј Р Рљ!\n\n"
+        "РљРѕРјР°РЅРґС‹:\n"
+        "/ai_on - РІРєР»СЋС‡РёС‚СЊ AI РїРѕРјРѕС‰РЅРёРєР°\n"
+        "/ai_off - РІС‹РєР»СЋС‡РёС‚СЊ AI РїРѕРјРѕС‰РЅРёРєР°\n"
+        "/operator - СЃРІСЏР·Р°С‚СЊСЃСЏ СЃ РѕРїРµСЂР°С‚РѕСЂРѕРј\n\n"
+        "Р”Р»СЏ РЅР°С‡Р°Р»Р° СѓРєР°Р¶РёС‚Рµ Р‘РРќ РІР°С€РµР№ РѕСЂРіР°РЅРёР·Р°С†РёРё (12 С†РёС„СЂ).",
+        reply_markup=_section_keyboard()
+    )
+    logger.info("Start command handled for chat %s", chat.id)
+
+
+section_ids = list(SECTION_COMMANDS.keys())
+
+
+@bot.message_handler(commands=section_ids)
+def handle_section_commands(message: telebot.types.Message) -> None:
+    section_id = message.text.lstrip("/").split()[0]
+    chat = message.chat
+    database.upsert_chat(chat.id, chat.title or chat.username or str(chat.id), chat.username, chat.type)
+    chat_record = database.get_chat(chat.id)
+    if chat_record and not chat_record.get("bin"):
+        bot.send_message(chat.id, "РЎРЅР°С‡Р°Р»Р° СѓРєР°Р¶РёС‚Рµ Р‘РРќ РѕСЂРіР°РЅРёР·Р°С†РёРё.")
+        _persist_message(message, direction="incoming", section=None)
+        return
+    _persist_message(message, direction="incoming", section=None)
+    _select_section(chat.id, section_id)
+
+
+@bot.message_handler(commands=["faq"])
+def handle_faq_command(message: telebot.types.Message) -> None:
+    chat = message.chat
+    chat_record = database.get_chat(chat.id)
+    section_id = chat_record.get("section") if chat_record else None
+    if not section_id:
+        bot.send_message(chat.id, "РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРёС‚Рµ СЂР°Р·РґРµР», С‡С‚РѕР±С‹ РїРѕРєР°Р·Р°С‚СЊ FAQ.")
+        _persist_message(message, direction="incoming", section=None)
+        return
+    _persist_message(message, direction="incoming", section=section_id)
+    _send_faq_menu(chat.id, section_id)
+
+
+@bot.message_handler(content_types=["text", "photo", "document", "audio", "video", "voice", "sticker"])
+def handle_updates(message: telebot.types.Message) -> None:
+    chat = message.chat
+    database.upsert_chat(chat.id, chat.title or chat.username or str(chat.id), chat.username, chat.type)
+
+    text = message.text or ""
+    chat_record = database.get_chat(chat.id)
+    
+    # Р СџР С•Р В»РЎС“РЎвЂЎР В°Р ВµР С AI РЎРѓР ВµРЎРѓРЎРѓР С‘РЎР‹
+    ai_session = get_ai_session(chat.id)
+
+    # Р С›Р В±РЎР‚Р В°Р В±Р В°РЎвЂљРЎвЂ№Р Р†Р В°Р ВµР С РЎвЂљР ВµР С”РЎРѓРЎвЂљР С•Р Р†РЎвЂ№Р Вµ Р С”Р С•Р СР В°Р Р…Р Т‘РЎвЂ№ РЎС“Р С—РЎР‚Р В°Р Р†Р В»Р ВµР Р…Р С‘РЎРЏ AI
+    if message.content_type == "text":
+        stripped_text = text.strip()
+        if stripped_text == START_BUTTON:
+            _persist_message(message, direction="incoming", override_text="[РљРћРњРђРќР”Рђ] РЎС‚Р°СЂС‚", section=None)
+            handle_start(message)
+            return
+        if stripped_text == NEW_BIN_BUTTON:
+            ai_session['ai_enabled'] = True
+            ai_session['operator_requested'] = False
+            bot.send_message(chat.id, "РћС‚РїСЂР°РІСЊС‚Рµ Р‘РРќ РѕСЂРіР°РЅРёР·Р°С†РёРё С‡РёСЃР»РѕРј РёР· 12 С†РёС„СЂ, С‡С‚РѕР±С‹ РЅР°С‡Р°С‚СЊ РЅРѕРІС‹Р№ РґРёР°Р»РѕРі.")
+            _persist_message(message, direction="incoming", override_text="[РљРћРњРђРќР”Рђ] Р”РѕР±Р°РІРёС‚СЊ Р‘РРќ", section=None)
+            return
+        if stripped_text == SELECT_BIN_BUTTON:
+            _persist_message(message, direction="incoming", override_text="[РљРћРњРђРќР”Рђ] Р’С‹Р±СЂР°С‚СЊ Р‘РРќ", section=None)
+            _send_bin_selection_menu(chat.id)
+            return
+        if stripped_text == FINISH_BUTTON:
+            active_dialog = database.get_active_chat_dialog(chat.id)
+            database.close_active_chat_dialog(chat.id)
+            ai_session['ai_enabled'] = True
+            ai_session['operator_requested'] = False
+            if active_dialog:
+                bot.send_message(
+                    chat.id,
+                    "РћР±СЂР°С‰РµРЅРёРµ Р·Р°РІРµСЂС€РµРЅРѕ. рџ¤– AI РїРѕРјРѕС‰РЅРёРє СЃРЅРѕРІР° РІРєР»СЋС‡РµРЅ.\n"
+                    "Р§С‚РѕР±С‹ РІРѕР·РѕР±РЅРѕРІРёС‚СЊ РґРёР°Р»РѕРі, РІС‹Р±РµСЂРёС‚Рµ РёР»Рё РѕС‚РїСЂР°РІСЊС‚Рµ Р‘РРќ.",
+                    reply_markup=_section_keyboard(),
+                )
+                try:
+                    latest_stats = database.get_latest_dialog_stats(int(active_dialog["id"]))
+                    latest_appeal_id = (
+                        int(latest_stats["appeal_id"])
+                        if latest_stats and latest_stats.get("appeal_id") is not None
+                        else database.get_latest_closed_appeal_id(int(active_dialog["id"]))
+                    )
+                    if latest_appeal_id is not None:
+                        if latest_stats and bool(latest_stats.get("is_ai_closed")):
+                            send_ai_csat_request(chat.id, int(active_dialog["id"]), latest_appeal_id)
+                        else:
+                            send_csat_request(chat.id, int(active_dialog["id"]), latest_appeal_id)
+                except Exception:
+                    logger.warning(
+                        "Failed to send rating request after FINISH for dialog %s",
+                        active_dialog.get("id"),
+                        exc_info=True,
+                    )
+            else:
+                bot.send_message(
+                    chat.id,
+                    "РђРєС‚РёРІРЅС‹С… РґРёР°Р»РѕРіРѕРІ РЅРµ Р±С‹Р»Рѕ. РћС‚РїСЂР°РІСЊС‚Рµ Р‘РРќ РѕСЂРіР°РЅРёР·Р°С†РёРё, С‡С‚РѕР±С‹ РЅР°С‡Р°С‚СЊ СЂР°Р±РѕС‚Сѓ.",
+                    reply_markup=_section_keyboard(),
+                )
+            _persist_message(message, direction="incoming", override_text="[РљРћРњРђРќР”Рђ] Р—Р°РІРµСЂС€РёС‚СЊ СЂР°Р±РѕС‚Сѓ", section=None)
+            return
+        normalized = text.strip().lower()
+        
+        # Р С™Р Р…Р С•Р С—Р С”Р С‘ РЎС“Р С—РЎР‚Р В°Р Р†Р В»Р ВµР Р…Р С‘РЎРЏ AI
+        if normalized == "рџ¤– РІРєР»СЋС‡РёС‚СЊ ai":
+            ai_session['ai_enabled'] = True
+            ai_session['operator_requested'] = False
+            bot.send_message(chat.id, "вњ… AI РїРѕРјРѕС‰РЅРёРє РІРєР»СЋС‡РµРЅ!")
+            _persist_message(message, direction="incoming", section=None)
+            return
+            
+        elif normalized == "рџ‘ЁвЂЌрџ’ј РѕРїРµСЂР°С‚РѕСЂ" or normalized == "РѕРїРµСЂР°С‚РѕСЂ":
+            # Р С’Р вЂ™Р СћР С›Р СљР С’Р СћР ВР В§Р вЂўР РЋР С™Р С›Р вЂў Р С›Р СћР С™Р вЂєР В®Р В§Р вЂўР СњР ВР вЂў AI Р СџР В Р В Р вЂ”Р С’Р СџР В Р С›Р РЋР вЂў Р С›Р СџР вЂўР В Р С’Р СћР С›Р В Р С’
+            ai_session['operator_requested'] = True
+            ai_session['ai_enabled'] = False
+            
+            # Р Р€Р вЂќР С’Р вЂєР Р‡Р вЂўР Сљ Р РЋР С›Р С›Р вЂР В©Р вЂўР СњР ВР вЂў "Р СџР С›Р вЂќР С›Р вЂ“Р вЂќР ВР СћР вЂў" Р вЂўР РЋР вЂєР В Р С›Р СњР С› Р вЂўР РЋР СћР В¬
+            if ai_session['waiting_message_id']:
+                try:
+                    bot.delete_message(chat.id, ai_session['waiting_message_id'])
+                except:
+                    pass
+                ai_session['waiting_message_id'] = None
+            
+            bot.send_message(chat.id, "рџ‘ЁвЂЌрџ’ј РџРѕРґРєР»СЋС‡Р°СЋ РѕРїРµСЂР°С‚РѕСЂР°...")
+            _persist_message(message, direction="incoming", override_text="[Р—РђРџР РћРЎ РћРџР•Р РђРўРћР Рђ]", section=None)
+            return
+
+    if message.content_type == "text" and handle_survey_text_answer(message):
+        return
+
+    normalized_text = (text or "").strip()
+    is_text_message = message.content_type == "text"
+    is_bin_message = is_text_message and BIN_PATTERN.match(normalized_text)
+
+    # Р СћРЎР‚Р ВµР В±РЎС“Р ВµР С Р вЂР ВР Сњ, Р ВµРЎРѓР В»Р С‘ Р С•Р Р… Р ВµРЎвЂ°РЎвЂ Р Р…Р Вµ РЎС“Р С”Р В°Р В·Р В°Р Р…
+    if chat_record and not chat_record.get("bin") and not is_bin_message:
+        bot.send_message(chat.id, "РћС‚РїСЂР°РІСЊС‚Рµ Р‘РРќ РѕСЂРіР°РЅРёР·Р°С†РёРё С‡РёСЃР»РѕРј РёР· 12 С†РёС„СЂ.")
+        if is_text_message:
+            _persist_message(message, direction="incoming", section=None)
+        else:
+            _persist_message(
+                message,
+                direction="incoming",
+                override_text=_humanize_message(message),
+                section=None,
+            )
+        return
+
+    if is_bin_message:
+        dialog_id, _ = database.set_chat_bin(chat.id, normalized_text)
+        contract_result = contract_checker.check_customer_contracts(normalized_text)
+        has_contract = contract_result.get("has_contract", False)
+
+        if not has_contract:
+            _send_and_store_message(
+                chat.id,
+                "вљ пёЏ Р’РЅРёРјР°РЅРёРµ: Сѓ РІР°С€РµР№ РѕСЂРіР°РЅРёР·Р°С†РёРё РЅРµС‚ РґРµР№СЃС‚РІСѓСЋС‰РµРіРѕ РґРѕРіРѕРІРѕСЂР° СЃ РЅР°РјРё РЅР° 2026 РіРѕРґ.\nР’С‹ РјРѕР¶РµС‚Рµ РѕСЃС‚Р°РІРёС‚СЊ РѕР±СЂР°С‰РµРЅРёРµ, Рё РјС‹ РµРіРѕ РїСЂРѕРІРµСЂРёРј.",
+                dialog_id=dialog_id,
+                author="System",
+            )
+
+        _send_and_store_message(
+            chat.id,
+            "РўРµРїРµСЂСЊ РІС‹Р±РµСЂРёС‚Рµ РїРѕРґС…РѕРґСЏС‰РёР№ СЂР°Р·РґРµР».\n\nрџ¤– AI РїРѕРјРѕС‰РЅРёРє Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РІРєР»СЋС‡РµРЅ Рё Р±СѓРґРµС‚ РѕС‚РІРµС‡Р°С‚СЊ РїРѕ С‚РµРјРµ СЂР°Р·РґРµР»Р°!",
+            reply_markup=_section_keyboard(),
+            dialog_id=dialog_id,
+            author="System",
+        )
+        _persist_message(message, direction="incoming", section=None, dialog_id=dialog_id)
+        return
+
+
+    # РІвЂќР‚РІвЂќР‚ Auto-resume: Р ВµРЎРѓР В»Р С‘ Р Р…Р ВµРЎвЂљ Р В°Р С”РЎвЂљР С‘Р Р†Р Р…Р С•Р С–Р С• Р Т‘Р С‘Р В°Р В»Р С•Р С–Р В°, Р Р…Р С• Р ВµРЎРѓРЎвЂљРЎРЉ Р В·Р В°Р С”РЎР‚РЎвЂ№РЎвЂљРЎвЂ№Р в„– РІР‚вЂќ Р Р†Р С•Р В·Р С•Р В±Р Р…Р С•Р Р†Р В»РЎРЏР ВµР С РІвЂќР‚РІвЂќР‚
+    active_dialog = database.get_active_chat_dialog(chat.id)
+    if active_dialog is None:
+        resumed = database.resume_last_closed_dialog(chat.id)
+        if resumed:
+            ai_session['ai_enabled'] = True
+            ai_session['operator_requested'] = False
+            appeal_num = resumed["appeal_num"]
+            resumed_bin = resumed["bin"] or "?"
+            bot.send_message(
+                chat.id,
+                f"рџ“‹ Р”РёР°Р»РѕРі РїРѕ Р‘РРќ {resumed_bin} РІРѕР·РѕР±РЅРѕРІР»С‘РЅ. РќРѕРІРѕРµ РѕР±СЂР°С‰РµРЅРёРµ в„–{appeal_num}.\n"
+                "рџ¤– AI РїРѕРјРѕС‰РЅРёРє РІРєР»СЋС‡РµРЅ.",
+                reply_markup=_section_keyboard(),
+            )
+            # Re-fetch chat record with updated BIN
+            chat_record = database.get_chat(chat.id)
+
+    # Р С›Р В±РЎР‚Р В°Р В±Р С•РЎвЂљР С”Р В° РЎР‚Р В°Р В·Р Т‘Р ВµР В»Р С•Р Р† Р С‘ FAQ
+    selected_section = None
+    if message.content_type == "text":
+        normalized = text.strip().lower()
+        if normalized in SECTION_TITLES:
+            selected_section = SECTION_TITLES[normalized]["id"]
+        elif normalized == FAQ_TRIGGER:
+            _persist_message(message, direction="incoming", section=None)
+            if chat_record and chat_record.get("section"):
+                _send_faq_menu(chat.id, chat_record["section"])
+            else:
+                bot.send_message(chat.id, "РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРёС‚Рµ СЂР°Р·РґРµР» С‡РµСЂРµР· РєРѕРјР°РЅРґС‹ РёР»Рё РєРЅРѕРїРєРё.", reply_markup=_section_keyboard())
+            return
+        elif normalized == OPERATOR_TRIGGER:
+            # Р С’Р вЂ™Р СћР С›Р СљР С’Р СћР ВР В§Р вЂўР РЋР С™Р С›Р вЂў Р С›Р СћР С™Р вЂєР В®Р В§Р вЂўР СњР ВР вЂў AI Р СџР В Р В Р вЂ”Р С’Р СџР В Р С›Р РЋР вЂў Р С›Р СџР вЂўР В Р С’Р СћР С›Р В Р С’
+            ai_session['operator_requested'] = True
+            ai_session['ai_enabled'] = False
+            
+            # Р Р€Р вЂќР С’Р вЂєР Р‡Р вЂўР Сљ Р РЋР С›Р С›Р вЂР В©Р вЂўР СњР ВР вЂў "Р СџР С›Р вЂќР С›Р вЂ“Р вЂќР ВР СћР вЂў" Р вЂўР РЋР вЂєР В Р С›Р СњР С› Р вЂўР РЋР СћР В¬
+            if ai_session['waiting_message_id']:
+                try:
+                    bot.delete_message(chat.id, ai_session['waiting_message_id'])
+                except:
+                    pass
+                ai_session['waiting_message_id'] = None
+                
+            _persist_message(message, direction="incoming", section=chat_record.get("section") if chat_record else None)
+            bot.send_message(chat.id, "рџ‘ЁвЂЌрџ’ј РџРѕРґРєР»СЋС‡Р°СЋ РѕРїРµСЂР°С‚РѕСЂР°...")
+            return
+            
+    if selected_section:
+        _persist_message(message, direction="incoming", section=selected_section)
+        _select_section(chat.id, selected_section)
+        return
+
+    # Р СџР С•Р В»РЎС“РЎвЂЎР В°Р ВµР С РЎР‚Р В°Р В·Р Т‘Р ВµР В» Р С‘Р В· Р В°Р С”РЎвЂљР С‘Р Р†Р Р…Р С•Р С–Р С• Р Т‘Р С‘Р В°Р В»Р С•Р С–Р В° (Р С—РЎР‚Р С‘Р Р†РЎРЏР В·Р В°Р Р… Р С” Р вЂР ВР СњРЎС“), Р В° Р Р…Р Вµ Р С‘Р В· РЎвЂЎР В°РЎвЂљР В°
+    current_section = database.get_dialog_section(chat.id)
+    # Р вЂўРЎРѓР В»Р С‘ section Р С—РЎС“РЎРѓРЎвЂљР С•Р в„– Р Р† Р Т‘Р С‘Р В°Р В»Р С•Р С–Р Вµ - Р В±Р ВµРЎР‚РЎвЂР С Р С‘Р В· РЎвЂЎР В°РЎвЂљР В° Р Т‘Р В»РЎРЏ Р С•Р В±РЎР‚Р В°РЎвЂљР Р…Р С•Р в„– РЎРѓР С•Р Р†Р СР ВµРЎРѓРЎвЂљР С‘Р СР С•РЎРѓРЎвЂљР С‘
+    if not current_section:
+        chat_record = database.get_chat(chat.id)
+        current_section = chat_record.get("section") if chat_record else None
+    
+    if not current_section:
+        bot.send_message(
+            chat.id,
+            "РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РІС‹Р±РµСЂРёС‚Рµ СЂР°Р·РґРµР» С‡РµСЂРµР· РєРѕРјР°РЅРґС‹ Р±РѕС‚Р° РёР»Рё РєРЅРѕРїРєРё РЅРёР¶Рµ.",
+            reply_markup=_section_keyboard(),
+        )
+        _persist_message(message, direction="incoming", override_text=_humanize_message(message), section=None)
+        return
+
+    # Р РЋР С›Р ТђР В Р С’Р СњР Р‡Р вЂўР Сљ РЎРѓР С•Р С•Р В±РЎвЂ°Р ВµР Р…Р С‘Р Вµ Р С—Р С•Р В»РЎРЉР В·Р С•Р Р†Р В°РЎвЂљР ВµР В»РЎРЏ Р Р† Р В»РЎР‹Р В±Р С•Р С РЎРѓР В»РЎС“РЎвЂЎР В°Р Вµ
+    _persist_message(
+        message,
+        direction="incoming",
+        override_text=_humanize_message(message),
+        section=current_section,
+    )
+
+    # Р вЂўР РЋР вЂєР В AI Р вЂ™Р В«Р С™Р вЂєР В®Р В§Р вЂўР Сњ Р ВР вЂєР В Р вЂ”Р С’Р СџР В Р С›Р РЃР вЂўР Сњ Р С›Р СџР вЂўР В Р С’Р СћР С›Р В  - Р Р†РЎвЂ№РЎвЂ¦Р С•Р Т‘Р С‘Р С (Р СњР ВР С™Р С’Р С™Р ВР Тђ AI Р С›Р СћР вЂ™Р вЂўР СћР С›Р вЂ™)
+    if not ai_session['ai_enabled'] or ai_session['operator_requested']:
+        logger.info("AI Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР ВµР Р… Р Т‘Р В»РЎРЏ РЎвЂЎР В°РЎвЂљР В° %s. Р РЋР С•Р С•Р В±РЎвЂ°Р ВµР Р…Р С‘Р Вµ РЎРѓР С•РЎвЂ¦РЎР‚Р В°Р Р…Р ВµР Р…Р С• Р Т‘Р В»РЎРЏ Р С•Р С—Р ВµРЎР‚Р В°РЎвЂљР С•РЎР‚Р В°.", chat.id)
+        return
+
+    # Р вЂўР РЋР вЂєР В AI Р вЂ™Р С™Р вЂєР В®Р В§Р вЂўР Сњ - Р С–Р ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р ВµР С Р С•РЎвЂљР Р†Р ВµРЎвЂљ Р РЋ Р ВР СњР вЂќР ВР С™Р С’Р СћР С›Р В Р С›Р Сљ Р С›Р вЂ“Р ВР вЂќР С’Р СњР ВР Р‡
+    if message.content_type == "text" and ai_manager is not None:
+        _generate_ai_response(message, current_section)
+
+
+def _extract_telegram_attachment_ids(message: telebot.types.Message) -> list[int]:
+    if message.content_type not in ("photo", "video"):
+        return []
+    try:
+        if message.content_type == "photo":
+            photo = message.photo[-1] if message.photo else None
+            if photo is None:
+                return []
+            file_id = photo.file_id
+            original_name = f"telegram_photo_{message.message_id}.jpg"
+            claimed_mime = "image/jpeg"
+        else:
+            video = message.video
+            if video is None:
+                return []
+            file_id = video.file_id
+            original_name = video.file_name or f"telegram_video_{message.message_id}.mp4"
+            claimed_mime = video.mime_type or "video/mp4"
+        file_info = bot.get_file(file_id)
+        payload = bot.download_file(file_info.file_path)
+        media = media_service.ingest_upload(
+            io.BytesIO(payload),
+            original_name=original_name,
+            claimed_mime_type=claimed_mime,
+        )
+        return [media.media_id]
+    except MediaValidationError as exc:
+        logger.warning("Telegram media validation failed for chat %s: %s", message.chat.id, exc.message)
+    except Exception as exc:
+        logger.exception("Failed to ingest Telegram media for chat %s: %s", message.chat.id, exc)
+    return []
+
+
+def _humanize_message(message: telebot.types.Message) -> str:
+    if message.content_type == "text":
+        return message.text or ""
+    return f"[{message.content_type} СЃРѕРѕР±С‰РµРЅРёРµ]"
+
+
+def _resolve_dialog_id(chat_id: int, dialog_id: Optional[int] = None) -> Optional[int]:
+    if dialog_id is not None:
+        return dialog_id
+    return database.get_active_chat_dialog_id(chat_id)
+
+
+def _publish_message_event(
+    *,
+    chat_id: int,
+    dialog_id: Optional[int],
+    message_id: int,
+    text: str,
+    direction: str,
+    author: Optional[str],
+) -> None:
+    try:
+        from .api import event_bus
+
+        if not event_bus.loop:
+            return
+        asyncio.run_coroutine_threadsafe(
+            event_bus.publish_all("new_message", {
+                "chat_id": chat_id,
+                "dialog_id": dialog_id,
+                "message_id": message_id,
+                "text": text,
+                "direction": direction,
+                "author": author,
+            }),
+            event_bus.loop,
+        )
+    except Exception as e:
+        logger.error("Failed to publish SSE event: %s", e)
+
+
+def _store_outgoing_message(
+    message: telebot.types.Message,
+    *,
+    text: str,
+    section: Optional[str] = None,
+    author: Optional[str] = "Bot",
+    dialog_id: Optional[int] = None,
+) -> int:
+    chat = message.chat
+    resolved_dialog_id = _resolve_dialog_id(chat.id, dialog_id)
+    stored_message_id = database.save_message(
+        chat_id=chat.id,
+        direction="outgoing",
+        text=text,
+        message_id=message.message_id,
+        author=author,
+        chat_title=chat.title or chat.username or str(chat.id),
+        username=chat.username,
+        chat_type=chat.type,
+        section=section,
+        dialog_id=resolved_dialog_id,
+    )
+    _publish_message_event(
+        chat_id=chat.id,
+        dialog_id=resolved_dialog_id,
+        message_id=stored_message_id,
+        text=text,
+        direction="outgoing",
+        author=author,
+    )
+    return stored_message_id
+
+
+def _send_and_store_message(
+    chat_id: int,
+    text: str,
+    *,
+    stored_text: str | None = None,
+    section: Optional[str] = None,
+    author: Optional[str] = "Bot",
+    dialog_id: Optional[int] = None,
+    persist: bool = True,
+    **kwargs,
+) -> telebot.types.Message:
+    message = bot.send_message(chat_id, text, **kwargs)
+    if persist:
+        _store_outgoing_message(
+            message,
+            text=stored_text if stored_text is not None else text,
+            section=section,
+            author=author,
+            dialog_id=dialog_id,
+        )
+    return message
+
+
+def _persist_message(
+    message: telebot.types.Message,
+    *,
+    direction: str,
+    override_text: str | None = None,
+    section: Optional[str] = None,
+    author: Optional[str] = None,
+    dialog_id: Optional[int] = None,
+) -> None:
+    chat = message.chat
+    attachment_ids = _extract_telegram_attachment_ids(message)
+    if override_text is not None:
+        text = override_text
+    elif message.content_type in ("photo", "video"):
+        text = (message.caption or "").strip()
+    else:
+        text = _humanize_message(message)
+    if not text.strip() and not attachment_ids:
+        text = _humanize_message(message) or f"[{message.content_type} СЃРѕРѕР±С‰РµРЅРёРµ]"
+    message_author = author
+    resolved_dialog_id = _resolve_dialog_id(chat.id, dialog_id)
+
+    if not message_author and message.from_user:
+        message_author = message.from_user.username or message.from_user.full_name
+
+    message_id = database.save_message(
+        chat_id=chat.id,
+        direction=direction,
+        text=text,
+        message_id=message.message_id,
+        author=message_author,
+        chat_title=chat.title or chat.username or str(chat.id),
+        username=chat.username,
+        chat_type=chat.type,
+        section=section,
+        dialog_id=resolved_dialog_id,
+        attachment_ids=attachment_ids,
+    )
+    logger.info("Stored %s message from chat %s", direction, chat.id)
+    _publish_message_event(
+        chat_id=chat.id,
+        dialog_id=resolved_dialog_id,
+        message_id=message_id,
+        text=text,
+        direction=direction,
+        author=message_author,
+    )
+
+
+def _select_section(chat_id: int, section_id: str) -> None:
+    section = SECTION_COMMANDS.get(section_id)
+    if not section:
+        return
+    database.set_chat_section(chat_id, section_id)
+    _send_and_store_message(
+        chat_id,
+        f"Р Р°Р·РґРµР» В«{section['title']}В» РІС‹Р±СЂР°РЅ. РћРїРёС€РёС‚Рµ РІР°С€ РІРѕРїСЂРѕСЃ.",
+        reply_markup=_section_keyboard(),
+        section=section_id,
+        author="System",
+    )
+    logger.info("Chat %s selected section %s", chat_id, section_id)
+    _send_faq_menu(chat_id, section_id)
+
+
+def _faq_keyboard(section_id: str) -> Optional[types.InlineKeyboardMarkup]:
+    entries = FAQ_BY_SECTION.get(section_id) or []
+    if not entries:
+        return None
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    row: list[types.InlineKeyboardButton] = []
+    for index, entry in enumerate(entries):
+        row.append(
+            types.InlineKeyboardButton(
+                _compact_button_text(entry.get("question"), max_len=30),
+                callback_data=f"faq:{section_id}:{index}",
+            )
+        )
+        if len(row) == 2:
+            keyboard.row(*row)
+            row = []
+    if row:
+        keyboard.row(*row)
+    keyboard.row(
+        types.InlineKeyboardButton(
+            "\U0001f468\u200d\U0001f4bc \u041d\u0443\u0436\u0435\u043d \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440",
+            callback_data=f"operator:{section_id}",
+        )
+    )
+    return keyboard
+
+def _send_faq_menu(chat_id: int, section_id: str) -> None:
+    keyboard = _faq_keyboard(section_id)
+    if not keyboard:
+        return
+    section = SECTION_COMMANDS.get(section_id)
+    section_title = _sanitize_telegram_text(section.get("title") if section else None, "\u0440\u0430\u0437\u0434\u0435\u043b")
+    _send_and_store_message(
+        chat_id,
+        f"\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0431\u044b\u0441\u0442\u0440\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043f\u043e \u0440\u0430\u0437\u0434\u0435\u043b\u0443 \u00ab{section_title}\u00bb \u0438\u043b\u0438 \u043d\u0430\u0436\u043c\u0438\u0442\u0435 \u043a\u043d\u043e\u043f\u043a\u0443 \u043d\u0438\u0436\u0435, \u0447\u0442\u043e\u0431\u044b \u043f\u043e\u0437\u0432\u0430\u0442\u044c \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0430.",
+        reply_markup=keyboard,
+        section=section_id,
+        author="System",
+    )
+
+def _send_bin_selection_menu(chat_id: int) -> None:
+    # Use client_bins for persistent BIN list (not deleted with dialogs)
+    client_bins = database.list_client_bins(chat_id)
+    if not client_bins:
+        bot.send_message(
+            chat_id,
+            "РЎРѕС…СЂР°РЅС‘РЅРЅС‹С… Р‘РРќРѕРІ РїРѕРєР° РЅРµС‚. Р”РѕР±Р°РІСЊС‚Рµ РЅРѕРІС‹Р№ Р‘РРќ С‡РµСЂРµР· РєРЅРѕРїРєСѓ"
+            " РёР»Рё РїСЂРѕСЃС‚Рѕ РѕС‚РїСЂР°РІСЊС‚Рµ Р‘РРќ С‡РёСЃР»РѕРј РёР· 12 С†РёС„СЂ.",
+        )
+        return
+    keyboard = types.InlineKeyboardMarkup()
+    # Check which BIN has active dialog
+    active_dialog = database.get_active_chat_dialog(chat_id)
+    active_bin = active_dialog["bin"] if active_dialog else None
+    for bin_value in client_bins:
+        label = bin_value
+        if bin_value == active_bin:
+            label = f"{label} вЂў С‚РµРєСѓС‰РёР№"
+        keyboard.add(
+            types.InlineKeyboardButton(
+                label,
+                callback_data=f"{SWITCH_BIN_CALLBACK}:{bin_value}",
+            )
+        )
+    bot.send_message(
+        chat_id,
+        "Р’С‹Р±РµСЂРёС‚Рµ Р‘РРќ, С‡С‚РѕР±С‹ РїСЂРѕРґРѕР»Р¶РёС‚СЊ СЂР°Р±РѕС‚Сѓ СЃ СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓСЋС‰РёРј РґРёР°Р»РѕРіРѕРј.",
+        reply_markup=keyboard,
+    )
+
+
+def _try_auto_answer(message: telebot.types.Message, section_id: str) -> None:
+    entry = database.find_faq_entry_by_keywords(message.text or "", section_id)
+    if not entry:
+        return
+
+    answer_text = entry.get("answer", "")
+    if not answer_text:
+        return
+
+    _send_and_store_message(
+        message.chat.id,
+        _sanitize_telegram_text(answer_text, "\u041e\u0442\u0432\u0435\u0442 \u043f\u043e\u043a\u0430 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d."),
+        section=entry.get("section") or section_id,
+        author="AutoBot",
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("faq:"))
+def handle_faq_callback(call: telebot.types.CallbackQuery) -> None:
+    _, section_id, index_str = call.data.split(":", 2)
+    entries = FAQ_BY_SECTION.get(section_id) or []
+    try:
+        entry = entries[int(index_str)]
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РѕС‚РІРµС‚")
+        return
+    chat = call.message.chat
+    bot.answer_callback_query(call.id, "РћС‚РІРµС‚ РѕС‚РїСЂР°РІР»РµРЅ")
+    database.set_chat_section(chat.id, section_id)
+    author = None
+    if call.from_user:
+        author = call.from_user.username or call.from_user.full_name
+    database.save_message(
+        chat_id=chat.id,
+        direction="incoming",
+        text=f"[FAQ] {_sanitize_telegram_text(entry.get('question'), 'FAQ')}",
+        message_id=None,
+        author=author,
+        chat_title=chat.title or chat.username or str(chat.id),
+        username=chat.username,
+        chat_type=chat.type,
+        section=section_id,
+    )
+    _send_and_store_message(
+        chat.id,
+        _sanitize_telegram_text(entry.get("answer"), "\u041e\u0442\u0432\u0435\u0442 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d."),
+        section=section_id,
+        author="AutoBot",
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("operator:"))
+def handle_operator_callback(call: telebot.types.CallbackQuery) -> None:
+    _, section_id = call.data.split(":", 1)
+    chat = call.message.chat
+    database.set_chat_section(chat.id, section_id)
+    bot.answer_callback_query(call.id, "Р—Р°РїСЂРѕСЃ РїРµСЂРµРґР°РЅ РѕРїРµСЂР°С‚РѕСЂСѓ")
+
+    ai_session = get_ai_session(chat.id)
+    ai_session['operator_requested'] = True
+    ai_session['ai_enabled'] = False
+
+    if ai_session['waiting_message_id']:
+        try:
+            bot.delete_message(chat.id, ai_session['waiting_message_id'])
+        except Exception:
+            pass
+        ai_session['waiting_message_id'] = None
+
+    author = None
+    if call.from_user:
+        author = call.from_user.username or call.from_user.full_name
+    database.save_message(
+        chat_id=chat.id,
+        direction="incoming",
+        text="[FAQ] РЎРІСЏР·Р°С‚СЊСЃСЏ СЃ РѕРїРµСЂР°С‚РѕСЂРѕРј",
+        message_id=None,
+        author=author,
+        chat_title=chat.title or chat.username or str(chat.id),
+        username=chat.username,
+        chat_type=chat.type,
+        section=section_id,
+    )
+    _send_and_store_message(chat.id, "Р—Р°РїСЂРѕСЃ РѕРїРµСЂР°С‚РѕСЂСѓ РѕС‚РїСЂР°РІР»РµРЅ...", section=section_id, author="System")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith(f"{SWITCH_BIN_CALLBACK}:"))
+def handle_switch_bin_callback(call: telebot.types.CallbackQuery) -> None:
+    try:
+        _, bin_value = call.data.split(":", 1)
+        bin_value = bin_value.strip()
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "РќРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ Р‘РРќ")
+        return
+    if not bin_value:
+        bot.answer_callback_query(call.id, "Р‘РРќ РЅРµ СѓРєР°Р·Р°РЅ")
+        return
+    chat = call.message.chat
+    dialog_id, is_resumed = database.set_chat_bin(chat.id, bin_value)
+    if dialog_id is None:
+        bot.answer_callback_query(call.id, "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РґРёР°Р»РѕРі")
+        return
+    ai_session = get_ai_session(chat.id)
+    ai_session['ai_enabled'] = True
+    ai_session['operator_requested'] = False
+    if is_resumed:
+        appeal_num = database.count_appeals(dialog_id)
+        bot.answer_callback_query(call.id, "Р‘РРќ РїРµСЂРµРєР»СЋС‡РµРЅ")
+        _send_and_store_message(
+            chat.id,
+            f"рџ“‹ Р’РѕР·РѕР±РЅРѕРІР»С‘РЅ РґРёР°Р»РѕРі РїРѕ Р‘РРќ {bin_value}. РќРѕРІРѕРµ РѕР±СЂР°С‰РµРЅРёРµ в„–{appeal_num}. AI РїРѕРјРѕС‰РЅРёРє РІРєР»СЋС‡РµРЅ.",
+            reply_markup=_section_keyboard(),
+            dialog_id=dialog_id,
+            author="System",
+        )
+    else:
+        bot.answer_callback_query(call.id, "Р‘РРќ РїРµСЂРµРєР»СЋС‡РµРЅ")
+        _send_and_store_message(
+            chat.id,
+            f"РђРєС‚РёРІРёСЂРѕРІР°РЅ РґРёР°Р»РѕРі РїРѕ Р‘РРќ {bin_value}. AI РїРѕРјРѕС‰РЅРёРє РІРєР»СЋС‡РµРЅ.",
+            reply_markup=_section_keyboard(),
+            dialog_id=dialog_id,
+            author="System",
+        )
+
+
+# -----------------------------------------------------------
+# Customer Surveys
+# -----------------------------------------------------------
+
+
+def _survey_employee_options(session: dict, question: dict) -> list[dict]:
+    if question.get("question_type") != QUESTION_EMPLOYEE:
+        return []
+    operators = session.get("operators") or []
+    if operators:
+        return operators
+    bin_value = session.get("bin")
+    if bin_value:
+        return database.get_bin_interacted_employees(str(bin_value))
+    return []
+
+
+def _send_survey_question(session: dict) -> bool:
+    question = session.get("current_question")
+    if not question:
+        database.complete_survey_session(int(session["id"]))
+        return False
+    employee_options = _survey_employee_options(session, question)
+    text = format_survey_question_message(
+        question,
+        index=int(session.get("current_question_index") or 1),
+        total=int(session.get("questions_total") or 1),
+        employee_options=employee_options,
+    )
+    _send_and_store_message(
+        int(session["chat_id"]),
+        text,
+        dialog_id=session.get("dialog_id"),
+        author="System",
+    )
+    return True
+
+
+def start_survey_for_context(
+    *,
+    template_id: int,
+    chat_id: int,
+    dialog_id: int | None,
+    appeal_id: int | None = None,
+    trigger_source: str = SURVEY_TRIGGER_MANUAL,
+) -> dict | None:
+    session = database.start_survey_session(
+        template_id=template_id,
+        chat_id=chat_id,
+        dialog_id=dialog_id,
+        appeal_id=appeal_id,
+        trigger_source=trigger_source,
+    )
+    if not session:
+        return None
+    _send_survey_question(session)
+    return session
+
+
+def start_survey_after_rating(dialog_id: int, appeal_id: int | None = None) -> dict | None:
+    templates = database.list_active_survey_templates(SURVEY_TRIGGER_AFTER_CSAT)
+    if not templates:
+        return None
+    dialog = database.get_chat_dialog(dialog_id)
+    if not dialog:
+        return None
+    for template in templates:
+        if database.survey_session_exists(int(template["id"]), dialog_id, appeal_id):
+            continue
+        return start_survey_for_context(
+            template_id=int(template["id"]),
+            chat_id=int(dialog["chat_id"]),
+            dialog_id=dialog_id,
+            appeal_id=appeal_id,
+            trigger_source=SURVEY_TRIGGER_AFTER_CSAT,
+        )
+    return None
+
+
+def maybe_start_survey_after_employee_csat(dialog_id: int, appeal_id: int | None = None) -> dict | None:
+    if not database.operator_csats_complete(dialog_id, appeal_id):
+        return None
+    return start_survey_after_rating(dialog_id, appeal_id)
+
+
+def handle_survey_text_answer(message: telebot.types.Message) -> bool:
+    if message.content_type != "text":
+        return False
+    session = database.get_active_survey_session(message.chat.id)
+    if not session:
+        return False
+    question = session.get("current_question")
+    if not question:
+        database.complete_survey_session(int(session["id"]))
+        return True
+    employee_options = _survey_employee_options(session, question)
+    result = parse_survey_answer(question, message.text or "", employee_options=employee_options)
+    _persist_message(
+        message,
+        direction="incoming",
+        section=None,
+        dialog_id=session.get("dialog_id"),
+    )
+    if not result.valid:
+        _send_and_store_message(
+            message.chat.id,
+            result.error_message or "РћС‚РІРµС‚ РЅРµ СЂР°СЃРїРѕР·РЅР°РЅ. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰Рµ СЂР°Р·.",
+            dialog_id=session.get("dialog_id"),
+            author="System",
+        )
+        return True
+    database.save_survey_answer(session_id=int(session["id"]), question=question, answer=result)
+    next_session = database.advance_survey_session(int(session["id"]))
+    if next_session:
+        _send_survey_question(next_session)
+    else:
+        _send_and_store_message(
+            message.chat.id,
+            "РЎРїР°СЃРёР±Рѕ, РѕС‚РІРµС‚С‹ СЃРѕС…СЂР°РЅРµРЅС‹.",
+            dialog_id=session.get("dialog_id"),
+            author="System",
+        )
+    return True
+
+
+def start_manual_survey(
+    template_id: int,
+    *,
+    bin_values: list[str] | None = None,
+    dialog_ids: list[int] | None = None,
+) -> dict:
+    targets = database.resolve_survey_manual_targets(bin_values=bin_values, dialog_ids=dialog_ids)
+    started: list[dict] = []
+    skipped: list[dict] = []
+    for target in targets:
+        session = start_survey_for_context(
+            template_id=template_id,
+            chat_id=int(target["chat_id"]),
+            dialog_id=int(target["dialog_id"]) if target.get("dialog_id") is not None else None,
+            appeal_id=int(target["appeal_id"]) if target.get("appeal_id") is not None else None,
+            trigger_source=SURVEY_TRIGGER_MANUAL,
+        )
+        if session:
+            started.append({"session_id": session["id"], **target})
+        else:
+            skipped.append(target)
+    return {"started": started, "skipped": skipped, "started_count": len(started), "skipped_count": len(skipped)}
+
+
+def _periodic_survey_key(interval: str | None, now: datetime) -> str | None:
+    normalized = (interval or "monthly").strip().lower()
+    if normalized == "monthly":
+        return now.strftime("%Y-%m")
+    if normalized == "quarterly":
+        quarter = ((now.month - 1) // 3) + 1
+        return f"{now.year}-Q{quarter}"
+    return None
+
+
+def start_periodic_surveys(now: datetime | None = None) -> dict:
+    current_time = now or datetime.now(timezone.utc)
+    templates = database.list_active_survey_templates(SURVEY_TRIGGER_PERIODIC)
+    targets = database.resolve_survey_manual_targets()
+    started: list[dict] = []
+    skipped: list[dict] = []
+    for template in templates:
+        period_key = _periodic_survey_key(template.get("periodic_interval"), current_time)
+        if not period_key:
+            continue
+        trigger_source = f"{SURVEY_TRIGGER_PERIODIC}:{period_key}"
+        for target in targets:
+            session = start_survey_for_context(
+                template_id=int(template["id"]),
+                chat_id=int(target["chat_id"]),
+                dialog_id=int(target["dialog_id"]) if target.get("dialog_id") is not None else None,
+                appeal_id=None,
+                trigger_source=trigger_source,
+            )
+            payload = {"template_id": int(template["id"]), "period": period_key, **target}
+            if session:
+                started.append({"session_id": session["id"], **payload})
+            else:
+                skipped.append(payload)
+    return {"started": started, "skipped": skipped, "started_count": len(started), "skipped_count": len(skipped)}
+
+
+# -----------------------------------------------------------
+# CSAT / Customer Satisfaction Rating
+# -----------------------------------------------------------
+
+CSAT_PREFIX = "csat_"
+AI_CSAT_PREFIX = "ai_csat_"
+
+
+def _send_rating_request(
+    chat_id: int,
+    dialog_id: int,
+    *,
+    appeal_id: int | None,
+    prefix: str,
+    prompt: str,
+) -> None:
+    """Send rating request (1-5) with callback payload bound to dialog/appeal."""
+    markup = types.InlineKeyboardMarkup(row_width=5)
+    callback_prefix = f"{prefix}{dialog_id}_"
+    if appeal_id is not None:
+        callback_prefix = f"{prefix}{dialog_id}_{appeal_id}_"
+    buttons = [
+        types.InlineKeyboardButton(
+            text=f"{'в­ђ' * i}",
+            callback_data=f"{callback_prefix}{i}",
+        )
+        for i in range(1, 6)
+    ]
+    markup.add(*buttons)
+    _send_and_store_message(chat_id, prompt, reply_markup=markup, dialog_id=dialog_id, author="System")
+
+
+
+def _send_operator_rating_request(
+    chat_id: int,
+    dialog_id: int,
+    *,
+    operator_stat_id: int,
+    operator_name: str,
+) -> None:
+    """Send one CSAT request for a concrete employee."""
+    markup = types.InlineKeyboardMarkup(row_width=5)
+    buttons = [
+        types.InlineKeyboardButton(
+            text=f"{chr(0x2B50) * i}",
+            callback_data=build_operator_csat_callback(
+                operator_stat_id=operator_stat_id,
+                rating=i,
+            ),
+        )
+        for i in range(1, 6)
+    ]
+    markup.add(*buttons)
+    _send_and_store_message(
+        chat_id,
+        f"\U0001f4ca \u041f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, \u043e\u0446\u0435\u043d\u0438\u0442\u0435 \u0440\u0430\u0431\u043e\u0442\u0443 \u0441\u043e\u0442\u0440\u0443\u0434\u043d\u0438\u043a\u0430 {operator_name}:",
+        reply_markup=markup,
+        dialog_id=dialog_id,
+        author="System",
+    )
+
+def send_csat_request(chat_id: int, dialog_id: int, appeal_id: int | None = None) -> None:
+    """Send operator CSAT request."""
+    operator_targets = database.list_operator_rating_targets(dialog_id, appeal_id)
+    if operator_targets:
+        for target in operator_targets:
+            _send_operator_rating_request(
+                chat_id,
+                dialog_id,
+                operator_stat_id=int(target["id"]),
+                operator_name=str(target["operator_name"]),
+            )
+        return
+
+    _send_rating_request(
+        chat_id,
+        dialog_id,
+        appeal_id=appeal_id,
+        prefix=CSAT_PREFIX,
+        prompt="\U0001f4ca \u041f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, \u043e\u0446\u0435\u043d\u0438\u0442\u0435 \u043a\u0430\u0447\u0435\u0441\u0442\u0432\u043e \u043e\u0431\u0441\u043b\u0443\u0436\u0438\u0432\u0430\u043d\u0438\u044f:",
+    )
+
+
+def send_ai_csat_request(chat_id: int, dialog_id: int, appeal_id: int | None = None) -> None:
+    """Send AI CSAT request for AI-resolved appeals."""
+    _send_rating_request(
+        chat_id,
+        dialog_id,
+        appeal_id=appeal_id,
+        prefix=AI_CSAT_PREFIX,
+        prompt="рџ¤– РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РѕС†РµРЅРёС‚Рµ РєР°С‡РµСЃС‚РІРѕ РѕС‚РІРµС‚Р° AI:",
+    )
+
+
+
+def _finalize_rating_message(call: types.CallbackQuery, text: str) -> None:
+    """Best-effort UI update after rating click."""
+    message = getattr(call, "message", None)
+    chat = getattr(message, "chat", None)
+    chat_id = getattr(chat, "id", None)
+    message_id = getattr(message, "message_id", None)
+    if chat_id is None or message_id is None:
+        return
+
+    try:
+        bot.edit_message_text(
+            text,
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=None,
+        )
+        return
+    except Exception:
+        logger.warning("Failed to edit rating message for callback %s", call.data, exc_info=True)
+
+    try:
+        bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=None,
+        )
+    except Exception:
+        logger.warning("Failed to clear rating keyboard for callback %s", call.data, exc_info=True)
+
+    try:
+        bot.send_message(chat_id, text)
+    except Exception:
+        logger.warning("Failed to send rating confirmation for callback %s", call.data, exc_info=True)
+
+@bot.callback_query_handler(func=lambda call: call.data and call.data.startswith(OPERATOR_CSAT_PREFIX))
+def operator_csat_callback_handler(call: types.CallbackQuery) -> None:
+    """Handle employee-specific CSAT callback from inline buttons."""
+    logger.info(
+        "Operator CSAT callback received: data=%s chat_id=%s message_id=%s",
+        getattr(call, "data", None),
+        getattr(getattr(getattr(call, "message", None), "chat", None), "id", None),
+        getattr(getattr(call, "message", None), "message_id", None),
+    )
+    try:
+        parsed = parse_operator_csat_callback(getattr(call, "data", None))
+        if parsed is None:
+            bot.answer_callback_query(call.id, "\u041e\u0448\u0438\u0431\u043a\u0430 \u0434\u0430\u043d\u043d\u044b\u0445")
+            return
+
+        existing = database.get_operator_csat_for_target(parsed.operator_stat_id)
+        if existing is not None:
+            bot.answer_callback_query(call.id, f"\u0412\u044b \u0443\u0436\u0435 \u043e\u0446\u0435\u043d\u0438\u043b\u0438 \u0441\u043e\u0442\u0440\u0443\u0434\u043d\u0438\u043a\u0430: {chr(0x2B50) * existing}")
+            return
+
+        target = database.get_operator_rating_target(parsed.operator_stat_id)
+        operator_name = str(target["operator_name"]) if target else "\u0441\u043e\u0442\u0440\u0443\u0434\u043d\u0438\u043a\u0430"
+        saved = database.save_operator_csat_rating(parsed.operator_stat_id, parsed.rating)
+        if not saved:
+            bot.answer_callback_query(call.id, "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u043e\u0446\u0435\u043d\u043a\u0443")
+            return
+
+        bot.answer_callback_query(call.id, f"\u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u043e\u0446\u0435\u043d\u043a\u0443! {chr(0x2B50) * parsed.rating}")
+        _finalize_rating_message(
+            call,
+            f"\U0001f4ca \u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u043e\u0446\u0435\u043d\u043a\u0443 \u0441\u043e\u0442\u0440\u0443\u0434\u043d\u0438\u043a\u0430 {operator_name}: {chr(0x2B50) * parsed.rating}\n\u041c\u044b \u0446\u0435\u043d\u0438\u043c \u0432\u0430\u0448 \u043e\u0442\u0437\u044b\u0432!",
+        )
+        if target:
+            maybe_start_survey_after_employee_csat(
+                int(target["dialog_id"]),
+                int(target["appeal_id"]) if target.get("appeal_id") is not None else None,
+            )
+    except Exception:
+        logger.error("Operator CSAT callback error", exc_info=True)
+        bot.answer_callback_query(call.id, "\u041f\u0440\u043e\u0438\u0437\u043e\u0448\u043b\u0430 \u043e\u0448\u0438\u0431\u043a\u0430")
+
+@bot.callback_query_handler(func=lambda call: call.data and call.data.startswith(CSAT_PREFIX))
+def csat_callback_handler(call: types.CallbackQuery) -> None:
+    """Handle CSAT rating callback from inline buttons."""
+    logger.info("CSAT callback received: data=%s chat_id=%s message_id=%s", getattr(call, "data", None), getattr(getattr(getattr(call, "message", None), "chat", None), "id", None), getattr(getattr(call, "message", None), "message_id", None))
+    try:
+        # Parse callback_data:
+        # - csat_{dialog_id}_{rating} (legacy)
+        # - csat_{dialog_id}_{appeal_id}_{rating} (current)
+        parts = call.data[len(CSAT_PREFIX):].split("_")
+        if len(parts) not in (2, 3):
+            bot.answer_callback_query(call.id, "РћС€РёР±РєР° РґР°РЅРЅС‹С…")
+            return
+
+        dialog_id = int(parts[0])
+        appeal_id: int | None = None
+        if len(parts) == 3:
+            appeal_id = int(parts[1])
+            rating = int(parts[2])
+        else:
+            rating = int(parts[1])
+
+        if rating < 1 or rating > 5:
+            bot.answer_callback_query(call.id, "РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ РѕС†РµРЅРєР°")
+            return
+
+        # Check if already rated
+        if appeal_id is not None:
+            existing = database.get_csat_for_appeal(appeal_id)
+        else:
+            existing = database.get_csat_for_dialog(dialog_id)
+        if existing is not None:
+            bot.answer_callback_query(call.id, f"Р’С‹ СѓР¶Рµ РѕС†РµРЅРёР»Рё: {'в­ђ' * existing}")
+            return
+
+        # Save the rating
+        saved = database.save_csat_rating(dialog_id, rating, appeal_id=appeal_id)
+        if not saved:
+            bot.answer_callback_query(call.id, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РѕС†РµРЅРєСѓ")
+            return
+
+        # Acknowledge and update the message
+        bot.answer_callback_query(call.id, f"\u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u043e\u0446\u0435\u043d\u043a\u0443! {chr(0x2B50) * rating}")
+        _finalize_rating_message(
+            call,
+            f"\U0001f4ca \u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u0432\u0430\u0448\u0443 \u043e\u0446\u0435\u043d\u043a\u0443: {chr(0x2B50) * rating}\n\u041c\u044b \u0446\u0435\u043d\u0438\u043c \u0432\u0430\u0448 \u043e\u0442\u0437\u044b\u0432!",
+        )
+        start_survey_after_rating(dialog_id, appeal_id)
+
+    except (ValueError, IndexError):
+        logger.warning("Invalid CSAT callback data: %s", call.data, exc_info=True)
+        bot.answer_callback_query(call.id, "РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё")
+    except Exception:
+        logger.error("CSAT callback error", exc_info=True)
+        bot.answer_callback_query(call.id, "РџСЂРѕРёР·РѕС€Р»Р° РѕС€РёР±РєР°")
+
+
+@bot.callback_query_handler(func=lambda call: call.data and call.data.startswith(AI_CSAT_PREFIX))
+def ai_csat_callback_handler(call: types.CallbackQuery) -> None:
+    """Handle AI CSAT callback from inline buttons."""
+    logger.info("AI CSAT callback received: data=%s chat_id=%s message_id=%s", getattr(call, "data", None), getattr(getattr(getattr(call, "message", None), "chat", None), "id", None), getattr(getattr(call, "message", None), "message_id", None))
+    try:
+        # Parse callback_data:
+        # - ai_csat_{dialog_id}_{rating} (legacy)
+        # - ai_csat_{dialog_id}_{appeal_id}_{rating} (current)
+        parts = call.data[len(AI_CSAT_PREFIX):].split("_")
+        if len(parts) not in (2, 3):
+            bot.answer_callback_query(call.id, "РћС€РёР±РєР° РґР°РЅРЅС‹С…")
+            return
+
+        dialog_id = int(parts[0])
+        appeal_id: int | None = None
+        if len(parts) == 3:
+            appeal_id = int(parts[1])
+            rating = int(parts[2])
+        else:
+            rating = int(parts[1])
+
+        if rating < 1 or rating > 5:
+            bot.answer_callback_query(call.id, "РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ РѕС†РµРЅРєР°")
+            return
+
+        if appeal_id is not None:
+            existing = database.get_ai_csat_for_appeal(appeal_id)
+        else:
+            existing = database.get_ai_csat_for_dialog(dialog_id)
+        if existing is not None:
+            bot.answer_callback_query(call.id, f"Р’С‹ СѓР¶Рµ РѕС†РµРЅРёР»Рё AI: {'в­ђ' * existing}")
+            return
+
+        saved = database.save_ai_csat_rating(dialog_id, rating, appeal_id=appeal_id)
+        if not saved:
+            bot.answer_callback_query(call.id, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РѕС†РµРЅРєСѓ AI")
+            return
+
+        bot.answer_callback_query(call.id, f"\u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u043e\u0446\u0435\u043d\u043a\u0443 AI! {chr(0x2B50) * rating}")
+        _finalize_rating_message(
+            call,
+            f"\U0001f916 \u0421\u043f\u0430\u0441\u0438\u0431\u043e \u0437\u0430 \u043e\u0446\u0435\u043d\u043a\u0443 AI: {chr(0x2B50) * rating}\n\u041c\u044b \u0443\u043b\u0443\u0447\u0448\u0430\u0435\u043c \u043e\u0442\u0432\u0435\u0442\u044b \u043d\u0430 \u043e\u0441\u043d\u043e\u0432\u0435 \u0432\u0430\u0448\u0435\u0439 \u043e\u0431\u0440\u0430\u0442\u043d\u043e\u0439 \u0441\u0432\u044f\u0437\u0438.",
+        )
+    except (ValueError, IndexError):
+        logger.warning("Invalid AI CSAT callback data: %s", call.data, exc_info=True)
+        bot.answer_callback_query(call.id, "РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё")
+    except Exception:
+        logger.error("AI CSAT callback error", exc_info=True)
+        bot.answer_callback_query(call.id, "РџСЂРѕРёР·РѕС€Р»Р° РѕС€РёР±РєР°")
+
+
+bot.set_my_commands(
+    [
+        types.BotCommand("start", "РќР°С‡Р°С‚СЊ СЂР°Р±РѕС‚Сѓ"),
+        types.BotCommand("faq", "Р§Р°СЃС‚С‹Рµ РІРѕРїСЂРѕСЃС‹"),
+        types.BotCommand("ai", "Р’РєР»СЋС‡РёС‚СЊ AI РїРѕРјРѕС‰РЅРёРєР°"),
+        types.BotCommand("operator", "РЎРІСЏР·Р°С‚СЊСЃСЏ СЃ РѕРїРµСЂР°С‚РѕСЂРѕРј"),
+        *[
+            types.BotCommand(section_id, section["title"])
+            for section_id, section in SECTION_COMMANDS.items()
+        ],
+    ]
+)
+
+
+
+
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def unhandled_callback_query_handler(call: types.CallbackQuery) -> None:
+    """Log any callback that did not match a dedicated handler."""
+    logger.warning(
+        "Unhandled callback query: data=%r chat_id=%s message_id=%s",
+        getattr(call, "data", None),
+        getattr(getattr(getattr(call, "message", None), "chat", None), "id", None),
+        getattr(getattr(call, "message", None), "message_id", None),
+    )
+    try:
+        bot.answer_callback_query(call.id, "\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043f\u043e\u043a\u0430 \u043d\u0435 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442\u0441\u044f")
+    except Exception:
+        logger.warning("Failed to answer unhandled callback query: %r", getattr(call, "data", None), exc_info=True)

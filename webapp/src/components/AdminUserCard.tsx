@@ -21,6 +21,7 @@ export interface AdminUserCardProps {
     onPasswordReset: (userId: number, password: string) => Promise<void>;
     canDeleteUser: boolean;
     onDeleteRequest: (user: UserProfile) => void;
+    onOpenProfile?: (user: UserProfile) => void;
     style?: React.CSSProperties;
 }
 
@@ -37,6 +38,7 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     onPasswordReset,
     canDeleteUser,
     onDeleteRequest,
+    onOpenProfile,
     style,
 }) => {
     const [selectedRole, setSelectedRole] = useState(user.role);
@@ -301,9 +303,29 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     const isOperator = user.role === 'operator';
     const isRoleReadonly = currentUserRole === 'moderator' && user.role !== 'operator';
     const canManageThisUser = !isRoleReadonly;
+    const handleCardClick = (event: React.MouseEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement;
+        const interactiveTarget = target.closest('button, input, select, textarea, a, .menu, .select-pill');
+        if (interactiveTarget && interactiveTarget !== event.currentTarget) {
+            return;
+        }
+        onOpenProfile?.(user);
+    };
+
+    const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement;
+        const interactiveTarget = target.closest('button, input, select, textarea, a, .menu, .select-pill');
+        if (interactiveTarget && interactiveTarget !== event.currentTarget) {
+            return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onOpenProfile?.(user);
+        }
+    };
 
     return (
-        <div className="card admin-user-card" style={style}>
+        <div className="card admin-user-card" style={style} onClick={handleCardClick} onKeyDown={handleCardKeyDown} role="button" tabIndex={0}>
             {/* HEADER: Name and Badge only */}
             <div className="admin-user-card__header-minimal">
                 <h3 className="admin-user-card__name">{user.name}</h3>
@@ -578,4 +600,3 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
 };
 
 export default AdminUserCard;
-

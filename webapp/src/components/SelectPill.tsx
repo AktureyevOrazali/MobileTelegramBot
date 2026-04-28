@@ -36,11 +36,37 @@ export default function SelectPill({
     [options, value, placeholder],
   );
 
+  const normalizeText = useCallback((text: string | undefined | null) => (sanitizeUiText(text) ?? text ?? '').toLowerCase(), []);
+  const extractDigits = useCallback((text: string | undefined | null) => (text ?? '').replace(/\D+/g, ''), []);
+
   const filtered = useMemo(() => {
     if (!searchable || !q.trim()) return options;
     const s = q.toLowerCase();
-    return options.filter((o) => ((sanitizeUiText(o.label) ?? o.label) + o.value + (sanitizeUiText(o.meta) ?? o.meta ?? '')).toLowerCase().includes(s));
-  }, [q, options, searchable]);
+    const digitsQuery = extractDigits(q);
+    return options.filter((o) => (
+      o.value === ''
+      || (
+        digitsQuery
+          ? [o.value, o.label, o.meta].some((candidate) => extractDigits(candidate).startsWith(digitsQuery))
+          : (() => {
+            const label = normalizeText(o.label);
+            const meta = normalizeText(o.meta);
+            const optionValue = normalizeText(o.value);
+            if (label.startsWith(s) || meta.startsWith(s) || optionValue.startsWith(s)) {
+              return true;
+            }
+            const tokens = `${label} ${meta} ${optionValue}`.split(/[\s,.;:()\-_/]+/).filter(Boolean);
+            return tokens.some((token) => token.startsWith(s));
+          })()
+      )
+    ));
+  }, [extractDigits, normalizeText, q, options, searchable]);
+
+  useEffect(() => {
+    if (!open && q) {
+      setQ('');
+    }
+  }, [open, q]);
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -111,6 +137,9 @@ export default function SelectPill({
         className={`pill${disabled ? ' pill--disabled' : ''}`}
         onClick={() => {
           if (disabled) return;
+          if (!open && q) {
+            setQ('');
+          }
           setOpen((v) => !v);
         }}
         aria-haspopup="listbox"
@@ -147,6 +176,7 @@ export default function SelectPill({
               className="opt"
               onClick={() => {
                 onChange(o.value);
+                setQ('');
                 setOpen(false);
               }}
             >

@@ -14,6 +14,7 @@ from . import require_env
 from .api import app
 from . import database
 from .telegram_bot import bot
+from .survey_service import start_periodic_surveys
 
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,36 @@ class BotPollingThread(threading.Thread):
         return self._exception
 
 
+
+
+class SurveyDispatchThread(threading.Thread):
+    """Periodically checks whether scheduled customer surveys should be sent."""
+
+    INTERVAL_SECONDS = 3600
+
+    def __init__(self) -> None:
+        super().__init__(daemon=True)
+        self._stopping = threading.Event()
+
+    def run(self) -> None:
+        logger.info("SurveyDispatchThread started (interval=%ds)", self.INTERVAL_SECONDS)
+        while not self._stopping.is_set():
+            try:
+                result = start_periodic_surveys()
+                if result.get("started_count"):
+                    logger.info(
+                        "SurveyDispatchThread: started %s scheduled survey session(s)",
+                        result.get("started_count"),
+                    )
+            except Exception:
+                logger.exception("SurveyDispatchThread: error during scheduled survey dispatch")
+            self._stopping.wait(timeout=self.INTERVAL_SECONDS)
+        logger.info("SurveyDispatchThread stopped")
+
+    def stop(self) -> None:
+        self._stopping.set()
+
+
 class CleanupThread(threading.Thread):
     """Р¤РѕРЅРѕРІС‹Р№ РїРѕС‚РѕРє: РєР°Р¶РґС‹Р№ С‡Р°СЃ СѓРґР°Р»СЏРµС‚ Р·Р°РєСЂС‹С‚С‹Рµ РґРёР°Р»РѕРіРё СЃС‚Р°СЂС€Рµ 24 С‡Р°СЃРѕРІ."""
 
@@ -113,6 +144,9 @@ def main() -> None:
     cleanup_thread = CleanupThread()
     cleanup_thread.start()
 
+    survey_dispatch_thread = SurveyDispatchThread()
+    survey_dispatch_thread.start()
+
     # РљРѕРЅС„РёРіСѓСЂРёСЂСѓРµРј uvicorn РєР°Рє СѓРїСЂР°РІР»СЏРµРјС‹Р№ СЃРµСЂРІРµСЂ, С‡С‚РѕР±С‹ РїРµСЂРµС…РІР°С‚С‹РІР°С‚СЊ СЃРёРіРЅР°Р»С‹ Рё Р·Р°РІРµСЂС€Р°С‚СЊСЃСЏ РєРѕСЂСЂРµРєС‚РЅРѕ
     config = uvicorn.Config(
         app,
@@ -150,6 +184,12 @@ def main() -> None:
         except Exception:
             pass
         cleanup_thread.join(timeout=5)
+
+        try:
+            survey_dispatch_thread.stop()
+        except Exception:
+            pass
+        survey_dispatch_thread.join(timeout=5)
 
         # Р•СЃР»Рё РІ РїРѕС‚РѕРєРµ Р±РѕС‚Р° Р±С‹Р»Р° РѕС€РёР±РєР° вЂ” РїСЂРѕР±СЂР°СЃС‹РІР°РµРј РµС‘ РЅР°РІРµСЂС…
         if bot_thread.exception:

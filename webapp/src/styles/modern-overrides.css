@@ -77,6 +77,7 @@
   padding: 4px 8px;
   min-width: 0;
 }
+
 .app-header__brand-mark {
   width: 48px;
   height: 48px;
@@ -402,6 +403,7 @@
   color: #ffffff;
   box-shadow: 0 12px 24px rgba(223, 124, 124, 0.22);
 }
+
 .button.danger:hover:not(:disabled) {
   background: var(--danger-hover);
 }
@@ -463,7 +465,7 @@
   min-height: 48px;
   padding: 0 16px;
   border-radius: 16px;
-    background: var(--surface-color);
+  background: var(--surface-color);
   border: 1px solid var(--border-color);
   box-shadow: none;
   transition: transform var(--motion-fast) ease, border-color var(--motion-base) ease, box-shadow var(--motion-base) ease;
@@ -493,7 +495,7 @@
 .menu {
   padding: 8px;
   border-radius: 18px;
-    background: var(--surface-color);
+  background: var(--surface-color);
   border: 1px solid var(--border-color);
   box-shadow: var(--popover-shadow);
   backdrop-filter: none;
@@ -1243,7 +1245,7 @@
   height: 18px;
   border-radius: 6px;
   border: 1.5px solid rgba(153, 178, 213, 0.52);
-    background: var(--surface-color);
+  background: var(--surface-color);
   flex: 0 0 auto;
 }
 
@@ -1257,7 +1259,7 @@
 }
 
 .menu {
-    background: var(--surface-color) !important;
+  background: var(--surface-color) !important;
   border-color: rgba(153, 178, 213, 0.22) !important;
 }
 
@@ -3089,7 +3091,7 @@
   padding: 0 12px;
   border-radius: 12px;
   border: 1px solid rgba(154, 171, 194, 0.28);
-    background: var(--surface-color);
+  background: var(--surface-color);
   color: var(--text-heading);
   font: inherit;
   font-size: 0.8rem;
@@ -3212,7 +3214,7 @@
 }
 
 .chat-inline .message-bubble.incoming {
-    background: var(--surface-color) !important;
+  background: var(--surface-color) !important;
   border-bottom-left-radius: 6px !important;
 }
 
@@ -3556,7 +3558,7 @@
   padding: 0 12px !important;
   border-radius: 12px !important;
   font-size: 0.8rem !important;
-    background: var(--surface-color) !important;
+  background: var(--surface-color) !important;
 }
 
 .dialogs-page--minimal .pill .value,
@@ -3805,7 +3807,7 @@
   padding: 0 10px;
   border-radius: 12px;
   border: 1px solid rgba(154, 171, 194, 0.24);
-    background: var(--surface-color);
+  background: var(--surface-color);
   color: #4f6179;
   font: inherit;
   font-size: 0.78rem;
@@ -4583,6 +4585,7 @@
   height: calc(100% - 40px) !important;
   max-height: none !important;
 }
+
 /* Dashboard shell final geometry */
 .dashboard-page--app-sidebar {
   min-height: 0 !important;
@@ -4629,7 +4632,7 @@
   margin-bottom: 10px !important;
 }
 
-.dashboard-page--app-sidebar .dashboard-map-widget__header > div:first-child {
+.dashboard-page--app-sidebar .dashboard-map-widget__header>div:first-child {
   min-width: 0 !important;
 }
 
@@ -4851,8 +4854,8 @@
   align-items: stretch !important;
 }
 
-.app-shell--dashboard .dashboard-page--app-sidebar .dashboard-overview-row > .dashboard-card,
-.app-shell--dashboard .dashboard-page--app-sidebar .dashboard-columns > .dashboard-card {
+.app-shell--dashboard .dashboard-page--app-sidebar .dashboard-overview-row>.dashboard-card,
+.app-shell--dashboard .dashboard-page--app-sidebar .dashboard-columns>.dashboard-card {
   height: 100% !important;
 }
 
@@ -5025,7 +5028,7 @@
     width: 100%;
   }
 
-  .app-shell--dashboard .dashboard-page--app-sidebar .dashboard-hero__controls-group > * {
+  .app-shell--dashboard .dashboard-page--app-sidebar .dashboard-hero__controls-group>* {
     flex: 1 1 180px;
   }
 
@@ -5273,6 +5276,335 @@
 }
 
 
+/* Surveys stabilization pass (2026-04-14) */
+.app-shell--surveys .app-main--sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden !important;
+}
+
+.app-shell--surveys .app-main--sidebar .app-page-transition {
+  flex: 1 1 auto;
+  min-height: 0 !important;
+  height: 100%;
+  display: flex;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar {
+  --surveys-hero-height: 84px;
+  --surveys-tabs-height: 54px;
+  --surveys-tabs-gap: 14px;
+  --surveys-builder-sticky-top: calc(var(--surveys-tabs-height) + var(--surveys-tabs-gap));
+  --surveys-template-card-height: calc(100vh - 28px - var(--surveys-hero-height) - 12px - var(--surveys-builder-sticky-top));
+  flex: 1 1 auto;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: none !important;
+  display: grid !important;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-hero {
+  flex: 0 0 auto;
+  margin-bottom: 0 !important;
+  min-height: 84px;
+  padding: 16px 18px !important;
+  gap: 12px !important;
+  border-radius: 20px !important;
+  background: var(--surface-color) !important;
+  border: 1px solid var(--header-border) !important;
+  box-shadow: 0 10px 30px rgba(20, 33, 61, 0.06) !important;
+  align-items: center !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-hero h1 {
+  margin: 0 !important;
+  font-size: clamp(1.45rem, 2vw, 1.78rem) !important;
+  line-height: 1.08 !important;
+  color: var(--text-heading) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-hero__meta {
+  display: flex !important;
+  align-items: center !important;
+  min-height: 100%;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-content-shell {
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-content {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 0 6px 0 0 !important;
+  gap: 14px !important;
+  position: relative;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-content::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-color) 30%, transparent);
+}
+
+/* Let the surveys workspace use the main shell scroll instead of a nested locked area. */
+.app-shell--surveys .app-main--sidebar {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar {
+  height: auto !important;
+  min-height: calc(100vh - 28px) !important;
+  overflow: visible !important;
+  grid-template-rows: auto auto minmax(0, 1fr) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-content-shell {
+  overflow: visible !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-content {
+  height: auto !important;
+  overflow: visible !important;
+  padding-right: 0 !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-tabs {
+  margin-bottom: 0 !important;
+  padding: 5px !important;
+  border-radius: 18px !important;
+  border: 1px solid var(--header-border) !important;
+  background: color-mix(in srgb, var(--surface-soft-color) 78%, var(--surface-color)) !important;
+  box-shadow: 0 10px 30px rgba(20, 33, 61, 0.04) !important;
+  position: sticky;
+  top: 0;
+  z-index: 12;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-tabs__button {
+  min-height: 42px;
+  padding: 0 16px !important;
+  border-radius: 13px !important;
+  font-size: 0.88rem !important;
+  font-weight: 700 !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-tabs__button.is-active {
+  box-shadow: none !important;
+  background: var(--surface-color) !important;
+  border: 1px solid color-mix(in srgb, var(--brand-color) 18%, var(--border-color));
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-card,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-table {
+  border-radius: 20px !important;
+  border: 1px solid var(--header-border) !important;
+  background: var(--surface-color) !important;
+  box-shadow: 0 10px 30px rgba(20, 33, 61, 0.06) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-card {
+  padding: 16px !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder {
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 14px !important;
+  align-items: start !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-template-list {
+  position: sticky !important;
+  top: var(--surveys-builder-sticky-top) !important;
+  height: var(--surveys-template-card-height);
+  min-height: var(--surveys-template-card-height);
+  max-height: var(--surveys-template-card-height);
+  gap: 14px !important;
+  align-self: stretch !important;
+  overflow: hidden;
+  display: grid !important;
+  grid-template-rows: auto auto repeat(3, minmax(0, 1fr));
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-template-list,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-editor-column {
+  min-width: 0;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-template-group {
+  min-height: 0;
+  align-content: start;
+  grid-auto-rows: min-content;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-template-group .surveys-muted {
+  margin: 0;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-header {
+  gap: 0 !important;
+  padding: 0 2px;
+  margin-bottom: 2px !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-card-label {
+  margin-bottom: 12px !important;
+  padding: 0 10px !important;
+  min-height: 28px !important;
+  border-radius: 999px !important;
+  border: 1px solid color-mix(in srgb, var(--brand-color) 22%, var(--border-color)) !important;
+  background: color-mix(in srgb, var(--brand-soft) 72%, var(--surface-color)) !important;
+  color: var(--brand-color) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-switch button,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-template-group button,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-trigger-option,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-kpi-card,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-sentiment-card,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-top-list,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-chart,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-setting-row,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-editor {
+  border-radius: 16px !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-switch button,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-template-group button,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-trigger-option,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-setting-row,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-editor,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-kpi-card,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-sentiment-card,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-top-list,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-chart {
+  border-color: color-mix(in srgb, var(--border-color) 88%, transparent) !important;
+  background: color-mix(in srgb, var(--surface-soft-color) 84%, white 16%) !important;
+  box-shadow: none !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-trigger-option {
+  min-height: 70px;
+  padding: 10px 14px !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-switch button {
+  min-height: 64px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-template-group button {
+  min-height: 86px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-button {
+  min-height: 40px;
+  border-radius: 12px !important;
+  font-size: 0.88rem !important;
+  box-shadow: none !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-button--primary {
+  background: var(--brand-color) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-field__label,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question__number,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-card-label {
+  font-size: 0.66rem !important;
+  letter-spacing: 0.08em !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-trigger-option__content {
+  gap: 0 !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-trigger-option__content strong {
+  font-size: 0.9rem !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar input,
+.app-shell--surveys .surveys-page--app-sidebar select,
+.app-shell--surveys .surveys-page--app-sidebar textarea {
+  min-height: 44px;
+  border-radius: 12px !important;
+  background: var(--surface-color) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar textarea {
+  min-height: 92px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-kpi-grid {
+  gap: 10px !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-kpi-card {
+  min-height: 112px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question__top {
+  padding: 12px 14px !important;
+  background: color-mix(in srgb, var(--surface-soft-color) 90%, white 10%) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question__actions button {
+  min-height: 30px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-table {
+  padding: 16px !important;
+}
+
+@media (max-width: 1180px) {
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .app-shell--surveys .app-main--sidebar {
+    overflow: auto !important;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    grid-template-rows: auto 1fr;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-content-shell,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-content {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-template-list {
+    position: static !important;
+    top: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    display: flex !important;
+  }
+}
+
+
 /* Profile stabilization pass (2026-03-12) */
 .app-shell--profile .app-main--sidebar {
   display: flex;
@@ -5462,12 +5794,12 @@
 
 
 /* Profile card stretch alignment (2026-03-13) */
-.app-shell--profile .profile-page--app-sidebar .profile-content > .profile-card:first-child:last-child {
+.app-shell--profile .profile-page--app-sidebar .profile-content>.profile-card:first-child:last-child {
   flex: 1 1 auto;
   min-height: 100%;
 }
 
-.app-shell--profile .profile-page--app-sidebar .profile-content > .profile-card:first-child:last-child .profile-card__actions {
+.app-shell--profile .profile-page--app-sidebar .profile-content>.profile-card:first-child:last-child .profile-card__actions {
   margin-top: auto;
   padding-top: 8px;
 }
@@ -5588,4 +5920,619 @@
 
 .chat-inline--minimal .message-bubble__text {
   white-space: pre-wrap;
+}
+
+/* Surveys dashboard alignment pass */
+.app-shell--surveys .app-main--sidebar {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+.app-shell--surveys .app-main--sidebar .app-page-transition {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: calc(100vh - 28px) !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
+  overflow: visible !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-hero {
+  position: sticky !important;
+  top: 0;
+  z-index: 24;
+  min-height: 108px !important;
+  width: 100%;
+  border-radius: 22px !important;
+  border: 1px solid var(--header-border) !important;
+  background: var(--surface-color) !important;
+  box-shadow: 0 10px 30px rgba(20, 33, 61, 0.06) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-tabs {
+  position: sticky !important;
+  top: 122px;
+  z-index: 23;
+  width: 100%;
+  min-height: 54px;
+  align-items: center;
+  border-radius: 22px !important;
+  border: 1px solid var(--header-border) !important;
+  background: color-mix(in srgb, var(--surface-soft-color) 78%, var(--surface-color)) !important;
+  box-shadow: 0 10px 30px rgba(20, 33, 61, 0.04) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-tabs__button {
+  flex: 0 0 auto;
+  min-height: 42px;
+  border-radius: 14px !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-panel,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-card,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-score-card {
+  border-radius: 22px !important;
+  border: 1px solid var(--header-border) !important;
+  background: var(--surface-color) !important;
+  box-shadow: 0 10px 30px rgba(20, 33, 61, 0.06) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-panel,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-layout,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-panel,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-dashboard-grid {
+  width: 100%;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-panel__body {
+  align-items: stretch;
+  gap: 16px !important;
+  background: color-mix(in srgb, var(--surface-soft-color) 74%, var(--surface-color)) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-client-overview {
+  grid-template-columns: repeat(2, minmax(380px, 1fr));
+  align-items: stretch;
+  gap: 16px !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-score-card,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-trend-card {
+  min-height: 430px !important;
+  height: 100%;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-trend-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-trend-card__donut {
+  min-height: 158px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-score-card__rows {
+  margin-top: auto;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-kpi-grid {
+  width: 100%;
+  border-radius: 22px !important;
+  border: 1px solid var(--header-border) !important;
+  box-shadow: 0 10px 30px rgba(20, 33, 61, 0.05) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-kpi {
+  min-height: 92px;
+  background: var(--surface-color) !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-dashboard-grid {
+  grid-template-columns: repeat(2, minmax(360px, 1fr));
+  align-items: stretch;
+  gap: 16px !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-dashboard-grid--three {
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-dashboard-grid > .surveys-card,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-dashboard-grid--three > .surveys-card {
+  height: 100%;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-layout--builder {
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-editor {
+  min-height: calc(100vh - 206px);
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question {
+  border-radius: 18px !important;
+  background: color-mix(in srgb, var(--surface-soft-color) 78%, var(--surface-color)) !important;
+}
+
+@media (max-width: 1180px) {
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-client-overview,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-dashboard-grid,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-dashboard-grid--three {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-score-card,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-trend-card {
+    min-height: 0 !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-hero,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-tabs {
+    position: static !important;
+    top: auto;
+  }
+}
+
+/* Survey builder reference layout. */
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-shell {
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  flex: 1 1 auto;
+  gap: 14px !important;
+  height: calc(100vh - 218px);
+  min-height: 0;
+  max-height: calc(100vh - 218px);
+  overflow: hidden;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-sidebar {
+  display: flex !important;
+  position: sticky !important;
+  top: 204px !important;
+  align-self: stretch !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  padding: 14px !important;
+  border-radius: 22px !important;
+  box-shadow: none !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-segmented--builder {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  width: 100%;
+  flex-wrap: nowrap;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-segmented--builder button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-editor--builder {
+  gap: 13px;
+  height: 100%;
+  min-height: 0 !important;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head--builder {
+  align-items: center;
+  padding: 14px 18px 11px;
+  border-bottom: 1px solid #dfe7f1;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head--builder h2 {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head--builder .surveys-actions {
+  align-items: center;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card {
+  gap: 13px;
+  margin: 0 18px;
+  padding: 15px 16px;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card__row {
+  grid-template-columns: minmax(0, 1fr) minmax(128px, 128px);
+  gap: 12px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-field .pill,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card .pill,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-field input,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card input {
+  min-height: 34px;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-button {
+  min-height: 31px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-button--danger-text {
+  border-color: transparent;
+  background: transparent;
+  color: #dc2626;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-button--primary {
+  border-color: #415fb5;
+  background: #415fb5;
+  color: #ffffff;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card--launch {
+  display: grid;
+  width: auto;
+  align-self: stretch;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  align-self: stretch;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #e0e6ef;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #51657f;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-date-field {
+  width: min(260px, 100%);
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option.is-active {
+  border-color: #415fb5;
+  background: #eef3ff;
+  color: #2f4aaa;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option__icon {
+  width: 15px;
+  height: 15px;
+  color: #6f83a0;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option__icon::before {
+  display: block;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option__icon--calendar::before {
+  content: "□";
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option__icon--trend::before {
+  content: "↗";
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option__icon--message::before {
+  content: "▱";
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option__icon--clock::before {
+  content: "◷";
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-head--builder {
+  margin: 6px 18px -1px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-head--builder h3 {
+  font-size: 0.86rem;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-list--builder {
+  gap: 9px;
+  margin: 0 18px 18px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card {
+  gap: 11px;
+  padding: 12px 14px;
+  border-radius: 9px !important;
+  border-color: #dfe7f1;
+  background: #ffffff !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card.is-expanded {
+  border-color: #415fb5;
+  background: #f8fbff !important;
+  box-shadow: 0 0 0 1px rgba(65, 95, 181, 0.12);
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__lead {
+  gap: 10px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__lead--button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__lead--button:focus-visible {
+  outline: 2px solid rgba(65, 95, 181, 0.35);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__number {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card.is-expanded .surveys-question-card__number {
+  border-color: #415fb5;
+  background: #415fb5;
+  color: #ffffff;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__copy strong {
+  font-size: 0.82rem;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__meta {
+  gap: 8px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__meta span,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__meta small {
+  font-size: 0.68rem;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__actions {
+  gap: 7px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__actions .surveys-icon-button {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #8da0ba;
+  font-size: 0.9rem;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__editor {
+  gap: 10px;
+  padding-top: 13px;
+  border-top: 1px solid #e4ebf5;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card .surveys-form-grid {
+  gap: 10px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card .surveys-check {
+  min-height: 0;
+  justify-content: flex-start;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-preview {
+  display: grid;
+  gap: 6px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-config {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-config > span {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-strip {
+  gap: 6px;
+  padding-bottom: 0;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-strip__chip {
+  min-width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-strip__chip.is-active {
+  border-color: #415fb5;
+  background: #415fb5;
+  color: #ffffff;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-preview__legend {
+  display: flex;
+  justify-content: space-between;
+  color: #97a6bf;
+  font-size: 0.68rem;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-choice-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-choice-row .surveys-choice-control {
+  width: 17px !important;
+  min-width: 17px !important;
+  height: 17px !important;
+  min-height: 17px !important;
+  padding: 0 !important;
+  accent-color: #415fb5;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-choice-row .surveys-option-input {
+  min-width: 0;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-choice-row .surveys-link-button {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-comment-preview textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 10px;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px !important;
+  resize: vertical;
+}
+
+@media (max-width: 760px) {
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head--builder {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card__row,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-launch-options,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-shell,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card .surveys-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-shell,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-sidebar {
+    min-height: 0 !important;
+    height: auto !important;
+  }
+}
+
+/* Survey analytics keeps controls fixed while only the report body scrolls. */
+.app-shell--surveys .app-main--sidebar {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.app-shell--surveys .app-main--sidebar .app-page-transition {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar {
+  height: calc(100vh - 28px) !important;
+  min-height: 0 !important;
+  max-height: calc(100vh - 28px) !important;
+  display: grid !important;
+  grid-template-rows: auto auto minmax(0, 1fr) !important;
+  overflow: hidden !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-hero,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-tabs {
+  position: static !important;
+  top: auto !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-panel {
+  min-height: 0 !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-panel > .surveys-panel__head {
+  flex: 0 0 auto;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-panel > .surveys-panel__body {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-panel > .surveys-panel__body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-panel > .surveys-panel__body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-color) 30%, transparent);
 }

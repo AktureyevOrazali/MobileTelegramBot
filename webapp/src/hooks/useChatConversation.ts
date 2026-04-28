@@ -81,7 +81,9 @@ export const useChatConversation = ({
   }, [maxTextareaHeight]);
 
   const loadMessages = useCallback(async () => {
-    if (!chat) {
+    const chatId = chat?.chatId;
+    const dialogId = chat?.dialogId;
+    if (!chatId) {
       setMessages([]);
       setError(null);
       return;
@@ -95,7 +97,7 @@ export const useChatConversation = ({
     const task = (async () => {
       try {
         setLoading(true);
-        const data = await apiClient.fetchMessages(chat.chatId, MESSAGE_FETCH_LIMIT, chat.dialogId);
+        const data = await apiClient.fetchMessages(chatId, MESSAGE_FETCH_LIMIT, dialogId);
         setMessages(data);
         setError(null);
       } catch (err) {
@@ -112,10 +114,10 @@ export const useChatConversation = ({
     } finally {
       inflightLoadRef.current = null;
     }
-  }, [apiClient, chat, scrollToBottom]);
+  }, [apiClient, chat?.chatId, chat?.dialogId, scrollToBottom]);
 
   const scheduleLoadMessages = useCallback((delay = MESSAGE_RELOAD_DEBOUNCE_MS) => {
-    if (!chat || reloadTimerRef.current !== null) {
+    if (!chat?.chatId || reloadTimerRef.current !== null) {
       return;
     }
 
@@ -123,7 +125,7 @@ export const useChatConversation = ({
       reloadTimerRef.current = null;
       void loadMessages();
     }, delay);
-  }, [chat, loadMessages]);
+  }, [chat?.chatId, loadMessages]);
 
   useEffect(() => () => {
     if (reloadTimerRef.current !== null) {
@@ -166,7 +168,7 @@ export const useChatConversation = ({
     return () => {
       cancelled = true;
     };
-  }, [apiClient, canReply, chat]);
+  }, [apiClient, canReply, chat?.section]);
 
   useEffect(() => {
     const frameId = requestAnimationFrame(() => scrollToBottom(true));
@@ -180,16 +182,18 @@ export const useChatConversation = ({
   }, [autosizeTextarea, input]);
 
   useEffect(() => {
-    if (!chat) {
+    const chatId = chat?.chatId;
+    const dialogId = chat?.dialogId;
+    if (!chatId) {
       return undefined;
     }
 
     const cleanup = apiClient.connectToStream({
       onMessage: (message) => {
-        if (message.chat_id !== chat.chatId) {
+        if (message.chat_id !== chatId) {
           return;
         }
-        if (typeof message.dialog_id === 'number' && message.dialog_id !== chat.dialogId) {
+        if (typeof message.dialog_id === 'number' && message.dialog_id !== dialogId) {
           return;
         }
         scheduleLoadMessages();
@@ -197,7 +201,7 @@ export const useChatConversation = ({
     });
 
     return cleanup;
-  }, [apiClient, chat, scheduleLoadMessages]);
+  }, [apiClient, chat?.chatId, chat?.dialogId, scheduleLoadMessages]);
 
   const handlePresetClick = useCallback((text: string) => {
     setInput(text);
@@ -212,7 +216,9 @@ export const useChatConversation = ({
   }, [autosizeTextarea]);
 
   const sendMessage = useCallback(async (options: SendChatMessageOptions = {}) => {
-    if (!chat) {
+    const chatId = chat?.chatId;
+    const dialogId = chat?.dialogId;
+    if (!chatId) {
       return false;
     }
 
@@ -224,7 +230,7 @@ export const useChatConversation = ({
 
     setSending(true);
     try {
-      await apiClient.sendMessage(chat.chatId, trimmed, chat.dialogId, attachmentIds);
+      await apiClient.sendMessage(chatId, trimmed, dialogId, attachmentIds);
       setInput('');
       options.onSent?.();
       scheduleLoadMessages(80);
@@ -236,7 +242,7 @@ export const useChatConversation = ({
     } finally {
       setSending(false);
     }
-  }, [apiClient, chat, input, scheduleLoadMessages]);
+  }, [apiClient, chat?.chatId, chat?.dialogId, input, scheduleLoadMessages]);
 
   return {
     canReply,

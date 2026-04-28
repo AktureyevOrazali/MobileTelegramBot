@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient } from '../api/ApiClient';
 import { AuthSession, BinDetailed, ChatSummary, DashboardSummary, Section } from '../types';
 import { extractErrorMessage } from '../utils/errors';
@@ -10,6 +10,8 @@ import {
     SVG_ID_TO_REGION_KEY,
 } from '../utils/kazakhstanGeo';
 import { OBLAST_RAYONS } from '../data/kzMapData';
+
+const DIALOGS_STREAM_REFRESH_DEBOUNCE_MS = 180;
 
 /** Per-region/rayon aggregated statistics. */
 export interface RegionStats {
@@ -121,6 +123,7 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
     const [dialogStatusLoading, setDialogStatusLoading] = useState(false);
     const [binDetails, setBinDetails] = useState<BinDetailed[]>([]);
     const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+    const refreshTimerRef = useRef<number | null>(null);
 
     const currentUser = session.user;
     const canDeleteDialog = currentUser.isAdmin;
@@ -240,7 +243,42 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
         setActiveChat((prev) => (prev ? applyAiOverrides([prev])[0] : prev));
     }, [applyAiOverrides]);
 
-    /* ---- Auto-refresh disabled: manual refresh only ---- */
+    const refreshChats = useCallback(async () => {
+        try {
+            const loadedChats = await apiClient.fetchChats();
+            setChats(applyAiOverrides(loadedChats));
+        } catch (err) {
+            console.warn('Не удалось обновить список диалогов из стрима', err);
+        }
+    }, [apiClient, applyAiOverrides]);
+
+    const scheduleDialogsRefresh = useCallback((delay = DIALOGS_STREAM_REFRESH_DEBOUNCE_MS) => {
+        if (refreshTimerRef.current !== null) {
+            return;
+        }
+
+        refreshTimerRef.current = window.setTimeout(() => {
+            refreshTimerRef.current = null;
+            void refreshChats();
+        }, delay);
+    }, [refreshChats]);
+
+    useEffect(() => () => {
+        if (refreshTimerRef.current !== null) {
+            window.clearTimeout(refreshTimerRef.current);
+            refreshTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        const cleanup = apiClient.connectToStream({
+            onMessage: () => {
+                scheduleDialogsRefresh();
+            },
+        });
+
+        return cleanup;
+    }, [apiClient, scheduleDialogsRefresh]);
 
     /* ---- Filter options ---- */
     const sectionOptions = useMemo(
@@ -593,17 +631,19 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
                     : await apiClient.openDialog(chat.dialogId);
             const closedAt = response.dialogClosedAt ?? null;
             const aiEnabled = response.aiEnabled;
+            const employeeAssessmentId = action === 'close' ? response.employeeAssessmentId : chat.employeeAssessmentId;
+            const employeeAssessmentPending = action === 'close' ? response.employeeAssessmentPending : chat.employeeAssessmentPending;
 
             setChats((prev) =>
                 prev.map((item) =>
                     item.dialogId === chat.dialogId
-                        ? { ...item, dialogClosedAt: closedAt, aiEnabled }
+                        ? { ...item, dialogClosedAt: closedAt, aiEnabled, employeeAssessmentId, employeeAssessmentPending }
                         : item,
                 ),
             );
             setActiveChat((prev) =>
                 prev && prev.dialogId === chat.dialogId
-                    ? { ...prev, dialogClosedAt: closedAt, aiEnabled }
+                    ? { ...prev, dialogClosedAt: closedAt, aiEnabled, employeeAssessmentId, employeeAssessmentPending }
                     : prev,
             );
             setAiManuallyDisabled((prev) => {

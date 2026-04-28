@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../api/ApiClient';
-import { Attachment, ChatSummary, Message, UploadMediaResponse } from '../types';
+import { Attachment, ChatSummary, EmployeeClientAssessmentSubmitPayload, Message, UploadMediaResponse } from '../types';
 import { useChatConversation } from '../hooks/useChatConversation';
 import { extractErrorMessage } from '../utils/errors';
 import { getChatAvatarGradient, getChatAvatarLabel } from '../utils/chatParticipantAvatar';
 import { sanitizeMessageText, sanitizeUiText } from '../utils/text';
+import EmployeeClientAssessmentCard from './EmployeeClientAssessmentCard';
 
 interface InlineChatPanelProps {
   apiClient: ApiClient;
   chat: ChatSummary | null;
   onToggleAi: (chat: ChatSummary) => void;
   onToggleStatus: (chat: ChatSummary) => void;
+  assessmentSubmittingId: number | null;
+  onAssessmentSubmit: (assessmentId: number, payload: EmployeeClientAssessmentSubmitPayload) => Promise<void>;
 }
 
 const TEXT = {
@@ -109,7 +112,7 @@ const MessageAttachmentView: React.FC<{ attachment: Attachment; onImageClick: (u
   );
 };
 
-const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ apiClient, chat, onToggleAi, onToggleStatus }) => {
+const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ apiClient, chat, onToggleAi, onToggleStatus, assessmentSubmittingId, onAssessmentSubmit }) => {
   const {
     autosizeTextarea,
     canReply,
@@ -230,7 +233,20 @@ const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ apiClient, chat, onTo
     );
   }
 
-  const canSubmit = canReply && !sending && !uploading && (input.trim().length > 0 || pendingUploads.length > 0);
+  const showEmployeeAssessment = Boolean(chat?.dialogClosedAt && chat?.employeeAssessmentPending && chat?.employeeAssessmentId);
+  const canSubmit = !showEmployeeAssessment && canReply && !sending && !uploading && (input.trim().length > 0 || pendingUploads.length > 0);
+
+  if (showEmployeeAssessment) {
+    return (
+      <section className="dialogs-side-card chat-inline chat-inline--minimal chat-inline--assessment-screen" style={{ '--avatar-bg': getChatAvatarGradient(chat) } as React.CSSProperties}>
+        <EmployeeClientAssessmentCard
+          chat={chat}
+          isSubmitting={assessmentSubmittingId === chat.employeeAssessmentId}
+          onSubmit={onAssessmentSubmit}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="dialogs-side-card chat-inline chat-inline--minimal" style={{ '--avatar-bg': getChatAvatarGradient(chat) } as React.CSSProperties}>
@@ -329,91 +345,91 @@ const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ apiClient, chat, onTo
       </div>
 
       {canReply && templates.length > 0 && (
-        <div className="preset-replies chat-inline__presets chat-inline__presets--minimal">
-          {templates.slice(0, 3).map((template) => (
-            <button
-              key={template.id}
-              type="button"
-              className="preset-reply"
-              onClick={() => handlePresetClick(template.text)}
-              title={template.text}
-            >
-              {template.title}
-            </button>
-          ))}
-        </div>
-      )}
+            <div className="preset-replies chat-inline__presets chat-inline__presets--minimal">
+              {templates.slice(0, 3).map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  className="preset-reply"
+                  onClick={() => handlePresetClick(template.text)}
+                  title={template.text}
+                >
+                  {template.title}
+                </button>
+              ))}
+            </div>
+          )}
 
-      {pendingUploads.length > 0 && (
-        <div className="chat-inline__pending-list">
-          {pendingUploads.map((item) => (
-            <div key={item.mediaId} className="chat-inline__pending-item">
-              <span className="chat-inline__pending-name">{item.originalName}</span>
-              <button type="button" className="chat-inline__pending-remove" onClick={() => handleRemoveUpload(item.mediaId)}>
-                {TEXT.removeSymbol}
+          {pendingUploads.length > 0 && (
+            <div className="chat-inline__pending-list">
+              {pendingUploads.map((item) => (
+                <div key={item.mediaId} className="chat-inline__pending-item">
+                  <span className="chat-inline__pending-name">{item.originalName}</span>
+                  <button type="button" className="chat-inline__pending-remove" onClick={() => handleRemoveUpload(item.mediaId)}>
+                    {TEXT.removeSymbol}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="dialog-composer chat-inline__composer chat-inline__composer--minimal">
+            <input
+              ref={fileInputRef}
+              className="chat-inline__file-input"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
+              multiple
+              onChange={handleFileChange}
+              hidden
+            />
+            <textarea
+              ref={textareaRef}
+              className="textarea chat-inline__textarea"
+              placeholder={canReply ? TEXT.inputPlaceholder : TEXT.noReplyRights}
+              value={input}
+              onPaste={handlePaste}
+              onChange={(event) => {
+                setInput(event.target.value);
+                if (textareaRef.current) {
+                  autosizeTextarea(textareaRef.current);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void handleSend();
+                }
+              }}
+              disabled={!canReply || sending || uploading}
+              rows={1}
+            />
+            <div className="dialog-composer__actions chat-inline__composer-actions">
+              <button
+                type="button"
+                className="chat-inline__attach-icon-btn"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!canReply || sending || uploading}
+                title={TEXT.attachTitle}
+              >
+                {uploading ? (
+                  <span className="chat-inline__uploading-dots">...</span>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.51a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                )}
+              </button>
+              <button className="button chat-inline__send chat-inline__send--minimal chat-inline__send--icon" type="button" onClick={() => void handleSend()} disabled={!canSubmit}>
+                {sending ? '...' : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m22 2-7 20-4-9-9-4z" />
+                    <path d="M22 2 11 13" />
+                  </svg>
+                )}
               </button>
             </div>
-          ))}
-        </div>
-      )}
-
-      <div className="dialog-composer chat-inline__composer chat-inline__composer--minimal">
-        <input
-          ref={fileInputRef}
-          className="chat-inline__file-input"
-          type="file"
-          accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
-          multiple
-          onChange={handleFileChange}
-          hidden
-        />
-        <textarea
-          ref={textareaRef}
-          className="textarea chat-inline__textarea"
-          placeholder={canReply ? TEXT.inputPlaceholder : TEXT.noReplyRights}
-          value={input}
-          onPaste={handlePaste}
-          onChange={(event) => {
-            setInput(event.target.value);
-            if (textareaRef.current) {
-              autosizeTextarea(textareaRef.current);
-            }
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              void handleSend();
-            }
-          }}
-          disabled={!canReply || sending || uploading}
-          rows={1}
-        />
-        <div className="dialog-composer__actions chat-inline__composer-actions">
-          <button
-            type="button"
-            className="chat-inline__attach-icon-btn"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!canReply || sending || uploading}
-            title={TEXT.attachTitle}
-          >
-            {uploading ? (
-              <span className="chat-inline__uploading-dots">...</span>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.51a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-              </svg>
-            )}
-          </button>
-          <button className="button chat-inline__send chat-inline__send--minimal chat-inline__send--icon" type="button" onClick={() => void handleSend()} disabled={!canSubmit}>
-            {sending ? '...' : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m22 2-7 20-4-9-9-4z" />
-                <path d="M22 2 11 13" />
-              </svg>
-            )}
-          </button>
-        </div>
-      </div>
+          </div>
       <ImagePreviewModal
         url={previewImageUrl}
         onClose={() => setPreviewImageUrl(null)}

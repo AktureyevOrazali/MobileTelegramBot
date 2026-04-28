@@ -9,6 +9,7 @@ import React, {
 import { ApiClient } from '../api/ApiClient';
 import { AuthSession } from '../types';
 import { normalizeAssignmentsFromStorage } from '../utils/converters';
+import { sanitizeUiText } from '../utils/text';
 
 interface ApiContextValue {
   apiClient: ApiClient;
@@ -42,6 +43,12 @@ function loadSessionFromStorage(): AuthSession | null {
         token: parsed.token,
         user: {
           ...parsed.user,
+          email: sanitizeUiText(parsed.user.email) ?? parsed.user.email ?? '',
+          login: sanitizeUiText(parsed.user.login) ?? parsed.user.login ?? '',
+          name: sanitizeUiText(parsed.user.name) ?? parsed.user.name ?? '',
+          jobTitle: sanitizeUiText(parsed.user.jobTitle ?? parsed.user.job_title) ?? parsed.user.jobTitle ?? parsed.user.job_title ?? '',
+          phone: sanitizeUiText(parsed.user.phone) ?? parsed.user.phone ?? '',
+          bio: sanitizeUiText(parsed.user.bio) ?? parsed.user.bio ?? '',
           createdAt: new Date(parsed.user.createdAt ?? parsed.user.created_at ?? new Date().toISOString()),
           sections: Array.isArray(parsed.user.sections) ? parsed.user.sections : [],
           bins: normalizedBins,

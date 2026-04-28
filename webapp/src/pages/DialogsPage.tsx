@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient } from '../api/ApiClient';
-import { AuthSession, ChatSummary } from '../types';
+import { AuthSession, ChatSummary, EmployeeClientAssessmentSubmitPayload } from '../types';
 import SelectPill from '../components/SelectPill';
 import ConfirmModal from '../components/ConfirmModal';
 import DialogCard from '../components/DialogCard';
@@ -30,6 +30,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     }
   });
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [submittingAssessmentId, setSubmittingAssessmentId] = useState<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -117,6 +118,14 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
 
   const collapsedRailChats = useMemo(() => visibleChats.slice(0, 6), [visibleChats]);
 
+  const resetFilters = () => {
+    setSelectedSection(null);
+    setSelectedBin(null);
+    setShowFavoritesOnly(false);
+    setSortOrder('desc');
+    setStatusFilter('all');
+  };
+
 
   const findOptionLabel = (options: Array<{ value: string; label: string }>, value: string | null) =>
     options.find((option) => option.value === (value ?? ''))?.label ?? '';
@@ -145,12 +154,18 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
     return chips.filter(Boolean);
   }, [sectionOptions, selectedSection, selectedBin, showFavoritesOnly, sortOptions, sortOrder, statusFilter, statusOptions]);
 
-  const resetFilters = () => {
-    setSelectedSection(null);
-    setSelectedBin(null);
-    setShowFavoritesOnly(false);
-    setSortOrder('desc');
-    setStatusFilter('all');
+  const handleEmployeeAssessmentSubmit = async (assessmentId: number, payload: EmployeeClientAssessmentSubmitPayload) => {
+    try {
+      setSubmittingAssessmentId(assessmentId);
+      await apiClient.submitEmployeeClientAssessment(assessmentId, payload);
+      setBanner('\u041E\u0446\u0435\u043D\u043A\u0430 \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0430.');
+      await loadSectionsAndChats(false);
+    } catch (error) {
+      setBanner(`\u041E\u0448\u0438\u0431\u043A\u0430: ${error instanceof Error ? error.message : '\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u043E\u0446\u0435\u043D\u043A\u0443 \u043A\u043B\u0438\u0435\u043D\u0442\u0430.'}`);
+      throw error;
+    } finally {
+      setSubmittingAssessmentId(null);
+    }
   };
 
 
@@ -369,6 +384,8 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
             chat={activeChat}
             onToggleAi={handleToggleAi}
             onToggleStatus={requestStatusChange}
+            assessmentSubmittingId={submittingAssessmentId}
+            onAssessmentSubmit={handleEmployeeAssessmentSubmit}
           />
         </aside>
       </section>

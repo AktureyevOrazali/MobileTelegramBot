@@ -23,7 +23,7 @@ from pathlib import Path
 
 from datetime import date, datetime, timezone
 
-from typing import Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 
 import asyncio
 
@@ -44,6 +44,7 @@ from pydantic import AliasChoices, BaseModel, EmailStr, Field, validator
 
 
 from . import database
+from . import employee_client_assessments
 
 from .ai_manager import ai_manager
 
@@ -4954,6 +4955,48 @@ class OneCRatingRequest(BaseModel):
 
     rating: int = Field(ge=1, le=5)
 
+
+class SurveyTemplateRequest(BaseModel):
+    title: str
+    description: str = ""
+    audience: str = "client"
+    status: str = "draft"
+    trigger_type: str = "periodic"
+    periodic_interval: str | None = None
+    scheduled_at: str | None = None
+    launch_rules: List[Dict[str, Any]] = Field(default_factory=list)
+    is_anonymous: bool = False
+    questions: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ManualSurveyLaunchRequest(BaseModel):
+    template_id: int
+    bin_values: List[str] = Field(default_factory=list)
+    dialog_ids: List[int] = Field(default_factory=list)
+
+
+class EmployeeClientAssessmentSubmitRequest(BaseModel):
+    question_clarity_score: int = Field(ge=1, le=5)
+    data_completeness_score: int = Field(ge=1, le=5)
+    client_response_speed_score: int = Field(ge=1, le=5)
+    business_communication_score: int = Field(ge=1, le=5)
+    client_readiness_score: int = Field(ge=1, le=5)
+    low_score_reason: str | None = None
+    internal_comment: str | None = None
+    interaction_status: str
+    interaction_flag: str
+    request_repeat_status: str
+    client_data_overdue: bool = False
+
+
+def _parse_optional_date_param(value: str | None, *, field_name: str) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Некорректная дата: {field_name}") from exc
+
     target: Literal["operator", "ai"] = "operator"
 
 
@@ -5437,7 +5480,191 @@ def list_updates(
     return enriched
 
 
+@router.get("/surveys/templates")
+def list_survey_templates_endpoint(
+    status: str | None = None,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    return database.list_survey_templates(status=status)
 
+
+@router.post("/surveys/templates")
+def create_survey_template_endpoint(
+    body: SurveyTemplateRequest,
+    current_user: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    try:
+        return database.create_survey_template(
+            title=body.title,
+            description=body.description,
+            audience=body.audience,
+            status=body.status,
+            launch_rules=body.launch_rules,
+            trigger_type=body.trigger_type,
+            periodic_interval=body.periodic_interval,
+            scheduled_at=body.scheduled_at,
+            is_anonymous=body.is_anonymous,
+            questions=body.questions,
+            created_by=int(current_user["id"]),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/surveys/templates/{template_id}")
+def update_survey_template_endpoint(
+    template_id: int,
+    body: SurveyTemplateRequest,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    try:
+        return database.update_survey_template(
+            int(template_id),
+            title=body.title,
+            description=body.description,
+            audience=body.audience,
+            status=body.status,
+            launch_rules=body.launch_rules,
+            trigger_type=body.trigger_type,
+            periodic_interval=body.periodic_interval,
+            scheduled_at=body.scheduled_at,
+            is_anonymous=body.is_anonymous,
+            questions=body.questions,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/surveys/templates/{template_id}/duplicate")
+def duplicate_survey_template_endpoint(
+    template_id: int,
+    current_user: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    try:
+        return database.duplicate_survey_template(int(template_id), created_by=int(current_user["id"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/surveys/templates/{template_id}")
+def delete_survey_template_endpoint(
+    template_id: int,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    deleted = database.delete_survey_template(int(template_id))
+    if not deleted:
+        raise HTTPException(status_code=409, detail="Шаблон нельзя удалить")
+    return {"status": "ok"}
+
+
+@router.post("/surveys/manual-launch")
+def launch_survey_endpoint(
+    body: ManualSurveyLaunchRequest,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    targets = database.resolve_survey_manual_targets(
+        bin_values=body.bin_values,
+        dialog_ids=body.dialog_ids,
+        only_closed=False,
+    )
+    started: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for target in targets:
+        session = database.start_survey_session(
+            template_id=int(body.template_id),
+            chat_id=int(target["chat_id"]),
+            dialog_id=int(target["dialog_id"]) if target.get("dialog_id") is not None else None,
+            appeal_id=int(target["appeal_id"]) if target.get("appeal_id") is not None else None,
+            trigger_source="admin_manual",
+        )
+        if session:
+            started.append(
+                {
+                    "session_id": int(session["id"]),
+                    "chat_id": int(session["chat_id"]),
+                    "dialog_id": session.get("dialog_id"),
+                    "appeal_id": session.get("appeal_id"),
+                    "bin": session.get("bin"),
+                }
+            )
+        else:
+            skipped.append(
+                {
+                    "chat_id": int(target["chat_id"]),
+                    "dialog_id": target.get("dialog_id"),
+                    "appeal_id": target.get("appeal_id"),
+                    "bin": target.get("bin"),
+                }
+            )
+    return {
+        "started": started,
+        "skipped": skipped,
+        "started_count": len(started),
+        "skipped_count": len(skipped),
+    }
+
+
+@router.get("/analytics/surveys")
+def get_survey_analytics_endpoint(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    operator_name: str | None = None,
+    bin: str | None = None,
+    region: str | None = None,
+    topic: str | None = None,
+    template_id: int | None = None,
+    section: str | None = None,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    return database.get_survey_analytics(
+        start_date=_parse_optional_date_param(start_date, field_name="start_date"),
+        end_date=_parse_optional_date_param(end_date, field_name="end_date"),
+        operator_name=operator_name,
+        bin_value=bin,
+        region=region,
+        topic=topic,
+        template_id=template_id,
+        section=section,
+    )
+
+
+@router.get("/analytics/employee-client-assessments")
+def get_employee_client_assessment_analytics_endpoint(
+    employee_id: int | None = None,
+    employee_name: str | None = None,
+    client_bin: str | None = None,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    return employee_client_assessments.get_employee_assessment_analytics(
+        employee_id=employee_id,
+        employee_name=employee_name,
+        client_bin=client_bin,
+    )
+
+
+@router.post("/employee-client-assessments/{assessment_id}/submit")
+def submit_employee_client_assessment_endpoint(
+    assessment_id: int,
+    body: EmployeeClientAssessmentSubmitRequest,
+    _: Dict[str, object] = Depends(get_current_user),
+):
+    try:
+        return employee_client_assessments.submit_employee_assessment(
+            int(assessment_id),
+            question_clarity_score=body.question_clarity_score,
+            data_completeness_score=body.data_completeness_score,
+            client_response_speed_score=body.client_response_speed_score,
+            business_communication_score=body.business_communication_score,
+            client_readiness_score=body.client_readiness_score,
+            low_score_reason=body.low_score_reason,
+            internal_comment=body.internal_comment,
+            interaction_status=body.interaction_status,
+            interaction_flag=body.interaction_flag,
+            request_repeat_status=body.request_repeat_status,
+            client_data_overdue=body.client_data_overdue,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/health")

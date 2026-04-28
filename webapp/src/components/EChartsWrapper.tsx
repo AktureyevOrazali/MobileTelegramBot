@@ -11,7 +11,16 @@ export interface EChartsWrapperProps {
     onEvents?: Record<string, Function>;
 }
 
-const EChartsWrapper: React.FC<EChartsWrapperProps> = ({
+const shallowStyleEqual = (left?: React.CSSProperties, right?: React.CSSProperties) => {
+    if (left === right) return true;
+    if (!left || !right) return false;
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) return false;
+    return leftKeys.every((key) => left[key as keyof React.CSSProperties] === right[key as keyof React.CSSProperties]);
+};
+
+const EChartsWrapperBase: React.FC<EChartsWrapperProps> = ({
     option,
     style,
     className,
@@ -22,6 +31,8 @@ const EChartsWrapper: React.FC<EChartsWrapperProps> = ({
 }) => {
     const chartRef = useRef<HTMLDivElement>(null);
     const chartInstance = useRef<echarts.ECharts | null>(null);
+    const optionFrameRef = useRef<number | null>(null);
+    const resizeFrameRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (!chartRef.current) return;
@@ -33,6 +44,14 @@ const EChartsWrapper: React.FC<EChartsWrapperProps> = ({
         chartInstance.current = currentInstance;
 
         return () => {
+            if (optionFrameRef.current !== null) {
+                window.cancelAnimationFrame(optionFrameRef.current);
+                optionFrameRef.current = null;
+            }
+            if (resizeFrameRef.current !== null) {
+                window.cancelAnimationFrame(resizeFrameRef.current);
+                resizeFrameRef.current = null;
+            }
             if (chartInstance.current) {
                 chartInstance.current.dispose();
                 chartInstance.current = null;
@@ -57,30 +76,50 @@ const EChartsWrapper: React.FC<EChartsWrapperProps> = ({
     // Update chart when option changes
     useEffect(() => {
         if (chartInstance.current && option) {
-            chartInstance.current.setOption(option, notMerge, lazyUpdate);
+            if (optionFrameRef.current !== null) {
+                window.cancelAnimationFrame(optionFrameRef.current);
+            }
+            optionFrameRef.current = window.requestAnimationFrame(() => {
+                optionFrameRef.current = null;
+                chartInstance.current?.setOption(option, notMerge, lazyUpdate);
+            });
         }
+        return () => {
+            if (optionFrameRef.current !== null) {
+                window.cancelAnimationFrame(optionFrameRef.current);
+                optionFrameRef.current = null;
+            }
+        };
     }, [option, notMerge, lazyUpdate]);
 
     // Handle Resize correctly
     useEffect(() => {
-        const handleResize = () => {
-            if (chartInstance.current) {
-                chartInstance.current.resize();
+        const scheduleResize = () => {
+            if (resizeFrameRef.current !== null) {
+                return;
             }
+            resizeFrameRef.current = window.requestAnimationFrame(() => {
+                resizeFrameRef.current = null;
+                chartInstance.current?.resize();
+            });
         };
-
-        window.addEventListener('resize', handleResize);
 
         let resizeObserver: ResizeObserver | null = null;
         if (chartRef.current && typeof ResizeObserver !== 'undefined') {
             resizeObserver = new ResizeObserver(() => {
-                handleResize();
+                scheduleResize();
             });
             resizeObserver.observe(chartRef.current);
+        } else {
+            window.addEventListener('resize', scheduleResize);
         }
 
         return () => {
-            window.removeEventListener('resize', handleResize);
+            window.removeEventListener('resize', scheduleResize);
+            if (resizeFrameRef.current !== null) {
+                window.cancelAnimationFrame(resizeFrameRef.current);
+                resizeFrameRef.current = null;
+            }
             if (resizeObserver && chartRef.current) {
                 resizeObserver.unobserve(chartRef.current);
                 resizeObserver.disconnect();
@@ -90,5 +129,15 @@ const EChartsWrapper: React.FC<EChartsWrapperProps> = ({
 
     return <div ref={chartRef} style={{ width: '100%', height: '100%', ...style }} className={className} />;
 };
+
+const EChartsWrapper = React.memo(EChartsWrapperBase, (prevProps, nextProps) => (
+    prevProps.option === nextProps.option
+    && prevProps.className === nextProps.className
+    && prevProps.theme === nextProps.theme
+    && prevProps.notMerge === nextProps.notMerge
+    && prevProps.lazyUpdate === nextProps.lazyUpdate
+    && prevProps.onEvents === nextProps.onEvents
+    && shallowStyleEqual(prevProps.style, nextProps.style)
+));
 
 export default EChartsWrapper;

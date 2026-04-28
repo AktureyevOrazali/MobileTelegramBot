@@ -1,6 +1,7 @@
 ﻿const MEDIA_PLACEHOLDER_RE = /^\[?(photo|image|video|document|file|attachment)(?:\s+message)?\]?$/i;
 const ONLY_BROKEN_SYMBOLS_RE = /^[\s\uFFFD.,:;!?()[\]{}\-_'"`~]+$/;
 const MOJIBAKE_HINT_RE = /(?:Р.|С.|Ð.|Ñ.){2,}/;
+const MOJIBAKE_EXTRA_CHARS_RE = /[\u00A0\u0098\u040E\u0453\u2018\u2019\u201A\u2020\u2026\u2030]/;
 const UNICODE_ESCAPE_RE = /\\u([0-9a-fA-F]{4})/g;
 const SIMPLE_ESCAPE_RE = /\\([nrt])/g;
 const CP1251_DECODER = new TextDecoder('windows-1251');
@@ -27,8 +28,12 @@ function countCyrillic(value: string): number {
   return matches ? matches.length : 0;
 }
 
-function repairMojibake(value: string): string | null {
-  if (!MOJIBAKE_HINT_RE.test(value)) {
+function looksBroken(value: string): boolean {
+  return MOJIBAKE_HINT_RE.test(value) || MOJIBAKE_EXTRA_CHARS_RE.test(value) || value.includes('\uFFFD');
+}
+
+function repairMojibakeOnce(value: string): string | null {
+  if (!looksBroken(value)) {
     return null;
   }
 
@@ -49,6 +54,22 @@ function repairMojibake(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+function repairMojibake(value: string): string | null {
+  let current = value;
+  let changed = false;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const repaired = repairMojibakeOnce(current);
+    if (!repaired || repaired === current) {
+      break;
+    }
+    current = repaired;
+    changed = true;
+  }
+
+  return changed ? current : null;
 }
 
 function decodeEscapedSequences(value: string): string | null {

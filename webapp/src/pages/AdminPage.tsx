@@ -6,6 +6,7 @@ import { cloneAssignment, formatDateTimeLocalInput, parseDateTimeLocalInput } fr
 import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
 import AdminUserCard from '../components/AdminUserCard';
+import EmployeeProfileAnalyticsModal from '../components/EmployeeProfileAnalyticsModal';
 import { useAdminData } from '../hooks/useAdminData';
 
 interface AdminPageProps {
@@ -44,6 +45,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
   const [assignExpiresAt, setAssignExpiresAt] = useState('');
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
+  const [selectedProfileUser, setSelectedProfileUser] = useState<UserProfile | null>(null);
 
   // ── Data loading (debounced search) ──
   useEffect(() => {
@@ -315,6 +317,7 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
               onBinsSave={admin.handleBinsSave}
               onPasswordReset={admin.handlePasswordReset}
               canDeleteUser={currentUser.id !== user.id}
+              onOpenProfile={setSelectedProfileUser}
               onDeleteRequest={(selectedUser) => {
                 admin.setDeleteError(null);
                 admin.setUserToDelete(selectedUser);
@@ -348,6 +351,13 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
           admin.setDeleteError(null);
         }}
         onConfirm={admin.handleConfirmDelete}
+      />
+
+      <EmployeeProfileAnalyticsModal
+        open={Boolean(selectedProfileUser)}
+        user={selectedProfileUser}
+        apiClient={apiClient}
+        onClose={() => setSelectedProfileUser(null)}
       />
 
       {/* Pending Registrations Modal */}

@@ -177,6 +177,9 @@ const RegionActivityMap: React.FC<{
 }> = React.memo(({ counts, rayonCounts, regionStats, rayonStats, binDetails, chats }) => {
     const wrapperRef = useRef<HTMLDivElement | null>(null);
     const [hovered, setHovered] = useState<{ key: string; x: number; y: number } | null>(null);
+    const hoveredRef = useRef<{ key: string; x: number; y: number } | null>(null);
+    const hoverFrameRef = useRef<number | null>(null);
+    const pendingHoverRef = useRef<{ key: string; x: number; y: number } | null>(null);
     const [selectedOblast, setSelectedOblast] = useState<string | null>(null);
     const [selectedRayon, setSelectedRayon] = useState<number | null>(null);
     const [expandedPanels, setExpandedPanels] = useState<PanelSectionState>(createInitialExpandedPanels);
@@ -200,35 +203,77 @@ const RegionActivityMap: React.FC<{
         return result;
     }, []);
 
+    const flushHoverState = useCallback((nextHover: { key: string; x: number; y: number } | null) => {
+        const currentHover = hoveredRef.current;
+        if (
+            currentHover?.key === nextHover?.key
+            && currentHover?.x === nextHover?.x
+            && currentHover?.y === nextHover?.y
+        ) {
+            return;
+        }
+        hoveredRef.current = nextHover;
+        setHovered(nextHover);
+    }, []);
+
+    const scheduleHoverState = useCallback((nextHover: { key: string; x: number; y: number } | null) => {
+        pendingHoverRef.current = nextHover;
+        if (hoverFrameRef.current !== null) {
+            return;
+        }
+        hoverFrameRef.current = window.requestAnimationFrame(() => {
+            hoverFrameRef.current = null;
+            flushHoverState(pendingHoverRef.current);
+        });
+    }, [flushHoverState]);
+
     const handleMouseMove = useCallback((event: React.MouseEvent<SVGElement>, key: string) => {
         if (!wrapperRef.current) return;
         const rect = wrapperRef.current.getBoundingClientRect();
-        setHovered({ key, x: event.clientX - rect.left, y: event.clientY - rect.top });
-    }, []);
+        const nextHover = { key, x: event.clientX - rect.left, y: event.clientY - rect.top };
+        const currentHover = hoveredRef.current;
 
-    const handleMouseLeave = useCallback(() => setHovered(null), []);
+        if (
+            currentHover?.key === nextHover.key
+            && Math.abs(currentHover.x - nextHover.x) < 6
+            && Math.abs(currentHover.y - nextHover.y) < 6
+        ) {
+            return;
+        }
+
+        scheduleHoverState(nextHover);
+    }, [scheduleHoverState]);
+
+    const handleMouseLeave = useCallback(() => {
+        if (hoverFrameRef.current !== null) {
+            window.cancelAnimationFrame(hoverFrameRef.current);
+            hoverFrameRef.current = null;
+        }
+        pendingHoverRef.current = null;
+        flushHoverState(null);
+    }, [flushHoverState]);
 
     const handleOblastClick = useCallback((oblastId: string) => {
         if (OBLAST_RAYONS[oblastId]) {
             setSelectedOblast(oblastId);
             setSelectedRayon(null);
-            setHovered(null);
+            flushHoverState(null);
             setBinTab('all');
         }
-    }, []);
+    }, [flushHoverState]);
 
     const handleBack = useCallback(() => {
         if (selectedRayon !== null) {
             setSelectedRayon(null);
-            setHovered(null);
+            flushHoverState(null);
             setBinTab('all');
         } else {
             setSelectedOblast(null);
             setSelectedRayon(null);
-            setHovered(null);
+            flushHoverState(null);
             setBinTab('all');
         }
-    }, [selectedRayon]);
+    }, [flushHoverState, selectedRayon]);
 
     const toggleFullscreen = useCallback(() => {
         setIsFullscreen((prev) => !prev);
@@ -257,6 +302,12 @@ const RegionActivityMap: React.FC<{
             };
         }
     }, [isFullscreen]);
+
+    useEffect(() => () => {
+        if (hoverFrameRef.current !== null) {
+            window.cancelAnimationFrame(hoverFrameRef.current);
+        }
+    }, []);
 
     const selectedOblastData = selectedOblast ? OBLAST_RAYONS[selectedOblast] : null;
     const selectedRegionKey = selectedOblast ? SVG_ID_TO_REGION_KEY[selectedOblast] ?? '' : '';
@@ -1141,7 +1192,5 @@ const RegionActivityMap: React.FC<{
 });
 
 export default RegionActivityMap;
-
-
 
 

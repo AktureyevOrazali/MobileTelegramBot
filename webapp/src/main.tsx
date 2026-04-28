@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
@@ -10,6 +10,7 @@ import './styles/dashboard.css';
 import './styles/profile.css';
 import './styles/chat-modal.css';
 import './styles/admin.css';
+import './styles/surveys.css';
 import './styles/auth.css';
 import './styles/modern-overrides.css';
 import './styles/dialogs-refinement.css';

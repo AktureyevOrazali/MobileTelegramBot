@@ -217,6 +217,35 @@
   color: var(--profile-role-color);
 }
 
+.profile-button--sidebar {
+  padding: 8px 10px 8px 8px;
+  border-radius: 16px;
+  align-items: center;
+}
+
+.profile-button__avatar--sidebar {
+  width: 34px;
+  height: 34px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, rgba(58, 124, 165, 0.18), rgba(105, 167, 200, 0.22));
+  border-color: rgba(58, 124, 165, 0.24);
+  color: var(--brand-color);
+}
+
+.profile-button--sidebar .profile-button__body {
+  min-width: 0;
+  gap: 2px;
+}
+
+.profile-button--sidebar .profile-button__name,
+.profile-button--sidebar .profile-button__role {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* --- Theme toggle --- */
 .theme-toggle {
   width: 34px;

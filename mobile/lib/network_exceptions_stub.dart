@@ -1,1 +1,0 @@
-bool isNetworkException(Object? error) => false;

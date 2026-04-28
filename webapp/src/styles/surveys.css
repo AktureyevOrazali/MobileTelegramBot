@@ -838,6 +838,10 @@
   gap: 10px;
 }
 
+.surveys-matrix-grid--ledger {
+  margin-bottom: 12px;
+}
+
 .surveys-matrix-cell {
   display: grid;
   gap: 4px;
@@ -1187,6 +1191,25 @@
   gap: 14px;
 }
 
+.surveys-ratings-summary {
+  align-content: start;
+}
+
+.surveys-ratings-entities {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.surveys-ratings-entity-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.surveys-ratings-entity-card .surveys-assessment-ops {
+  margin-top: auto;
+}
+
 .surveys-assessment-filter {
   display: flex;
   align-items: center;
@@ -1399,6 +1422,12 @@
   width: 120px;
 }
 
+.surveys-assessment-line-chart {
+  width: 100%;
+  height: 220px;
+  margin-top: 10px;
+}
+
 .surveys-assessment-donut__center {
   position: absolute;
   inset: 0;
@@ -1589,6 +1618,56 @@
   background: #f1f5f9;
 }
 
+.surveys-response-toggle {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.surveys-response-toggle:hover strong {
+  color: #1d4ed8;
+}
+
+.surveys-response-detail-row td {
+  background: #f8fafc;
+}
+
+.surveys-response-detail {
+  display: grid;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.surveys-response-detail__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, auto);
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid rgba(30, 41, 80, 0.08);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.surveys-response-detail__item > div {
+  min-width: 0;
+}
+
+.surveys-response-detail__item span {
+  color: #1d2940;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: right;
+}
+
 .surveys-assessment-table td strong,
 .surveys-assessment-table td small {
   display: block;
@@ -1644,7 +1723,8 @@
 
 @media (max-width: 1180px) {
   .surveys-assessment-grid--two,
-  .surveys-assessment-grid--three {
+  .surveys-assessment-grid--three,
+  .surveys-ratings-entities {
     grid-template-columns: 1fr;
   }
 

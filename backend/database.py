@@ -8452,18 +8452,13 @@ def get_survey_analytics(
             owc.customer_name_ru
         ORDER BY sa.created_at DESC, sa.id DESC
     """
-    score_sum = 0.0
-    score_count = 0
-    positive = 0
-    neutral = 0
-    negative = 0
     client_requests: Dict[str, int] = {}
     training_labels: Dict[str, int] = {}
     employee_remarks: Dict[str, int] = {}
-    monthly: Dict[str, Dict[str, float]] = {}
     answers: List[Dict[str, Any]] = []
     answers_total_count = 0
     completed_session_ids: set[int] = set()
+    score_rows: List[Dict[str, Any]] = []
 
     with _lock:
         cursor = execute(sql_query, params)
@@ -8476,19 +8471,14 @@ def get_survey_analytics(
                     completed_session_ids.add(int(row["session_id"]))
                 score = float(row["numeric_score"]) if row.get("numeric_score") is not None else None
                 if score is not None:
-                    score_sum += score
-                    score_count += 1
-                    if score >= 4:
-                        positive += 1
-                    elif score == 3:
-                        neutral += 1
-                    else:
-                        negative += 1
-                    parsed_date = _parse_datetime(row.get("created_at"))
-                    month_key = parsed_date.strftime("%Y-%m") if parsed_date else str(row.get("created_at", ""))[:7]
-                    bucket = monthly.setdefault(month_key, {"sum": 0.0, "count": 0.0})
-                    bucket["sum"] += score
-                    bucket["count"] += 1
+                    score_rows.append(
+                        {
+                            "session_id": int(row["session_id"]),
+                            "session_status": row.get("session_status"),
+                            "numeric_score": score,
+                            "created_at": row.get("created_at"),
+                        }
+                    )
                 config = _json_loads(row.get("question_config"), {})
                 options = customer_surveys.normalize_options(config if isinstance(config, Mapping) else {})
                 by_id = {str(option["id"]): str(option["label"]) for option in options}
@@ -8543,28 +8533,23 @@ def get_survey_analytics(
     def top_items(source: Dict[str, int], limit: int = 10) -> List[Dict[str, Any]]:
         return [{"label": label, "count": count} for label, count in sorted(source.items(), key=lambda item: (-item[1], item[0]))[:limit]]
 
+    score_summary = survey_analytics.summarize_completed_survey_scores(score_rows)
+
     return {
-        "average_score": (score_sum / score_count) if score_count else None,
+        "average_score": score_summary["average_score"],
         "completed_survey_count": len(completed_session_ids),
         "answer_count": answers_total_count,
-        "score_count": score_count,
-        "positive_count": positive,
-        "neutral_count": neutral,
-        "negative_count": negative,
-        "positive_share": (positive / score_count) if score_count else 0,
-        "neutral_share": (neutral / score_count) if score_count else 0,
-        "negative_share": (negative / score_count) if score_count else 0,
+        "score_count": score_summary["score_count"],
+        "positive_count": score_summary["positive_count"],
+        "neutral_count": score_summary["neutral_count"],
+        "negative_count": score_summary["negative_count"],
+        "positive_share": score_summary["positive_share"],
+        "neutral_share": score_summary["neutral_share"],
+        "negative_share": score_summary["negative_share"],
         "top_client_requests": top_items(client_requests),
         "top_training_wishes": top_items(training_labels),
         "employee_remarks": top_items(employee_remarks),
-        "monthly_satisfaction": [
-            {
-                "month": month,
-                "average_score": values["sum"] / values["count"],
-                "count": int(values["count"]),
-            }
-            for month, values in sorted(monthly.items())
-        ],
+        "monthly_satisfaction": score_summary["monthly_satisfaction"],
         "answers": answers,
         "answers_total_count": answers_total_count,
         "answers_preview_limited": answers_total_count > len(answers),

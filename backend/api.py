@@ -5628,6 +5628,84 @@ def get_survey_analytics_endpoint(
     )
 
 
+@router.get("/analytics/ratings/summary")
+def get_ratings_summary_endpoint(
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    return database.get_ratings_summary()
+
+
+@router.get("/analytics/ratings/employees")
+def get_employee_ratings_analytics_endpoint(
+    employee_id: int | None = None,
+    employee_name: str | None = None,
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    return database.get_employee_ratings_analytics_filtered(
+        employee_id=employee_id,
+        employee_name=employee_name,
+    )
+
+
+@router.get("/analytics/ratings/clients")
+def get_client_ratings_analytics_endpoint(
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    return database.get_client_ratings_analytics()
+
+
+@router.get("/analytics/ratings/ai")
+def get_ai_ratings_analytics_endpoint(
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    return database.get_ai_ratings_analytics()
+
+
+@router.get("/analytics/ratings/matrix")
+def get_mutual_rating_matrix_endpoint(
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    return database.get_mutual_rating_matrix()
+
+
+@router.get("/analytics/ratings/ledger")
+def get_rating_ledger_endpoint(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    rater_type: str | None = None,
+    rated_object_type: str | None = None,
+    employee_id: int | None = None,
+    employee_name: str | None = None,
+    client_bin: str | None = None,
+    client_id: int | None = None,
+    section: str | None = None,
+    region: str | None = None,
+    organization: str | None = None,
+    ai_involved: bool | None = None,
+    channel: str | None = None,
+    limit: int = Query(default=50, ge=1),
+    offset: int = Query(default=0, ge=0),
+    _: Dict[str, object] = Depends(require_admin_or_moderator),
+):
+    return database.get_rating_ledger(
+        start_date=_parse_optional_date_param(start_date, field_name="start_date"),
+        end_date=_parse_optional_date_param(end_date, field_name="end_date"),
+        rater_type=rater_type,
+        rated_object_type=rated_object_type,
+        employee_id=employee_id,
+        employee_name=employee_name,
+        client_bin=client_bin,
+        client_id=client_id,
+        section=section,
+        region=region,
+        organization=organization,
+        ai_involved=ai_involved,
+        channel=channel,
+        limit=limit,
+        offset=offset,
+    )
+
+
 @router.get("/analytics/employee-client-assessments")
 def get_employee_client_assessment_analytics_endpoint(
     employee_id: int | None = None,

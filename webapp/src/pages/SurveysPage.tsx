@@ -16,6 +16,7 @@ import type {
   RatingLedgerResponse,
   RatingsSummary,
   SurveyAnalytics,
+  SurveyAnalyticsAnswer,
   SurveyQuestion,
   SurveyQuestionOption,
   SurveyQuestionType,
@@ -805,104 +806,271 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
   );
 };
 
+type ClientSurveyResponse = {
+  sessionId: number;
+  displayName: string;
+  bin: string | null;
+  templateTitle: string;
+  section: string | null;
+  questionCount: number;
+  averageScore: number | null;
+  latestAt: Date;
+  answers: SurveyAnalyticsAnswer[];
+};
+
+const formatQuestionCount = (count: number): string => {
+  const last = count % 10;
+  const lastTwo = count % 100;
+  if (last === 1 && lastTwo !== 11) return `${count} вопрос`;
+  if (last >= 2 && last <= 4 && (lastTwo < 10 || lastTwo >= 20)) return `${count} вопроса`;
+  return `${count} вопросов`;
+};
+
+const buildClientSurveyResponses = (answers: SurveyAnalyticsAnswer[]): ClientSurveyResponse[] => {
+  const groups = new Map<number, SurveyAnalyticsAnswer[]>();
+
+  answers.forEach((answer) => {
+    const current = groups.get(answer.sessionId) ?? [];
+    current.push(answer);
+    groups.set(answer.sessionId, current);
+  });
+
+  return Array.from(groups.entries())
+    .map(([sessionId, sessionAnswers]) => {
+      const sortedAnswers = [...sessionAnswers].sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+      const latestAnswer = sortedAnswers[sortedAnswers.length - 1];
+      const scoreAnswers = sortedAnswers.filter((answer) => answer.numericScore !== null && answer.numericScore !== undefined);
+      const scoreSum = scoreAnswers.reduce((sum, answer) => sum + (answer.numericScore ?? 0), 0);
+      return {
+        sessionId,
+        displayName: latestAnswer.organization ?? latestAnswer.chatTitle ?? latestAnswer.bin ?? latestAnswer.templateTitle,
+        bin: latestAnswer.bin,
+        templateTitle: latestAnswer.templateTitle,
+        section: latestAnswer.section,
+        questionCount: sortedAnswers.length,
+        averageScore: scoreAnswers.length > 0 ? scoreSum / scoreAnswers.length : null,
+        latestAt: latestAnswer.createdAt,
+        answers: sortedAnswers,
+      };
+    })
+    .sort((left, right) => right.latestAt.getTime() - left.latestAt.getTime());
+};
+
 const ClientSurveyAnalytics: React.FC<{
   analytics: SurveyAnalytics | null;
   isLoading: boolean;
   onRefresh: () => void;
-}> = ({ analytics, isLoading, onRefresh }) => {
+}> = ({ analytics }) => {
   const lineOption = useMemo(
     () => createLineOption(
-      analytics?.monthlySatisfaction.map((item) => formatMonth(item.month)) ?? [],
+      analytics?.monthlySatisfaction.map((item) => formatShortMonth(item.month)) ?? [],
       analytics?.monthlySatisfaction.map((item) => item.averageScore) ?? [],
       'Средняя оценка',
-    ),
-    [analytics],
-  );
-  const toneDonutOption = useMemo(
-    () => createToneDonutOption(
-      analytics?.positiveCount ?? 0,
-      analytics?.neutralCount ?? 0,
-      analytics?.negativeCount ?? 0,
+      '#3e5aa8',
     ),
     [analytics],
   );
 
+  const bucketCounts = useMemo(() => ({
+    total: analytics?.scoreCount ?? 0,
+    low: analytics?.negativeCount ?? 0,
+    neutral: analytics?.neutralCount ?? 0,
+    high: analytics?.positiveCount ?? 0,
+  }), [analytics]);
+
+  const donutOption = useMemo(
+    () => createAssessmentDonutOption(bucketCounts.low, bucketCounts.neutral, bucketCounts.high),
+    [bucketCounts.high, bucketCounts.low, bucketCounts.neutral],
+  );
+
+  const surveyResponses = useMemo(
+    () => buildClientSurveyResponses(analytics?.answers ?? []),
+    [analytics],
+  );
+  const [expandedSurveyId, setExpandedSurveyId] = useState<number | null>(null);
+
+  const percentOfTotal = useCallback((count: number) => (
+    bucketCounts.total > 0 ? `${Math.round((count / bucketCounts.total) * 100)}%` : '0%'
+  ), [bucketCounts.total]);
+
+  const criteria = [
+    { label: 'Положительные', value: (analytics?.positiveShare ?? 0) * 100 },
+    { label: 'Нейтральные', value: (analytics?.neutralShare ?? 0) * 100 },
+    { label: 'Негативные', value: (analytics?.negativeShare ?? 0) * 100 },
+    { label: 'Оценочные ответы', value: analytics && analytics.answerCount > 0 ? (analytics.scoreCount / analytics.answerCount) * 100 : 0 },
+  ];
+
+  const hasAnalytics = Boolean(analytics && ((analytics.completedSurveyCount ?? 0) > 0 || analytics.answerCount > 0));
+
   return (
-    <AnalyticsPanel
-      eyebrow="Опросы клиентов"
-      title="Аналитика опросов клиентов"
-      description="Главный счетчик показывает завершенные анкеты, а не количество вопросов внутри них."
-      actionLabel="Обновить"
-      onAction={onRefresh}
-      isLoading={isLoading}
-    >
-      <div className="surveys-client-overview">
-        <section className="surveys-score-card">
-          <span className="surveys-eyebrow">Клиентский CSAT</span>
-          <h3>Общая оценка сервиса</h3>
-          <div className="surveys-score-card__value">
-            <strong>{formatScore(analytics?.averageScore)}</strong>
-            <span>из 5</span>
+    <section className="surveys-assessment">
+      <div className="surveys-assessment-hero">
+        <div>
+          <h2>Аналитика опроса клиентов</h2>
+        </div>
+        <div className="surveys-assessment-hero__stats">
+          <div>
+            <span>Анкет</span>
+            <strong>{numberFormatter.format(analytics?.completedSurveyCount ?? 0)}</strong>
           </div>
-          <p>
-            {numberFormatter.format(analytics?.completedSurveyCount ?? 0)} завершенных опросов · {numberFormatter.format(analytics?.answerCount ?? 0)} ответов на вопросы
-          </p>
-          <div className="surveys-score-card__rows">
-            <ToneRow label="Положительные" value={analytics?.positiveShare ?? 0} count={analytics?.positiveCount ?? 0} tone="ok" />
-            <ToneRow label="Нейтральные" value={analytics?.neutralShare ?? 0} count={analytics?.neutralCount ?? 0} tone="neutral" />
-            <ToneRow label="Негативные" value={analytics?.negativeShare ?? 0} count={analytics?.negativeCount ?? 0} tone="warn" />
+          <div>
+            <span>Ответов</span>
+            <strong>{numberFormatter.format(analytics?.answerCount ?? 0)}</strong>
           </div>
-        </section>
-        <section className="surveys-card surveys-trend-card">
-          <h3>Тональность и динамика</h3>
-          <p className="surveys-muted">Как меняется удовлетворенность и какой тип ответов преобладает.</p>
-          <div className="surveys-trend-card__donut">
-            <EChartsWrapper option={toneDonutOption} style={{ height: 150 }} />
-          </div>
-          <div className="surveys-tone-list surveys-trend-card__tone">
-            <ToneRow label="Положительные" value={analytics?.positiveShare ?? 0} count={analytics?.positiveCount ?? 0} tone="ok" />
-            <ToneRow label="Нейтральные" value={analytics?.neutralShare ?? 0} count={analytics?.neutralCount ?? 0} tone="neutral" />
-            <ToneRow label="Негативные" value={analytics?.negativeShare ?? 0} count={analytics?.negativeCount ?? 0} tone="warn" />
-          </div>
-          {!analytics || analytics.monthlySatisfaction.length === 0 ? (
-            <EmptyState text="Недостаточно данных по месяцам." />
-          ) : (
-            <EChartsWrapper option={lineOption} style={{ height: 170 }} />
-          )}
-        </section>
+        </div>
       </div>
-      <KpiGrid
-        items={[
-          { label: 'Завершенные опросы', value: numberFormatter.format(analytics?.completedSurveyCount ?? 0), hint: '1 анкета = 1 опрос' },
-          { label: 'Ответы на вопросы', value: numberFormatter.format(analytics?.answerCount ?? 0), hint: 'для детализации' },
-          { label: 'Средняя оценка', value: formatScore(analytics?.averageScore), hint: 'из 5' },
-          { label: 'Положительные', value: formatPercent(analytics?.positiveShare), hint: `${numberFormatter.format(analytics?.positiveCount ?? 0)} ответов` },
-        ]}
-      />
-      {!analytics || ((analytics.completedSurveyCount ?? 0) === 0 && analytics.answerCount === 0) ? (
-        <EmptyState text="Пока нет завершенных клиентских опросов." />
+
+      {!hasAnalytics ? (
+        <div className="surveys-assessment-card">
+          <EmptyState text="Пока нет завершенных клиентских опросов." />
+        </div>
       ) : (
         <>
-          <div className="surveys-dashboard-grid">
-            <Card title="Тональность">
-              <div className="surveys-tone-list">
-                <ToneRow label="Положительные" value={analytics.positiveShare} count={analytics.positiveCount} tone="ok" />
-                <ToneRow label="Нейтральные" value={analytics.neutralShare} count={analytics.neutralCount} tone="neutral" />
-                <ToneRow label="Негативные" value={analytics.negativeShare} count={analytics.negativeCount} tone="warn" />
+          <div className="surveys-assessment-grid surveys-assessment-grid--hero">
+            <section className="surveys-assessment-card surveys-assessment-card--quality">
+              <h3>Клиентский CSAT</h3>
+              <div className="surveys-assessment-score">
+                <strong>{formatScore(analytics?.averageScore)}</strong>
+                <span>из 5</span>
               </div>
-            </Card>
-            <Card title="Динамика оценок">
-              {analytics.monthlySatisfaction.length === 0 ? <EmptyState text="Недостаточно данных по месяцам." /> : <EChartsWrapper option={lineOption} style={{ height: 220 }} />}
-            </Card>
+              <p>Средняя оценка сервиса по завершенным клиентским анкетам.</p>
+              <div className="surveys-assessment-criteria">
+                {criteria.map((item) => {
+                  const value = Math.max(0, Math.min(100, Math.round(item.value)));
+                  return (
+                    <div className="surveys-assessment-criteria__row" key={item.label}>
+                      <span>{item.label}</span>
+                      <div><i style={{ width: `${value}%` }} /></div>
+                      <strong>{value}%</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="surveys-assessment-card">
+              <h3>Динамика и структура оценок</h3>
+              <p>Тренд средней оценки и распределение ответов по тональности.</p>
+              <div className="surveys-assessment-chart-combo">
+                <div className="surveys-assessment-donut">
+                  <div className="surveys-assessment-donut__stage">
+                    <EChartsWrapper
+                      option={donutOption}
+                      className="surveys-assessment-donut-chart"
+                      style={{ height: 130 }}
+                    />
+                    <div className="surveys-assessment-donut__center">
+                      <strong>{numberFormatter.format(bucketCounts.total)}</strong>
+                      <span>оценок</span>
+                    </div>
+                  </div>
+                  <div className="surveys-assessment-legend">
+                    <span><i className="is-low" />Негативные ({percentOfTotal(bucketCounts.low)})</span>
+                    <span><i className="is-mid" />Нейтральные ({percentOfTotal(bucketCounts.neutral)})</span>
+                    <span><i className="is-high" />Положительные ({percentOfTotal(bucketCounts.high)})</span>
+                  </div>
+                </div>
+                <div>
+                  {analytics && analytics.monthlySatisfaction.length === 0 ? (
+                    <EmptyState text="Недостаточно данных по месяцам." />
+                  ) : (
+                    <EChartsWrapper
+                      option={lineOption}
+                      className="surveys-assessment-line-chart"
+                      style={{ height: 160 }}
+                    />
+                  )}
+                  <div className="surveys-assessment-series">
+                    <span><i className="is-score" />Оценка</span>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
-          <div className="surveys-dashboard-grid surveys-dashboard-grid--three">
-            <TopList title="Запросы клиентов" items={analytics.topClientRequests} />
-            <TopList title="Пожелания по обучению" items={analytics.topTrainingWishes} />
-            <TopList title="Замечания по сотрудникам" items={analytics.employeeRemarks} />
+
+          <div className="surveys-assessment-grid surveys-assessment-grid--three">
+            <ProgressCard title="Запросы клиентов" items={analytics?.topClientRequests ?? []} tone="accent" />
+            <ProgressCard title="Пожелания по обучению" items={analytics?.topTrainingWishes ?? []} tone="accent" />
+            <ProgressCard title="Замечания по сотрудникам" items={analytics?.employeeRemarks ?? []} tone="accent" />
+          </div>
+
+          <div className="surveys-assessment-grid">
+            <section className="surveys-assessment-card">
+              <h3>Отвеченные опросы</h3>
+              <div className="surveys-assessment-table-wrap surveys-assessment-table-wrap--limited">
+                <table className="surveys-assessment-table">
+                  <thead>
+                    <tr>
+                      <th>Клиент</th>
+                      <th>Шаблон</th>
+                      <th>Вопросов</th>
+                      <th>Ср. балл</th>
+                      <th>Последний ответ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {surveyResponses.length === 0 ? (
+                      <tr>
+                        <td colSpan={5}>Нет данных по отвеченным опросам.</td>
+                      </tr>
+                    ) : surveyResponses.map((survey) => {
+                      const isExpanded = expandedSurveyId === survey.sessionId;
+                      return (
+                        <React.Fragment key={survey.sessionId}>
+                          <tr>
+                            <td>
+                              <button
+                                type="button"
+                                className="surveys-response-toggle"
+                                aria-expanded={isExpanded}
+                                onClick={() => setExpandedSurveyId((current) => (
+                                  current === survey.sessionId ? null : survey.sessionId
+                                ))}
+                              >
+                                <strong>{survey.displayName}</strong>
+                                <small>{[survey.bin, formatQuestionCount(survey.questionCount)].filter(Boolean).join(' · ')}</small>
+                              </button>
+                            </td>
+                            <td>{survey.templateTitle}</td>
+                            <td>{formatQuestionCount(survey.questionCount)}</td>
+                            <td><ScoreBadge value={survey.averageScore} /></td>
+                            <td><span className="surveys-assessment-date">{formatDate(survey.latestAt)}</span></td>
+                          </tr>
+                          {isExpanded ? (
+                            <tr className="surveys-response-detail-row">
+                              <td colSpan={5}>
+                                <div className="surveys-response-detail">
+                                  {survey.answers.map((item) => {
+                                    const answerText = item.numericScore !== null && item.numericScore !== undefined
+                                      ? formatTableScore(item.numericScore)
+                                      : item.selectedOptions.length > 0
+                                        ? item.selectedOptions.join(', ')
+                                        : item.rawText || '-';
+                                    return (
+                                      <div key={item.id} className="surveys-response-detail__item">
+                                        <div>
+                                          <strong>{item.questionText}</strong>
+                                          <small>{questionTypeLabels[item.questionType]}</small>
+                                        </div>
+                                        <span>{answerText}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </div>
         </>
       )}
-    </AnalyticsPanel>
+    </section>
   );
 };
 
@@ -1203,92 +1371,237 @@ const RatingsAnalytics: React.FC<{
   onRefresh,
   onApplyFilters,
 }) => (
-  <AnalyticsPanel
-    eyebrow="Сводная аналитика"
-    title="Все движения оценок"
-    description="Отдельные срезы по направлениям и общий реестр: кто, кому и какую оценку поставил."
-    actionLabel="Обновить"
-    onAction={onRefresh}
-    isLoading={isLoading}
-  >
-    {error ? <div className="surveys-alert">{error}</div> : null}
-    <KpiGrid
-      items={[
-        { label: 'Клиент -> сотрудник', value: numberFormatter.format(summary?.employees.ratingCount ?? 0), hint: 'оценок клиентов' },
-        { label: 'Сотрудник -> клиент', value: numberFormatter.format(summary?.clients.assessmentCount ?? 0), hint: 'внутренних анкет' },
-        { label: 'Клиент -> ИИ', value: numberFormatter.format(summary?.ai.ratingCount ?? 0), hint: 'оценок ИИ' },
-        { label: 'В реестре', value: numberFormatter.format(ledger?.total ?? 0), hint: 'движений' },
-      ]}
-    />
-    <div className="surveys-subtabs">
-      {[
-        ['client_to_employee', 'Клиент -> сотрудник'],
-        ['employee_to_client', 'Сотрудник -> клиент'],
-        ['ai', 'Клиент -> ИИ'],
-        ['ledger', 'Реестр'],
-      ].map(([key, label]) => (
-        <button key={key} type="button" className={activeTab === key ? 'is-active' : ''} onClick={() => onTabChange(key as RatingsTab)}>
-          {label}
-        </button>
+  <section className="surveys-panel surveys-analytics-panel">
+    <div className="surveys-panel__head">
+      <div>
+        <span className="surveys-eyebrow">Сводная аналитика для руководителя</span>
+        <h2>Сводная аналитика оценок</h2>
+        <p>Разрезы по клиентам, сотрудникам и ИИ, плюс контроль полноты обратной связи.</p>
+      </div>
+      <button type="button" className="surveys-button" onClick={onRefresh} disabled={isLoading}>
+        {isLoading ? 'Загрузка...' : 'Обновить'}
+      </button>
+    </div>
+    <div className="surveys-panel__body">
+      <section className="surveys-assessment surveys-ratings-summary">
+        <div className="surveys-assessment-hero">
+          <div>
+            <h2>Сводная аналитика оценок</h2>
+            <p>Единый рабочий экран для контроля качества сервиса, поведения клиентов, роли ИИ и структуры взаимных оценок.</p>
+          </div>
+          <div className="surveys-assessment-hero__stats">
+            <div>
+              <span>Сотрудники</span>
+              <strong>{numberFormatter.format(summary?.employees.ratingCount ?? 0)}</strong>
+            </div>
+            <div>
+              <span>Клиенты</span>
+              <strong>{numberFormatter.format(summary?.clients.assessmentCount ?? 0)}</strong>
+            </div>
+            <div>
+              <span>ИИ</span>
+              <strong>{numberFormatter.format(summary?.ai.ratingCount ?? 0)}</strong>
+            </div>
+            <div>
+              <span>Реестр</span>
+              <strong>{numberFormatter.format(ledger?.total ?? 0)}</strong>
+            </div>
+          </div>
+        </div>
+
+        {error ? <div className="surveys-alert">{error}</div> : null}
+
+        <div className="surveys-ratings-entities">
+          <EntitySummaryCard
+            title="Клиенты"
+            score={summary?.clients.averageScore}
+            rows={[
+              ['Обращения', numberFormatter.format(clientRatings?.rows.reduce((sum, item) => sum + item.completedAppealsCount, 0) ?? 0)],
+              ['Повторные обращения', formatPercent(summary?.clients.repeatedRequestShare)],
+              ['Полнота данных', formatPercent(summary?.clients.fullDataFirstTimeShare)],
+            ]}
+          />
+          <EntitySummaryCard
+            title="Сотрудники"
+            score={summary?.employees.averageScore}
+            rows={[
+              ['Средняя клиентская оценка', formatScore(summary?.employees.averageScore)],
+              ['Положительные отзывы', formatPercent(summary?.employees.highScoreShare)],
+              ['Жалобы / низкие оценки', formatPercent(summary?.employees.lowScoreShare)],
+            ]}
+          />
+          <EntitySummaryCard
+            title="ИИ"
+            score={summary?.ai.averageScore}
+            rows={[
+              ['Частота использования', formatPercent(summary?.ai.aiUsageShare)],
+              ['Ошибки ИИ', formatPercent(summary?.ai.inaccurateShare)],
+              ['Ручная корректировка', formatPercent(summary?.ai.manualCorrectionShare)],
+            ]}
+          />
+        </div>
+
+        <div className="surveys-subtabs">
+          {[
+            ['client_to_employee', 'Сотрудники'],
+            ['employee_to_client', 'Клиенты'],
+            ['ai', 'ИИ'],
+            ['ledger', 'Кто кому поставил оценку'],
+          ].map(([key, label]) => (
+            <button key={key} type="button" className={activeTab === key ? 'is-active' : ''} onClick={() => onTabChange(key as RatingsTab)}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'client_to_employee' ? <EmployeeRatingsSlice analytics={employeeRatings} /> : null}
+        {activeTab === 'employee_to_client' ? <ClientRatingsSlice analytics={clientRatings} /> : null}
+        {activeTab === 'ai' ? <AiRatingsSlice analytics={aiRatings} matrix={matrix} /> : null}
+        {activeTab === 'ledger' ? (
+          <LedgerSlice
+            ledger={ledger}
+            matrix={matrix}
+            selectedEntry={selectedLedgerEntry}
+            filters={filters}
+            onFiltersChange={onFiltersChange}
+            onApplyFilters={onApplyFilters}
+          />
+        ) : null}
+      </section>
+    </div>
+  </section>
+);
+
+const EntitySummaryCard: React.FC<{
+  title: string;
+  score: number | null | undefined;
+  rows: Array<[string, string]>;
+}> = ({ title, score, rows }) => (
+  <section className="surveys-assessment-card surveys-ratings-entity-card">
+    <h3>{title}</h3>
+    <div className="surveys-assessment-score">
+      <strong>{formatScore(score)}</strong>
+      <span>/ 5</span>
+    </div>
+    <div className="surveys-assessment-ops">
+      {rows.map(([label, value]) => (
+        <span key={label}>{label}<strong>{value}</strong></span>
       ))}
     </div>
-    {activeTab === 'client_to_employee' ? <EmployeeRatingsSlice analytics={employeeRatings} /> : null}
-    {activeTab === 'employee_to_client' ? <ClientRatingsSlice analytics={clientRatings} /> : null}
-    {activeTab === 'ai' ? <AiRatingsSlice analytics={aiRatings} matrix={matrix} /> : null}
-    {activeTab === 'ledger' ? (
-      <LedgerSlice
-        ledger={ledger}
-        selectedEntry={selectedLedgerEntry}
-        filters={filters}
-        onFiltersChange={onFiltersChange}
-        onApplyFilters={onApplyFilters}
-      />
-    ) : null}
-  </AnalyticsPanel>
+  </section>
 );
 
 const EmployeeRatingsSlice: React.FC<{ analytics: EmployeeRatingsAnalytics | null }> = ({ analytics }) => {
   if (!analytics || analytics.rows.length === 0) return <EmptyState text="Пока нет оценок сотрудников клиентами." />;
+  const lineOption = createLineOption(
+    analytics.monthlyDynamics.map((item) => formatShortMonth(item.month)),
+    analytics.monthlyDynamics.map((item) => item.averageScore),
+    'Средняя оценка',
+    '#3e5aa8',
+  );
   return (
     <>
-      <div className="surveys-dashboard-grid surveys-dashboard-grid--three">
-        <TopList title="Причины низких оценок" items={analytics.lowScoreReasons} />
-        <TopList title="Лучшие сотрудники" items={analytics.topEmployees.map((item) => ({ label: item.employeeName, count: item.ratedAppealsCount }))} />
-        <TopList title="Низкие оценки" items={analytics.problemEmployees.map((item) => ({ label: item.employeeName, count: item.totalLowRatings }))} />
+      <div className="surveys-assessment-grid surveys-assessment-grid--hero">
+        <section className="surveys-assessment-card surveys-assessment-card--quality">
+          <h3>Средняя клиентская оценка</h3>
+          <div className="surveys-assessment-score">
+            <strong>{formatScore(analytics.summary.averageScore)}</strong>
+            <span>/ 5</span>
+          </div>
+          <div className="surveys-assessment-criteria">
+            <CriteriaRow label="Положительные отзывы" value={analytics.summary.highScoreShare * 100} />
+            <CriteriaRow label="Количество жалоб" value={analytics.summary.lowScoreShare * 100} />
+            <CriteriaRow label="Использование ИИ" value={(analytics.summary.aiAssistedShare ?? 0) * 100} />
+            <CriteriaRow label="Корректность закрытия" value={(analytics.summary.closureCorrectness ?? 0) * 100} />
+          </div>
+        </section>
+        <section className="surveys-assessment-card">
+          <h3>Динамика оценок по периодам</h3>
+          <EChartsWrapper option={lineOption} className="surveys-assessment-line-chart" />
+        </section>
       </div>
-      <Card title="Рейтинг сотрудников">
-        <DataTable
-          headers={['Сотрудник', 'Средний балл', 'Оценки', 'Высокие', 'Низкие']}
-          rows={analytics.rows.map((item) => [
-            item.employeeName,
-            formatScore(item.averageScore),
-            numberFormatter.format(item.ratedAppealsCount),
-            formatPercent(item.highScoreShare),
-            formatPercent(item.lowScoreShare),
-          ])}
-        />
-      </Card>
+
+      <div className="surveys-assessment-grid surveys-assessment-grid--three">
+        <TopList title="Топ лучших сотрудников" items={analytics.topEmployees.map((item) => ({ label: item.employeeName, count: item.ratedAppealsCount }))} />
+        <TopList title="Сотрудники с наибольшим количеством низких оценок" items={analytics.problemEmployees.map((item) => ({ label: item.employeeName, count: item.totalLowRatings }))} />
+        <TopList title="Количество жалоб" items={analytics.lowScoreReasons} />
+      </div>
+
+      <div className="surveys-assessment-grid surveys-assessment-grid--two">
+        <Card title="Зависимость оценки от использования ИИ">
+          <DataTable
+            headers={['Сценарий', 'Средняя оценка', 'Оценок']}
+            rows={analytics.aiImpact.map((item) => [
+              item.label,
+              formatScore(item.averageScore),
+              numberFormatter.format(item.ratingCount),
+            ])}
+          />
+        </Card>
+        <Card title="Рейтинг сотрудников по качеству обслуживания">
+          <DataTable
+            headers={['Сотрудник', 'Средняя оценка', 'Оценки', 'Положительные', 'Низкие']}
+            rows={analytics.rows.map((item) => [
+              item.employeeName,
+              formatScore(item.averageScore),
+              numberFormatter.format(item.ratedAppealsCount),
+              formatPercent(item.highScoreShare),
+              formatPercent(item.lowScoreShare),
+            ])}
+          />
+        </Card>
+      </div>
     </>
   );
 };
 
 const ClientRatingsSlice: React.FC<{ analytics: ClientRatingsAnalytics | null }> = ({ analytics }) => {
   if (!analytics || analytics.rows.length === 0) return <EmptyState text="Пока нет внутренних оценок клиентов." />;
+  const lineOption = createAssessmentLineOption(
+    analytics.monthlyDynamics.map((item) => formatShortMonth(item.month)),
+    analytics.monthlyDynamics.map((item) => item.averageScore),
+    analytics.monthlyDynamics.map((item) => item.interactionQualityIndex === null ? null : item.interactionQualityIndex / 20),
+  );
   return (
     <>
-      <div className="surveys-dashboard-grid surveys-dashboard-grid--three">
-        <TopList title="Причины низких оценок" items={analytics.lowScoreReasons} />
-        <TopList title="Статусы взаимодействия" items={analytics.interactionStatuses} />
-        <TopList title="Флаги коммуникации" items={analytics.interactionFlags} />
+      <div className="surveys-assessment-grid surveys-assessment-grid--hero">
+        <section className="surveys-assessment-card surveys-assessment-card--quality">
+          <h3>Рейтинг клиентов по качеству взаимодействия</h3>
+          <div className="surveys-assessment-score">
+            <strong>{formatScore(analytics.summary.averageScore)}</strong>
+            <span>/ 5</span>
+          </div>
+          <div className="surveys-assessment-criteria">
+            <CriteriaRow label="Доля повторных обращений" value={analytics.summary.repeatedRequestShare * 100} />
+            <CriteriaRow label="Полнота предоставления данных" value={analytics.summary.fullDataFirstTimeShare * 100} />
+            <CriteriaRow label="Индекс взаимодействия" value={analytics.summary.interactionQualityIndex ?? 0} />
+            <CriteriaRow label="Затрудненные кейсы" value={Math.min(100, analytics.summary.hinderedCount * 10)} />
+          </div>
+        </section>
+        <section className="surveys-assessment-card">
+          <h3>Динамика взаимодействия</h3>
+          <EChartsWrapper option={lineOption} className="surveys-assessment-line-chart" />
+          <div className="surveys-assessment-series">
+            <span><i className="is-score" />Оценка</span>
+            <span><i className="is-index" />Индекс</span>
+          </div>
+        </section>
+      </div>
+
+      <div className="surveys-assessment-grid surveys-assessment-grid--three">
+        <TopList title="Клиенты, требующие дополнительного обучения" items={analytics.supportCandidates.map((item) => ({ label: item.clientName, count: item.hinderedCount || item.completedAppealsCount }))} />
+        <TopList title="Повторные обращения" items={analytics.requestRepeatStatuses} />
+        <TopList title="Клиенты для вебинаров и методической поддержки" items={analytics.supportCandidates.map((item) => ({ label: item.recommendation ?? item.clientName, count: item.completedAppealsCount }))} />
       </div>
       <Card title="Рейтинг клиентов">
         <DataTable
-          headers={['Клиент', 'Средний балл', 'Индекс', 'Обращения', 'Рекомендация']}
+          headers={['Клиент', 'Средний балл', 'Количество обращений', 'Повторные обращения', 'Полнота данных', 'Рекомендация']}
           rows={analytics.rows.map((item) => [
             `${item.clientName}${item.clientBin ? ` · ${item.clientBin}` : ''}`,
             formatScore(item.averageScore),
-            item.interactionQualityIndex === null ? '-' : `${Math.round(item.interactionQualityIndex)}%`,
             numberFormatter.format(item.completedAppealsCount),
+            formatPercent(item.repeatedRequestShare),
+            formatPercent(item.fullDataFirstTimeShare),
             item.recommendation ?? '-',
           ])}
         />
@@ -1299,37 +1612,77 @@ const ClientRatingsSlice: React.FC<{ analytics: ClientRatingsAnalytics | null }>
 
 const AiRatingsSlice: React.FC<{ analytics: AiRatingsAnalytics | null; matrix: MutualRatingMatrix | null }> = ({ analytics, matrix }) => {
   if (!analytics) return <EmptyState text="Пока нет оценок ИИ." />;
+  const lineOption = createLineOption(
+    analytics.monthlyDynamics.map((item) => formatShortMonth(item.month)),
+    analytics.monthlyDynamics.map((item) => item.averageScore),
+    'Оценка ИИ',
+    '#10b981',
+  );
   return (
     <>
-      <div className="surveys-dashboard-grid surveys-dashboard-grid--three">
-        <TopList title="Причины низких оценок ИИ" items={analytics.lowScoreReasons} />
-        <TopList title="Полезные категории" items={analytics.topUsefulSections.map((item) => ({ label: item.section ?? 'Без категории', count: item.ratingCount }))} />
-        <TopList title="На проверку" items={analytics.reviewRequiredSections.map((item) => ({ label: item.section ?? 'Без категории', count: item.ratingCount }))} />
+      <div className="surveys-assessment-grid surveys-assessment-grid--hero">
+        <section className="surveys-assessment-card surveys-assessment-card--quality">
+          <h3>Общая оценка ИИ</h3>
+          <div className="surveys-assessment-score">
+            <strong>{formatScore(analytics.summary.averageScore)}</strong>
+            <span>/ 5</span>
+          </div>
+          <div className="surveys-assessment-criteria">
+            <CriteriaRow label="Частота использования" value={(analytics.summary.aiUsageShare ?? 0) * 100} />
+            <CriteriaRow label="Ошибки ИИ" value={analytics.summary.inaccurateShare * 100} />
+            <CriteriaRow label="Ручная корректировка" value={(analytics.summary.manualCorrectionShare ?? 0) * 100} />
+            <CriteriaRow label="Положительная оценка" value={analytics.summary.highScoreShare * 100} />
+          </div>
+        </section>
+        <section className="surveys-assessment-card">
+          <h3>Динамика оценки ИИ</h3>
+          <EChartsWrapper option={lineOption} className="surveys-assessment-line-chart" />
+        </section>
       </div>
-      <Card title="Матрица направлений">
-        <div className="surveys-matrix-grid">
-          {(matrix?.cells ?? []).map((item) => (
-            <div key={item.code} className="surveys-matrix-cell">
-              <span>{item.label}</span>
-              <strong>{numberFormatter.format(item.count)}</strong>
-              <small>{item.averageScore === null ? 'Нет данных' : `Средний балл ${formatScore(item.averageScore)}`}</small>
-            </div>
-          ))}
-        </div>
-      </Card>
+
+      <div className="surveys-assessment-grid surveys-assessment-grid--three">
+        <TopList title="Полезность ИИ по категориям обращений" items={analytics.topUsefulSections.map((item) => ({ label: item.section ?? 'Без категории', count: item.ratingCount }))} />
+        <TopList title="Ошибки ИИ" items={analytics.lowScoreReasons} />
+        <TopList title="На ручную проверку" items={analytics.reviewRequiredSections.map((item) => ({ label: item.section ?? 'Без категории', count: item.ratingCount }))} />
+      </div>
+
+      <div className="surveys-assessment-grid surveys-assessment-grid--two">
+        <Card title="Сравнение по сценариям">
+          <DataTable
+            headers={['Сценарий', 'Кейсы', 'Средняя оценка']}
+            rows={analytics.scenarioComparison.map((item) => [
+              item.label,
+              numberFormatter.format(item.casesCount),
+              formatScore(item.averageScore),
+            ])}
+          />
+        </Card>
+        <Card title="Матрица направлений">
+          <div className="surveys-matrix-grid">
+            {(matrix?.cells ?? []).map((item) => (
+              <div key={item.code} className="surveys-matrix-cell">
+                <span>{item.label}</span>
+                <strong>{numberFormatter.format(item.count)}</strong>
+                <small>{item.averageScore === null ? 'Нет данных' : `Средний балл ${formatScore(item.averageScore)}`}</small>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
     </>
   );
 };
 
 const LedgerSlice: React.FC<{
   ledger: RatingLedgerResponse | null;
+  matrix: MutualRatingMatrix | null;
   selectedEntry: RatingLedgerEntry | null;
   filters: RatingLedgerFilters;
   onFiltersChange: React.Dispatch<React.SetStateAction<RatingLedgerFilters>>;
   onApplyFilters: () => void;
-}> = ({ ledger, selectedEntry, filters, onFiltersChange, onApplyFilters }) => (
+}> = ({ ledger, matrix, selectedEntry, filters, onFiltersChange, onApplyFilters }) => (
   <div className="surveys-ledger">
-    <Card title="Фильтры реестра">
+    <Card title="Фильтры взаимных оценок">
       <div className="surveys-filter-grid">
         <label className="surveys-field">
           <span>С даты</span>
@@ -1340,41 +1693,105 @@ const LedgerSlice: React.FC<{
           <input type="date" value={filters.endDate ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, endDate: event.target.value || null }))} />
         </label>
         <label className="surveys-field">
+          <span>Тип оценщика</span>
+          <select aria-label="Тип оценщика" value={filters.raterType ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, raterType: event.target.value || null }))}>
+            <option value="">Все</option>
+            <option value="client">Клиент</option>
+            <option value="employee">Сотрудник</option>
+            <option value="ai">ИИ</option>
+            <option value="manager">Руководитель</option>
+          </select>
+        </label>
+        <label className="surveys-field">
+          <span>Тип оцениваемого объекта</span>
+          <select aria-label="Тип оцениваемого объекта" value={filters.ratedObjectType ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, ratedObjectType: event.target.value || null }))}>
+            <option value="">Все</option>
+            <option value="employee">Сотрудник</option>
+            <option value="client">Клиент</option>
+            <option value="ai">ИИ</option>
+            <option value="case">Обращение</option>
+          </select>
+        </label>
+        <label className="surveys-field">
           <span>Сотрудник</span>
-          <input value={filters.employeeName ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, employeeName: event.target.value || null }))} />
+          <input aria-label="Сотрудник" value={filters.employeeName ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, employeeName: event.target.value || null }))} />
         </label>
         <label className="surveys-field">
           <span>БИН клиента</span>
-          <input value={filters.clientBin ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, clientBin: event.target.value || null }))} />
+          <input aria-label="Клиент" value={filters.clientBin ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, clientBin: event.target.value || null }))} />
+        </label>
+        <label className="surveys-field">
+          <span>Категория обращения</span>
+          <input aria-label="Категория обращения" value={filters.section ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, section: event.target.value || null }))} />
+        </label>
+        <label className="surveys-field">
+          <span>Регион</span>
+          <input aria-label="Регион" value={filters.region ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, region: event.target.value || null }))} />
+        </label>
+        <label className="surveys-field">
+          <span>Организация</span>
+          <input aria-label="Организация" value={filters.organization ?? ''} onChange={(event) => onFiltersChange((current) => ({ ...current, organization: event.target.value || null }))} />
         </label>
         <button type="button" className="surveys-button surveys-button--primary" onClick={onApplyFilters}>Применить</button>
       </div>
     </Card>
-    <Card title="Реестр оценок">
+    <Card title="Таблица взаимных оценок">
+      <div className="surveys-matrix-grid surveys-matrix-grid--ledger">
+        {(matrix?.cells ?? []).map((item) => (
+          <div key={item.code} className="surveys-matrix-cell">
+            <span>{item.label}</span>
+            <strong>{numberFormatter.format(item.count)}</strong>
+            <small>{item.averageScore === null ? 'Нет данных' : `Средний балл ${formatScore(item.averageScore)}`}</small>
+          </div>
+        ))}
+      </div>
       <DataTable
-        headers={['Дата', 'Направление', 'Кто поставил', 'Кому', 'Балл', 'Канал']}
+        headers={['Номер обращения', 'Дата', 'Кто поставил', 'Кому поставил', 'Балл', 'Категория', 'Регион']}
         rows={(ledger?.items ?? []).map((item) => [
+          item.appealId === null ? '-' : String(item.appealId),
           formatDate(item.createdAt),
-          ratingDirectionLabels[item.sourceKind] ?? item.sourceKind,
           item.raterName ?? item.raterType,
           item.ratedObjectName ?? item.ratedObjectType,
           formatScore(item.finalScore),
-          item.ratingChannel ?? '-',
+          item.section ?? '-',
+          item.region ?? '-',
         ])}
       />
     </Card>
     <Card title="Карточка оценки">
       {selectedEntry ? (
         <div className="surveys-detail-list">
-          <span>Направление</span><strong>{ratingDirectionLabels[selectedEntry.sourceKind] ?? selectedEntry.sourceKind}</strong>
-          <span>Клиент</span><strong>{selectedEntry.clientName ?? selectedEntry.clientBin ?? '-'}</strong>
+          <span>Номер обращения</span><strong>{selectedEntry.appealId ?? '-'}</strong>
+          <span>Кто поставил оценку</span><strong>{selectedEntry.raterName ?? selectedEntry.raterType}</strong>
+          <span>Кому поставил оценку</span><strong>{selectedEntry.ratedObjectName ?? selectedEntry.ratedObjectType}</strong>
+          <span>Дата</span><strong>{formatDate(selectedEntry.createdAt)}</strong>
+          <span>Балл</span><strong>{formatScore(selectedEntry.finalScore)}</strong>
+          <span>Детализация параметров</span><strong>{formatParameterDetails(selectedEntry.parameterDetails)}</strong>
           <span>Комментарий</span><strong>{selectedEntry.comment ?? '-'}</strong>
-          <span>Причина низкой оценки</span><strong>{selectedEntry.lowScoreReason ?? '-'}</strong>
+          <span>Участвовал ли ИИ</span><strong>{selectedEntry.aiInvolved ? 'Да' : 'Нет'}</strong>
+          <span>Итоговый статус обращения</span><strong>{selectedEntry.status || '-'}</strong>
         </div>
       ) : <EmptyState text="В реестре нет записей." />}
     </Card>
   </div>
 );
+
+const CriteriaRow: React.FC<{ label: string; value: number }> = ({ label, value }) => {
+  const safeValue = Math.max(0, Math.min(100, Math.round(value)));
+  return (
+    <div className="surveys-assessment-criteria__row">
+      <span>{label}</span>
+      <div><i style={{ width: `${safeValue}%` }} /></div>
+      <strong>{safeValue}%</strong>
+    </div>
+  );
+};
+
+const formatParameterDetails = (details: Record<string, unknown>): string => {
+  const entries = Object.entries(details ?? {});
+  if (entries.length === 0) return '-';
+  return entries.map(([key, value]) => `${key}: ${String(value)}`).join(', ');
+};
 
 const AnalyticsPanel: React.FC<{
   eyebrow: string;

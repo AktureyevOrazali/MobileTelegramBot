@@ -277,9 +277,14 @@ const createAssessmentDonutOption = (low: number, neutral: number, high: number)
   series: [
     {
       type: 'pie',
-      radius: ['72%', '92%'],
+      radius: ['75%', '88%'],
       center: ['50%', '50%'],
-      avoidLabelOverlap: true,
+      avoidLabelOverlap: false,
+      itemStyle: {
+        borderRadius: 5,
+        borderColor: '#ffffff',
+        borderWidth: 2,
+      },
       label: { show: false },
       labelLine: { show: false },
       data: [
@@ -940,7 +945,6 @@ const EmployeeSurveyAnalytics: React.FC<{
     <section className="surveys-assessment">
       <div className="surveys-assessment-hero">
         <div>
-          <span className="surveys-assessment-eyebrow">Оценка клиентов сотрудниками</span>
           <h2>Внутренняя оценка взаимодействия с клиентами</h2>
         </div>
         <div className="surveys-assessment-hero__stats">
@@ -960,7 +964,6 @@ const EmployeeSurveyAnalytics: React.FC<{
         <>
           <div className="surveys-assessment-grid surveys-assessment-grid--hero">
             <section className="surveys-assessment-card surveys-assessment-card--quality">
-              <span className="surveys-assessment-eyebrow">Сотрудник -&gt; Клиент</span>
               <h3>Качество взаимодействия</h3>
               <div className="surveys-assessment-score">
                 <strong>{formatScore(analytics.averageOverallScore)}</strong>
@@ -986,14 +989,16 @@ const EmployeeSurveyAnalytics: React.FC<{
               <p>Тренд общей оценки и индекс коммуникации по месяцам.</p>
               <div className="surveys-assessment-chart-combo">
                 <div className="surveys-assessment-donut">
-                  <EChartsWrapper
-                    option={donutOption}
-                    className="surveys-assessment-donut-chart"
-                    style={{ height: 130 }}
-                  />
-                  <div className="surveys-assessment-donut__center">
-                    <strong>{numberFormatter.format(bucketCounts.total)}</strong>
-                    <span>анкет</span>
+                  <div className="surveys-assessment-donut__stage">
+                    <EChartsWrapper
+                      option={donutOption}
+                      className="surveys-assessment-donut-chart"
+                      style={{ height: 130 }}
+                    />
+                    <div className="surveys-assessment-donut__center">
+                      <strong>{numberFormatter.format(bucketCounts.total)}</strong>
+                      <span>анкет</span>
+                    </div>
                   </div>
                   <div className="surveys-assessment-legend">
                     <span><i className="is-low" />Низкие ({percentOfTotal(bucketCounts.low)})</span>
@@ -1018,14 +1023,13 @@ const EmployeeSurveyAnalytics: React.FC<{
 
           <div className="surveys-assessment-grid surveys-assessment-grid--three">
             <ProgressCard title="Причины низких оценок" items={analytics.lowScoreReasons} tone="accent" />
-            <ProgressCard title="Статусы коммуникации" items={analytics.interactionStatuses} tone="teal" />
-            <ProgressCard title="Флаги обращений" items={analytics.interactionFlags} tone="green" />
+            <ProgressCard title="Статусы коммуникации" items={analytics.interactionStatuses} tone="accent" />
+            <ProgressCard title="Флаги обращений" items={analytics.interactionFlags} tone="accent" />
           </div>
 
           <div className="surveys-assessment-grid surveys-assessment-grid--two">
             <section className="surveys-assessment-card">
               <h3>Операционные показатели</h3>
-              <p>Сигналы, которые помогают понять поведение клиента в процессе.</p>
               <div className="surveys-assessment-ops">
                 <span>Средняя задержка ответа<strong>{(analytics.averageFeedbackDelayHours ?? 0).toFixed(1).replace('.', ',')} ч</strong></span>
                 <span>Без уточнений<strong>{numberFormatter.format(analytics.withoutClarificationsCount)}</strong></span>
@@ -1035,12 +1039,11 @@ const EmployeeSurveyAnalytics: React.FC<{
               </div>
             </section>
 
-            <section className="surveys-assessment-card">
+            <section className="surveys-assessment-card surveys-assessment-card--character">
               <h3>Характер обращений</h3>
-              <p>Как распределяются первые, повторные и неповторные кейсы.</p>
               <div className="surveys-assessment-character">
                 {analytics.requestRepeatStatuses.map((item) => (
-                  <ProgressRow key={item.label} item={item} max={Math.max(...analytics.requestRepeatStatuses.map((status) => status.count), 1)} tone="green" />
+                  <ProgressRow key={item.label} item={item} max={Math.max(...analytics.requestRepeatStatuses.map((status) => status.count), 1)} tone="accent" />
                 ))}
               </div>
             </section>
@@ -1049,8 +1052,7 @@ const EmployeeSurveyAnalytics: React.FC<{
           <div className="surveys-assessment-grid surveys-assessment-grid--two">
             <section className="surveys-assessment-card">
               <h3>Рейтинг клиентов</h3>
-              <p>Качество взаимодействия по БИН и доля проблемных кейсов.</p>
-              <div className="surveys-assessment-table-wrap">
+              <div className="surveys-assessment-table-wrap surveys-assessment-table-wrap--limited">
                 <table className="surveys-assessment-table">
                   <thead>
                     <tr>
@@ -1063,7 +1065,7 @@ const EmployeeSurveyAnalytics: React.FC<{
                     </tr>
                   </thead>
                   <tbody>
-                    {analytics.clientRatings.slice(0, 20).map((item) => (
+                    {analytics.clientRatings.map((item) => (
                       <tr key={`${item.clientName}-${item.clientBin ?? 'no-bin'}`}>
                         <td>
                           <strong>{item.clientName}</strong>
@@ -1083,8 +1085,7 @@ const EmployeeSurveyAnalytics: React.FC<{
 
             <section className="surveys-assessment-card">
               <h3>Последние оценки</h3>
-              <p>Свежие анкеты сотрудников без перехода в сырой журнал.</p>
-              <div className="surveys-assessment-table-wrap">
+              <div className="surveys-assessment-table-wrap surveys-assessment-table-wrap--limited">
                 <table className="surveys-assessment-table">
                   <thead>
                     <tr>
@@ -1096,7 +1097,7 @@ const EmployeeSurveyAnalytics: React.FC<{
                     </tr>
                   </thead>
                   <tbody>
-                    {analytics.recentAssessments.slice(0, 8).map((item) => (
+                    {analytics.recentAssessments.map((item) => (
                       <tr key={item.id}>
                         <td>
                           <strong>{item.clientName}</strong>

@@ -172,6 +172,12 @@ describe('SurveysPage employee analytics', () => {
     expect(screen.getByText('Карточек')).toBeInTheDocument();
     expect(screen.queryByText('Средний балл')).not.toBeInTheDocument();
     expect(screen.queryByText('Качество данных, скорость ответа и деловая коммуникация.')).not.toBeInTheDocument();
+    expect(container.querySelector('.surveys-assessment > .surveys-assessment-hero .surveys-assessment-eyebrow')).not.toBeInTheDocument();
+    expect(container.querySelector('.surveys-assessment-card--quality > .surveys-assessment-eyebrow')).not.toBeInTheDocument();
+    expect(screen.queryByText('Сигналы, которые помогают понять поведение клиента в процессе.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Как распределяются первые, повторные и неповторные кейсы.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Качество взаимодействия по БИН и доля проблемных кейсов.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Свежие анкеты сотрудников без перехода в сырой журнал.')).not.toBeInTheDocument();
     expect(container.querySelector('.surveys-assessment-tags')).not.toBeInTheDocument();
     expect(container.querySelector('.surveys-hero .surveys-assessment-filter')).toBeInTheDocument();
     expect(screen.getAllByText('2,33')[0]).toBeInTheDocument();
@@ -191,5 +197,17 @@ describe('SurveysPage employee analytics', () => {
       expect(screen.getByTestId('surveys-assessment-line-chart')).toHaveTextContent('Оценка');
       expect(screen.getByTestId('surveys-assessment-donut-chart')).toHaveTextContent('Низкие');
     });
+
+    const donutOption = JSON.parse(screen.getByTestId('surveys-assessment-donut-chart').textContent ?? '{}');
+    expect(donutOption.series[0]).toMatchObject({
+      radius: ['75%', '88%'],
+      avoidLabelOverlap: false,
+      itemStyle: {
+        borderRadius: 5,
+        borderWidth: 2,
+      },
+    });
+    expect(container.querySelector('.surveys-assessment-card--character')).toBeInTheDocument();
+    expect(container.querySelectorAll('.surveys-assessment-table-wrap--limited')).toHaveLength(2);
   });
 });

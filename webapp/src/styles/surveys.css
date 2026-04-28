@@ -1338,9 +1338,9 @@
 
 .surveys-assessment-criteria__row {
   display: grid;
-  grid-template-columns: minmax(90px, 1fr) 90px 38px;
+  grid-template-columns: minmax(112px, 0.7fr) minmax(180px, 1.3fr) 42px;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .surveys-assessment-criteria__row span,
@@ -1357,10 +1357,10 @@
 
 .surveys-assessment-criteria__row div,
 .surveys-assessment-progress em {
-  height: 5px;
+  height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: #f1f5f9;
+  background: #e8eef7;
 }
 
 .surveys-assessment-criteria__row i,
@@ -1368,7 +1368,7 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #3e5aa8, #5b7fd4);
+  background: linear-gradient(90deg, #5a7ab8, #3d5a8f);
 }
 
 .surveys-assessment-criteria__row strong {
@@ -1389,18 +1389,24 @@
   position: relative;
 }
 
+.surveys-assessment-donut__stage {
+  position: relative;
+  width: 120px;
+  height: 130px;
+}
+
 .surveys-assessment-donut-chart {
-  width: 130px;
+  width: 120px;
 }
 
 .surveys-assessment-donut__center {
   position: absolute;
-  top: 44px;
-  left: 0;
-  width: 130px;
+  inset: 0;
   display: grid;
+  place-content: center;
   justify-items: center;
   pointer-events: none;
+  text-align: center;
 }
 
 .surveys-assessment-donut__center strong {
@@ -1438,8 +1444,8 @@
 }
 
 .surveys-assessment-legend i {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
 }
 
@@ -1457,6 +1463,7 @@
 
 .surveys-assessment-series {
   display: flex;
+  justify-content: flex-end;
   gap: 12px;
   margin-top: 6px;
 }
@@ -1491,12 +1498,15 @@
   font-size: 0.78rem;
 }
 
-.surveys-assessment-progress .is-teal {
-  background: linear-gradient(90deg, #0891b2, #22d3ee);
+.surveys-assessment-card--character {
+  display: flex;
+  flex-direction: column;
 }
 
-.surveys-assessment-progress .is-green {
-  background: linear-gradient(90deg, #059669, #34d399);
+.surveys-assessment-card--character .surveys-assessment-character {
+  flex: 1;
+  align-content: space-between;
+  gap: 14px;
 }
 
 .surveys-assessment-ops {
@@ -1536,6 +1546,11 @@
   margin-top: 12px;
 }
 
+.surveys-assessment-table-wrap--limited {
+  max-height: 292px;
+  overflow: auto;
+}
+
 .surveys-assessment-table {
   width: 100%;
   min-width: 520px;
@@ -1544,8 +1559,12 @@
 }
 
 .surveys-assessment-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 6px 10px 8px;
   border-bottom: 1px solid rgba(30, 41, 80, 0.09);
+  background: #ffffff;
   color: #94a3b8;
   font-size: 0.64rem;
   font-weight: 800;

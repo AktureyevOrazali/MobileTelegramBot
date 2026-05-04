@@ -1557,10 +1557,11 @@ body.chat-focus-mode .dialogs-list-panel {
 
 
 .chat-inline--assessment-screen {
-  display: block !important;
+  display: flex !important;
+  flex-direction: column;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  padding: 16px !important;
+  padding: 14px !important;
   animation: dialog-assessment-enter 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -1574,24 +1575,23 @@ body.chat-focus-mode .dialogs-list-panel {
 }
 
 .employee-assessment {
+  flex: 1 1 auto;
   display: grid;
-  gap: 14px;
-  padding: 18px;
-  border: 1px solid rgba(192, 204, 220, 0.52);
-  border-radius: 22px;
-  background:
-    linear-gradient(180deg, rgba(249, 251, 255, 0.98), rgba(255, 255, 255, 0.98)),
-    radial-gradient(circle at top left, rgba(122, 179, 212, 0.18), transparent 42%);
-  box-shadow:
-    0 18px 34px rgba(79, 103, 139, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  gap: 12px;
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   animation: dialog-assessment-enter 260ms ease-out;
 }
 
 .employee-assessment__header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 230px);
+  gap: 12px;
   align-items: start;
 }
 
@@ -1600,28 +1600,28 @@ body.chat-focus-mode .dialogs-list-panel {
 }
 
 .employee-assessment__eyebrow {
-  margin-bottom: 6px;
+  margin-bottom: 5px;
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #6ba5c6;
 }
 
 .employee-assessment__title {
   margin: 0;
-  font-size: clamp(1.02rem, 1rem + 0.35vw, 1.22rem);
+  font-size: 1.08rem;
   line-height: 1.18;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: #1a2535;
 }
 
 .employee-assessment__identity {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .employee-assessment__identity strong {
@@ -1633,8 +1633,8 @@ body.chat-focus-mode .dialogs-list-panel {
 .employee-assessment__identity span {
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
-  padding: 0 10px;
+  min-height: 22px;
+  padding: 0 8px;
   border-radius: 999px;
   background: rgba(241, 245, 249, 0.92);
   border: 1px solid rgba(220, 227, 234, 0.92);
@@ -1645,12 +1645,12 @@ body.chat-focus-mode .dialogs-list-panel {
 
 .employee-assessment__status-card {
   display: grid;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(220, 227, 234, 0.92);
-  box-shadow: 0 10px 24px rgba(58, 124, 165, 0.08);
+  box-shadow: none;
 }
 
 .employee-assessment__status-row {
@@ -1666,8 +1666,8 @@ body.chat-focus-mode .dialogs-list-panel {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 28px;
-  padding: 0 11px;
+  min-height: 24px;
+  padding: 0 9px;
   border-radius: 999px;
   border: 1px solid rgba(220, 227, 234, 0.92);
   background: #fff;
@@ -1718,14 +1718,18 @@ body.chat-focus-mode .dialogs-list-panel {
 
 .employee-assessment__section {
   display: grid;
-  gap: 12px;
+  gap: 8px;
+}
+
+.employee-assessment__section--details {
+  min-height: 0;
 }
 
 .employee-assessment__section-label {
-  padding: 8px 14px;
+  padding: 6px 2px;
   border-top: 1px solid rgba(240, 244, 248, 0.96);
-  border-bottom: 1px solid rgba(240, 244, 248, 0.96);
-  background: rgba(248, 250, 252, 0.96);
+  border-bottom: 0;
+  background: transparent;
   color: #a2afbf;
   font-size: 10px;
   font-weight: 800;
@@ -1737,17 +1741,17 @@ body.chat-focus-mode .dialogs-list-panel {
   display: grid;
   gap: 0;
   border: 1px solid rgba(220, 227, 234, 0.92);
-  border-radius: 16px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.84);
   overflow: hidden;
 }
 
 .employee-assessment__question {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(250px, 320px);
-  gap: 12px;
+  grid-template-columns: minmax(150px, 1fr) minmax(190px, 230px);
+  gap: 10px;
   align-items: center;
-  padding: 12px 18px;
+  padding: 9px 12px;
   border-bottom: 1px solid rgba(240, 244, 248, 0.96);
 }
 
@@ -1776,14 +1780,14 @@ body.chat-focus-mode .dialogs-list-panel {
 .employee-assessment__scale {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
 }
 
 .employee-assessment__score {
   min-width: 0;
-  min-height: 34px;
+  min-height: 30px;
   border: 1px solid rgba(220, 227, 234, 0.96);
-  border-radius: 10px;
+  border-radius: 8px;
   background: #fff;
   color: #8a9bb0;
   font: inherit;
@@ -1814,29 +1818,35 @@ body.chat-focus-mode .dialogs-list-panel {
 
 .employee-assessment__summary {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.employee-assessment__section--details .employee-assessment__summary {
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
 }
 
 .employee-assessment__detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  width: 100%;
 }
 
 .employee-assessment__average {
   display: grid;
   gap: 2px;
   align-content: start;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border: 1px solid rgba(220, 227, 234, 0.92);
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.9);
 }
 
 .employee-assessment__average strong {
-  font-size: 30px;
+  font-size: 26px;
   line-height: 1;
   color: #1a2535;
 }
@@ -1871,8 +1881,8 @@ body.chat-focus-mode .dialogs-list-panel {
 .employee-assessment__field textarea {
   width: 100%;
   min-width: 0;
-  min-height: 42px;
-  padding: 10px 12px;
+  min-height: 38px;
+  padding: 8px 11px;
   border: 1px solid rgba(220, 227, 234, 0.96);
   border-radius: 10px;
   background-color: rgba(248, 250, 252, 0.96);
@@ -1896,7 +1906,9 @@ body.chat-focus-mode .dialogs-list-panel {
 }
 
 .employee-assessment__field textarea {
-  min-height: 88px;
+  min-height: 72px;
+  height: auto;
+  overflow: hidden;
   resize: vertical;
 }
 
@@ -1913,15 +1925,26 @@ body.chat-focus-mode .dialogs-list-panel {
 }
 
 .employee-assessment__field--comment textarea {
-  min-height: 72px;
+  min-height: 64px;
+}
+
+.employee-assessment__field--comment {
+  grid-column: 1 / -1;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.employee-assessment__section--details .employee-assessment__field--comment textarea {
+  height: 100%;
+  min-height: 160px;
 }
 
 .employee-assessment__toggle {
   display: inline-flex;
   align-items: flex-start;
   gap: 8px;
-  min-height: 42px;
-  padding: 10px 12px;
+  min-height: 36px;
+  padding: 8px 2px 0;
   border-top: 1px solid rgba(240, 244, 248, 0.96);
   color: #4a5568;
   font-size: 12px;
@@ -1947,16 +1970,16 @@ body.chat-focus-mode .dialogs-list-panel {
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  padding-top: 12px;
+  padding-top: 10px;
   border-top: 1px solid rgba(220, 227, 234, 0.92);
 }
 
 .employee-assessment__submit {
-  min-width: 200px;
-  min-height: 42px;
-  padding: 0 18px;
+  min-width: 164px;
+  min-height: 36px;
+  padding: 0 14px;
   border: none;
-  border-radius: 10px;
+  border-radius: 9px;
   background: #3a7ca5;
   color: #fff;
   font: inherit;
@@ -2008,8 +2031,8 @@ body.chat-focus-mode .dialogs-list-panel {
 }
 
 [data-theme='dark'] .employee-assessment {
-  border-color: rgba(71, 85, 105, 0.45);
-  background: linear-gradient(180deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.96));
+  border-color: transparent;
+  background: transparent;
 }
 
 [data-theme='dark'] .employee-assessment__title,
@@ -2046,7 +2069,7 @@ body.chat-focus-mode .dialogs-list-panel {
 }
 
 [data-theme='dark'] .employee-assessment__section-label {
-  background: rgba(30, 41, 59, 0.82);
+  background: transparent;
   border-color: rgba(71, 85, 105, 0.42);
   color: #9fb2cf;
 }

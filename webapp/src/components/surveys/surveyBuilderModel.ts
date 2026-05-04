@@ -19,11 +19,21 @@ export function buildBuilderTemplateGroups(templates: SurveyTemplate[]): Builder
 }
 
 export function buildLaunchSummary(template: Pick<SurveyTemplate, 'triggerType' | 'launchRules' | 'scheduledAt'>): string {
-  const customDate = template.launchRules.find((rule) => rule.type === 'calendar' && rule.schedule === 'custom_dates')?.dates[0]
-    ?? template.scheduledAt;
+  if (template.triggerType !== 'periodic') {
+    return launchLabels[template.triggerType] ?? 'Не настроено';
+  }
+
+  const calendarRule = template.launchRules.find((rule) => rule.type === 'calendar');
+  const customDate = calendarRule?.schedule === 'custom_dates'
+    ? calendarRule.dates[0] ?? template.scheduledAt
+    : template.scheduledAt;
 
   if (customDate) {
     return `Своя дата: ${new Date(customDate).toLocaleDateString('ru-RU')}`;
+  }
+
+  if (calendarRule?.schedule === 'month_start') {
+    return 'Начало месяца';
   }
 
   return launchLabels[template.triggerType] ?? 'Не настроено';

@@ -1,0 +1,4 @@
+2026-05-04 14:48:37,013 [INFO] root: Starting backend...
+2026-05-04 14:48:38,757 [INFO] backend.ai_manager: DeepSeek AI manager initialized. model=deepseek-chat base_url=https://api.deepseek.com
+2026-05-04 14:48:40,461 [INFO] backend.main: CleanupThread started (interval=3600s)
+2026-05-04 14:48:40,461 [INFO] backend.main: SurveyDispatchThread started (interval=3600s)

@@ -76,10 +76,10 @@ export const SurveyBuilderSection: React.FC<SurveyBuilderSectionProps> = ({
   const [expandedQuestionIndex, setExpandedQuestionIndex] = useState<number | null>(0);
   const [isLaunchOptionsOpen, setIsLaunchOptionsOpen] = useState(false);
   const activeLaunchOption: LaunchOptionId = (() => {
+    if (draft.triggerType === 'after_appeal_closed') return 'after_appeal_closed';
     const calendarRule = draft.launchRules.find((rule) => rule.type === 'calendar');
     if (calendarRule?.schedule === 'month_start') return 'month_start';
     if (calendarRule?.schedule === 'custom_dates' || draft.scheduledAt) return 'custom_date';
-    if (draft.triggerType === 'after_appeal_closed') return 'after_appeal_closed';
     return 'schedule';
   })();
 

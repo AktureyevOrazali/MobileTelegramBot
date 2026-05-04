@@ -14,6 +14,7 @@ def _admin_user():
 class RatingsApiTests(unittest.TestCase):
     def setUp(self):
         api.app.dependency_overrides[api.require_admin_or_moderator] = _admin_user
+        api.app.dependency_overrides[api.require_onec_token] = lambda: None
         self.client = TestClient(api.app)
 
     def tearDown(self):
@@ -92,6 +93,128 @@ class RatingsApiTests(unittest.TestCase):
                 "offset": 50,
             },
         )
+
+    def test_onec_rating_defaults_to_operator_target(self):
+        with (
+            patch.object(api.database, "save_csat_rating", return_value=True) as save_operator,
+            patch.object(api.database, "save_ai_csat_rating", return_value=True) as save_ai,
+        ):
+            response = self.client.post(
+                "/integrations/1c/rating",
+                json={
+                    "external_chat_id": "onec-chat-1",
+                    "dialog_id": 42,
+                    "appeal_id": 99,
+                    "rating": 5,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["target"], "operator")
+        save_operator.assert_called_once_with(
+            42,
+            5,
+            appeal_id=99,
+            rater_external_chat_id="onec-chat-1",
+            channel=api.database.RATING_CHANNEL_ONEC_API,
+        )
+        save_ai.assert_not_called()
+
+    def test_onec_rating_without_dialog_uses_latest_closed_dialog_for_chat(self):
+        with (
+            patch.object(api, "_resolve_onec_chat_id", return_value=20) as resolve_chat,
+            patch.object(api.database, "get_latest_closed_chat_dialog_id", return_value=42, create=True) as latest_dialog,
+            patch.object(api.database, "get_latest_closed_appeal_id", return_value=99) as latest_appeal,
+            patch.object(api.database, "save_csat_rating", return_value=True) as save_operator,
+            patch.object(api.database, "save_ai_csat_rating", return_value=True) as save_ai,
+            patch.object(api.survey_service, "maybe_start_survey_after_employee_csat", return_value={"started": False}),
+        ):
+            response = self.client.post(
+                "/integrations/1c/rating",
+                json={
+                    "external_chat_id": "onec-chat-1",
+                    "rating": 5,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        resolve_chat.assert_called_once_with("onec-chat-1", None)
+        latest_dialog.assert_called_once_with(20)
+        latest_appeal.assert_called_once_with(42)
+        save_operator.assert_called_once_with(
+            42,
+            5,
+            appeal_id=99,
+            rater_external_chat_id="onec-chat-1",
+            channel=api.database.RATING_CHANNEL_ONEC_API,
+        )
+        save_ai.assert_not_called()
+
+    def test_onec_rating_uses_explicit_chat_id_for_latest_closed_dialog(self):
+        with (
+            patch.object(api, "_resolve_onec_chat_id", return_value=20) as resolve_chat,
+            patch.object(api.database, "get_latest_closed_chat_dialog_id", return_value=42, create=True) as latest_dialog,
+            patch.object(api.database, "get_latest_closed_appeal_id", return_value=99) as latest_appeal,
+            patch.object(api.database, "save_csat_rating", return_value=True) as save_operator,
+            patch.object(api.database, "save_ai_csat_rating", return_value=True) as save_ai,
+            patch.object(api.survey_service, "maybe_start_survey_after_employee_csat", return_value={"started": False}),
+        ):
+            response = self.client.post(
+                "/integrations/1c/rating",
+                json={
+                    "external_chat_id": "onec-chat-1",
+                    "chat_id": 20,
+                    "rating": 5,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        resolve_chat.assert_called_once_with("onec-chat-1", 20)
+        latest_dialog.assert_called_once_with(20)
+        latest_appeal.assert_called_once_with(42)
+        save_operator.assert_called_once_with(
+            42,
+            5,
+            appeal_id=99,
+            rater_external_chat_id="onec-chat-1",
+            channel=api.database.RATING_CHANNEL_ONEC_API,
+        )
+        save_ai.assert_not_called()
+
+    def test_onec_rating_falls_back_to_stored_external_chat_mapping(self):
+        def fake_latest_dialog(chat_id):
+            return 42 if chat_id == 20 else None
+
+        with (
+            patch.object(api, "_resolve_onec_chat_id", return_value=999) as resolve_chat,
+            patch.object(api.database, "get_chat_by_external_chat_id", return_value={"chat_id": 20}, create=True) as get_external_chat,
+            patch.object(api.database, "get_latest_closed_chat_dialog_id", side_effect=fake_latest_dialog, create=True) as latest_dialog,
+            patch.object(api.database, "get_latest_closed_appeal_id", return_value=99) as latest_appeal,
+            patch.object(api.database, "save_csat_rating", return_value=True) as save_operator,
+            patch.object(api.database, "save_ai_csat_rating", return_value=True) as save_ai,
+            patch.object(api.survey_service, "maybe_start_survey_after_employee_csat", return_value={"started": False}),
+        ):
+            response = self.client.post(
+                "/integrations/1c/rating",
+                json={
+                    "external_chat_id": "onec-chat-1",
+                    "rating": 5,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        resolve_chat.assert_called_once_with("onec-chat-1", None)
+        get_external_chat.assert_called_once_with("onec-chat-1")
+        self.assertEqual([call.args[0] for call in latest_dialog.call_args_list], [999, 20])
+        latest_appeal.assert_called_once_with(42)
+        save_operator.assert_called_once_with(
+            42,
+            5,
+            appeal_id=99,
+            rater_external_chat_id="onec-chat-1",
+            channel=api.database.RATING_CHANNEL_ONEC_API,
+        )
+        save_ai.assert_not_called()
 
 
 if __name__ == "__main__":

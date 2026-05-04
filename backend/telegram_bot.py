@@ -701,6 +701,7 @@ def _send_onec_outgoing_message(
     dialog_id: Optional[int] = None,
     author: Optional[str] = "System",
     section: Optional[str] = None,
+    quick_replies: Optional[list[dict]] = None,
 ) -> int:
     chat = database.get_chat(chat_id) or {}
     chat_title = str(chat.get("title") or f"1C chat {chat_id}")
@@ -717,6 +718,7 @@ def _send_onec_outgoing_message(
         chat_type="onec",
         section=section,
         dialog_id=dialog_id,
+        quick_replies=quick_replies,
     )
     payload = {
         "external_chat_id": external_chat_id,
@@ -730,6 +732,8 @@ def _send_onec_outgoing_message(
         "direction": "outgoing",
         "attachments": [],
     }
+    if quick_replies:
+        payload["quick_replies"] = quick_replies
     database.outbox_enqueue_onec(
         message_id=message_id,
         chat_id=chat_id,
@@ -755,6 +759,7 @@ def _send_survey_channel_message(
     dialog_id: Optional[int] = None,
     author: Optional[str] = "System",
     section: Optional[str] = None,
+    quick_replies: Optional[list[dict]] = None,
 ) -> None:
     chat = database.get_chat(chat_id)
     if chat and chat.get("type") == "onec":
@@ -764,6 +769,7 @@ def _send_survey_channel_message(
             dialog_id=dialog_id,
             author=author,
             section=section,
+            quick_replies=quick_replies,
         )
         return
     _send_and_store_message(

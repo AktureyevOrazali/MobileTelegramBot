@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>1C survey buttons demo</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  font-family: Segoe UI, Tahoma, Arial, sans-serif;
+  font-size: 14px;
+  background: #0b141a;
+  color: #e9edef;
+}
+.chat-container {
+  width: 100%;
+  max-width: 760px;
+  height: 100%;
+  margin: 0 auto;
+  position: relative;
+  background: #0b141a;
+  overflow: hidden;
+}
+.top-bar {
+  height: 50px;
+  line-height: 50px;
+  padding: 0 12px;
+  background: #202c33;
+  border-bottom: 1px solid #2a3942;
+  font-size: 16px;
+  font-weight: 600;
+}
+.chat {
+  position: absolute;
+  top: 50px;
+  left: 0;
+  right: 0;
+  bottom: 96px;
+  padding: 12px;
+  overflow: auto;
+}
+.msg {
+  max-width: 82%;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+.left {
+  background: #202c33;
+  border-top-left-radius: 0;
+}
+.right {
+  margin-left: auto;
+  background: #005c4b;
+  border-top-right-radius: 0;
+}
+.author {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8bd8c7;
+}
+.meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #8696a0;
+  text-align: right;
+}
+.msg-buttons {
+  margin-top: 8px;
+  padding: 0 4px;
+  clear: both;
+  text-align: left;
+}
+.qa-rate {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  margin: 0 4px 4px 0;
+  border: 1px solid #3d5667;
+  border-radius: 14px;
+  background: #213847;
+  color: #d6e8f7;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.qa-survey-rate:hover {
+  border-color: #06cf9c;
+  background: #06cf9c;
+  color: #111b21;
+}
+.input-row-outer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 96px;
+  padding: 8px 12px;
+  background: #202c33;
+  border-top: 1px solid #2a3942;
+}
+.input-row {
+  display: table;
+  width: 100%;
+}
+.input-cell {
+  display: table-cell;
+  vertical-align: middle;
+}
+.button-cell {
+  display: table-cell;
+  width: 118px;
+  padding-left: 8px;
+  vertical-align: middle;
+}
+.message-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #2a3942;
+  color: #e9edef;
+  font: inherit;
+}
+.send-button {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #00a884;
+  color: #111b21;
+  text-align: center;
+  text-decoration: none;
+  font-weight: 600;
+}
+</style>
+<script>
+function sendDemoMessage() {
+  var input = document.getElementById('messageInput');
+  var chat = document.getElementById('chatMessages');
+  if (!input || !chat) return false;
+
+  var value = input.value || '';
+  value = value.replace(/^\s+|\s+$/g, '');
+  if (!value) return false;
+
+  var div = document.createElement('div');
+  div.className = 'msg right';
+  div.innerHTML = '<div class="author">Клиент</div><div>' + value + '</div><div class="meta">сейчас</div>';
+  chat.appendChild(div);
+  input.value = '';
+  chat.scrollTop = chat.scrollHeight + 1000;
+  return false;
+}
+
+function chooseSurveyAnswer(value) {
+  var input = document.getElementById('messageInput');
+  if (input) {
+    input.value = value;
+  }
+  return sendDemoMessage();
+}
+</script>
+</head>
+<body>
+<div class="chat-container">
+  <div class="top-bar">Чат поддержки</div>
+  <div class="chat" id="chatMessages">
+    <div class="msg left">
+      <div class="author">Система</div>
+      <div>Насколько вы удовлетворены качеством консультации? Ответьте от 1 до 5.</div>
+      <div class="msg-buttons survey-buttons">
+        <a href="#" class="qa-rate qa-survey-rate" onclick="return chooseSurveyAnswer('1');">1</a>
+        <a href="#" class="qa-rate qa-survey-rate" onclick="return chooseSurveyAnswer('2');">2</a>
+        <a href="#" class="qa-rate qa-survey-rate" onclick="return chooseSurveyAnswer('3');">3</a>
+        <a href="#" class="qa-rate qa-survey-rate" onclick="return chooseSurveyAnswer('4');">4</a>
+        <a href="#" class="qa-rate qa-survey-rate" onclick="return chooseSurveyAnswer('5');">5</a>
+      </div>
+      <div class="meta">сейчас</div>
+    </div>
+  </div>
+  <div class="input-row-outer">
+    <form name="dataInput" onsubmit="return sendDemoMessage();">
+      <div class="input-row">
+        <div class="input-cell">
+          <input type="text" name="textInput" id="messageInput" class="message-input" placeholder="Введите сообщение...">
+        </div>
+        <div class="button-cell">
+          <a href="#" class="send-button" onclick="return sendDemoMessage();">Отправить</a>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>

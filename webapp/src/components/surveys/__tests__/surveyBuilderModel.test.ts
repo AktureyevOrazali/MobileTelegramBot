@@ -61,6 +61,10 @@ describe('surveyBuilderModel', () => {
     expect(buildLaunchSummary(template({ triggerType: 'after_appeal_closed' }))).toBe('После обращения');
     expect(buildLaunchSummary(template({
       triggerType: 'periodic',
+      launchRules: [{ type: 'calendar', schedule: 'month_start', dates: [] }],
+    }))).toBe('Начало месяца');
+    expect(buildLaunchSummary(template({
+      triggerType: 'periodic',
       launchRules: [{ type: 'calendar', schedule: 'custom_dates', dates: ['2026-05-15'] }],
       scheduledAt: '2026-05-15',
     }))).toBe('Своя дата: 15.05.2026');

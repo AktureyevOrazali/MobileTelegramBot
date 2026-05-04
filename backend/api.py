@@ -45,6 +45,7 @@ from pydantic import AliasChoices, BaseModel, EmailStr, Field, validator
 
 from . import database
 from . import employee_client_assessments
+from . import survey_service
 
 from .ai_manager import ai_manager
 
@@ -77,6 +78,79 @@ ONEC_CHAT_ID_SPACE = 1_000_000_000_000
 # Опциональный общий секрет для подписи HMAC нагрузки, которую 1С забирает из outbox
 
 ONEC_SHARED_SECRET = os.getenv("ONEC_SHARED_SECRET", "")
+
+
+ONEC_OPERATOR_COMMAND_VALUES = {
+    "/operator",
+    "operator",
+    "позвать оператора",
+    "позовите оператора",
+    "позовите, пожалуйста, оператора.",
+    "нужен оператор",
+    "оператор",
+    "операторды шақыру",
+    "оператор керек",
+}
+
+ONEC_LANGUAGE_COMMANDS = {
+    "/lang_ru": ("ru", "Язык диалога: русский."),
+    "/lang_kk": ("kk", "Диалог тілі: қазақша."),
+}
+
+
+def _onec_quick_reply(
+    reply_id: str,
+    label: str,
+    value: str,
+    *,
+    kind: str = "command",
+) -> dict[str, str]:
+    return {"id": reply_id, "label": label, "value": value, "type": kind}
+
+
+def _onec_language_quick_replies() -> list[dict[str, str]]:
+    return [
+        _onec_quick_reply("lang_ru", "Русский", "/lang_ru", kind="language"),
+        _onec_quick_reply("lang_kk", "Қазақша", "/lang_kk", kind="language"),
+    ]
+
+
+def _onec_default_quick_replies() -> list[dict[str, str]]:
+    return [
+        _onec_quick_reply("status", "Статус заявки", "Проверьте, пожалуйста, статус моей заявки."),
+        _onec_quick_reply("docs", "Документы", "Какие документы нужны для оформления?"),
+        _onec_quick_reply("operator", "Позвать оператора", "/operator", kind="operator_request"),
+    ]
+
+
+def _onec_rating_quick_replies(target: str) -> list[dict[str, str]]:
+    return [
+        _onec_quick_reply(
+            f"rate_{target}_{rating}",
+            str(rating),
+            str(rating),
+            kind=f"{target}_rating",
+        )
+        for rating in range(1, 6)
+    ]
+
+
+def _is_onec_operator_request(normalized_text: str) -> bool:
+    text = (normalized_text or "").strip().lower()
+    return text in ONEC_OPERATOR_COMMAND_VALUES
+
+
+def _normalize_onec_language_command(normalized_text: str) -> tuple[str, str] | None:
+    return ONEC_LANGUAGE_COMMANDS.get((normalized_text or "").strip().lower())
+
+
+def _build_onec_contract_status_text(*, has_contract: bool, year: int | str) -> str:
+    if has_contract:
+        return f"Действующий договор на {year} год найден. Можете продолжить обращение."
+    return (
+        f"Не найден действующий договор на {year} год для этой организации.\n"
+        "Для продолжения обслуживания обратитесь в офис для оформления договора."
+    )
 
 
 
@@ -248,6 +322,7 @@ def _enqueue_onec_outgoing_message(
     attachments: List[dict] | None = None,
 
     direction: str = "outgoing",
+    quick_replies: List[dict] | None = None,
 
 ) -> None:
 
@@ -274,6 +349,8 @@ def _enqueue_onec_outgoing_message(
         "attachments": attachments or [],
 
     }
+    if quick_replies:
+        payload["quick_replies"] = quick_replies
 
     signature = _sign_payload(payload)
 
@@ -573,6 +650,8 @@ class OneCMessageEntry(BaseModel):
 
     attachments: List[AttachmentResponse] = Field(default_factory=list)
 
+    quick_replies: List[dict] = Field(default_factory=list)
+
 
 
 
@@ -843,6 +922,12 @@ class ChatResponse(BaseModel):
 
     last_message_attachment_kind: str | None = None
 
+    employee_assessment_id: int | None = None
+
+    employee_assessment_pending: bool = False
+
+    employee_assessment_created_at: str | None = None
+
 
 class DialogStatusResponse(BaseModel):
 
@@ -855,6 +940,10 @@ class DialogStatusResponse(BaseModel):
     dialog_closed_at: str | None = None
 
     ai_enabled: bool = True
+
+    employee_assessment_id: int | None = None
+
+    employee_assessment_pending: bool = False
 
 
 
@@ -3276,6 +3365,9 @@ def list_chats(
                 last_message_has_attachments=bool(chat.get("last_message_has_attachments")),
 
                 last_message_attachment_kind=chat.get("last_message_attachment_kind"),
+                employee_assessment_id=chat.get("employee_assessment_id"),
+                employee_assessment_pending=bool(chat.get("employee_assessment_pending")),
+                employee_assessment_created_at=chat.get("employee_assessment_created_at"),
             )
 
         )
@@ -4206,9 +4298,16 @@ def close_dialog(
 
 
     closed_at = datetime.now(timezone.utc).isoformat()
-
-
-
+    latest_appeal_id = database.get_latest_closed_appeal_id(dialog_id)
+    employee_assessments = database.create_employee_client_assessments_for_dialog(
+        dialog_id,
+        appeal_id=latest_appeal_id,
+    )
+    employee_assessment_id = (
+        int(employee_assessments[0]["id"])
+        if employee_assessments and employee_assessments[0].get("id") is not None
+        else None
+    )
     if chat_type == "onec":
 
         message_id = database.save_message(
@@ -4256,6 +4355,10 @@ def close_dialog(
             section=section,
 
         )
+        try:
+            survey_service.maybe_start_survey_after_appeal_closed(dialog_id, latest_appeal_id)
+        except Exception:
+            logger.warning("Failed to start after-close survey for dialog %s", dialog_id, exc_info=True)
 
         return DialogStatusResponse(
 
@@ -4266,6 +4369,8 @@ def close_dialog(
             dialog_closed_at=closed_at,
 
             ai_enabled=True,
+            employee_assessment_id=employee_assessment_id,
+            employee_assessment_pending=employee_assessment_id is not None,
 
         )
 
@@ -4321,13 +4426,16 @@ def close_dialog(
 
     try:
 
-        latest_appeal_id = database.get_latest_closed_appeal_id(dialog_id)
-
         send_csat_request(chat_id, dialog_id, latest_appeal_id)
 
     except Exception:
 
         logger.warning("Failed to send CSAT request for dialog %s", dialog_id, exc_info=True)
+
+    try:
+        survey_service.maybe_start_survey_after_appeal_closed(dialog_id, latest_appeal_id)
+    except Exception:
+        logger.warning("Failed to start after-close survey for dialog %s", dialog_id, exc_info=True)
 
 
 
@@ -4340,6 +4448,8 @@ def close_dialog(
         dialog_closed_at=closed_at,
 
         ai_enabled=True,
+        employee_assessment_id=employee_assessment_id,
+        employee_assessment_pending=employee_assessment_id is not None,
 
     )
 
@@ -4439,6 +4549,7 @@ def _store_onec_outgoing_text_message(
     author: str | None,
     chat_title: str,
     section: str | None,
+    quick_replies: List[dict] | None = None,
 ) -> int:
     message_id = database.save_message(
         chat_id=chat_id,
@@ -4451,6 +4562,7 @@ def _store_onec_outgoing_text_message(
         chat_type="onec",
         section=section,
         dialog_id=dialog_id,
+        quick_replies=quick_replies,
     )
     _enqueue_onec_outgoing_message(
         message_id=message_id,
@@ -4461,6 +4573,7 @@ def _store_onec_outgoing_text_message(
         text=text,
         author=author,
         section=section,
+        quick_replies=quick_replies,
     )
     _publish_new_message_event(
         chat_id=chat_id,
@@ -4490,9 +4603,25 @@ def _process_onec_incoming_message(
         chat_section = section_id or (chat_record.get("section") if chat_record else None)
         chat_bin = (chat_record.get("bin") if chat_record else None) or bin_value
 
-        if normalized_text == "operator":
+        language_selection = _normalize_onec_language_command(normalized_text)
+        if language_selection is not None:
+            _, language_notice = language_selection
+            _store_onec_outgoing_text_message(
+                chat_id=chat_id,
+                dialog_id=dialog_id,
+                external_chat_id=external_chat_id,
+                bin_value=chat_bin,
+                text=language_notice,
+                author="System",
+                chat_title=chat_title,
+                section=chat_section,
+                quick_replies=_onec_default_quick_replies(),
+            )
+            return
+
+        if _is_onec_operator_request(normalized_text):
             database.set_dialog_operator_mode(dialog_id, True)
-            operator_notice = "\u0412\u0430\u0448 \u0437\u0430\u043f\u0440\u043e\u0441 \u043f\u0435\u0440\u0435\u0434\u0430\u043d \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0443..."
+            operator_notice = "Ваш запрос передан оператору. AI помощник отключён до закрытия диалога."
             _store_onec_outgoing_text_message(
                 chat_id=chat_id,
                 dialog_id=dialog_id,
@@ -4515,6 +4644,9 @@ def _process_onec_incoming_message(
         if database.is_dialog_in_operator_mode(dialog_id):
             return
 
+        if survey_service.handle_channel_survey_text_answer(chat_id, message_text):
+            return
+
         faq_entry = database.find_faq_entry_by_keywords(message_text, chat_section)
         if faq_entry:
             response_section = faq_entry.get("section") or chat_section
@@ -4523,7 +4655,7 @@ def _process_onec_incoming_message(
             if response_question:
                 response_text = f"FAQ:\\n{response_question}\\n\\n{response_text}" if response_text else response_question
             if not response_text:
-                response_text = "No ready answer was found. Send 'operator' to contact a specialist."
+                response_text = "Готовый ответ не найден. При необходимости нажмите «Позвать оператора»."
             if response_section and response_section != chat_section:
                 database.set_chat_section(chat_id, response_section, dialog_id=dialog_id)
                 chat_section = response_section
@@ -4537,6 +4669,7 @@ def _process_onec_incoming_message(
                 author="AutoBot",
                 chat_title=chat_title,
                 section=chat_section,
+                quick_replies=_onec_default_quick_replies(),
             )
             return
 
@@ -4545,8 +4678,7 @@ def _process_onec_incoming_message(
             ai_reply = ai_manager.generate_response(message_text, history)
         else:
             ai_reply = (
-                "AI assistant is temporarily unavailable. Please send 'operator' "
-                "to contact a specialist."
+                "AI помощник временно недоступен. При необходимости нажмите «Позвать оператора»."
             )
 
         ai_reply = (ai_reply or "").strip()
@@ -4563,6 +4695,7 @@ def _process_onec_incoming_message(
             author="AI Assistant",
             chat_title=chat_title,
             section=chat_section,
+            quick_replies=_onec_default_quick_replies(),
         )
     except Exception:
         logger.exception(
@@ -4597,7 +4730,13 @@ def create_onec_message(
     chat_id = _resolve_onec_chat_id(external_chat_id, request.chat_id)
     author = _normalize_optional(request.author)
     normalized_text = message_text.lower()
-    stored_text = "[OPERATOR REQUEST]" if normalized_text == "operator" else message_text
+    language_selection = _normalize_onec_language_command(normalized_text)
+    if _is_onec_operator_request(normalized_text):
+        stored_text = "[OPERATOR REQUEST]"
+    elif language_selection is not None:
+        stored_text = f"[LANGUAGE:{language_selection[0]}]"
+    else:
+        stored_text = message_text
 
     title_candidate = _normalize_optional(request.title)
     chat_title = title_candidate or f"1C client {external_chat_id}"
@@ -4669,20 +4808,21 @@ def create_onec_message(
                 customer_name_ru=contract_result.get("customer_name_ru"),
             )
             logger.info("1C Organization %s saved as organization without contract", bin_value)
-            response_message = (
-                f"No active {contract_checker.ACTIVE_CONTRACT_YEAR} contract was found for this organization.\\n"
-                "Contact our office to sign a contract."
-            )
-            _store_onec_outgoing_text_message(
-                chat_id=chat_id,
-                dialog_id=dialog_id,
-                external_chat_id=external_chat_id,
-                bin_value=bin_value,
-                text=response_message,
-                author="System",
-                chat_title=chat_title,
-                section=section_id,
-            )
+        response_message = _build_onec_contract_status_text(
+            has_contract=bool(has_contract),
+            year=contract_checker.ACTIVE_CONTRACT_YEAR,
+        )
+        _store_onec_outgoing_text_message(
+            chat_id=chat_id,
+            dialog_id=dialog_id,
+            external_chat_id=external_chat_id,
+            bin_value=bin_value,
+            text=response_message,
+            author="System",
+            chat_title=chat_title,
+            section=section_id,
+            quick_replies=_onec_language_quick_replies(),
+        )
 
     if not message_text:
         return {
@@ -4777,6 +4917,7 @@ def _onec_history_core(
                 created_at=created_at_iso,
                 section=message.get("section"),
                 attachments=_message_attachment_payloads(message, request, for_onec=True),
+                quick_replies=message.get("quick_replies") or [],
             )
         )
 
@@ -4949,11 +5090,15 @@ class OneCRatingRequest(BaseModel):
 
     external_chat_id: str = Field(min_length=1, max_length=128)
 
+    chat_id: int | None = None
+
     dialog_id: int | None = None
 
     appeal_id: int | None = None
 
     rating: int = Field(ge=1, le=5)
+
+    target: Literal["operator", "ai"] = "operator"
 
 
 class SurveyTemplateRequest(BaseModel):
@@ -4996,12 +5141,6 @@ def _parse_optional_date_param(value: str | None, *, field_name: str) -> date | 
         return date.fromisoformat(value)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Некорректная дата: {field_name}") from exc
-
-    target: Literal["operator", "ai"] = "operator"
-
-
-
-
 
 @app.post("/integrations/1c/close")
 
@@ -5054,6 +5193,15 @@ def onec_close_dialog(
     rating_target = "ai" if latest_stats and latest_stats.get("is_ai_closed") else "operator"
 
     rating_required = latest_appeal_id is not None
+    employee_assessments = database.create_employee_client_assessments_for_dialog(
+        dialog_id,
+        appeal_id=latest_appeal_id,
+    )
+    employee_assessment_id = (
+        int(employee_assessments[0]["id"])
+        if employee_assessments and employee_assessments[0].get("id") is not None
+        else None
+    )
 
 
 
@@ -5087,6 +5235,11 @@ def onec_close_dialog(
 
         pass  # Telegram notification is best-effort
 
+    try:
+        survey_service.maybe_start_survey_after_appeal_closed(dialog_id, latest_appeal_id)
+    except Exception:
+        logger.warning("Failed to start after-close survey for dialog %s", dialog_id, exc_info=True)
+
 
 
     logger.info(
@@ -5108,6 +5261,9 @@ def onec_close_dialog(
         "rating_required": bool(rating_required),
 
         "rating_target": rating_target,
+        "employee_assessment_count": len(employee_assessments),
+        "employee_assessment_id": employee_assessment_id,
+        "employee_assessment_pending": employee_assessment_id is not None,
 
     }
 
@@ -5137,6 +5293,8 @@ def onec_submit_rating(
 
 
 
+    chat_id = _resolve_onec_chat_id(external_chat_id, body.chat_id)
+
     appeal_id = body.appeal_id
 
     dialog_id = body.dialog_id
@@ -5145,15 +5303,31 @@ def onec_submit_rating(
 
         dialog_id = database.get_dialog_id_for_appeal(appeal_id)
 
+    if dialog_id is None:
+
+        dialog_id = database.get_latest_closed_chat_dialog_id(chat_id)
+
+    if dialog_id is None and body.chat_id is None:
+        stored_chat = database.get_chat_by_external_chat_id(external_chat_id)
+        if stored_chat and stored_chat.get("chat_id") is not None:
+            stored_chat_id = int(stored_chat["chat_id"])
+            if stored_chat_id != chat_id:
+                chat_id = stored_chat_id
+                dialog_id = database.get_latest_closed_chat_dialog_id(chat_id)
+
 
 
     if dialog_id is None:
 
+        logger.warning(
+            "1C rating rejected: no closed dialog found ext_id=%s resolved_chat_id=%s explicit_chat_id=%s appeal_id=%s target=%s",
+            external_chat_id,
+            chat_id,
+            body.chat_id,
+            appeal_id,
+            body.target,
+        )
         raise HTTPException(status_code=400, detail="dialog_id \u0438\u043b\u0438 appeal_id \u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u0435\u043d")
-
-
-
-    chat_id = _resolve_onec_chat_id(external_chat_id, None)
 
 
 
@@ -5165,11 +5339,23 @@ def onec_submit_rating(
 
     if body.target == "ai":
 
-        saved = database.save_ai_csat_rating(dialog_id, body.rating, appeal_id=appeal_id)
+        saved = database.save_ai_csat_rating(
+            dialog_id,
+            body.rating,
+            appeal_id=appeal_id,
+            rater_external_chat_id=external_chat_id,
+            channel=database.RATING_CHANNEL_ONEC_API,
+        )
 
     else:
 
-        saved = database.save_csat_rating(dialog_id, body.rating, appeal_id=appeal_id)
+        saved = database.save_csat_rating(
+            dialog_id,
+            body.rating,
+            appeal_id=appeal_id,
+            rater_external_chat_id=external_chat_id,
+            channel=database.RATING_CHANNEL_ONEC_API,
+        )
 
 
 
@@ -5197,6 +5383,10 @@ def onec_submit_rating(
 
     )
 
+    survey_result = None
+    if body.target == "operator":
+        survey_result = survey_service.maybe_start_survey_after_employee_csat(dialog_id, appeal_id)
+
     return {
 
         "status": "ok",
@@ -5208,6 +5398,7 @@ def onec_submit_rating(
         "target": body.target,
 
         "rating": body.rating,
+        "survey": survey_result,
 
     }
 

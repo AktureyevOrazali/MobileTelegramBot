@@ -137,6 +137,37 @@ function renderBuilderSection(question: SurveyQuestion = draftQuestion) {
   return render(<Wrapper />);
 }
 
+function renderBuilderSectionWithDraft(initialDraft: SurveyDraft) {
+  const Wrapper: React.FC = () => {
+    const [draft, setDraft] = React.useState<SurveyDraft>(initialDraft);
+
+    return (
+      <SurveyBuilderSection
+        audience="client"
+        onAudienceChange={vi.fn()}
+        templates={[makeTemplate(1, 'Активный опрос', 'active')]}
+        selectedTemplateId={1}
+        onSelectTemplate={vi.fn()}
+        draft={draft}
+        setDraft={setDraft}
+        isLoading={false}
+        onSave={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onNew={vi.fn()}
+        updateQuestion={vi.fn()}
+        addQuestion={vi.fn()}
+        removeQuestion={vi.fn()}
+        updateOption={vi.fn()}
+        addOption={vi.fn()}
+        removeOption={vi.fn()}
+      />
+    );
+  };
+
+  return render(<Wrapper />);
+}
+
 describe('SurveyBuilderSection', () => {
   it('keeps launch presets hidden until configure is clicked', () => {
     const { container } = renderBuilderSection();
@@ -197,6 +228,20 @@ describe('SurveyBuilderSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Своя дата' }));
     fireEvent.change(screen.getByLabelText('Дата запуска'), { target: { value: '2026-05-15' } });
     expect(screen.getByText('Своя дата: 15.05.2026')).toBeInTheDocument();
+  });
+
+  it('keeps after-appeal launch active when legacy calendar data is still present', () => {
+    const { container } = renderBuilderSectionWithDraft({
+      ...makeDraft(),
+      triggerType: 'after_appeal_closed',
+      launchRules: [{ type: 'calendar', schedule: 'month_start', dates: [] }],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Настроить запуск' }));
+
+    expect(screen.getByRole('button', { name: 'После обращения' })).toHaveClass('is-active');
+    expect(screen.getByRole('button', { name: 'Начало месяца' })).not.toHaveClass('is-active');
+    expect(container.querySelector('.surveys-launch-option.is-active')).toHaveTextContent('После обращения');
   });
 
   it('renders scale questions with selectable marks capped at five', () => {

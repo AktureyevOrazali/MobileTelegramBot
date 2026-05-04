@@ -425,7 +425,8 @@ def _init_db() -> None:
             author TEXT,
             created_at TEXT NOT NULL,
             section TEXT,
-            dialog_id BIGINT REFERENCES chat_dialogs(id) ON DELETE SET NULL
+            dialog_id BIGINT REFERENCES chat_dialogs(id) ON DELETE SET NULL,
+            quick_replies TEXT
         )
         """,
         """
@@ -878,6 +879,7 @@ def _init_db() -> None:
     _ensure_column("chats", "external_chat_id", "TEXT")
     _ensure_column("messages", "section", "TEXT")
     _ensure_column("messages", "dialog_id", "BIGINT")
+    _ensure_column("messages", "quick_replies", "TEXT")
     _ensure_column("chat_dialogs", "bin", "TEXT")
     _ensure_column("chat_dialogs", "started_at", "TEXT")
     _ensure_column("chat_dialogs", "ended_at", "TEXT")
@@ -1900,20 +1902,25 @@ def _init_db() -> None:
         default_questions = customer_surveys.default_after_csat_questions()
         template_row = execute(
             """
-            SELECT st.id, st.title, COUNT(DISTINCT sq.id) AS question_count,
+            SELECT st.id, st.title, st.trigger_type, COUNT(DISTINCT sq.id) AS question_count,
                    COUNT(DISTINCT ss.id) AS session_count
             FROM survey_templates st
             LEFT JOIN survey_questions sq ON sq.template_id = st.id
             LEFT JOIN survey_sessions ss ON ss.template_id = st.id
-            WHERE st.trigger_type = %s AND st.status = %s AND st.audience = %s
-            GROUP BY st.id, st.title
-            ORDER BY COUNT(DISTINCT sq.id) DESC, st.updated_at DESC, st.id DESC
+            WHERE st.audience = %s
+              AND st.status = %s
+              AND (st.trigger_type = %s OR st.title = %s)
+            GROUP BY st.id, st.title, st.trigger_type
+            ORDER BY CASE WHEN st.title = %s THEN 0 ELSE 1 END,
+                     COUNT(DISTINCT sq.id) DESC, st.updated_at DESC, st.id DESC
             LIMIT 1
             """,
             (
-                customer_surveys.SURVEY_TRIGGER_PERIODIC,
-                customer_surveys.SURVEY_STATUS_ACTIVE,
                 customer_surveys.SURVEY_AUDIENCE_CLIENT,
+                customer_surveys.SURVEY_STATUS_ACTIVE,
+                customer_surveys.SURVEY_TRIGGER_PERIODIC,
+                customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
+                customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
             ),
         ).fetchone()
 
@@ -1924,9 +1931,9 @@ def _init_db() -> None:
                 """
                 INSERT INTO survey_templates (
                     title, description, audience, status, trigger_type, periodic_interval,
-                    scheduled_at, is_anonymous, created_by, created_at, updated_at
+                    scheduled_at, launch_rules, is_anonymous, created_by, created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -1934,9 +1941,10 @@ def _init_db() -> None:
                     customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
                     customer_surveys.SURVEY_AUDIENCE_CLIENT,
                     customer_surveys.SURVEY_STATUS_ACTIVE,
-                    customer_surveys.SURVEY_TRIGGER_PERIODIC,
-                    customer_surveys.SURVEY_PERIOD_MONTHLY,
+                    customer_surveys.SURVEY_TRIGGER_AFTER_APPEAL_CLOSED,
                     None,
+                    None,
+                    json.dumps([{"type": customer_surveys.SURVEY_TRIGGER_AFTER_APPEAL_CLOSED, "dates": []}], ensure_ascii=False),
                     False,
                     None,
                     now,
@@ -1949,8 +1957,9 @@ def _init_db() -> None:
         else:
             question_count = int(template_row["question_count"] or 0)
             session_count = int(template_row["session_count"] or 0)
+            is_periodic_seed = template_row.get("trigger_type") == customer_surveys.SURVEY_TRIGGER_PERIODIC
             broken_text = "???" in str(template_row.get("title") or "")
-            if question_count < len(default_questions) or broken_text:
+            if is_periodic_seed and (question_count < len(default_questions) or broken_text):
                 if session_count == 0:
                     template_id = int(template_row["id"])
                     execute("DELETE FROM survey_questions WHERE template_id = %s", (template_id,))
@@ -1976,9 +1985,9 @@ def _init_db() -> None:
                         """
                         INSERT INTO survey_templates (
                             title, description, audience, status, trigger_type, periodic_interval,
-                            scheduled_at, is_anonymous, created_by, created_at, updated_at
+                            scheduled_at, launch_rules, is_anonymous, created_by, created_at, updated_at
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                         """,
                         (
@@ -1986,9 +1995,10 @@ def _init_db() -> None:
                             customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
                             customer_surveys.SURVEY_AUDIENCE_CLIENT,
                             customer_surveys.SURVEY_STATUS_ACTIVE,
-                            customer_surveys.SURVEY_TRIGGER_PERIODIC,
-                            customer_surveys.SURVEY_PERIOD_MONTHLY,
+                            customer_surveys.SURVEY_TRIGGER_AFTER_APPEAL_CLOSED,
                             None,
+                            None,
+                            json.dumps([{"type": customer_surveys.SURVEY_TRIGGER_AFTER_APPEAL_CLOSED, "dates": []}], ensure_ascii=False),
                             False,
                             None,
                             now,
@@ -2180,10 +2190,11 @@ def _ensure_check_constraint(
     expression: str,
     not_valid: bool = True,
 ) -> None:
-    if _constraint_exists(table, constraint_name):
-        return
-
     not_valid_clause = " NOT VALID" if not_valid else ""
+    drop_query = (
+        f"ALTER TABLE {_quote_identifier(table)} "
+        f"DROP CONSTRAINT IF EXISTS {_quote_identifier(constraint_name)}"
+    )
     query = (
         f"ALTER TABLE {_quote_identifier(table)} "
         f"ADD CONSTRAINT {_quote_identifier(constraint_name)} "
@@ -2192,7 +2203,7 @@ def _ensure_check_constraint(
 
     with _lock:
         if _constraint_exists(table, constraint_name):
-            return
+            execute(drop_query)
         execute(query)
 
 
@@ -2331,6 +2342,7 @@ class Message:
     created_at: datetime
     section: str | None
     dialog_id: int | None
+    quick_replies: list[dict[str, Any]]
 
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> "Message":
@@ -2344,6 +2356,7 @@ class Message:
             created_at=datetime.fromisoformat(row["created_at"]),
             section=row["section"],
             dialog_id=row["dialog_id"],
+            quick_replies=_json_loads(row.get("quick_replies"), []),
         )
 
 
@@ -2640,9 +2653,13 @@ def save_message(
     section: str | None,
     dialog_id: int | None = None,
     attachment_ids: Sequence[int] | None = None,
+    quick_replies: Sequence[Mapping[str, Any]] | None = None,
 ) -> int:
     normalized_text = text if text is not None else ""
     normalized_attachment_ids = [int(item) for item in (attachment_ids or []) if int(item) > 0]
+    normalized_quick_replies = [
+        dict(item) for item in (quick_replies or []) if isinstance(item, Mapping)
+    ]
     if not normalized_text.strip() and not normalized_attachment_ids:
         raise ValueError("Message must contain text or attachments")
 
@@ -2656,11 +2673,18 @@ def save_message(
     with _lock:
         cursor = execute(
             """
-            INSERT INTO messages (chat_id, direction, text, message_id, author, created_at, section, dialog_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO messages (
+                chat_id, direction, text, message_id, author, created_at,
+                section, dialog_id, quick_replies
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (chat_id, direction, normalized_text, message_id, author, now, section, resolved_dialog_id),
+            (
+                chat_id, direction, normalized_text, message_id, author, now,
+                section, resolved_dialog_id,
+                json.dumps(normalized_quick_replies, ensure_ascii=False) if normalized_quick_replies else None,
+            ),
         )
         inserted_row = cursor.fetchone()
         if inserted_row is None:
@@ -2827,6 +2851,23 @@ def get_active_chat_dialog_id(chat_id: int) -> int | None:
     if dialog is None:
         return None
     return int(dialog["id"])
+
+
+def get_latest_closed_chat_dialog_id(chat_id: int) -> int | None:
+    with _lock:
+        row = execute(
+            """
+            SELECT id
+            FROM chat_dialogs
+            WHERE chat_id = %s
+              AND ended_at IS NOT NULL
+              AND purged_at IS NULL
+            ORDER BY ended_at DESC, started_at DESC
+            LIMIT 1
+            """,
+            (chat_id,),
+        ).fetchone()
+    return int(row["id"]) if row else None
 
 
 def set_dialog_operator_mode(dialog_id: int, operator_mode: bool) -> None:
@@ -3455,6 +3496,107 @@ def list_operator_rating_targets(
                 (dialog_id,),
             ).fetchall()
     return select_operator_rating_targets(rows or [])
+
+
+def create_employee_client_assessments_for_dialog(
+    dialog_id: int,
+    *,
+    appeal_id: int | None = None,
+) -> List[Dict[str, object]]:
+    """Create pending employee-to-client assessment rows for human operators."""
+    targets = list_operator_rating_targets(int(dialog_id), appeal_id)
+    if not targets:
+        return []
+    now = datetime.now(timezone.utc).isoformat()
+    created: List[Dict[str, object]] = []
+    with _lock:
+        context = execute(
+            """
+            SELECT
+                cd.chat_id,
+                COALESCE(cd.bin, c.bin) AS client_bin,
+                COALESCE(NULLIF(TRIM(c.title), ''), NULLIF(TRIM(c.external_chat_id), ''), cd.chat_id::text) AS client_name,
+                COALESCE(ds.is_ai_closed, FALSE) OR COALESCE(ds.ai_messages_count, 0) > 0 AS ai_assisted
+            FROM chat_dialogs cd
+            JOIN chats c ON c.chat_id = cd.chat_id
+            LEFT JOIN LATERAL (
+                SELECT is_ai_closed, ai_messages_count
+                FROM dialog_stats
+                WHERE dialog_id = cd.id
+                  AND (%s IS NULL OR appeal_id = %s)
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+            ) ds ON TRUE
+            WHERE cd.id = %s
+            LIMIT 1
+            """,
+            (appeal_id, appeal_id, int(dialog_id)),
+        ).fetchone()
+        if context is None:
+            return []
+        for target in targets:
+            operator_name = str(target.get("operator_name") or "").strip()
+            if not operator_name:
+                continue
+            user = execute(
+                """
+                SELECT id, name
+                FROM users
+                WHERE LOWER(name) = LOWER(%s)
+                   OR LOWER(login) = LOWER(%s)
+                   OR LOWER(email) = LOWER(%s)
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (operator_name, operator_name, operator_name),
+            ).fetchone()
+            if user is None:
+                continue
+            existing = execute(
+                """
+                SELECT id, assigned_user_id, assigned_user_name, status, created_at
+                FROM employee_client_assessments
+                WHERE dialog_id = %s
+                  AND assigned_user_id = %s
+                  AND (%s IS NULL OR appeal_id = %s)
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (int(dialog_id), int(user["id"]), appeal_id, appeal_id),
+            ).fetchone()
+            if existing is not None:
+                created.append(dict(existing))
+                continue
+            row = execute(
+                """
+                INSERT INTO employee_client_assessments (
+                    dialog_id, appeal_id, chat_id, client_bin, client_name,
+                    assigned_user_id, assigned_user_name, status,
+                    task_opened_at, task_closed_at, ai_assisted,
+                    created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, assigned_user_id, assigned_user_name, status, created_at
+                """,
+                (
+                    int(dialog_id),
+                    int(appeal_id) if appeal_id is not None else None,
+                    int(context["chat_id"]),
+                    context.get("client_bin"),
+                    context.get("client_name"),
+                    int(user["id"]),
+                    user["name"],
+                    employee_client_assessments.ASSESSMENT_STATUS_PENDING,
+                    now,
+                    now,
+                    bool(context.get("ai_assisted")),
+                    now,
+                    now,
+                ),
+            ).fetchone()
+            if row is not None:
+                created.append(dict(row))
+    return created
 
 
 def get_operator_csat_for_operator(
@@ -4624,13 +4766,31 @@ def list_chats_for_user(
         "      AND m.dialog_id = cd.id",
         "      AND m.direction = 'incoming'",
         "      AND (dr.last_read_at IS NULL OR m.created_at > dr.last_read_at)",
-        "  ), 0) AS unread_count",
+        "  ), 0) AS unread_count,",
+        "  (",
+        "    SELECT eca.id",
+        "    FROM employee_client_assessments eca",
+        "    WHERE eca.dialog_id = cd.id",
+        "      AND eca.assigned_user_id = %s",
+        "      AND eca.status = 'pending'",
+        "    ORDER BY eca.created_at DESC, eca.id DESC",
+        "    LIMIT 1",
+        "  ) AS employee_assessment_id,",
+        "  (",
+        "    SELECT eca.created_at",
+        "    FROM employee_client_assessments eca",
+        "    WHERE eca.dialog_id = cd.id",
+        "      AND eca.assigned_user_id = %s",
+        "      AND eca.status = 'pending'",
+        "    ORDER BY eca.created_at DESC, eca.id DESC",
+        "    LIMIT 1",
+        "  ) AS employee_assessment_created_at",
         "FROM chat_dialogs cd",
         "JOIN chats c ON c.chat_id = cd.chat_id",
         "LEFT JOIN favorites f ON f.dialog_id = cd.id AND f.user_id = %s",
         "LEFT JOIN dialog_reads dr ON dr.dialog_id = cd.id AND dr.user_id = %s",
     ]
-    params: List[object] = [user_id, user_id]
+    params: List[object] = [user_id, user_id, user_id, user_id]
     filters: List[str] = ["cd.purged_at IS NULL"]
     if not is_admin_like(role):
         allowed_sections = get_user_sections(user_id)
@@ -4686,6 +4846,9 @@ def list_chats_for_user(
                 "last_message_author": row["last_message_author"],
                 "last_message_has_attachments": bool(row["last_message_has_attachments"]),
                 "last_message_attachment_kind": row["last_message_attachment_kind"],
+                "employee_assessment_id": int(row["employee_assessment_id"]) if row["employee_assessment_id"] is not None else None,
+                "employee_assessment_pending": row["employee_assessment_id"] is not None,
+                "employee_assessment_created_at": row["employee_assessment_created_at"],
             }
         )
     return chats
@@ -4713,7 +4876,7 @@ def get_messages(
     dialog_id: int | None = None,
 ) -> List[dict]:
     query_parts = [
-        "SELECT id, chat_id, direction, text, message_id, author, created_at, section, dialog_id",
+        "SELECT id, chat_id, direction, text, message_id, author, created_at, section, dialog_id, quick_replies",
         "FROM messages",
         "WHERE chat_id = %s",
     ]
@@ -5051,6 +5214,26 @@ def get_chat(chat_id: int) -> Optional[Dict[str, object]]:
             WHERE chat_id = %s
             """,
             (chat_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return dict(asdict(Chat.from_row(row)))
+
+
+def get_chat_by_external_chat_id(external_chat_id: str) -> Optional[Dict[str, object]]:
+    normalized = (external_chat_id or "").strip()
+    if not normalized:
+        return None
+    with _lock:
+        row = execute(
+            """
+            SELECT chat_id, title, username, type, updated_at, section, bin, external_chat_id
+            FROM chats
+            WHERE external_chat_id = %s
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (normalized,),
         ).fetchone()
     if row is None:
         return None
@@ -7646,7 +7829,7 @@ def _survey_session_from_row(row: Mapping[str, Any] | None, *, include_children:
         operators = get_survey_session_operators(session["id"])
         current_question = None
         current_index = 0
-        for index, question in enumerate(questions, start=1):
+        for index, question in enumerate(questions):
             if question["id"] == session["current_question_id"]:
                 current_question = question
                 current_index = index

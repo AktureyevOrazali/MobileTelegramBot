@@ -54,7 +54,7 @@ def _question_key_part(value: object) -> str:
     return " ".join(str(value or "").split()).casefold()
 
 
-def _question_group_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
+def question_group_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
     text_key = _question_key_part(row.get("question_text"))
     if not text_key:
         text_key = str(row["question_id"])
@@ -65,14 +65,22 @@ def _question_group_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
     )
 
 
-def summarize_question_analytics(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def summarize_question_analytics(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    allowed_question_keys: Iterable[tuple[str, str, str]] | None = None,
+) -> list[dict[str, Any]]:
     questions: dict[tuple[str, str, str], dict[str, Any]] = {}
+    allowed = set(allowed_question_keys) if allowed_question_keys is not None else None
 
     for row in rows:
         question_id = int(row["question_id"])
         sort_order = int(row.get("sort_order") or 0)
+        group_key = question_group_key(row)
+        if allowed is not None and group_key not in allowed:
+            continue
         bucket = questions.setdefault(
-            _question_group_key(row),
+            group_key,
             {
                 "question_id": question_id,
                 "question_text": str(row.get("question_text") or ""),

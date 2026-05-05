@@ -8604,6 +8604,35 @@ def list_survey_sessions(limit: int = 100) -> List[Dict[str, Any]]:
         ).fetchall()
     return [_survey_session_from_row(row, include_children=False) for row in rows]
 
+
+def _current_survey_question_keys_for_analytics(
+    *,
+    audience: str,
+    template_id: int | None = None,
+) -> set[tuple[str, str, str]]:
+    if template_id:
+        rows = execute(
+            """
+            SELECT id AS question_id, text AS question_text, question_type, topic
+            FROM survey_questions
+            WHERE template_id = %s
+            """,
+            (int(template_id),),
+        ).fetchall()
+    else:
+        rows = execute(
+            """
+            SELECT sq.id AS question_id, sq.text AS question_text, sq.question_type, sq.topic
+            FROM survey_questions sq
+            JOIN survey_templates st ON st.id = sq.template_id
+            WHERE st.audience = %s
+              AND st.status = %s
+            """,
+            (audience, customer_surveys.SURVEY_STATUS_ACTIVE),
+        ).fetchall()
+    return {survey_analytics.question_group_key(row) for row in rows or []}
+
+
 def get_survey_analytics(
     *,
     audience: str | None = None,
@@ -8703,6 +8732,10 @@ def get_survey_analytics(
     question_rows: List[Dict[str, Any]] = []
 
     with _lock:
+        allowed_question_keys = _current_survey_question_keys_for_analytics(
+            audience=normalized_audience,
+            template_id=template_id,
+        )
         cursor = execute(sql_query, params)
         while True:
             rows = cursor.fetchmany(SURVEY_ANALYTICS_FETCH_BATCH_SIZE)
@@ -8805,7 +8838,10 @@ def get_survey_analytics(
         "top_client_requests": top_items(client_requests),
         "top_training_wishes": top_items(training_labels),
         "employee_remarks": top_items(employee_remarks),
-        "question_analytics": survey_analytics.summarize_question_analytics(question_rows),
+        "question_analytics": survey_analytics.summarize_question_analytics(
+            question_rows,
+            allowed_question_keys=allowed_question_keys,
+        ),
         "monthly_satisfaction": score_summary["monthly_satisfaction"],
         "answers": answers,
         "answers_total_count": answers_total_count,

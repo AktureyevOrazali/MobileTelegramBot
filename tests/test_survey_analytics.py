@@ -127,6 +127,49 @@ class SurveyAnalyticsTests(unittest.TestCase):
         self.assertEqual(summary[0]["average_score"], 4.0)
         self.assertEqual(summary[0]["score_distribution"], [{"label": "5", "count": 1}, {"label": "3", "count": 1}])
 
+    def test_summarize_question_analytics_keeps_only_current_constructor_questions(self):
+        current_question_key = survey_analytics.question_group_key(
+            {
+                "question_id": 200,
+                "question_text": "Current question",
+                "question_type": "scale",
+                "topic": "current",
+            }
+        )
+
+        summary = survey_analytics.summarize_question_analytics(
+            [
+                {
+                    "question_id": 100,
+                    "question_text": "Old deleted question",
+                    "question_type": "scale",
+                    "topic": "old",
+                    "sort_order": 1,
+                    "numeric_score": 1,
+                    "raw_text": "",
+                    "selected_options": [],
+                    "selected_employee_name": None,
+                    "option_labels_by_id": {},
+                },
+                {
+                    "question_id": 200,
+                    "question_text": "Current question",
+                    "question_type": "scale",
+                    "topic": "current",
+                    "sort_order": 2,
+                    "numeric_score": 5,
+                    "raw_text": "",
+                    "selected_options": [],
+                    "selected_employee_name": None,
+                    "option_labels_by_id": {},
+                },
+            ],
+            allowed_question_keys={current_question_key},
+        )
+
+        self.assertEqual([item["question_text"] for item in summary], ["Current question"])
+        self.assertEqual(summary[0]["average_score"], 5.0)
+
     def test_summarize_completed_survey_scores_counts_one_score_per_session(self):
         summary = survey_analytics.summarize_completed_survey_scores(
             [

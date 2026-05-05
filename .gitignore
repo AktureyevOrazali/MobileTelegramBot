@@ -19,6 +19,7 @@ ios/
 # IDE
 .idea/
 .vscode/moblie.zip
+.worktrees/
 
 *.zip
 

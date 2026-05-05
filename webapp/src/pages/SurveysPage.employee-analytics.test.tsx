@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient } from '../api/ApiClient';
-import type { EmployeeClientAssessmentAnalytics, SurveyAnalytics } from '../types';
+import type { EmployeeClientAssessmentAnalytics, SurveyAnalytics, SurveyTemplate } from '../types';
 import SurveysPage from './SurveysPage';
 
 vi.mock('../components/EChartsWrapper', () => ({
@@ -150,9 +150,26 @@ const employeeAssessmentAnalytics: EmployeeClientAssessmentAnalytics = {
   updatedAt: new Date('2026-04-15T00:00:00Z'),
 };
 
+const currentEmployeeTemplate: SurveyTemplate = {
+  id: 88,
+  title: 'Current employee survey',
+  description: '',
+  audience: 'employee',
+  status: 'active',
+  triggerType: 'after_appeal_closed',
+  periodicInterval: null,
+  scheduledAt: null,
+  launchRules: [{ type: 'after_appeal_closed', dates: [] }],
+  isAnonymous: false,
+  createdBy: null,
+  createdAt: new Date('2026-04-01T00:00:00Z'),
+  updatedAt: new Date('2026-04-18T00:00:00Z'),
+  questions: [],
+};
+
 function renderEmployeeAnalyticsPage() {
   const apiClient = {
-    fetchSurveyTemplates: vi.fn().mockResolvedValue([]),
+    fetchSurveyTemplates: vi.fn().mockResolvedValue([currentEmployeeTemplate]),
     fetchSurveyAnalytics: vi.fn().mockImplementation((options?: { audience?: string | null }) => (
       options?.audience === 'employee'
         ? Promise.resolve(employeeSurveyAnalytics)
@@ -175,14 +192,18 @@ describe('SurveysPage employee analytics', () => {
     const { container, apiClient } = renderEmployeeAnalyticsPage();
 
     expect((await screen.findAllByText('Client Alpha')).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Employee survey question')).toBeInTheDocument();
-    expect(screen.getByText('Employee ninth question')).toBeInTheDocument();
+    expect(await screen.findByText('Employee survey question')).toBeInTheDocument();
+    expect(await screen.findByText('Employee ninth question')).toBeInTheDocument();
     expect(screen.getByText('Need clearer scripts')).toBeInTheDocument();
     expect(container.querySelector('.surveys-assessment-card--quality')).toBeInTheDocument();
     expect(container.querySelector('.surveys-hero .surveys-assessment-filter')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(apiClient.fetchSurveyAnalytics).toHaveBeenCalledWith(expect.objectContaining({ audience: 'employee' }));
+      expect(apiClient.fetchSurveyAnalytics).toHaveBeenCalledWith(expect.objectContaining({
+        audience: 'employee',
+        templateId: currentEmployeeTemplate.id,
+      }));
       expect(apiClient.fetchEmployeeClientAssessmentAnalytics).toHaveBeenCalled();
     });
   });

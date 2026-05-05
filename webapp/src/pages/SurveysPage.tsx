@@ -4,7 +4,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiClient } from '../api/ApiClient';
 import EChartsWrapper from '../components/EChartsWrapper';
 import { SurveyBuilderSection } from '../components/surveys/SurveyBuilderSection';
-import { createBlankSurveyQuestion, SURVEY_TOPICS, useSurveyData } from '../hooks/useSurveyData';
+import {
+  createBlankSurveyQuestion,
+  getFirstSurveyTemplateIdForAudience,
+  SURVEY_TOPICS,
+  useSurveyData,
+} from '../hooks/useSurveyData';
 import type {
   AiRatingsAnalytics,
   ClientRatingsAnalytics,
@@ -338,6 +343,10 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     () => data.templates.filter((template) => template.audience === builderAudience),
     [builderAudience, data.templates],
   );
+  const currentEmployeeTemplateId = useMemo(
+    () => getFirstSurveyTemplateIdForAudience(data.templates, 'employee'),
+    [data.templates],
+  );
 
   const selectedLedgerEntry = useMemo<RatingLedgerEntry | null>(
     () => ledger?.items[0] ?? null,
@@ -360,7 +369,12 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     try {
       const [assessmentAnalytics, surveyAnalytics] = await Promise.all([
         apiClient.fetchEmployeeClientAssessmentAnalytics(),
-        apiClient.fetchSurveyAnalytics({ audience: 'employee' }),
+        currentEmployeeTemplateId
+          ? apiClient.fetchSurveyAnalytics({
+              audience: 'employee',
+              templateId: currentEmployeeTemplateId,
+            })
+          : Promise.resolve(null),
       ]);
       setEmployeeAnalytics(assessmentAnalytics);
       setEmployeeSurveyAnalytics(surveyAnalytics);
@@ -369,7 +383,7 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     } finally {
       setEmployeeLoading(false);
     }
-  }, [apiClient]);
+  }, [apiClient, currentEmployeeTemplateId]);
 
   const loadRatings = useCallback(async (filters: RatingLedgerFilters = ledgerFilters) => {
     setRatingsLoading(true);

@@ -194,6 +194,11 @@ function createBlankSurveyTemplate(
   };
 }
 
+export const getFirstSurveyTemplateIdForAudience = (
+  templates: SurveyTemplate[],
+  audience: SurveyTemplateAudience,
+): number | null => templates.find((template) => template.audience === audience)?.id ?? null;
+
 export function useSurveyData(apiClient: ApiClient) {
   const [templates, setTemplates] = useState<SurveyTemplate[]>([]);
   const [analytics, setAnalytics] = useState<SurveyAnalytics | null>(null);
@@ -221,8 +226,11 @@ export function useSurveyData(apiClient: ApiClient) {
     return nextTemplates;
   }, [apiClient]);
 
-  const refreshAnalytics = useCallback(async () => {
-    const nextAnalytics = await apiClient.fetchSurveyAnalytics({ audience: 'client' });
+  const refreshAnalytics = useCallback(async (templateId?: number | null) => {
+    const nextAnalytics = await apiClient.fetchSurveyAnalytics({
+      audience: 'client',
+      templateId: templateId ?? undefined,
+    });
     setAnalytics(nextAnalytics);
     return nextAnalytics;
   }, [apiClient]);
@@ -232,7 +240,8 @@ export function useSurveyData(apiClient: ApiClient) {
     setIsAnalyticsLoading(true);
     setError(null);
     try {
-      await Promise.all([refreshTemplates(), refreshAnalytics()]);
+      const nextTemplates = await refreshTemplates();
+      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(nextTemplates, 'client'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить данные опросов.');
     } finally {
@@ -245,13 +254,13 @@ export function useSurveyData(apiClient: ApiClient) {
     setIsAnalyticsLoading(true);
     setError(null);
     try {
-      await refreshAnalytics();
+      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(templates, 'client'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить аналитику опросов.');
     } finally {
       setIsAnalyticsLoading(false);
     }
-  }, [refreshAnalytics]);
+  }, [refreshAnalytics, templates]);
 
   useEffect(() => {
     void load();
@@ -280,7 +289,8 @@ export function useSurveyData(apiClient: ApiClient) {
       const saved = selectedTemplateId
         ? await apiClient.updateSurveyTemplate(selectedTemplateId, draft)
         : await apiClient.createSurveyTemplate(draft);
-      await Promise.all([refreshTemplates(saved.id), refreshAnalytics()]);
+      const nextTemplates = await refreshTemplates(saved.id);
+      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(nextTemplates, 'client'));
       return saved;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось сохранить опрос.');
@@ -296,7 +306,8 @@ export function useSurveyData(apiClient: ApiClient) {
     setError(null);
     try {
       const created = await apiClient.duplicateSurveyTemplate(selectedTemplateId);
-      await Promise.all([refreshTemplates(created.id), refreshAnalytics()]);
+      const nextTemplates = await refreshTemplates(created.id);
+      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(nextTemplates, 'client'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось дублировать опрос.');
     } finally {
@@ -311,7 +322,8 @@ export function useSurveyData(apiClient: ApiClient) {
     try {
       await apiClient.deleteSurveyTemplate(selectedTemplateId);
       setDraft(createBlankSurveyTemplate(draft.audience));
-      await Promise.all([refreshTemplates(null), refreshAnalytics()]);
+      const nextTemplates = await refreshTemplates(null);
+      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(nextTemplates, 'client'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось удалить опрос.');
     } finally {

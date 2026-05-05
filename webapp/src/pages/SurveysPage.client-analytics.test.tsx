@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient } from '../api/ApiClient';
-import type { SurveyAnalytics } from '../types';
+import type { SurveyAnalytics, SurveyTemplate } from '../types';
 import SurveysPage from './SurveysPage';
 
 vi.mock('../components/EChartsWrapper', () => ({
@@ -174,9 +174,26 @@ const clientAnalytics: SurveyAnalytics = {
   updatedAt: new Date('2026-04-18T00:00:00Z'),
 };
 
+const currentClientTemplate: SurveyTemplate = {
+  id: 77,
+  title: 'Current client survey',
+  description: '',
+  audience: 'client',
+  status: 'active',
+  triggerType: 'after_appeal_closed',
+  periodicInterval: null,
+  scheduledAt: null,
+  launchRules: [{ type: 'after_appeal_closed', dates: [] }],
+  isAnonymous: false,
+  createdBy: null,
+  createdAt: new Date('2026-04-01T00:00:00Z'),
+  updatedAt: new Date('2026-04-18T00:00:00Z'),
+  questions: [],
+};
+
 function renderClientAnalyticsPage() {
   const apiClient = {
-    fetchSurveyTemplates: vi.fn().mockResolvedValue([]),
+    fetchSurveyTemplates: vi.fn().mockResolvedValue([currentClientTemplate]),
     fetchSurveyAnalytics: vi.fn().mockResolvedValue(clientAnalytics),
   } as unknown as ApiClient;
 
@@ -192,10 +209,16 @@ function renderClientAnalyticsPage() {
 describe('SurveysPage client analytics', () => {
   it('renders client analytics with the employee analytics card layout, donut chart, and question data', async () => {
     const user = userEvent.setup();
-    const { container } = renderClientAnalyticsPage();
+    const { container, apiClient } = renderClientAnalyticsPage();
 
     await waitFor(() => {
       expect(container.querySelector('.surveys-assessment')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(apiClient.fetchSurveyAnalytics).toHaveBeenCalledWith(expect.objectContaining({
+        audience: 'client',
+        templateId: currentClientTemplate.id,
+      }));
     });
 
     expect(container.querySelector('.surveys-client-overview')).not.toBeInTheDocument();

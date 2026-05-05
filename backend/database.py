@@ -8624,11 +8624,15 @@ def _current_survey_question_keys_for_analytics(
             """
             SELECT sq.id AS question_id, sq.text AS question_text, sq.question_type, sq.topic
             FROM survey_questions sq
-            JOIN survey_templates st ON st.id = sq.template_id
-            WHERE st.audience = %s
-              AND st.status = %s
+            WHERE sq.template_id = (
+                SELECT st.id
+                FROM survey_templates st
+                WHERE st.audience = %s
+                ORDER BY st.updated_at DESC, st.id DESC
+                LIMIT 1
+            )
             """,
-            (audience, customer_surveys.SURVEY_STATUS_ACTIVE),
+            (audience,),
         ).fetchall()
     return {survey_analytics.question_group_key(row) for row in rows or []}
 

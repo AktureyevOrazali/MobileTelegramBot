@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient } from '../api/ApiClient';
-import type { EmployeeClientAssessmentAnalytics, SurveyAnalytics } from '../types';
+import type { SurveyAnalytics } from '../types';
 import SurveysPage from './SurveysPage';
 
 vi.mock('../components/EChartsWrapper', () => ({
@@ -28,131 +28,71 @@ const emptySurveyAnalytics: SurveyAnalytics = {
   topClientRequests: [],
   topTrainingWishes: [],
   employeeRemarks: [],
+  questionAnalytics: [],
   answers: [],
   answersPreviewLimited: false,
   updatedAt: new Date('2026-04-15T00:00:00Z'),
 };
 
-const employeeAnalytics: EmployeeClientAssessmentAnalytics = {
-  totalAssessments: 3,
-  averageOverallScore: 2.3333333333,
-  averageInteractionQualityIndex: 46,
-  averageFeedbackDelayHours: 0,
-  highScoreShare: 0,
-  lowScoreShare: 2 / 3,
-  repeatedRequestShare: 1 / 3,
-  firstContactShare: 1 / 3,
-  hinderedCount: 1,
-  withoutClarificationsCount: 2,
-  firstTimeFullDataShare: 2 / 3,
-  lowScoreReasons: [
-    { label: 'Другая причина', count: 1 },
-    { label: 'Некорректная постановка вопроса', count: 1 },
+const employeeSurveyAnalytics: SurveyAnalytics = {
+  averageScore: 4.5,
+  completedSurveyCount: 2,
+  answerCount: 4,
+  scoreCount: 2,
+  positiveCount: 2,
+  neutralCount: 0,
+  negativeCount: 0,
+  positiveShare: 1,
+  neutralShare: 0,
+  negativeShare: 0,
+  monthlySatisfaction: [
+    { month: '2026-04', averageScore: 4.5, count: 2 },
   ],
-  interactionStatuses: [
-    { label: 'Клиент предоставил все необходимые данные', count: 2 },
-    { label: 'Клиент предоставил данные частично', count: 1 },
-  ],
-  interactionFlags: [
-    { label: 'Обращение было конструктивным', count: 2 },
-    { label: 'Обращение затруднено из-за действий клиента', count: 1 },
-  ],
-  requestRepeatStatuses: [
-    { label: 'Первое обращение', count: 1 },
-    { label: 'Не повторное', count: 1 },
-    { label: 'Повторное однотипное', count: 1 },
-  ],
-  monthlyScores: [
-    { month: '2026-02', averageOverallScore: 0, averageInteractionQualityIndex: 0, count: 0 },
-    { month: '2026-03', averageOverallScore: 0, averageInteractionQualityIndex: 0, count: 0 },
-    { month: '2026-04', averageOverallScore: 2.33, averageInteractionQualityIndex: 1.6, count: 3 },
-  ],
-  clientRatings: [
+  topClientRequests: [],
+  topTrainingWishes: [],
+  employeeRemarks: [],
+  questionAnalytics: [
     {
-      clientName: 'saycheese228',
-      clientBin: '131313131313',
-      taskCount: 1,
-      averageOverallScore: 3.8,
-      averageInteractionQualityIndex: 58,
-      highScoreShare: 0,
-      lowScoreShare: 0,
-      repeatedRequestShare: 0,
-      firstContactShare: 1,
-      averageFeedbackDelayHours: 0,
-      hinderedCount: 0,
-      withoutClarificationsCount: 1,
-      firstTimeFullDataShare: 1,
-      internalRating: 57.5,
+      questionId: 201,
+      questionText: 'Employee survey question',
+      questionType: 'scale',
+      topic: 'employee_quality',
+      sortOrder: 1,
+      answerCount: 2,
+      averageScore: 4.5,
+      scoreDistribution: [
+        { label: '5', count: 1 },
+        { label: '4', count: 1 },
+      ],
+      topAnswers: [],
     },
     {
-      clientName: 'saycheese228',
-      clientBin: '151515151515',
-      taskCount: 2,
-      averageOverallScore: 1.6,
-      averageInteractionQualityIndex: 40,
-      highScoreShare: 0,
-      lowScoreShare: 1,
-      repeatedRequestShare: 0.5,
-      firstContactShare: 0.5,
-      averageFeedbackDelayHours: 0,
-      hinderedCount: 1,
-      withoutClarificationsCount: 1,
-      firstTimeFullDataShare: 0.5,
-      internalRating: 40,
+      questionId: 209,
+      questionText: 'Employee ninth question',
+      questionType: 'text_comment',
+      topic: 'extra',
+      sortOrder: 9,
+      answerCount: 2,
+      averageScore: null,
+      scoreDistribution: [],
+      topAnswers: [
+        { label: 'Need clearer scripts', count: 2 },
+      ],
     },
   ],
-  recentAssessments: [
-    {
-      id: 1,
-      clientName: 'saycheese228',
-      clientBin: '131313131313',
-      assignedUserName: 'test1',
-      overallScore: 3.8,
-      interactionQualityIndex: 58,
-      lowScoreReason: null,
-      submittedAt: new Date('2026-04-15T00:00:00Z'),
-      repeatedRequest: false,
-      requestRepeatStatus: 'first_contact',
-      clientDataOverdue: false,
-      aiAssisted: false,
-    },
-    {
-      id: 2,
-      clientName: 'saycheese228',
-      clientBin: '151515151515',
-      assignedUserName: 'Администратор',
-      overallScore: 1.2,
-      interactionQualityIndex: 36,
-      lowScoreReason: 'Другая причина',
-      submittedAt: new Date('2026-04-15T00:00:00Z'),
-      repeatedRequest: true,
-      requestRepeatStatus: 'repeated_same_issue',
-      clientDataOverdue: true,
-      aiAssisted: false,
-    },
-    {
-      id: 3,
-      clientName: 'saycheese228',
-      clientBin: '151515151515',
-      assignedUserName: 'test1',
-      overallScore: 2,
-      interactionQualityIndex: 44,
-      lowScoreReason: 'Некорректная постановка вопроса',
-      submittedAt: new Date('2026-04-15T00:00:00Z'),
-      repeatedRequest: false,
-      requestRepeatStatus: 'not_repeated',
-      clientDataOverdue: false,
-      aiAssisted: false,
-    },
-  ],
+  answers: [],
+  answersPreviewLimited: false,
   updatedAt: new Date('2026-04-15T00:00:00Z'),
 };
 
 function renderEmployeeAnalyticsPage() {
   const apiClient = {
     fetchSurveyTemplates: vi.fn().mockResolvedValue([]),
-    fetchSurveyAnalytics: vi.fn().mockResolvedValue(emptySurveyAnalytics),
-    fetchEmployeeClientAssessmentAnalytics: vi.fn().mockResolvedValue(employeeAnalytics),
+    fetchSurveyAnalytics: vi.fn().mockImplementation((options?: { audience?: string | null }) => (
+      options?.audience === 'employee'
+        ? Promise.resolve(employeeSurveyAnalytics)
+        : Promise.resolve(emptySurveyAnalytics)
+    )),
   } as unknown as ApiClient;
 
   const result = render(
@@ -165,49 +105,20 @@ function renderEmployeeAnalyticsPage() {
 }
 
 describe('SurveysPage employee analytics', () => {
-  it('renders the employee-to-client dashboard with score structure, dynamics, ratings, and recent scores', async () => {
-    const { container } = renderEmployeeAnalyticsPage();
+  it('renders employee survey-builder question analytics for every configured question', async () => {
+    const { container, apiClient } = renderEmployeeAnalyticsPage();
 
-    expect(await screen.findByText('Внутренняя оценка взаимодействия с клиентами')).toBeInTheDocument();
-    expect(screen.getByText('Карточек')).toBeInTheDocument();
-    expect(screen.queryByText('Средний балл')).not.toBeInTheDocument();
-    expect(screen.queryByText('Качество данных, скорость ответа и деловая коммуникация.')).not.toBeInTheDocument();
-    expect(container.querySelector('.surveys-assessment > .surveys-assessment-hero .surveys-assessment-eyebrow')).not.toBeInTheDocument();
-    expect(container.querySelector('.surveys-assessment-card--quality > .surveys-assessment-eyebrow')).not.toBeInTheDocument();
-    expect(screen.queryByText('Сигналы, которые помогают понять поведение клиента в процессе.')).not.toBeInTheDocument();
-    expect(screen.queryByText('Как распределяются первые, повторные и неповторные кейсы.')).not.toBeInTheDocument();
-    expect(screen.queryByText('Качество взаимодействия по БИН и доля проблемных кейсов.')).not.toBeInTheDocument();
-    expect(screen.queryByText('Свежие анкеты сотрудников без перехода в сырой журнал.')).not.toBeInTheDocument();
-    expect(container.querySelector('.surveys-assessment-tags')).not.toBeInTheDocument();
-    expect(container.querySelector('.surveys-hero .surveys-assessment-filter')).toBeInTheDocument();
-    expect(screen.getAllByText('2,33')[0]).toBeInTheDocument();
-    expect(screen.getByText('Динамика и структура оценок')).toBeInTheDocument();
-    expect(screen.getByText('Низкие (67%)')).toBeInTheDocument();
-    expect(screen.getByText('Нейтральные (33%)')).toBeInTheDocument();
-    expect(screen.getByText('Высокие (0%)')).toBeInTheDocument();
-    expect(screen.getByText('Причины низких оценок')).toBeInTheDocument();
-    expect(screen.getAllByText('Клиент предоставил все необходимые данные').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Операционные показатели')).toBeInTheDocument();
-    expect(screen.getByText('Рейтинг клиентов')).toBeInTheDocument();
-    expect(screen.getByText('Последние оценки')).toBeInTheDocument();
-    expect(screen.getAllByText('saycheese228').length).toBeGreaterThanOrEqual(2);
+    expect(await screen.findByText('Аналитика опроса сотрудников')).toBeInTheDocument();
+    expect(screen.getByText('Средняя оценка сотрудников')).toBeInTheDocument();
+    expect(screen.getByText('Employee survey question')).toBeInTheDocument();
+    expect(screen.getByText('Employee ninth question')).toBeInTheDocument();
+    expect(screen.getByText('Need clearer scripts')).toBeInTheDocument();
+    expect(screen.queryByText('Внутренняя оценка взаимодействия с клиентами')).not.toBeInTheDocument();
+    expect(container.querySelector('.surveys-assessment-card--quality')).toBeInTheDocument();
+    expect(container.querySelector('.surveys-hero .surveys-assessment-filter')).not.toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByTestId('surveys-assessment-line-chart')).toHaveTextContent('Фев');
-      expect(screen.getByTestId('surveys-assessment-line-chart')).toHaveTextContent('Оценка');
-      expect(screen.getByTestId('surveys-assessment-donut-chart')).toHaveTextContent('Низкие');
+      expect(apiClient.fetchSurveyAnalytics).toHaveBeenCalledWith(expect.objectContaining({ audience: 'employee' }));
     });
-
-    const donutOption = JSON.parse(screen.getByTestId('surveys-assessment-donut-chart').textContent ?? '{}');
-    expect(donutOption.series[0]).toMatchObject({
-      radius: ['75%', '88%'],
-      avoidLabelOverlap: false,
-      itemStyle: {
-        borderRadius: 5,
-        borderWidth: 2,
-      },
-    });
-    expect(container.querySelector('.surveys-assessment-card--character')).toBeInTheDocument();
-    expect(container.querySelectorAll('.surveys-assessment-table-wrap--limited')).toHaveLength(2);
   });
 });

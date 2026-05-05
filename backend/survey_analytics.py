@@ -26,6 +26,105 @@ def _month_from_value(value: object) -> str:
         return text[:7]
 
 
+def _top_items(source: Mapping[str, int], limit: int = 10) -> list[dict[str, Any]]:
+    return [
+        {"label": label, "count": count}
+        for label, count in sorted(source.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    ]
+
+
+def _score_label(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return str(value).rstrip("0").rstrip(".")
+
+
+def _score_distribution_items(source: Mapping[str, int]) -> list[dict[str, Any]]:
+    def sort_key(item: tuple[str, int]) -> tuple[float, str]:
+        label, _count = item
+        try:
+            return (-float(label), label)
+        except ValueError:
+            return (0.0, label)
+
+    return [{"label": label, "count": count} for label, count in sorted(source.items(), key=sort_key)]
+
+
+def summarize_question_analytics(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    questions: dict[int, dict[str, Any]] = {}
+
+    for row in rows:
+        question_id = int(row["question_id"])
+        bucket = questions.setdefault(
+            question_id,
+            {
+                "question_id": question_id,
+                "question_text": str(row.get("question_text") or ""),
+                "question_type": str(row.get("question_type") or ""),
+                "topic": row.get("topic"),
+                "sort_order": int(row.get("sort_order") or 0),
+                "answer_count": 0,
+                "score_sum": 0.0,
+                "score_count": 0,
+                "score_distribution_counts": {},
+                "top_answer_counts": {},
+            },
+        )
+        bucket["answer_count"] += 1
+
+        score = row.get("numeric_score")
+        if score is not None:
+            numeric_score = float(score)
+            bucket["score_sum"] += numeric_score
+            bucket["score_count"] += 1
+            label = _score_label(numeric_score)
+            score_counts = bucket["score_distribution_counts"]
+            score_counts[label] = score_counts.get(label, 0) + 1
+
+        question_type = str(row.get("question_type") or "")
+        answer_counts = bucket["top_answer_counts"]
+        if question_type == "employee_exclusion":
+            employee_name = str(row.get("selected_employee_name") or "").strip()
+            if employee_name:
+                answer_counts[employee_name] = answer_counts.get(employee_name, 0) + 1
+            continue
+
+        if question_type in {"single_choice", "multi_choice"}:
+            labels_by_id = row.get("option_labels_by_id")
+            if not isinstance(labels_by_id, Mapping):
+                labels_by_id = {}
+            selected_options = row.get("selected_options")
+            if isinstance(selected_options, list):
+                for option_id in selected_options:
+                    label = str(labels_by_id.get(str(option_id), option_id)).strip()
+                    if label:
+                        answer_counts[label] = answer_counts.get(label, 0) + 1
+            continue
+
+        if question_type == "text_comment":
+            raw_text = str(row.get("raw_text") or "").strip()
+            if raw_text:
+                answer_counts[raw_text] = answer_counts.get(raw_text, 0) + 1
+
+    result: list[dict[str, Any]] = []
+    for bucket in sorted(questions.values(), key=lambda item: (int(item["sort_order"]), int(item["question_id"]))):
+        score_count = int(bucket["score_count"])
+        result.append(
+            {
+                "question_id": int(bucket["question_id"]),
+                "question_text": bucket["question_text"],
+                "question_type": bucket["question_type"],
+                "topic": bucket["topic"],
+                "sort_order": int(bucket["sort_order"]),
+                "answer_count": int(bucket["answer_count"]),
+                "average_score": (float(bucket["score_sum"]) / score_count) if score_count else None,
+                "score_distribution": _score_distribution_items(bucket["score_distribution_counts"]),
+                "top_answers": _top_items(bucket["top_answer_counts"]),
+            }
+        )
+    return result
+
+
 def summarize_completed_survey_scores(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     sessions: dict[int, dict[str, Any]] = {}
 

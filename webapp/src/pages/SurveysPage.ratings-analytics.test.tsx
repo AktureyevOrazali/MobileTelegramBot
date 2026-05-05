@@ -37,6 +37,7 @@ const emptySurveyAnalytics: SurveyAnalytics = {
   topClientRequests: [],
   topTrainingWishes: [],
   employeeRemarks: [],
+  questionAnalytics: [],
   answers: [],
   answersPreviewLimited: false,
   updatedAt: new Date('2026-04-20T00:00:00Z'),

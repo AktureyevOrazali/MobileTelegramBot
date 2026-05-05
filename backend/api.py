@@ -5847,6 +5847,7 @@ def launch_survey_endpoint(
 
 @router.get("/analytics/surveys")
 def get_survey_analytics_endpoint(
+    audience: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
     operator_name: str | None = None,
@@ -5858,6 +5859,7 @@ def get_survey_analytics_endpoint(
     _: Dict[str, object] = Depends(require_admin_or_moderator),
 ):
     return database.get_survey_analytics(
+        audience=audience,
         start_date=_parse_optional_date_param(start_date, field_name="start_date"),
         end_date=_parse_optional_date_param(end_date, field_name="end_date"),
         operator_name=operator_name,

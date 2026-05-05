@@ -222,7 +222,7 @@ export function useSurveyData(apiClient: ApiClient) {
   }, [apiClient]);
 
   const refreshAnalytics = useCallback(async () => {
-    const nextAnalytics = await apiClient.fetchSurveyAnalytics();
+    const nextAnalytics = await apiClient.fetchSurveyAnalytics({ audience: 'client' });
     setAnalytics(nextAnalytics);
     return nextAnalytics;
   }, [apiClient]);

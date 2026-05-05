@@ -17,6 +17,7 @@ import type {
   RatingsSummary,
   SurveyAnalytics,
   SurveyAnalyticsAnswer,
+  SurveyQuestionAnalytics,
   SurveyQuestion,
   SurveyQuestionOption,
   SurveyQuestionType,
@@ -317,7 +318,7 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
   const activeSection = useMemo(() => getSurveysSectionFromPath(location.pathname), [location.pathname]);
   const [builderAudience, setBuilderAudience] = useState<SurveyTemplateAudience>('client');
 
-  const [employeeAnalytics, setEmployeeAnalytics] = useState<EmployeeClientAssessmentAnalytics | null>(null);
+  const [employeeSurveyAnalytics, setEmployeeSurveyAnalytics] = useState<SurveyAnalytics | null>(null);
   const [employeeLoading, setEmployeeLoading] = useState(false);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
 
@@ -356,7 +357,7 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     setEmployeeLoading(true);
     setEmployeeError(null);
     try {
-      setEmployeeAnalytics(await apiClient.fetchEmployeeClientAssessmentAnalytics());
+      setEmployeeSurveyAnalytics(await apiClient.fetchSurveyAnalytics({ audience: 'employee' }));
     } catch (error) {
       setEmployeeError(error instanceof Error ? error.message : 'Не удалось загрузить аналитику опросов сотрудников.');
     } finally {
@@ -492,7 +493,6 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
           <p>Конструктор анкет, отдельная аналитика по клиентам и сотрудникам, общий реестр движений.</p>
         </div>
         <div className="surveys-hero-actions">
-          {activeSection === 'employees' ? <AssessmentBinFilter clientRatings={employeeAnalytics?.clientRatings} /> : null}
           <button
             type="button"
             className="surveys-button surveys-button--primary"
@@ -555,7 +555,16 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
       ) : null}
 
       {activeSection === 'employees' ? (
-        <EmployeeSurveyAnalytics analytics={employeeAnalytics} error={employeeError} />
+        <ClientSurveyAnalytics
+          analytics={employeeSurveyAnalytics}
+          isLoading={employeeLoading}
+          onRefresh={loadEmployeeAnalytics}
+          error={employeeError}
+          title="Аналитика опроса сотрудников"
+          emptyText="Пока нет завершенных опросов сотрудников."
+          scoreTitle="Средняя оценка сотрудников"
+          scoreDescription="Средняя оценка по завершенным сотрудническим анкетам из конструктора опросов."
+        />
       ) : null}
 
       {activeSection === 'ratings' ? (
@@ -856,11 +865,63 @@ const buildClientSurveyResponses = (answers: SurveyAnalyticsAnswer[]): ClientSur
     .sort((left, right) => right.latestAt.getTime() - left.latestAt.getTime());
 };
 
+const SurveyQuestionAnalyticsGrid: React.FC<{ questions: SurveyQuestionAnalytics[] }> = ({ questions }) => {
+  const sortedQuestions = [...questions].sort((left, right) => (
+    left.sortOrder - right.sortOrder || left.questionId - right.questionId
+  ));
+
+  return (
+    <div className="surveys-assessment-grid surveys-assessment-grid--three">
+      {sortedQuestions.length === 0 ? (
+        <section className="surveys-assessment-card">
+          <EmptyState text="Нет данных по вопросам опроса." />
+        </section>
+      ) : sortedQuestions.map((question) => (
+        <QuestionAnalyticsCard key={question.questionId} question={question} />
+      ))}
+    </div>
+  );
+};
+
+const QuestionAnalyticsCard: React.FC<{ question: SurveyQuestionAnalytics }> = ({ question }) => {
+  const items = question.questionType === 'scale' ? question.scoreDistribution : question.topAnswers;
+  const max = Math.max(...items.map((item) => item.count), 1);
+
+  return (
+    <section className="surveys-assessment-card">
+      <h3>{question.questionText}</h3>
+      {question.questionType === 'scale' ? (
+        <div className="surveys-assessment-ops">
+          <span>Средняя оценка<strong>{formatScore(question.averageScore)}</strong></span>
+          <span>Ответов<strong>{numberFormatter.format(question.answerCount)}</strong></span>
+        </div>
+      ) : null}
+      <div className="surveys-assessment-progress-list">
+        {items.length === 0 ? <EmptyState text="Нет данных." /> : items.map((item) => (
+          <ProgressRow key={item.label} item={item} max={max} tone="accent" />
+        ))}
+      </div>
+    </section>
+  );
+};
+
 const ClientSurveyAnalytics: React.FC<{
   analytics: SurveyAnalytics | null;
   isLoading: boolean;
   onRefresh: () => void;
-}> = ({ analytics }) => {
+  error?: string | null;
+  title?: string;
+  emptyText?: string;
+  scoreTitle?: string;
+  scoreDescription?: string;
+}> = ({
+  analytics,
+  error,
+  title = 'Аналитика опроса клиентов',
+  emptyText = 'Пока нет завершенных клиентских опросов.',
+  scoreTitle = 'Клиентский CSAT',
+  scoreDescription = 'Средняя оценка сервиса по завершенным клиентским анкетам.',
+}) => {
   const lineOption = useMemo(
     () => createLineOption(
       analytics?.monthlySatisfaction.map((item) => formatShortMonth(item.month)) ?? [],
@@ -906,7 +967,7 @@ const ClientSurveyAnalytics: React.FC<{
     <section className="surveys-assessment">
       <div className="surveys-assessment-hero">
         <div>
-          <h2>Аналитика опроса клиентов</h2>
+          <h2>{title}</h2>
         </div>
         <div className="surveys-assessment-hero__stats">
           <div>
@@ -920,20 +981,21 @@ const ClientSurveyAnalytics: React.FC<{
         </div>
       </div>
 
+      {error ? <div className="surveys-alert">{error}</div> : null}
       {!hasAnalytics ? (
         <div className="surveys-assessment-card">
-          <EmptyState text="Пока нет завершенных клиентских опросов." />
+          <EmptyState text={emptyText} />
         </div>
       ) : (
         <>
           <div className="surveys-assessment-grid surveys-assessment-grid--hero">
             <section className="surveys-assessment-card surveys-assessment-card--quality">
-              <h3>Клиентский CSAT</h3>
+              <h3>{scoreTitle}</h3>
               <div className="surveys-assessment-score">
                 <strong>{formatScore(analytics?.averageScore)}</strong>
                 <span>из 5</span>
               </div>
-              <p>Средняя оценка сервиса по завершенным клиентским анкетам.</p>
+              <p>{scoreDescription}</p>
               <div className="surveys-assessment-criteria">
                 {criteria.map((item) => {
                   const value = Math.max(0, Math.min(100, Math.round(item.value)));
@@ -988,11 +1050,7 @@ const ClientSurveyAnalytics: React.FC<{
             </section>
           </div>
 
-          <div className="surveys-assessment-grid surveys-assessment-grid--three">
-            <ProgressCard title="Запросы клиентов" items={analytics?.topClientRequests ?? []} tone="accent" />
-            <ProgressCard title="Пожелания по обучению" items={analytics?.topTrainingWishes ?? []} tone="accent" />
-            <ProgressCard title="Замечания по сотрудникам" items={analytics?.employeeRemarks ?? []} tone="accent" />
-          </div>
+          <SurveyQuestionAnalyticsGrid questions={analytics?.questionAnalytics ?? []} />
 
           <div className="surveys-assessment-grid">
             <section className="surveys-assessment-card">

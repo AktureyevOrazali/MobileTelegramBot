@@ -827,6 +827,18 @@ export interface SurveyAnalyticsTopItemRaw {
   count: number;
 }
 
+export interface SurveyQuestionAnalyticsRaw {
+  question_id: number;
+  question_text: string;
+  question_type: SurveyQuestionType;
+  topic?: string | null;
+  sort_order: number;
+  answer_count: number;
+  average_score?: number | null;
+  score_distribution: SurveyAnalyticsTopItemRaw[];
+  top_answers: SurveyAnalyticsTopItemRaw[];
+}
+
 export interface SurveyAnalyticsAnswerRaw {
   id: number;
   session_id: number;
@@ -867,6 +879,7 @@ export interface SurveyAnalyticsRaw {
   top_client_requests: SurveyAnalyticsTopItemRaw[];
   top_training_wishes: SurveyAnalyticsTopItemRaw[];
   employee_remarks: SurveyAnalyticsTopItemRaw[];
+  question_analytics?: SurveyQuestionAnalyticsRaw[];
   monthly_satisfaction: { month: string; average_score: number; count: number }[];
   answers: SurveyAnalyticsAnswerRaw[];
   answers_total_count?: number;
@@ -899,6 +912,18 @@ export interface SurveyAnalyticsAnswer {
   section: string | null;
 }
 
+export interface SurveyQuestionAnalytics {
+  questionId: number;
+  questionText: string;
+  questionType: SurveyQuestionType;
+  topic: string | null;
+  sortOrder: number;
+  answerCount: number;
+  averageScore: number | null;
+  scoreDistribution: SurveyAnalyticsTopItemRaw[];
+  topAnswers: SurveyAnalyticsTopItemRaw[];
+}
+
 export interface SurveyAnalytics {
   averageScore: number | null;
   completedSurveyCount: number;
@@ -913,6 +938,7 @@ export interface SurveyAnalytics {
   topClientRequests: SurveyAnalyticsTopItemRaw[];
   topTrainingWishes: SurveyAnalyticsTopItemRaw[];
   employeeRemarks: SurveyAnalyticsTopItemRaw[];
+  questionAnalytics: SurveyQuestionAnalytics[];
   monthlySatisfaction: { month: string; averageScore: number; count: number }[];
   answers: SurveyAnalyticsAnswer[];
   answersPreviewLimited: boolean;

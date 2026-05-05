@@ -40,6 +40,62 @@ const clientAnalytics: SurveyAnalytics = {
   employeeRemarks: [
     { label: 'More proactive updates', count: 1 },
   ],
+  questionAnalytics: [
+    {
+      questionId: 101,
+      questionText: 'Client response speed',
+      questionType: 'scale',
+      topic: 'response_speed',
+      sortOrder: 1,
+      answerCount: 2,
+      averageScore: 3.5,
+      scoreDistribution: [
+        { label: '5', count: 1 },
+        { label: '2', count: 1 },
+      ],
+      topAnswers: [],
+    },
+    {
+      questionId: 102,
+      questionText: 'Training format',
+      questionType: 'single_choice',
+      topic: 'webinars',
+      sortOrder: 2,
+      answerCount: 1,
+      averageScore: null,
+      scoreDistribution: [],
+      topAnswers: [
+        { label: 'Webinars', count: 1 },
+      ],
+    },
+    {
+      questionId: 103,
+      questionText: 'Requests from clients',
+      questionType: 'text_comment',
+      topic: 'support_improvements',
+      sortOrder: 8,
+      answerCount: 3,
+      averageScore: null,
+      scoreDistribution: [],
+      topAnswers: [
+        { label: 'Integration help', count: 3 },
+        { label: 'Support speed', count: 2 },
+      ],
+    },
+    {
+      questionId: 109,
+      questionText: 'Ninth question',
+      questionType: 'single_choice',
+      topic: 'extra',
+      sortOrder: 9,
+      answerCount: 1,
+      averageScore: null,
+      scoreDistribution: [],
+      topAnswers: [
+        { label: 'Yes', count: 1 },
+      ],
+    },
+  ],
   answers: [
     {
       id: 1,
@@ -146,8 +202,9 @@ describe('SurveysPage client analytics', () => {
     expect(container.querySelector('.surveys-score-card')).not.toBeInTheDocument();
     expect(container.querySelector('.surveys-assessment-card--quality')).toBeInTheDocument();
     expect(screen.getByText('Отвеченные опросы')).toBeInTheDocument();
-    expect(screen.queryByText('Client response speed')).not.toBeInTheDocument();
-    expect(screen.queryByText('Training format')).not.toBeInTheDocument();
+    expect(screen.getByText('Client response speed')).toBeInTheDocument();
+    expect(screen.getByText('Training format')).toBeInTheDocument();
+    expect(screen.getByText('Ninth question')).toBeInTheDocument();
     expect(screen.getByText('Integration help')).toBeInTheDocument();
 
     const betaSurvey = screen.getByRole('button', { name: /Beta.*2 вопрос/ });

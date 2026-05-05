@@ -54,6 +54,7 @@ import {
   SurveyQuestion,
   SurveyQuestionRaw,
   SurveyTemplate,
+  SurveyTemplateAudience,
   SurveyTemplateRaw,
   RegisterStatus,
   Section,
@@ -1036,6 +1037,17 @@ export class ApiClient {
       topClientRequests: raw.top_client_requests ?? [],
       topTrainingWishes: raw.top_training_wishes ?? [],
       employeeRemarks: raw.employee_remarks ?? [],
+      questionAnalytics: (raw.question_analytics ?? []).map((item) => ({
+        questionId: item.question_id,
+        questionText: item.question_text,
+        questionType: item.question_type,
+        topic: item.topic ?? null,
+        sortOrder: item.sort_order,
+        answerCount: item.answer_count,
+        averageScore: item.average_score ?? null,
+        scoreDistribution: item.score_distribution ?? [],
+        topAnswers: item.top_answers ?? [],
+      })),
       monthlySatisfaction: (raw.monthly_satisfaction ?? []).map((item) => ({ month: item.month, averageScore: item.average_score, count: item.count })),
       answers: (raw.answers ?? []).map((item) => ({
         id: item.id,
@@ -1208,6 +1220,7 @@ export class ApiClient {
   }
 
   async fetchSurveyAnalytics(options: {
+    audience?: SurveyTemplateAudience | null;
     startDate?: string | null;
     endDate?: string | null;
     operatorName?: string | null;
@@ -1220,6 +1233,7 @@ export class ApiClient {
     const response = await this.request<SurveyAnalyticsRaw>('analytics/surveys', {
       method: 'GET',
       query: {
+        audience: options.audience ?? undefined,
         start_date: options.startDate ?? undefined,
         end_date: options.endDate ?? undefined,
         operator_name: options.operatorName ?? undefined,

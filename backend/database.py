@@ -8606,6 +8606,7 @@ def list_survey_sessions(limit: int = 100) -> List[Dict[str, Any]]:
 
 def get_survey_analytics(
     *,
+    audience: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
     operator_name: str | None = None,
@@ -8615,8 +8616,9 @@ def get_survey_analytics(
     template_id: int | None = None,
     section: str | None = None,
 ) -> Dict[str, Any]:
+    normalized_audience = customer_surveys.normalize_survey_audience(audience)
     where = ["ss.status = %s", "st.audience = %s"]
-    params: List[Any] = ["completed", "client"]
+    params: List[Any] = ["completed", normalized_audience]
     if start_date:
         where.append("sa.created_at >= %s")
         params.append(start_date.isoformat())
@@ -8657,7 +8659,7 @@ def get_survey_analytics(
             sa.id, sa.session_id, sa.question_id, sa.question_type, sa.topic,
             sa.numeric_score, sa.raw_text, sa.selected_options,
             sa.selected_employee_name, sa.effective_is_anonymous, sa.created_at,
-            sq.text AS question_text, sq.config AS question_config,
+            sq.text AS question_text, sq.sort_order AS question_sort_order, sq.config AS question_config,
             st.id AS template_id, st.title AS template_title,
             ss.chat_id, ss.dialog_id, ss.appeal_id, ss.bin, ss.is_anonymous,
             ss.trigger_source, ss.status AS session_status,
@@ -8679,6 +8681,7 @@ def get_survey_analytics(
         GROUP BY
             sa.id,
             sq.text,
+            sq.sort_order,
             sq.config,
             st.id,
             st.title,
@@ -8697,6 +8700,7 @@ def get_survey_analytics(
     answers_total_count = 0
     completed_session_ids: set[int] = set()
     score_rows: List[Dict[str, Any]] = []
+    question_rows: List[Dict[str, Any]] = []
 
     with _lock:
         cursor = execute(sql_query, params)
@@ -8721,6 +8725,20 @@ def get_survey_analytics(
                 options = customer_surveys.normalize_options(config if isinstance(config, Mapping) else {})
                 by_id = {str(option["id"]): str(option["label"]) for option in options}
                 selected_options = _json_loads(row.get("selected_options"), [])
+                question_rows.append(
+                    {
+                        "question_id": int(row["question_id"]),
+                        "question_text": row["question_text"],
+                        "question_type": row["question_type"],
+                        "topic": row["topic"],
+                        "sort_order": int(row.get("question_sort_order") or 0),
+                        "numeric_score": score,
+                        "raw_text": row.get("raw_text"),
+                        "selected_options": selected_options if isinstance(selected_options, list) else [],
+                        "selected_employee_name": row.get("selected_employee_name"),
+                        "option_labels_by_id": by_id,
+                    }
+                )
                 topic_key = str(row.get("topic") or "")
                 raw_text = str(row.get("raw_text") or "").strip()
                 if topic_key == "support_improvements" and raw_text:
@@ -8787,6 +8805,7 @@ def get_survey_analytics(
         "top_client_requests": top_items(client_requests),
         "top_training_wishes": top_items(training_labels),
         "employee_remarks": top_items(employee_remarks),
+        "question_analytics": survey_analytics.summarize_question_analytics(question_rows),
         "monthly_satisfaction": score_summary["monthly_satisfaction"],
         "answers": answers,
         "answers_total_count": answers_total_count,

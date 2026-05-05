@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient } from '../api/ApiClient';
-import type { SurveyAnalytics } from '../types';
+import type { EmployeeClientAssessmentAnalytics, SurveyAnalytics } from '../types';
 import SurveysPage from './SurveysPage';
 
 vi.mock('../components/EChartsWrapper', () => ({
@@ -85,6 +85,71 @@ const employeeSurveyAnalytics: SurveyAnalytics = {
   updatedAt: new Date('2026-04-15T00:00:00Z'),
 };
 
+const employeeAssessmentAnalytics: EmployeeClientAssessmentAnalytics = {
+  totalAssessments: 3,
+  averageOverallScore: 2.3333333333,
+  averageInteractionQualityIndex: 46,
+  averageFeedbackDelayHours: 0,
+  highScoreShare: 0,
+  lowScoreShare: 2 / 3,
+  repeatedRequestShare: 1 / 3,
+  firstContactShare: 1 / 3,
+  hinderedCount: 1,
+  withoutClarificationsCount: 2,
+  firstTimeFullDataShare: 2 / 3,
+  lowScoreReasons: [
+    { label: 'Needs clarification', count: 2 },
+  ],
+  interactionStatuses: [
+    { label: 'Full data provided', count: 2 },
+  ],
+  interactionFlags: [
+    { label: 'Constructive interaction', count: 2 },
+  ],
+  requestRepeatStatuses: [
+    { label: 'First contact', count: 1 },
+    { label: 'Repeated request', count: 2 },
+  ],
+  monthlyScores: [
+    { month: '2026-04', averageOverallScore: 2.33, averageInteractionQualityIndex: 46, count: 3 },
+  ],
+  clientRatings: [
+    {
+      clientName: 'Client Alpha',
+      clientBin: '131313131313',
+      taskCount: 3,
+      averageOverallScore: 2.33,
+      averageInteractionQualityIndex: 46,
+      highScoreShare: 0,
+      lowScoreShare: 2 / 3,
+      repeatedRequestShare: 1 / 3,
+      firstContactShare: 1 / 3,
+      averageFeedbackDelayHours: 0,
+      hinderedCount: 1,
+      withoutClarificationsCount: 2,
+      firstTimeFullDataShare: 2 / 3,
+      internalRating: 46,
+    },
+  ],
+  recentAssessments: [
+    {
+      id: 1,
+      clientName: 'Client Alpha',
+      clientBin: '131313131313',
+      assignedUserName: 'Operator One',
+      overallScore: 2.33,
+      interactionQualityIndex: 46,
+      lowScoreReason: 'Needs clarification',
+      submittedAt: new Date('2026-04-15T00:00:00Z'),
+      repeatedRequest: true,
+      requestRepeatStatus: 'repeated_same_issue',
+      clientDataOverdue: false,
+      aiAssisted: false,
+    },
+  ],
+  updatedAt: new Date('2026-04-15T00:00:00Z'),
+};
+
 function renderEmployeeAnalyticsPage() {
   const apiClient = {
     fetchSurveyTemplates: vi.fn().mockResolvedValue([]),
@@ -93,6 +158,7 @@ function renderEmployeeAnalyticsPage() {
         ? Promise.resolve(employeeSurveyAnalytics)
         : Promise.resolve(emptySurveyAnalytics)
     )),
+    fetchEmployeeClientAssessmentAnalytics: vi.fn().mockResolvedValue(employeeAssessmentAnalytics),
   } as unknown as ApiClient;
 
   const result = render(
@@ -105,20 +171,19 @@ function renderEmployeeAnalyticsPage() {
 }
 
 describe('SurveysPage employee analytics', () => {
-  it('renders employee survey-builder question analytics for every configured question', async () => {
+  it('renders employee assessment analytics and survey-builder question analytics together', async () => {
     const { container, apiClient } = renderEmployeeAnalyticsPage();
 
-    expect(await screen.findByText('Аналитика опроса сотрудников')).toBeInTheDocument();
-    expect(screen.getByText('Средняя оценка сотрудников')).toBeInTheDocument();
+    expect((await screen.findAllByText('Client Alpha')).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Employee survey question')).toBeInTheDocument();
     expect(screen.getByText('Employee ninth question')).toBeInTheDocument();
     expect(screen.getByText('Need clearer scripts')).toBeInTheDocument();
-    expect(screen.queryByText('Внутренняя оценка взаимодействия с клиентами')).not.toBeInTheDocument();
     expect(container.querySelector('.surveys-assessment-card--quality')).toBeInTheDocument();
-    expect(container.querySelector('.surveys-hero .surveys-assessment-filter')).not.toBeInTheDocument();
+    expect(container.querySelector('.surveys-hero .surveys-assessment-filter')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(apiClient.fetchSurveyAnalytics).toHaveBeenCalledWith(expect.objectContaining({ audience: 'employee' }));
+      expect(apiClient.fetchEmployeeClientAssessmentAnalytics).toHaveBeenCalled();
     });
   });
 });

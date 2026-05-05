@@ -50,19 +50,35 @@ def _score_distribution_items(source: Mapping[str, int]) -> list[dict[str, Any]]
     return [{"label": label, "count": count} for label, count in sorted(source.items(), key=sort_key)]
 
 
+def _question_key_part(value: object) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _question_group_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
+    text_key = _question_key_part(row.get("question_text"))
+    if not text_key:
+        text_key = str(row["question_id"])
+    return (
+        _question_key_part(row.get("question_type")),
+        _question_key_part(row.get("topic")),
+        text_key,
+    )
+
+
 def summarize_question_analytics(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    questions: dict[int, dict[str, Any]] = {}
+    questions: dict[tuple[str, str, str], dict[str, Any]] = {}
 
     for row in rows:
         question_id = int(row["question_id"])
+        sort_order = int(row.get("sort_order") or 0)
         bucket = questions.setdefault(
-            question_id,
+            _question_group_key(row),
             {
                 "question_id": question_id,
                 "question_text": str(row.get("question_text") or ""),
                 "question_type": str(row.get("question_type") or ""),
                 "topic": row.get("topic"),
-                "sort_order": int(row.get("sort_order") or 0),
+                "sort_order": sort_order,
                 "answer_count": 0,
                 "score_sum": 0.0,
                 "score_count": 0,
@@ -70,6 +86,8 @@ def summarize_question_analytics(rows: Iterable[Mapping[str, Any]]) -> list[dict
                 "top_answer_counts": {},
             },
         )
+        bucket["question_id"] = min(int(bucket["question_id"]), question_id)
+        bucket["sort_order"] = min(int(bucket["sort_order"]), sort_order)
         bucket["answer_count"] += 1
 
         score = row.get("numeric_score")

@@ -318,6 +318,7 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
   const activeSection = useMemo(() => getSurveysSectionFromPath(location.pathname), [location.pathname]);
   const [builderAudience, setBuilderAudience] = useState<SurveyTemplateAudience>('client');
 
+  const [employeeAnalytics, setEmployeeAnalytics] = useState<EmployeeClientAssessmentAnalytics | null>(null);
   const [employeeSurveyAnalytics, setEmployeeSurveyAnalytics] = useState<SurveyAnalytics | null>(null);
   const [employeeLoading, setEmployeeLoading] = useState(false);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
@@ -357,7 +358,12 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     setEmployeeLoading(true);
     setEmployeeError(null);
     try {
-      setEmployeeSurveyAnalytics(await apiClient.fetchSurveyAnalytics({ audience: 'employee' }));
+      const [assessmentAnalytics, surveyAnalytics] = await Promise.all([
+        apiClient.fetchEmployeeClientAssessmentAnalytics(),
+        apiClient.fetchSurveyAnalytics({ audience: 'employee' }),
+      ]);
+      setEmployeeAnalytics(assessmentAnalytics);
+      setEmployeeSurveyAnalytics(surveyAnalytics);
     } catch (error) {
       setEmployeeError(error instanceof Error ? error.message : 'Не удалось загрузить аналитику опросов сотрудников.');
     } finally {
@@ -493,6 +499,7 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
           <p>Конструктор анкет, отдельная аналитика по клиентам и сотрудникам, общий реестр движений.</p>
         </div>
         <div className="surveys-hero-actions">
+          {activeSection === 'employees' ? <AssessmentBinFilter clientRatings={employeeAnalytics?.clientRatings} /> : null}
           <button
             type="button"
             className="surveys-button surveys-button--primary"
@@ -552,6 +559,10 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
 
       {activeSection === 'clients' ? (
         <ClientSurveyAnalytics analytics={data.analytics} isLoading={data.isAnalyticsLoading} onRefresh={data.reloadAnalytics} />
+      ) : null}
+
+      {activeSection === 'employees' ? (
+        <EmployeeSurveyAnalytics analytics={employeeAnalytics} error={employeeError} />
       ) : null}
 
       {activeSection === 'employees' ? (

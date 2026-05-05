@@ -91,6 +91,42 @@ class SurveyAnalyticsTests(unittest.TestCase):
         self.assertEqual(summary[3]["top_answers"], [{"label": "Operator One", "count": 1}])
         self.assertEqual(summary[4]["top_answers"], [{"label": "Yes", "count": 1}])
 
+    def test_summarize_question_analytics_merges_same_questions_from_template_versions(self):
+        summary = survey_analytics.summarize_question_analytics(
+            [
+                {
+                    "question_id": 10,
+                    "question_text": "Rate consultation quality",
+                    "question_type": "scale",
+                    "topic": "consultation_quality",
+                    "sort_order": 1,
+                    "numeric_score": 5,
+                    "raw_text": "",
+                    "selected_options": [],
+                    "selected_employee_name": None,
+                    "option_labels_by_id": {},
+                },
+                {
+                    "question_id": 20,
+                    "question_text": "Rate consultation quality",
+                    "question_type": "scale",
+                    "topic": "consultation_quality",
+                    "sort_order": 1,
+                    "numeric_score": 3,
+                    "raw_text": "",
+                    "selected_options": [],
+                    "selected_employee_name": None,
+                    "option_labels_by_id": {},
+                },
+            ]
+        )
+
+        self.assertEqual(len(summary), 1)
+        self.assertEqual(summary[0]["question_id"], 10)
+        self.assertEqual(summary[0]["answer_count"], 2)
+        self.assertEqual(summary[0]["average_score"], 4.0)
+        self.assertEqual(summary[0]["score_distribution"], [{"label": "5", "count": 1}, {"label": "3", "count": 1}])
+
     def test_summarize_completed_survey_scores_counts_one_score_per_session(self):
         summary = survey_analytics.summarize_completed_survey_scores(
             [

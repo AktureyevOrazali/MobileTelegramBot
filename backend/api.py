@@ -4355,11 +4355,6 @@ def close_dialog(
             section=section,
 
         )
-        try:
-            survey_service.maybe_start_survey_after_appeal_closed(dialog_id, latest_appeal_id)
-        except Exception:
-            logger.warning("Failed to start after-close survey for dialog %s", dialog_id, exc_info=True)
-
         return DialogStatusResponse(
 
             chat_id=chat_id,
@@ -4641,10 +4636,10 @@ def _process_onec_incoming_message(
             )
             return
 
-        if database.is_dialog_in_operator_mode(dialog_id):
+        if survey_service.handle_channel_survey_text_answer(chat_id, message_text):
             return
 
-        if survey_service.handle_channel_survey_text_answer(chat_id, message_text):
+        if database.is_dialog_in_operator_mode(dialog_id):
             return
 
         faq_entry = database.find_faq_entry_by_keywords(message_text, chat_section)
@@ -4731,23 +4726,47 @@ def create_onec_message(
     author = _normalize_optional(request.author)
     normalized_text = message_text.lower()
     language_selection = _normalize_onec_language_command(normalized_text)
+    active_survey_session = None
+    survey_dialog_id: int | None = None
     if _is_onec_operator_request(normalized_text):
         stored_text = "[OPERATOR REQUEST]"
     elif language_selection is not None:
         stored_text = f"[LANGUAGE:{language_selection[0]}]"
     else:
-        stored_text = message_text
+        active_survey_session = database.get_active_survey_session(int(chat_id))
+        if active_survey_session and active_survey_session.get("dialog_id") is not None:
+            survey_dialog_id = int(active_survey_session["dialog_id"])
+        stored_text = survey_service.get_channel_survey_answer_display_text(chat_id, message_text)
+        message_text = stored_text
+        normalized_text = message_text.lower()
 
     title_candidate = _normalize_optional(request.title)
     chat_title = title_candidate or f"1C client {external_chat_id}"
 
     database.upsert_chat(chat_id, chat_title, None, "onec", external_chat_id=external_chat_id)
-    try:
-        dialog_id = database.ensure_active_chat_dialog(chat_id, bin_value, section=section_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if survey_dialog_id is not None:
+        dialog_id = survey_dialog_id
+        dialog_resumed = False
+        is_survey_answer = True
+    else:
+        try:
+            dialog_result = database.ensure_active_chat_dialog(
+                chat_id,
+                bin_value,
+                section=section_id,
+                return_state=True,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if isinstance(dialog_result, tuple):
+            dialog_id = int(dialog_result[0])
+            dialog_resumed = bool(dialog_result[1])
+        else:
+            dialog_id = int(dialog_result)
+            dialog_resumed = False
+        is_survey_answer = False
 
     try:
         message_id = database.save_message(
@@ -4784,12 +4803,29 @@ def create_onec_message(
         attachments=incoming_attachments_payload,
     )
 
-    if section_id:
+    if section_id and not is_survey_answer:
         database.set_chat_section(chat_id, section_id, dialog_id=dialog_id)
 
-    existing_messages = database.get_messages(chat_id, limit=2, dialog_id=dialog_id)
-    is_first_message_in_dialog = len(existing_messages) <= 1
-    has_contract = not database.has_organization_without_contract(bin_value)
+    if dialog_resumed:
+        _store_onec_outgoing_text_message(
+            chat_id=chat_id,
+            dialog_id=dialog_id,
+            external_chat_id=external_chat_id,
+            bin_value=bin_value,
+            text="Диалог возобновлён. Новое обращение открыто, AI снова включён.",
+            author="System",
+            chat_title=chat_title,
+            section=section_id,
+            quick_replies=_onec_default_quick_replies(),
+        )
+
+    if is_survey_answer:
+        is_first_message_in_dialog = False
+        has_contract = True
+    else:
+        existing_messages = database.get_messages(chat_id, limit=2, dialog_id=dialog_id)
+        is_first_message_in_dialog = len(existing_messages) <= 1
+        has_contract = not database.has_organization_without_contract(bin_value)
     response_message = None
 
     if is_first_message_in_dialog:
@@ -4879,13 +4915,17 @@ def _onec_history_core(
     else:
         normalized_bin = (bin_value or "").strip() or None
         if normalized_bin is not None:
-            try:
-                database.upsert_chat(resolved_chat_id, "External User", None, "onec", external_chat_id=normalized_external)
-                resolved_dialog_id = database.ensure_active_chat_dialog(resolved_chat_id, normalized_bin)
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-            except RuntimeError as exc:
-                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            database.upsert_chat(resolved_chat_id, "External User", None, "onec", external_chat_id=normalized_external)
+            resolved_dialog_id = None
+            active_dialog = database.get_active_chat_dialog(resolved_chat_id)
+            if active_dialog and str(active_dialog.get("bin") or "").strip() == normalized_bin:
+                resolved_dialog_id = int(active_dialog["id"])
+            else:
+                latest_closed_dialog_id = database.get_latest_closed_chat_dialog_id(resolved_chat_id)
+                if latest_closed_dialog_id is not None:
+                    latest_closed_dialog = database.get_chat_dialog(latest_closed_dialog_id)
+                    if latest_closed_dialog and str(latest_closed_dialog.get("bin") or "").strip() == normalized_bin:
+                        resolved_dialog_id = int(latest_closed_dialog["id"])
         else:
             resolved_dialog_id = None
 
@@ -5235,13 +5275,6 @@ def onec_close_dialog(
 
         pass  # Telegram notification is best-effort
 
-    try:
-        survey_service.maybe_start_survey_after_appeal_closed(dialog_id, latest_appeal_id)
-    except Exception:
-        logger.warning("Failed to start after-close survey for dialog %s", dialog_id, exc_info=True)
-
-
-
     logger.info(
 
         "1C client closed dialog: ext_id=%s, chat_id=%s, dialog_id=%s",
@@ -5386,6 +5419,10 @@ def onec_submit_rating(
     survey_result = None
     if body.target == "operator":
         survey_result = survey_service.maybe_start_survey_after_employee_csat(dialog_id, appeal_id)
+        if not survey_result or not survey_result.get("started"):
+            legacy_survey_result = survey_service.maybe_start_survey_after_appeal_closed(dialog_id, appeal_id)
+            if legacy_survey_result and legacy_survey_result.get("started"):
+                survey_result = legacy_survey_result
 
     return {
 

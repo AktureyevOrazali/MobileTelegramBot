@@ -1941,10 +1941,10 @@ def _init_db() -> None:
                     customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
                     customer_surveys.SURVEY_AUDIENCE_CLIENT,
                     customer_surveys.SURVEY_STATUS_ACTIVE,
-                    customer_surveys.SURVEY_TRIGGER_AFTER_APPEAL_CLOSED,
+                    customer_surveys.SURVEY_TRIGGER_AFTER_EMPLOYEE_CSAT,
                     None,
                     None,
-                    json.dumps([{"type": customer_surveys.SURVEY_TRIGGER_AFTER_APPEAL_CLOSED, "dates": []}], ensure_ascii=False),
+                    json.dumps([{"type": customer_surveys.SURVEY_TRIGGER_AFTER_EMPLOYEE_CSAT, "dates": []}], ensure_ascii=False),
                     False,
                     None,
                     now,
@@ -1955,11 +1955,22 @@ def _init_db() -> None:
                 template_id = int(template["id"])
                 should_insert_questions = True
         else:
+            existing_questions = execute(
+                """
+                SELECT sort_order, question_type, text, required
+                FROM survey_questions
+                WHERE template_id = %s
+                ORDER BY sort_order ASC, id ASC
+                """,
+                (int(template_row["id"]),),
+            ).fetchall()
             question_count = int(template_row["question_count"] or 0)
             session_count = int(template_row["session_count"] or 0)
             is_periodic_seed = template_row.get("trigger_type") == customer_surveys.SURVEY_TRIGGER_PERIODIC
+            is_default_seed = is_periodic_seed or template_row.get("title") == customer_surveys.DEFAULT_AFTER_CSAT_TITLE
             broken_text = "???" in str(template_row.get("title") or "")
-            if is_periodic_seed and (question_count < len(default_questions) or broken_text):
+            needs_question_refresh = customer_surveys.default_after_csat_questions_need_refresh(existing_questions)
+            if is_default_seed and (question_count < len(default_questions) or broken_text or needs_question_refresh):
                 if session_count == 0:
                     template_id = int(template_row["id"])
                     execute("DELETE FROM survey_questions WHERE template_id = %s", (template_id,))
@@ -1981,33 +1992,70 @@ def _init_db() -> None:
                     )
                     should_insert_questions = True
                 else:
-                    template = execute(
+                    template_id = int(template_row["id"])
+                    execute(
                         """
-                        INSERT INTO survey_templates (
-                            title, description, audience, status, trigger_type, periodic_interval,
-                            scheduled_at, launch_rules, is_anonymous, created_by, created_at, updated_at
-                        )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        RETURNING id
+                        UPDATE survey_templates
+                        SET title = %s, description = %s, audience = %s, status = %s, is_anonymous = %s, updated_at = %s
+                        WHERE id = %s
                         """,
                         (
                             customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
                             customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
                             customer_surveys.SURVEY_AUDIENCE_CLIENT,
                             customer_surveys.SURVEY_STATUS_ACTIVE,
-                            customer_surveys.SURVEY_TRIGGER_AFTER_APPEAL_CLOSED,
-                            None,
-                            None,
-                            json.dumps([{"type": customer_surveys.SURVEY_TRIGGER_AFTER_APPEAL_CLOSED, "dates": []}], ensure_ascii=False),
                             False,
-                            None,
                             now,
-                            now,
+                            template_id,
                         ),
-                    ).fetchone()
-                    if template:
-                        template_id = int(template["id"])
-                        should_insert_questions = True
+                    )
+                    for index, question in enumerate(default_questions, start=1):
+                        cursor = execute(
+                            """
+                            UPDATE survey_questions
+                            SET question_type = %s,
+                                text = %s,
+                                topic = %s,
+                                required = %s,
+                                anonymity_mode = %s,
+                                config = %s,
+                                updated_at = %s
+                            WHERE template_id = %s AND sort_order = %s
+                            """,
+                            (
+                                question["question_type"],
+                                question["text"],
+                                question.get("topic"),
+                                bool(question.get("required", True)),
+                                customer_surveys.normalize_question_anonymity_mode(question.get("anonymity_mode")),
+                                json.dumps(question.get("config") or {}, ensure_ascii=False),
+                                now,
+                                template_id,
+                                index,
+                            ),
+                        )
+                        if cursor.rowcount == 0:
+                            execute(
+                                """
+                                INSERT INTO survey_questions (
+                                    template_id, sort_order, question_type, text, topic,
+                                    required, anonymity_mode, config, created_at, updated_at
+                                )
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                """,
+                                (
+                                    template_id,
+                                    index,
+                                    question["question_type"],
+                                    question["text"],
+                                    question.get("topic"),
+                                    bool(question.get("required", True)),
+                                    customer_surveys.normalize_question_anonymity_mode(question.get("anonymity_mode")),
+                                    json.dumps(question.get("config") or {}, ensure_ascii=False),
+                                    now,
+                                    now,
+                                ),
+                            )
 
         if template_id is not None and should_insert_questions:
             for index, question in enumerate(default_questions, start=1):
@@ -2015,9 +2063,9 @@ def _init_db() -> None:
                     """
                     INSERT INTO survey_questions (
                         template_id, sort_order, question_type, text, topic,
-                        required, config, created_at, updated_at
+                        required, anonymity_mode, config, created_at, updated_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         template_id,
@@ -2026,6 +2074,7 @@ def _init_db() -> None:
                         question["text"],
                         question.get("topic"),
                         bool(question.get("required", True)),
+                        customer_surveys.normalize_question_anonymity_mode(question.get("anonymity_mode")),
                         json.dumps(question.get("config") or {}, ensure_ascii=False),
                         now,
                         now,
@@ -5084,7 +5133,13 @@ def set_chat_bin(chat_id: int, bin_value: str | None) -> tuple[int | None, bool]
     return dialog_id, is_resumed
 
 
-def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None = None) -> int:
+def ensure_active_chat_dialog(
+    chat_id: int,
+    bin_value: str,
+    section: str | None = None,
+    *,
+    return_state: bool = False,
+) -> int | tuple[int, bool]:
     """Ensure there is an active dialog for the chat with the given BIN."""
 
     normalized = (bin_value or "").strip()
@@ -5138,7 +5193,7 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
             ).fetchone()
             if not appeal_exists:
                 create_appeal(dialog_id, chat_id, section)
-            return dialog_id
+            return (dialog_id, False) if return_state else dialog_id
 
         # Р вЂ”Р В°Р С”РЎР‚РЎвЂ№Р Р†Р В°Р ВµР С Р В°Р С”РЎвЂљР С‘Р Р†Р Р…РЎвЂ№Р Вµ Р Т‘Р С‘Р В°Р В»Р С•Р С–Р С‘ РЎРѓ Р Т‘РЎР‚РЎС“Р С–Р С‘Р С Р вЂР ВР Сњ, РЎвЂЎРЎвЂљР С•Р В±РЎвЂ№ Р С‘РЎРѓР С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ Р Т‘РЎС“Р В±Р В»Р С‘Р С”Р В°РЎвЂљРЎвЂ№
         execute(
@@ -5177,7 +5232,7 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
             )
             # Create new appeal for reactivated dialog
             create_appeal(dialog_id, chat_id, section)
-            return dialog_id
+            return (dialog_id, True) if return_state else dialog_id
 
         cursor = execute(
             """
@@ -5202,7 +5257,7 @@ def ensure_active_chat_dialog(chat_id: int, bin_value: str, section: str | None 
     dialog_id = int(dialog_id_row["id"])
     # Create first appeal for new dialog
     create_appeal(dialog_id, chat_id, section)
-    return dialog_id
+    return (dialog_id, False) if return_state else dialog_id
 
 
 def get_chat(chat_id: int) -> Optional[Dict[str, object]]:

@@ -187,11 +187,94 @@ def default_after_csat_questions() -> list[dict[str, Any]]:
         },
         {
             "sort_order": 2,
+            "question_type": QUESTION_TYPE_SCALE,
+            "text": "Насколько быстро сотрудник отвечал на ваши сообщения?",
+            "topic": "response_speed",
+            "required": True,
+            "anonymity_mode": ANONYMITY_INHERIT,
+            "config": {"min": 1, "max": 5, "presentation": "scale"},
+        },
+        {
+            "sort_order": 3,
+            "question_type": QUESTION_TYPE_SCALE,
+            "text": "Насколько понятно сотрудник объяснил решение?",
+            "topic": "answer_clarity",
+            "required": True,
+            "anonymity_mode": ANONYMITY_INHERIT,
+            "config": {"min": 1, "max": 5, "presentation": "scale"},
+        },
+        {
+            "sort_order": 4,
+            "question_type": QUESTION_TYPE_SCALE,
+            "text": "Насколько полно был решён ваш вопрос?",
+            "topic": "resolution_quality",
+            "required": True,
+            "anonymity_mode": ANONYMITY_INHERIT,
+            "config": {"min": 1, "max": 5, "presentation": "scale"},
+        },
+        {
+            "sort_order": 5,
+            "question_type": QUESTION_TYPE_SCALE,
+            "text": "Насколько вежливым было общение?",
+            "topic": "communication_quality",
+            "required": True,
+            "anonymity_mode": ANONYMITY_INHERIT,
+            "config": {"min": 1, "max": 5, "presentation": "scale"},
+        },
+        {
+            "sort_order": 6,
+            "question_type": QUESTION_TYPE_MULTI_CHOICE,
+            "text": "Какие новые материалы были бы вам полезны?",
+            "topic": "instructions",
+            "required": True,
+            "anonymity_mode": ANONYMITY_INHERIT,
+            "config": {
+                "options": [
+                    {"id": "instructions", "label": "Инструкции"},
+                    {"id": "memos", "label": "Памятки"},
+                    {"id": "videos", "label": "Видеоуроки"},
+                    {"id": "faq", "label": "Короткие ответы на частые вопросы"},
+                ]
+            },
+        },
+        {
+            "sort_order": 7,
+            "question_type": QUESTION_TYPE_EMPLOYEE_EXCLUSION,
+            "text": "С кем из сотрудников вы бы не хотели работать в дальнейшем?",
+            "topic": "employee_exclusion",
+            "required": True,
+            "anonymity_mode": ANONYMITY_INHERIT,
+            "config": {},
+        },
+        {
+            "sort_order": 8,
             "question_type": QUESTION_TYPE_TEXT_COMMENT,
-            "text": "Комментарий",
+            "text": "Поделитесь, пожалуйста, комментарием о сопровождении.",
             "topic": "support_improvements",
             "required": False,
             "anonymity_mode": ANONYMITY_INHERIT,
             "config": {},
         },
     ]
+
+
+def default_after_csat_questions_need_refresh(existing_questions: Sequence[Mapping[str, Any]] | None) -> bool:
+    expected = default_after_csat_questions()
+    if not isinstance(existing_questions, Sequence) or isinstance(existing_questions, (str, bytes)):
+        return True
+    if len(existing_questions) < len(expected):
+        return True
+    for index, expected_question in enumerate(expected):
+        if index >= len(existing_questions):
+            return True
+        existing_question = existing_questions[index]
+        if not isinstance(existing_question, Mapping):
+            return True
+        if normalize_question_type(existing_question.get("question_type")) != expected_question["question_type"]:
+            return True
+        existing_text = str(existing_question.get("text") or "").strip()
+        if existing_text != str(expected_question["text"]).strip():
+            return True
+        if bool(existing_question.get("required", True)) != bool(expected_question.get("required", True)):
+            return True
+    return False

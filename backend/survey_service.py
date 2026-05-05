@@ -6,6 +6,7 @@ from . import customer_surveys, database
 
 _send_channel_message: Callable[..., None] | None = None
 _persist_telegram_message: Callable[..., None] | None = None
+SKIP_OPTION_LABEL = "Пропустить"
 
 
 def configure_survey_runtime(
@@ -40,7 +41,57 @@ def _template_has_trigger(template: Mapping[str, Any], trigger_type: str) -> boo
     return str(template.get("trigger_type") or "").strip().lower() == trigger_type
 
 
-def _answer_quick_replies(question: Mapping[str, Any]) -> list[dict[str, str]]:
+def _is_optional_question(question: Mapping[str, Any]) -> bool:
+    return question.get("required") is False
+
+
+def _employee_options_from_session(session: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(session, Mapping):
+        return []
+    options: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    operators = session.get("operators") or []
+    if not isinstance(operators, list):
+        return []
+    for operator in operators:
+        if isinstance(operator, Mapping):
+            name = str(operator.get("operator_name") or operator.get("name") or "").strip()
+        else:
+            name = str(operator or "").strip()
+        key = name.casefold()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        options.append({"id": name, "label": name, "score": None})
+    return options
+
+
+def _question_options(question: Mapping[str, Any], session: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    question_type = customer_surveys.normalize_question_type(question.get("question_type"))
+    config = question.get("config") or {}
+    if question_type == customer_surveys.QUESTION_TYPE_EMPLOYEE_EXCLUSION:
+        employee_options = _employee_options_from_session(session)
+        if employee_options:
+            return employee_options
+    if isinstance(config, Mapping):
+        return customer_surveys.normalize_options(config)
+    return []
+
+
+def _match_option_label(options: list[dict[str, Any]], text: str) -> str | None:
+    normalized_text = text.casefold()
+    for option in options:
+        option_id = str(option["id"])
+        label = str(option["label"])
+        if normalized_text in {option_id.casefold(), label.casefold()}:
+            return label
+    return None
+
+
+def _answer_quick_replies(
+    question: Mapping[str, Any],
+    session: Mapping[str, Any] | None = None,
+) -> list[dict[str, str]]:
     question_type = customer_surveys.normalize_question_type(question.get("question_type"))
     config = question.get("config") or {}
     if question_type == customer_surveys.QUESTION_TYPE_SCALE:
@@ -55,8 +106,12 @@ def _answer_quick_replies(question: Mapping[str, Any]) -> list[dict[str, str]]:
             {"id": f"survey_{value}", "label": str(value), "value": str(value), "type": "survey_answer"}
             for value in range(minimum, maximum + 1)
         ]
-    if isinstance(config, Mapping):
-        options = customer_surveys.normalize_options(config)
+    if question_type == customer_surveys.QUESTION_TYPE_TEXT_COMMENT:
+        if _is_optional_question(question):
+            return [{"id": "survey_skip", "label": SKIP_OPTION_LABEL, "value": SKIP_OPTION_LABEL, "type": "survey_answer"}]
+        return []
+    options = _question_options(question, session)
+    if options:
         return [
             {
                 "id": f"survey_{option['id']}",
@@ -88,15 +143,21 @@ def _send_current_survey_question(session: Mapping[str, Any]) -> None:
         _question_text(session),
         dialog_id=session.get("dialog_id"),
         author="System",
-        quick_replies=_answer_quick_replies(question if isinstance(question, Mapping) else {}),
+        quick_replies=_answer_quick_replies(question if isinstance(question, Mapping) else {}, session=session),
     )
 
 
-def _parse_answer(question: Mapping[str, Any], raw_text: str) -> customer_surveys.SurveyAnswerParseResult | None:
+def _parse_answer(
+    question: Mapping[str, Any],
+    raw_text: str,
+    session: Mapping[str, Any] | None = None,
+) -> customer_surveys.SurveyAnswerParseResult | None:
     text = str(raw_text or "").strip()
-    if not text:
-        return None
     question_type = customer_surveys.normalize_question_type(question.get("question_type"))
+    if not text:
+        if question_type == customer_surveys.QUESTION_TYPE_TEXT_COMMENT and _is_optional_question(question):
+            return customer_surveys.SurveyAnswerParseResult(raw_text="")
+        return None
     config = question.get("config") or {}
     if question_type == customer_surveys.QUESTION_TYPE_SCALE:
         try:
@@ -109,17 +170,24 @@ def _parse_answer(question: Mapping[str, Any], raw_text: str) -> customer_survey
             return None
         return customer_surveys.SurveyAnswerParseResult(numeric_score=value, raw_text=text)
     if question_type == customer_surveys.QUESTION_TYPE_TEXT_COMMENT:
+        if _is_optional_question(question) and text.casefold() == SKIP_OPTION_LABEL.casefold():
+            return customer_surveys.SurveyAnswerParseResult(raw_text="")
         return customer_surveys.SurveyAnswerParseResult(raw_text=text)
     if question_type == customer_surveys.QUESTION_TYPE_EMPLOYEE_EXCLUSION:
-        return customer_surveys.SurveyAnswerParseResult(raw_text=text, selected_employee_name=text)
-    options = customer_surveys.normalize_options(config if isinstance(config, Mapping) else {})
+        label = _match_option_label(_question_options(question, session), text)
+        if label:
+            return customer_surveys.SurveyAnswerParseResult(raw_text=label, selected_employee_name=label)
+        return None
+    options = _question_options(question, session)
     selected: list[str] = []
+    selected_labels: list[str] = []
     normalized_text = text.casefold()
     for option in options:
         option_id = str(option["id"])
         label = str(option["label"])
         if normalized_text in {option_id.casefold(), label.casefold()}:
             selected.append(option_id)
+            selected_labels.append(label)
             break
     if not selected and question_type == customer_surveys.QUESTION_TYPE_MULTI_CHOICE:
         parts = [part.strip().casefold() for part in text.replace(";", ",").split(",") if part.strip()]
@@ -128,9 +196,26 @@ def _parse_answer(question: Mapping[str, Any], raw_text: str) -> customer_survey
             label = str(option["label"])
             if option_id.casefold() in parts or label.casefold() in parts:
                 selected.append(option_id)
+                selected_labels.append(label)
     if selected:
-        return customer_surveys.SurveyAnswerParseResult(raw_text=text, selected_options=selected)
+        label = ", ".join(selected_labels) if selected_labels else (_match_option_label(options, text) or text)
+        return customer_surveys.SurveyAnswerParseResult(raw_text=label, selected_options=selected)
     return None
+
+
+def get_channel_survey_answer_display_text(chat_id: int, text: str) -> str:
+    session = database.get_active_survey_session(int(chat_id))
+    if not session:
+        return text
+    question = session.get("current_question")
+    if not isinstance(question, Mapping):
+        return text
+    answer = _parse_answer(question, text, session=session)
+    if answer is None:
+        return text
+    if answer.raw_text is not None:
+        return answer.raw_text or text
+    return text
 
 
 def handle_channel_survey_text_answer(chat_id: int, text: str) -> bool:
@@ -141,7 +226,7 @@ def handle_channel_survey_text_answer(chat_id: int, text: str) -> bool:
     if not isinstance(question, Mapping):
         database.complete_survey_session(int(session["id"]))
         return False
-    answer = _parse_answer(question, text)
+    answer = _parse_answer(question, text, session=session)
     if answer is None:
         if _send_channel_message is not None:
             _send_channel_message(
@@ -149,7 +234,7 @@ def handle_channel_survey_text_answer(chat_id: int, text: str) -> bool:
                 "Не удалось распознать ответ. Пожалуйста, выберите вариант кнопкой или отправьте число от 1 до 5.",
                 dialog_id=session.get("dialog_id"),
                 author="System",
-                quick_replies=_answer_quick_replies(question),
+                quick_replies=_answer_quick_replies(question, session=session),
             )
         return True
     database.save_survey_answer(session_id=int(session["id"]), question=question, answer=answer)

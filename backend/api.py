@@ -233,6 +233,19 @@ class EventBus:
 event_bus = EventBus()
 
 
+@app.on_event("startup")
+async def _register_event_bus_loop() -> None:
+    event_bus.loop = asyncio.get_running_loop()
+    logger.info("SSE event bus loop registered")
+
+
+@app.on_event("shutdown")
+async def _clear_event_bus_loop() -> None:
+    event_bus.loop = None
+    event_bus.connections.clear()
+    logger.info("SSE event bus loop cleared")
+
+
 
 ROLE_LABELS: Dict[str, str] = {
 

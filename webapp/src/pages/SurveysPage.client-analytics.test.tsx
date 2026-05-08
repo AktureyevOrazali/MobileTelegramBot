@@ -207,7 +207,7 @@ function renderClientAnalyticsPage() {
 }
 
 describe('SurveysPage client analytics', () => {
-  it('renders client analytics with the employee analytics card layout, donut chart, and question data', async () => {
+  it('renders client analytics across all client survey templates like the executive summary', async () => {
     const user = userEvent.setup();
     const { container, apiClient } = renderClientAnalyticsPage();
 
@@ -217,9 +217,11 @@ describe('SurveysPage client analytics', () => {
     await waitFor(() => {
       expect(apiClient.fetchSurveyAnalytics).toHaveBeenCalledWith(expect.objectContaining({
         audience: 'client',
-        templateId: currentClientTemplate.id,
       }));
     });
+    expect(apiClient.fetchSurveyAnalytics).not.toHaveBeenCalledWith(expect.objectContaining({
+      templateId: currentClientTemplate.id,
+    }));
 
     expect(container.querySelector('.surveys-client-overview')).not.toBeInTheDocument();
     expect(container.querySelector('.surveys-score-card')).not.toBeInTheDocument();

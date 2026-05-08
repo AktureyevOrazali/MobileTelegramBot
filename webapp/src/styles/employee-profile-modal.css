@@ -184,6 +184,154 @@
   padding: 18px;
 }
 
+.survey-entity-analytics {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+  border-radius: 20px;
+  background: var(--surface-color);
+}
+
+.survey-entity-analytics__head,
+.survey-entity-analytics__question-head,
+.survey-entity-analytics__subhead,
+.survey-entity-analytics__answer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.survey-entity-analytics__eyebrow,
+.survey-entity-analytics__subhead span,
+.survey-entity-analytics__answer span,
+.survey-entity-analytics__question-head span,
+.survey-entity-analytics__score {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.survey-entity-analytics__eyebrow,
+.survey-entity-analytics__subhead span {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.survey-entity-analytics__head h4,
+.survey-entity-analytics__subhead h5,
+.survey-entity-analytics__question h5 {
+  margin: 0;
+}
+
+.survey-entity-analytics__head h4 {
+  font-size: 1rem;
+}
+
+.survey-entity-analytics__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.survey-entity-analytics__stats article,
+.survey-entity-analytics__question,
+.survey-entity-analytics__answer {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-soft-color) 74%, var(--surface-color));
+}
+
+.survey-entity-analytics__stats article {
+  display: grid;
+  gap: 6px;
+}
+
+.survey-entity-analytics__stats span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.survey-entity-analytics__stats strong {
+  font-size: 1.15rem;
+}
+
+.survey-entity-analytics__questions,
+.survey-entity-analytics__answer-list {
+  display: grid;
+  gap: 10px;
+}
+
+.survey-entity-analytics__question {
+  display: grid;
+  gap: 10px;
+}
+
+.survey-entity-analytics__progress-list {
+  display: grid;
+  gap: 9px;
+}
+
+.survey-entity-analytics__progress-row {
+  display: grid;
+  gap: 6px;
+}
+
+.survey-entity-analytics__progress-copy {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.86rem;
+}
+
+.survey-entity-analytics__progress-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-color) 58%, transparent);
+}
+
+.survey-entity-analytics__progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand-color);
+}
+
+.survey-entity-analytics__answers {
+  display: grid;
+  gap: 10px;
+}
+
+.survey-entity-analytics__answer > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.survey-entity-analytics__answer > div:last-child {
+  justify-items: end;
+  text-align: right;
+}
+
+.survey-entity-analytics__answer strong {
+  overflow-wrap: anywhere;
+}
+
+.survey-entity-analytics__empty {
+  padding: 18px;
+  border: 1px dashed color-mix(in srgb, var(--border-color) 82%, transparent);
+  border-radius: 16px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
 @media (max-width: 920px) {
   .employee-profile-modal__hero {
     display: grid;
@@ -194,7 +342,8 @@
   }
 
   .employee-profile-modal__profile-grid,
-  .employee-profile-modal__stats {
+  .employee-profile-modal__stats,
+  .survey-entity-analytics__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -215,15 +364,20 @@
   }
 
   .employee-profile-modal__profile-grid,
-  .employee-profile-modal__stats {
+  .employee-profile-modal__stats,
+  .survey-entity-analytics__stats {
     grid-template-columns: 1fr;
   }
 
-  .employee-profile-modal__list-item {
+  .employee-profile-modal__list-item,
+  .survey-entity-analytics__answer,
+  .survey-entity-analytics__head {
     display: grid;
   }
 
-  .employee-profile-modal__list-item > div:last-child {
+  .employee-profile-modal__list-item > div:last-child,
+  .survey-entity-analytics__answer > div:last-child {
     justify-items: start;
+    text-align: left;
   }
 }

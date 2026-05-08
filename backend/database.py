@@ -2303,7 +2303,7 @@ def _ensure_admin_account() -> None:
                     is_approved = 1
                 WHERE id = %s
                 """,
-                (ROLE_ADMIN, password_hash, "Р С’Р Т‘Р СР С‘Р Р…Р С‘РЎРѓРЎвЂљРЎР‚Р В°РЎвЂљР С•РЎР‚", "admin@example.com", row["id"]),
+                (ROLE_ADMIN, password_hash, admin_label, "admin@example.com", row["id"]),
             )
             return
     now = datetime.now(timezone.utc).isoformat()
@@ -2314,10 +2314,10 @@ def _ensure_admin_account() -> None:
         """,
         (
             "admin@example.com",
-            "Р С’Р Т‘Р СР С‘Р Р…Р С‘РЎРѓРЎвЂљРЎР‚Р В°РЎвЂљР С•РЎР‚",
+            admin_label,
             password_hash,
             now,
-            "Р С’Р Т‘Р СР С‘Р Р…Р С‘РЎРѓРЎвЂљРЎР‚Р В°РЎвЂљР С•РЎР‚",
+            admin_label,
             "admin",
             ROLE_ADMIN,
         ),
@@ -6516,20 +6516,29 @@ def get_dashboard_summary(
         csat_row = execute(
             """
             SELECT
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ds.csat_rating) AS csat_median,
-                COUNT(ds.csat_rating) AS csat_count,
-                COALESCE(SUM(CASE WHEN ds.csat_rating = 1 THEN 1 ELSE 0 END), 0) AS csat_1,
-                COALESCE(SUM(CASE WHEN ds.csat_rating = 2 THEN 1 ELSE 0 END), 0) AS csat_2,
-                COALESCE(SUM(CASE WHEN ds.csat_rating = 3 THEN 1 ELSE 0 END), 0) AS csat_3,
-                COALESCE(SUM(CASE WHEN ds.csat_rating = 4 THEN 1 ELSE 0 END), 0) AS csat_4,
-                COALESCE(SUM(CASE WHEN ds.csat_rating = 5 THEN 1 ELSE 0 END), 0) AS csat_5
-            FROM dialog_stats ds
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY dfr.rating) AS csat_median,
+                COUNT(dfr.rating) AS csat_count,
+                COALESCE(SUM(CASE WHEN dfr.rating = 1 THEN 1 ELSE 0 END), 0) AS csat_1,
+                COALESCE(SUM(CASE WHEN dfr.rating = 2 THEN 1 ELSE 0 END), 0) AS csat_2,
+                COALESCE(SUM(CASE WHEN dfr.rating = 3 THEN 1 ELSE 0 END), 0) AS csat_3,
+                COALESCE(SUM(CASE WHEN dfr.rating = 4 THEN 1 ELSE 0 END), 0) AS csat_4,
+                COALESCE(SUM(CASE WHEN dfr.rating = 5 THEN 1 ELSE 0 END), 0) AS csat_5
+            FROM dialog_feedback_ratings dfr
+            JOIN dialog_stats ds ON (
+                (dfr.appeal_id IS NOT NULL AND ds.appeal_id = dfr.appeal_id)
+                OR (
+                    dfr.appeal_id IS NULL
+                    AND ds.appeal_id IS NULL
+                    AND ds.dialog_id = dfr.dialog_id
+                )
+            )
             """
             + rating_operator_join_sql
             + """
-            WHERE ds.started_at >= %s AND ds.started_at < %s
+            WHERE dfr.created_at >= %s AND dfr.created_at < %s
+              AND dfr.rating_kind = %s
               AND COALESCE(ds.is_ai_closed, FALSE) = FALSE
-              AND ds.csat_rating IS NOT NULL
+              AND dfr.rating IS NOT NULL
               AND resolved_operator.operator_name IS NOT NULL
             """
             + operator_bin_filter_sql
@@ -6537,6 +6546,7 @@ def get_dashboard_summary(
             (
                 start_iso,
                 end_exclusive_iso,
+                DIALOG_FEEDBACK_KIND_CLIENT,
                 *operator_bin_filter_params,
                 *csat_operator_filter_params,
             ),
@@ -6578,7 +6588,7 @@ def get_dashboard_summary(
                     AND ds.dialog_id = ocr.dialog_id
                 )
             )
-            WHERE ds.started_at >= %s AND ds.started_at < %s
+            WHERE ocr.created_at >= %s AND ocr.created_at < %s
               AND COALESCE(ds.is_ai_closed, FALSE) = FALSE
             """
             + operator_bin_filter_sql
@@ -6591,7 +6601,7 @@ def get_dashboard_summary(
             ),
         ).fetchone()
         operator_csat_count = int(operator_csat_row["csat_count"] or 0)
-        if operator_csat_count:
+        if operator_csat_count and not csat_count:
             csat_average = (
                 round(_as_optional_float(operator_csat_row["csat_median"]), 2)
                 if operator_csat_row["csat_median"] is not None else None
@@ -6604,19 +6614,28 @@ def get_dashboard_summary(
         ai_csat_row = execute(
             """
             SELECT
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ds.ai_csat_rating) AS ai_csat_median,
-                COUNT(ds.ai_csat_rating) AS ai_csat_count,
-                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 1 THEN 1 ELSE 0 END), 0) AS ai_csat_1,
-                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 2 THEN 1 ELSE 0 END), 0) AS ai_csat_2,
-                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 3 THEN 1 ELSE 0 END), 0) AS ai_csat_3,
-                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 4 THEN 1 ELSE 0 END), 0) AS ai_csat_4,
-                COALESCE(SUM(CASE WHEN ds.ai_csat_rating = 5 THEN 1 ELSE 0 END), 0) AS ai_csat_5
-            FROM dialog_stats ds
-            WHERE ds.started_at >= %s AND ds.started_at < %s
-              AND COALESCE(ds.is_ai_closed, FALSE) = TRUE
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY dfr.rating) AS ai_csat_median,
+                COUNT(dfr.rating) AS ai_csat_count,
+                COALESCE(SUM(CASE WHEN dfr.rating = 1 THEN 1 ELSE 0 END), 0) AS ai_csat_1,
+                COALESCE(SUM(CASE WHEN dfr.rating = 2 THEN 1 ELSE 0 END), 0) AS ai_csat_2,
+                COALESCE(SUM(CASE WHEN dfr.rating = 3 THEN 1 ELSE 0 END), 0) AS ai_csat_3,
+                COALESCE(SUM(CASE WHEN dfr.rating = 4 THEN 1 ELSE 0 END), 0) AS ai_csat_4,
+                COALESCE(SUM(CASE WHEN dfr.rating = 5 THEN 1 ELSE 0 END), 0) AS ai_csat_5
+            FROM dialog_feedback_ratings dfr
+            JOIN dialog_stats ds ON (
+                (dfr.appeal_id IS NOT NULL AND ds.appeal_id = dfr.appeal_id)
+                OR (
+                    dfr.appeal_id IS NULL
+                    AND ds.appeal_id IS NULL
+                    AND ds.dialog_id = dfr.dialog_id
+                )
+            )
+            WHERE dfr.created_at >= %s AND dfr.created_at < %s
+              AND dfr.rating_kind = %s
+              AND dfr.rating IS NOT NULL
             """
             + operator_bin_filter_sql,
-            (start_iso, end_exclusive_iso, *operator_bin_filter_params),
+            (start_iso, end_exclusive_iso, DIALOG_FEEDBACK_KIND_AI, *operator_bin_filter_params),
         ).fetchone()
 
         ai_csat_average = (

@@ -26,7 +26,7 @@ const ApiContext = createContext<ApiContextValue | undefined>(undefined);
 // ---- helpers ----
 function loadSessionFromStorage(): AuthSession | null {
   try {
-    const stored = localStorage.getItem(SESSION_KEY);
+    const stored = sessionStorage.getItem(SESSION_KEY);
     if (!stored) return null;
 
     const parsed = JSON.parse(stored);
@@ -83,11 +83,35 @@ export const ApiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiClient.setSession(session);
   }, [apiClient, session]);
 
+  useEffect(() => {
+    if (!session?.token) {
+      return;
+    }
+    let cancelled = false;
+    const token = session.token;
+
+    (async () => {
+      try {
+        const profile = await apiClient.fetchProfile();
+        if (cancelled) {
+          return;
+        }
+        setSessionState((current) =>
+          current?.token === token ? { ...current, user: profile } : current,
+        );
+      } catch (e) {
+        console.debug('fetchProfile failed during session restore (ignored):', e);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [apiClient, session?.token]);
+
   // Сохраняем/чистим сессию в storage (для F5)
   useEffect(() => {
     try {
-      if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      else localStorage.removeItem(SESSION_KEY);
+      if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      else sessionStorage.removeItem(SESSION_KEY);
     } catch { }
   }, [session]);
 
@@ -113,7 +137,7 @@ export const ApiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           apiClient.clearSession?.();
           apiClient.setSession(null);
           try {
-            localStorage.removeItem(SESSION_KEY);
+            sessionStorage.removeItem(SESSION_KEY);
           } catch { }
         }
 
@@ -139,7 +163,7 @@ export const ApiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiClient.setSession(null);
     setSessionState(null);
     try {
-      localStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(SESSION_KEY);
     } catch { }
   }, [apiClient]);
 

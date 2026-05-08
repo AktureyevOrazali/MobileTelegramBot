@@ -8,6 +8,7 @@ import type { ApiClient } from '../api/ApiClient';
 import type {
   AiRatingsAnalytics,
   ClientRatingsAnalytics,
+  EmployeeClientAssessmentAnalytics,
   EmployeeRatingsAnalytics,
   MutualRatingMatrix,
   RatingLedgerResponse,
@@ -41,6 +42,58 @@ const emptySurveyAnalytics: SurveyAnalytics = {
   answers: [],
   answersPreviewLimited: false,
   updatedAt: new Date('2026-04-20T00:00:00Z'),
+};
+
+const clientSurveyAnalytics: SurveyAnalytics = {
+  ...emptySurveyAnalytics,
+  averageScore: 4.6,
+  completedSurveyCount: 5,
+  answerCount: 12,
+  scoreCount: 10,
+  positiveCount: 8,
+  neutralCount: 1,
+  negativeCount: 1,
+  positiveShare: 0.8,
+  neutralShare: 0.1,
+  negativeShare: 0.1,
+  monthlySatisfaction: [{ month: '2026-04', averageScore: 4.6, count: 5 }],
+};
+
+const employeeSurveyAnalytics: SurveyAnalytics = {
+  ...emptySurveyAnalytics,
+  averageScore: 4.2,
+  completedSurveyCount: 3,
+  answerCount: 7,
+  scoreCount: 6,
+  positiveCount: 4,
+  neutralCount: 1,
+  negativeCount: 1,
+  positiveShare: 2 / 3,
+  neutralShare: 1 / 6,
+  negativeShare: 1 / 6,
+  monthlySatisfaction: [{ month: '2026-04', averageScore: 4.2, count: 3 }],
+};
+
+const employeeAssessmentAnalytics: EmployeeClientAssessmentAnalytics = {
+  totalAssessments: 17,
+  averageOverallScore: 4.35,
+  averageInteractionQualityIndex: 82,
+  averageFeedbackDelayHours: 1.1,
+  highScoreShare: 0.76,
+  lowScoreShare: 0.06,
+  repeatedRequestShare: 0.18,
+  firstContactShare: 0.7,
+  hinderedCount: 1,
+  withoutClarificationsCount: 14,
+  firstTimeFullDataShare: 0.82,
+  lowScoreReasons: [],
+  interactionStatuses: [],
+  interactionFlags: [],
+  requestRepeatStatuses: [],
+  monthlyScores: [{ month: '2026-04', averageOverallScore: 4.35, averageInteractionQualityIndex: 82, count: 17 }],
+  clientRatings: [],
+  recentAssessments: [],
+  updatedAt: new Date('2026-04-21T00:00:00Z'),
 };
 
 const summaryEntity = {
@@ -256,10 +309,13 @@ const ledger: RatingLedgerResponse = {
 function renderRatingsPage() {
   const apiClient = {
     fetchSurveyTemplates: vi.fn().mockResolvedValue([]),
-    fetchSurveyAnalytics: vi.fn().mockResolvedValue(emptySurveyAnalytics),
+    fetchSurveyAnalytics: vi.fn((filters?: { audience?: string }) => Promise.resolve(
+      filters?.audience === 'employee' ? employeeSurveyAnalytics : clientSurveyAnalytics,
+    )),
     fetchRatingsSummary: vi.fn().mockResolvedValue(ratingsSummary),
     fetchEmployeeRatingsAnalytics: vi.fn().mockResolvedValue(employeeRatings),
     fetchClientRatingsAnalytics: vi.fn().mockResolvedValue(clientRatings),
+    fetchEmployeeClientAssessmentAnalytics: vi.fn().mockResolvedValue(employeeAssessmentAnalytics),
     fetchAiRatingsAnalytics: vi.fn().mockResolvedValue(aiRatings),
     fetchMutualRatingMatrix: vi.fn().mockResolvedValue(matrix),
     fetchRatingLedger: vi.fn().mockResolvedValue(ledger),
@@ -277,16 +333,22 @@ function renderRatingsPage() {
 describe('SurveysPage ratings analytics', () => {
   it('renders the executive summary analytics in the same assessment design with mutual-rating controls', async () => {
     const user = userEvent.setup();
-    const { container } = renderRatingsPage();
+    const { container, apiClient } = renderRatingsPage();
 
     expect((await screen.findAllByText('Сводная аналитика оценок')).length).toBeGreaterThanOrEqual(1);
     expect(container.querySelector('.surveys-assessment')).toBeInTheDocument();
-    expect(screen.getAllByText('Клиенты').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('Сотрудники').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Опросы клиентов').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Опросы сотрудников').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('ИИ').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Рейтинг сотрудников по качеству обслуживания')).toBeInTheDocument();
-    expect(screen.getByText('Динамика оценок по периодам')).toBeInTheDocument();
-    expect(screen.getByText('Зависимость оценки от использования ИИ')).toBeInTheDocument();
+    const clientSummaryCard = container.querySelector('.surveys-ratings-entity-card');
+    expect(clientSummaryCard?.querySelector('.surveys-assessment-ops span:first-child strong')).toHaveTextContent('5');
+    expect(screen.getByText('Аналитика опросов клиентов')).toBeInTheDocument();
+    expect(screen.getByText('Клиентские опросы')).toBeInTheDocument();
+    expect(apiClient.fetchSurveyAnalytics).toHaveBeenCalledWith(expect.objectContaining({ audience: 'client' }));
+    expect(apiClient.fetchEmployeeClientAssessmentAnalytics).toHaveBeenCalled();
+    expect(apiClient.fetchSurveyAnalytics).not.toHaveBeenCalledWith(expect.objectContaining({ audience: 'employee' }));
+    expect(apiClient.fetchEmployeeRatingsAnalytics).not.toHaveBeenCalled();
+    expect(apiClient.fetchClientRatingsAnalytics).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Кто кому поставил оценку' }));
 

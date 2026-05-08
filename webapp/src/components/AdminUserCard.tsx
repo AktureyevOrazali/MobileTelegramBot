@@ -5,6 +5,7 @@ import { extractErrorMessage } from '../utils/errors';
 import { validatePassword, validatePasswordMatch } from '../utils/validation';
 import { useDebouncedEffect } from '../hooks/useDebouncedEffect';
 import { cloneAssignment, formatDateTimeLocalInput, parseDateTimeLocalInput, roleLabels } from '../utils/admin-helpers';
+import { sanitizeUiText } from '../utils/text';
 import SelectPill from '../components/SelectPill';
 import Modal from '../components/Modal';
 
@@ -303,6 +304,7 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     const isOperator = user.role === 'operator';
     const isRoleReadonly = currentUserRole === 'moderator' && user.role !== 'operator';
     const canManageThisUser = !isRoleReadonly;
+    const displayName = sanitizeUiText(user.name) ?? user.name;
     const handleCardClick = (event: React.MouseEvent<HTMLDivElement>) => {
         const target = event.target as HTMLElement;
         const interactiveTarget = target.closest('button, input, select, textarea, a, .menu, .select-pill');
@@ -328,7 +330,7 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
         <div className="card admin-user-card" style={style} onClick={handleCardClick} onKeyDown={handleCardKeyDown} role="button" tabIndex={0}>
             {/* HEADER: Name and Badge only */}
             <div className="admin-user-card__header-minimal">
-                <h3 className="admin-user-card__name">{user.name}</h3>
+                <h3 className="admin-user-card__name">{displayName}</h3>
                 <span className="badge">{roleLabels[user.role] ?? user.role}</span>
             </div>
 
@@ -405,7 +407,7 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
                 <div className="admin-modal">
                     <div className="admin-modal__header">
                         <h3>БИНы оператора</h3>
-                        <span className="badge">{user.name}</span>
+                        <span className="badge">{displayName}</span>
                     </div>
                     <div className="admin-modal__form">
                         <div className="label">Добавить БИН</div>
@@ -465,7 +467,7 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
                 <div className="admin-modal">
                     <div className="admin-modal__header">
                         <h3>Разделы оператора</h3>
-                        <span className="badge">{user.name}</span>
+                        <span className="badge">{displayName}</span>
                     </div>
 
                     <div className="admin-modal__form">

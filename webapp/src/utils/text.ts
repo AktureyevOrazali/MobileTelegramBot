@@ -6,9 +6,14 @@ const UNICODE_ESCAPE_RE = /\\u([0-9a-fA-F]{4})/g;
 const SIMPLE_ESCAPE_RE = /\\([nrt])/g;
 const CP1251_DECODER = new TextDecoder('windows-1251');
 const CP1251_REVERSE = new Map<string, number>();
+const CP1251_UTF8_CONTINUATION_CHARS = new Set<string>();
 
 for (let byte = 0; byte <= 0xff; byte += 1) {
-  CP1251_REVERSE.set(CP1251_DECODER.decode(new Uint8Array([byte])), byte);
+  const char = CP1251_DECODER.decode(new Uint8Array([byte]));
+  CP1251_REVERSE.set(char, byte);
+  if (byte >= 0x80 && byte <= 0xbf) {
+    CP1251_UTF8_CONTINUATION_CHARS.add(char);
+  }
 }
 
 function encodeCp1251(value: string): Uint8Array | null {
@@ -23,13 +28,45 @@ function encodeCp1251(value: string): Uint8Array | null {
   return new Uint8Array(bytes);
 }
 
-function countCyrillic(value: string): number {
-  const matches = value.match(/[\u0400-\u04ff]/g);
-  return matches ? matches.length : 0;
+function looksBroken(value: string): boolean {
+  return MOJIBAKE_HINT_RE.test(value) || looksLikeLatinMarkerMojibake(value) || MOJIBAKE_EXTRA_CHARS_RE.test(value) || value.includes('\uFFFD');
 }
 
-function looksBroken(value: string): boolean {
-  return MOJIBAKE_HINT_RE.test(value) || MOJIBAKE_EXTRA_CHARS_RE.test(value) || value.includes('\uFFFD');
+function looksLikeLatinMarkerMojibake(value: string): boolean {
+  let pairs = 0;
+  for (let index = 0; index < value.length - 1; index += 1) {
+    const char = value[index];
+    const next = value[index + 1];
+    if ((char === 'P' || char === 'C') && CP1251_UTF8_CONTINUATION_CHARS.has(next)) {
+      pairs += 1;
+      if (pairs >= 2) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function normalizeLatinMojibakeMarkers(value: string): string {
+  if (!looksLikeLatinMarkerMojibake(value)) {
+    return value;
+  }
+
+  let normalized = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    const next = value[index + 1];
+    if (char === 'P' && next && CP1251_UTF8_CONTINUATION_CHARS.has(next)) {
+      normalized += 'Р';
+      continue;
+    }
+    if (char === 'C' && next && CP1251_UTF8_CONTINUATION_CHARS.has(next)) {
+      normalized += 'С';
+      continue;
+    }
+    normalized += char;
+  }
+  return normalized;
 }
 
 function repairMojibakeOnce(value: string): string | null {
@@ -37,7 +74,8 @@ function repairMojibakeOnce(value: string): string | null {
     return null;
   }
 
-  const bytes = encodeCp1251(value);
+  const normalizedMarkers = normalizeLatinMojibakeMarkers(value);
+  const bytes = encodeCp1251(normalizedMarkers);
   if (!bytes) {
     return null;
   }
@@ -45,9 +83,6 @@ function repairMojibakeOnce(value: string): string | null {
   try {
     const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes).trim();
     if (!decoded || decoded === value) {
-      return null;
-    }
-    if (countCyrillic(decoded) < countCyrillic(value)) {
       return null;
     }
     return decoded;

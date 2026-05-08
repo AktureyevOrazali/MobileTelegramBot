@@ -7,6 +7,7 @@ import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
 import AdminUserCard from '../components/AdminUserCard';
 import EmployeeProfileAnalyticsModal from '../components/EmployeeProfileAnalyticsModal';
+import SurveyEntityAnalyticsPanel from '../components/SurveyEntityAnalyticsPanel';
 import { useAdminData } from '../hooks/useAdminData';
 
 interface AdminPageProps {
@@ -472,6 +473,11 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                   <p className="text-muted">Дополнительная информация недоступна</p>
                 )}
               </div>
+              <SurveyEntityAnalyticsPanel
+                apiClient={apiClient}
+                open={orgModalOpen}
+                target={{ kind: 'bin', label: admin.selectedBinInfo.bin, bin: admin.selectedBinInfo.bin }}
+              />
             </div>
           ) : filteredOrganizations.length === 0 ? (
             <span className="text-muted">Нет организаций без договора.</span>
@@ -536,6 +542,11 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                   <p className="text-muted">Дополнительная информация недоступна</p>
                 )}
               </div>
+              <SurveyEntityAnalyticsPanel
+                apiClient={apiClient}
+                open={contractModalOpen}
+                target={{ kind: 'bin', label: admin.selectedBinInfo.bin, bin: admin.selectedBinInfo.bin }}
+              />
             </div>
           ) : filteredBinsWithContract.length === 0 ? (
             <span className="text-muted">Нет БИНов с договором.</span>
@@ -752,6 +763,11 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
                   <p className="text-muted">Дополнительная информация недоступна</p>
                 )}
               </div>
+              <SurveyEntityAnalyticsPanel
+                apiClient={apiClient}
+                open={allBinsModalOpen}
+                target={{ kind: 'bin', label: admin.selectedBinInfo.bin, bin: admin.selectedBinInfo.bin }}
+              />
             </div>
           ) : filteredBinsDetailed.length === 0 ? (
             <span className="text-muted">Нет БИНов.</span>

@@ -35,54 +35,18 @@ const emptySurveyAnalytics: SurveyAnalytics = {
 };
 
 const employeeSurveyAnalytics: SurveyAnalytics = {
-  averageScore: 4.5,
+  ...emptySurveyAnalytics,
+  averageScore: 4.4,
   completedSurveyCount: 2,
-  answerCount: 4,
-  scoreCount: 2,
-  positiveCount: 2,
-  neutralCount: 0,
+  answerCount: 5,
+  scoreCount: 4,
+  positiveCount: 3,
+  neutralCount: 1,
   negativeCount: 0,
-  positiveShare: 1,
-  neutralShare: 0,
+  positiveShare: 0.75,
+  neutralShare: 0.25,
   negativeShare: 0,
-  monthlySatisfaction: [
-    { month: '2026-04', averageScore: 4.5, count: 2 },
-  ],
-  topClientRequests: [],
-  topTrainingWishes: [],
-  employeeRemarks: [],
-  questionAnalytics: [
-    {
-      questionId: 201,
-      questionText: 'Employee survey question',
-      questionType: 'scale',
-      topic: 'employee_quality',
-      sortOrder: 1,
-      answerCount: 2,
-      averageScore: 4.5,
-      scoreDistribution: [
-        { label: '5', count: 1 },
-        { label: '4', count: 1 },
-      ],
-      topAnswers: [],
-    },
-    {
-      questionId: 209,
-      questionText: 'Employee ninth question',
-      questionType: 'text_comment',
-      topic: 'extra',
-      sortOrder: 9,
-      answerCount: 2,
-      averageScore: null,
-      scoreDistribution: [],
-      topAnswers: [
-        { label: 'Need clearer scripts', count: 2 },
-      ],
-    },
-  ],
-  answers: [],
-  answersPreviewLimited: false,
-  updatedAt: new Date('2026-04-15T00:00:00Z'),
+  monthlySatisfaction: [{ month: '2026-04', averageScore: 4.4, count: 2 }],
 };
 
 const employeeAssessmentAnalytics: EmployeeClientAssessmentAnalytics = {
@@ -170,11 +134,7 @@ const currentEmployeeTemplate: SurveyTemplate = {
 function renderEmployeeAnalyticsPage() {
   const apiClient = {
     fetchSurveyTemplates: vi.fn().mockResolvedValue([currentEmployeeTemplate]),
-    fetchSurveyAnalytics: vi.fn().mockImplementation((options?: { audience?: string | null }) => (
-      options?.audience === 'employee'
-        ? Promise.resolve(employeeSurveyAnalytics)
-        : Promise.resolve(emptySurveyAnalytics)
-    )),
+    fetchSurveyAnalytics: vi.fn().mockResolvedValue(employeeSurveyAnalytics),
     fetchEmployeeClientAssessmentAnalytics: vi.fn().mockResolvedValue(employeeAssessmentAnalytics),
   } as unknown as ApiClient;
 
@@ -188,22 +148,15 @@ function renderEmployeeAnalyticsPage() {
 }
 
 describe('SurveysPage employee analytics', () => {
-  it('renders employee assessment analytics and survey-builder question analytics together', async () => {
+  it('renders employee survey analytics from submitted employee assessment forms', async () => {
     const { container, apiClient } = renderEmployeeAnalyticsPage();
 
+    expect(await screen.findByText('Аналитика опроса сотрудников')).toBeInTheDocument();
     expect((await screen.findAllByText('Client Alpha')).length).toBeGreaterThanOrEqual(1);
-    expect(await screen.findByText('Employee survey question')).toBeInTheDocument();
-    expect(await screen.findByText('Employee ninth question')).toBeInTheDocument();
-    expect(screen.getByText('Need clearer scripts')).toBeInTheDocument();
     expect(container.querySelector('.surveys-assessment-card--quality')).toBeInTheDocument();
     expect(container.querySelector('.surveys-hero .surveys-assessment-filter')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(apiClient.fetchSurveyAnalytics).toHaveBeenCalledWith(expect.objectContaining({ audience: 'employee' }));
-      expect(apiClient.fetchSurveyAnalytics).toHaveBeenCalledWith(expect.objectContaining({
-        audience: 'employee',
-        templateId: currentEmployeeTemplate.id,
-      }));
       expect(apiClient.fetchEmployeeClientAssessmentAnalytics).toHaveBeenCalled();
     });
   });

@@ -6,7 +6,6 @@ import EChartsWrapper from '../components/EChartsWrapper';
 import { SurveyBuilderSection } from '../components/surveys/SurveyBuilderSection';
 import {
   createBlankSurveyQuestion,
-  getFirstSurveyTemplateIdForAudience,
   SURVEY_TOPICS,
   useSurveyData,
 } from '../hooks/useSurveyData';
@@ -324,14 +323,13 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
   const [builderAudience, setBuilderAudience] = useState<SurveyTemplateAudience>('client');
 
   const [employeeAnalytics, setEmployeeAnalytics] = useState<EmployeeClientAssessmentAnalytics | null>(null);
-  const [employeeSurveyAnalytics, setEmployeeSurveyAnalytics] = useState<SurveyAnalytics | null>(null);
   const [employeeLoading, setEmployeeLoading] = useState(false);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
 
   const [ratingsSummary, setRatingsSummary] = useState<RatingsSummary | null>(null);
-  const [employeeRatings, setEmployeeRatings] = useState<EmployeeRatingsAnalytics | null>(null);
-  const [clientRatings, setClientRatings] = useState<ClientRatingsAnalytics | null>(null);
   const [aiRatings, setAiRatings] = useState<AiRatingsAnalytics | null>(null);
+  const [ratingsClientSurveyAnalytics, setRatingsClientSurveyAnalytics] = useState<SurveyAnalytics | null>(null);
+  const [ratingsEmployeeAssessmentAnalytics, setRatingsEmployeeAssessmentAnalytics] = useState<EmployeeClientAssessmentAnalytics | null>(null);
   const [matrix, setMatrix] = useState<MutualRatingMatrix | null>(null);
   const [ledger, setLedger] = useState<RatingLedgerResponse | null>(null);
   const [ratingsTab, setRatingsTab] = useState<RatingsTab>('client_to_employee');
@@ -343,11 +341,6 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     () => data.templates.filter((template) => template.audience === builderAudience),
     [builderAudience, data.templates],
   );
-  const currentEmployeeTemplateId = useMemo(
-    () => getFirstSurveyTemplateIdForAudience(data.templates, 'employee'),
-    [data.templates],
-  );
-
   const selectedLedgerEntry = useMemo<RatingLedgerEntry | null>(
     () => ledger?.items[0] ?? null,
     [ledger],
@@ -367,40 +360,31 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     setEmployeeLoading(true);
     setEmployeeError(null);
     try {
-      const [assessmentAnalytics, surveyAnalytics] = await Promise.all([
-        apiClient.fetchEmployeeClientAssessmentAnalytics(),
-        currentEmployeeTemplateId
-          ? apiClient.fetchSurveyAnalytics({
-              audience: 'employee',
-              templateId: currentEmployeeTemplateId,
-            })
-          : Promise.resolve(null),
-      ]);
+      const assessmentAnalytics = await apiClient.fetchEmployeeClientAssessmentAnalytics();
       setEmployeeAnalytics(assessmentAnalytics);
-      setEmployeeSurveyAnalytics(surveyAnalytics);
     } catch (error) {
       setEmployeeError(error instanceof Error ? error.message : 'Не удалось загрузить аналитику опросов сотрудников.');
     } finally {
       setEmployeeLoading(false);
     }
-  }, [apiClient, currentEmployeeTemplateId]);
+  }, [apiClient]);
 
   const loadRatings = useCallback(async (filters: RatingLedgerFilters = ledgerFilters) => {
     setRatingsLoading(true);
     setRatingsError(null);
     try {
-      const [summary, employees, clients, ai, nextMatrix, nextLedger] = await Promise.all([
+      const [summary, ai, nextMatrix, nextLedger, clientSurvey, employeeAssessment] = await Promise.all([
         apiClient.fetchRatingsSummary(),
-        apiClient.fetchEmployeeRatingsAnalytics(),
-        apiClient.fetchClientRatingsAnalytics(),
         apiClient.fetchAiRatingsAnalytics(),
         apiClient.fetchMutualRatingMatrix(),
         apiClient.fetchRatingLedger(filters),
+        apiClient.fetchSurveyAnalytics({ audience: 'client' }),
+        apiClient.fetchEmployeeClientAssessmentAnalytics(),
       ]);
       setRatingsSummary(summary);
-      setEmployeeRatings(employees);
-      setClientRatings(clients);
       setAiRatings(ai);
+      setRatingsClientSurveyAnalytics(clientSurvey);
+      setRatingsEmployeeAssessmentAnalytics(employeeAssessment);
       setMatrix(nextMatrix);
       setLedger(nextLedger);
     } catch (error) {
@@ -529,7 +513,7 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
         {[
           ['builder', 'Конструктор'],
           ['clients', 'Опросы клиентов'],
-          ['employees', 'Оценка клиентов сотрудниками'],
+          ['employees', 'Опросы сотрудников'],
           ['ratings', 'Сводная аналитика'],
         ].map(([key, label]) => (
           <button
@@ -579,25 +563,12 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
         <EmployeeSurveyAnalytics analytics={employeeAnalytics} error={employeeError} />
       ) : null}
 
-      {activeSection === 'employees' ? (
-        <ClientSurveyAnalytics
-          analytics={employeeSurveyAnalytics}
-          isLoading={employeeLoading}
-          onRefresh={loadEmployeeAnalytics}
-          error={employeeError}
-          title="Аналитика опроса сотрудников"
-          emptyText="Пока нет завершенных опросов сотрудников."
-          scoreTitle="Средняя оценка сотрудников"
-          scoreDescription="Средняя оценка по завершенным сотрудническим анкетам из конструктора опросов."
-        />
-      ) : null}
-
       {activeSection === 'ratings' ? (
         <RatingsAnalytics
           summary={ratingsSummary}
-          employeeRatings={employeeRatings}
-          clientRatings={clientRatings}
           aiRatings={aiRatings}
+          clientSurveyAnalytics={ratingsClientSurveyAnalytics}
+          employeeAssessmentAnalytics={ratingsEmployeeAssessmentAnalytics}
           matrix={matrix}
           ledger={ledger}
           selectedLedgerEntry={selectedLedgerEntry}
@@ -983,7 +954,7 @@ const ClientSurveyAnalytics: React.FC<{
     { label: 'Положительные', value: (analytics?.positiveShare ?? 0) * 100 },
     { label: 'Нейтральные', value: (analytics?.neutralShare ?? 0) * 100 },
     { label: 'Негативные', value: (analytics?.negativeShare ?? 0) * 100 },
-    { label: 'Оценочные ответы', value: analytics && analytics.answerCount > 0 ? (analytics.scoreCount / analytics.answerCount) * 100 : 0 },
+    { label: 'Анкет с оценкой', value: analytics && analytics.answerCount > 0 ? (analytics.scoreCount / analytics.answerCount) * 100 : 0 },
   ];
 
   const hasAnalytics = Boolean(analytics && ((analytics.completedSurveyCount ?? 0) > 0 || analytics.answerCount > 0));
@@ -1196,11 +1167,11 @@ const EmployeeSurveyAnalytics: React.FC<{
     <section className="surveys-assessment">
       <div className="surveys-assessment-hero">
         <div>
-          <h2>Внутренняя оценка взаимодействия с клиентами</h2>
+          <h2>Аналитика опроса сотрудников</h2>
         </div>
         <div className="surveys-assessment-hero__stats">
           <div>
-            <span>Карточек</span>
+            <span>Анкет</span>
             <strong>{numberFormatter.format(analytics?.totalAssessments ?? 0)}</strong>
           </div>
         </div>
@@ -1423,9 +1394,9 @@ const ScoreBadge: React.FC<{ value: number | null | undefined; suffix?: string }
 
 const RatingsAnalytics: React.FC<{
   summary: RatingsSummary | null;
-  employeeRatings: EmployeeRatingsAnalytics | null;
-  clientRatings: ClientRatingsAnalytics | null;
   aiRatings: AiRatingsAnalytics | null;
+  clientSurveyAnalytics: SurveyAnalytics | null;
+  employeeAssessmentAnalytics: EmployeeClientAssessmentAnalytics | null;
   matrix: MutualRatingMatrix | null;
   ledger: RatingLedgerResponse | null;
   selectedLedgerEntry: RatingLedgerEntry | null;
@@ -1439,9 +1410,9 @@ const RatingsAnalytics: React.FC<{
   onApplyFilters: () => void;
 }> = ({
   summary,
-  employeeRatings,
-  clientRatings,
   aiRatings,
+  clientSurveyAnalytics,
+  employeeAssessmentAnalytics,
   matrix,
   ledger,
   selectedLedgerEntry,
@@ -1474,16 +1445,16 @@ const RatingsAnalytics: React.FC<{
           </div>
           <div className="surveys-assessment-hero__stats">
             <div>
-              <span>Сотрудники</span>
-              <strong>{numberFormatter.format(summary?.employees.ratingCount ?? 0)}</strong>
+              <span>Опросы клиентов</span>
+              <strong>{numberFormatter.format(clientSurveyAnalytics?.completedSurveyCount ?? 0)}</strong>
             </div>
             <div>
-              <span>Клиенты</span>
-              <strong>{numberFormatter.format(summary?.clients.assessmentCount ?? 0)}</strong>
+              <span>Опросы сотрудников</span>
+              <strong>{numberFormatter.format(employeeAssessmentAnalytics?.totalAssessments ?? 0)}</strong>
             </div>
             <div>
               <span>ИИ</span>
-              <strong>{numberFormatter.format(summary?.ai.ratingCount ?? 0)}</strong>
+              <strong>{numberFormatter.format(aiRatings?.summary.ratingCount ?? summary?.ai.ratingCount ?? 0)}</strong>
             </div>
             <div>
               <span>Реестр</span>
@@ -1496,38 +1467,38 @@ const RatingsAnalytics: React.FC<{
 
         <div className="surveys-ratings-entities">
           <EntitySummaryCard
-            title="Клиенты"
-            score={summary?.clients.averageScore}
+            title="Опросы клиентов"
+            score={clientSurveyAnalytics?.averageScore}
             rows={[
-              ['Обращения', numberFormatter.format(clientRatings?.rows.reduce((sum, item) => sum + item.completedAppealsCount, 0) ?? 0)],
-              ['Повторные обращения', formatPercent(summary?.clients.repeatedRequestShare)],
-              ['Полнота данных', formatPercent(summary?.clients.fullDataFirstTimeShare)],
+              ['Анкет', numberFormatter.format(clientSurveyAnalytics?.completedSurveyCount ?? 0)],
+              ['Ответов', numberFormatter.format(clientSurveyAnalytics?.answerCount ?? 0)],
+              ['Анкет с оценкой', numberFormatter.format(clientSurveyAnalytics?.scoreCount ?? 0)],
             ]}
           />
           <EntitySummaryCard
-            title="Сотрудники"
-            score={summary?.employees.averageScore}
+            title="Опросы сотрудников"
+            score={employeeAssessmentAnalytics?.averageOverallScore}
             rows={[
-              ['Средняя клиентская оценка', formatScore(summary?.employees.averageScore)],
-              ['Положительные отзывы', formatPercent(summary?.employees.highScoreShare)],
-              ['Жалобы / низкие оценки', formatPercent(summary?.employees.lowScoreShare)],
+              ['Анкет', numberFormatter.format(employeeAssessmentAnalytics?.totalAssessments ?? 0)],
+              ['Клиентов', numberFormatter.format(employeeAssessmentAnalytics?.clientRatings.length ?? 0)],
+              ['Низкие оценки', formatPercent(employeeAssessmentAnalytics?.lowScoreShare)],
             ]}
           />
           <EntitySummaryCard
             title="ИИ"
-            score={summary?.ai.averageScore}
+            score={aiRatings?.summary.averageScore ?? summary?.ai.averageScore}
             rows={[
-              ['Частота использования', formatPercent(summary?.ai.aiUsageShare)],
-              ['Ошибки ИИ', formatPercent(summary?.ai.inaccurateShare)],
-              ['Ручная корректировка', formatPercent(summary?.ai.manualCorrectionShare)],
+              ['Частота использования', formatPercent(aiRatings?.summary.aiUsageShare ?? summary?.ai.aiUsageShare)],
+              ['Ошибки ИИ', formatPercent(aiRatings?.summary.inaccurateShare ?? summary?.ai.inaccurateShare)],
+              ['Ручная корректировка', formatPercent(aiRatings?.summary.manualCorrectionShare ?? summary?.ai.manualCorrectionShare)],
             ]}
           />
         </div>
 
         <div className="surveys-subtabs">
           {[
-            ['client_to_employee', 'Сотрудники'],
-            ['employee_to_client', 'Клиенты'],
+            ['client_to_employee', 'Опросы клиентов'],
+            ['employee_to_client', 'Опросы сотрудников'],
             ['ai', 'ИИ'],
             ['ledger', 'Кто кому поставил оценку'],
           ].map(([key, label]) => (
@@ -1537,8 +1508,20 @@ const RatingsAnalytics: React.FC<{
           ))}
         </div>
 
-        {activeTab === 'client_to_employee' ? <EmployeeRatingsSlice analytics={employeeRatings} /> : null}
-        {activeTab === 'employee_to_client' ? <ClientRatingsSlice analytics={clientRatings} /> : null}
+        {activeTab === 'client_to_employee' ? (
+          <ClientSurveyAnalytics
+            analytics={clientSurveyAnalytics}
+            isLoading={false}
+            onRefresh={() => undefined}
+            title="Аналитика опросов клиентов"
+            emptyText="Пока нет завершенных опросов клиентов."
+            scoreTitle="Клиентские опросы"
+            scoreDescription="Средняя оценка по вопросам, которые клиент заполнил после первичного CSAT."
+          />
+        ) : null}
+        {activeTab === 'employee_to_client' ? (
+          <EmployeeSurveyAnalytics analytics={employeeAssessmentAnalytics} error={null} />
+        ) : null}
         {activeTab === 'ai' ? <AiRatingsSlice analytics={aiRatings} matrix={matrix} /> : null}
         {activeTab === 'ledger' ? (
           <LedgerSlice

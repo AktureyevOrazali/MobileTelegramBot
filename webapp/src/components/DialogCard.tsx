@@ -144,8 +144,8 @@ const DialogCard: React.FC<DialogCardProps> = ({
                   className="dialog-card__kebab"
                   ref={kebabRef}
                   onClick={handleToggleMenu}
-                  aria-label="\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044f"
-                  title="\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044f"
+                  aria-label="Действия"
+                  title="Действия"
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                     <circle cx="8" cy="3" r="1.5" />
@@ -178,7 +178,7 @@ const DialogCard: React.FC<DialogCardProps> = ({
                       }}
                       disabled={isAiToggling}
                     >
-                      <span className="dialog-card__menu-icon">\uD83E\uDD16</span>
+                      <span className="dialog-card__menu-icon">{'\uD83E\uDD16'}</span>
                       {isAiToggling ? '\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u043c...' : chat.aiEnabled ? '\u041e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c AI' : '\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c AI'}
                     </button>
                     <button
@@ -204,8 +204,8 @@ const DialogCard: React.FC<DialogCardProps> = ({
                           setMenuOpen(false);
                         }}
                       >
-                        <span className="dialog-card__menu-icon">\uD83D\uDDD1\uFE0F</span>
-                        \u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433
+                        <span className="dialog-card__menu-icon">{'\uD83D\uDDD1\uFE0F'}</span>
+                        {'\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433'}
                       </button>
                     )}
                   </div>

@@ -10,6 +10,7 @@ import './styles/dashboard.css';
 import './styles/profile.css';
 import './styles/chat-modal.css';
 import './styles/admin.css';
+import './styles/employee-profile-modal.css';
 import './styles/surveys.css';
 import './styles/auth.css';
 import './styles/modern-overrides.css';

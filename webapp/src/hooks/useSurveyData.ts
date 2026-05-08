@@ -194,11 +194,6 @@ function createBlankSurveyTemplate(
   };
 }
 
-export const getFirstSurveyTemplateIdForAudience = (
-  templates: SurveyTemplate[],
-  audience: SurveyTemplateAudience,
-): number | null => templates.find((template) => template.audience === audience)?.id ?? null;
-
 export function useSurveyData(apiClient: ApiClient) {
   const [templates, setTemplates] = useState<SurveyTemplate[]>([]);
   const [analytics, setAnalytics] = useState<SurveyAnalytics | null>(null);
@@ -226,10 +221,9 @@ export function useSurveyData(apiClient: ApiClient) {
     return nextTemplates;
   }, [apiClient]);
 
-  const refreshAnalytics = useCallback(async (templateId?: number | null) => {
+  const refreshAnalytics = useCallback(async () => {
     const nextAnalytics = await apiClient.fetchSurveyAnalytics({
       audience: 'client',
-      templateId: templateId ?? undefined,
     });
     setAnalytics(nextAnalytics);
     return nextAnalytics;
@@ -240,8 +234,8 @@ export function useSurveyData(apiClient: ApiClient) {
     setIsAnalyticsLoading(true);
     setError(null);
     try {
-      const nextTemplates = await refreshTemplates();
-      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(nextTemplates, 'client'));
+      await refreshTemplates();
+      await refreshAnalytics();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить данные опросов.');
     } finally {
@@ -254,7 +248,7 @@ export function useSurveyData(apiClient: ApiClient) {
     setIsAnalyticsLoading(true);
     setError(null);
     try {
-      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(templates, 'client'));
+      await refreshAnalytics();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить аналитику опросов.');
     } finally {
@@ -289,8 +283,8 @@ export function useSurveyData(apiClient: ApiClient) {
       const saved = selectedTemplateId
         ? await apiClient.updateSurveyTemplate(selectedTemplateId, draft)
         : await apiClient.createSurveyTemplate(draft);
-      const nextTemplates = await refreshTemplates(saved.id);
-      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(nextTemplates, 'client'));
+      await refreshTemplates(saved.id);
+      await refreshAnalytics();
       return saved;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось сохранить опрос.');
@@ -306,8 +300,8 @@ export function useSurveyData(apiClient: ApiClient) {
     setError(null);
     try {
       const created = await apiClient.duplicateSurveyTemplate(selectedTemplateId);
-      const nextTemplates = await refreshTemplates(created.id);
-      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(nextTemplates, 'client'));
+      await refreshTemplates(created.id);
+      await refreshAnalytics();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось дублировать опрос.');
     } finally {
@@ -322,8 +316,8 @@ export function useSurveyData(apiClient: ApiClient) {
     try {
       await apiClient.deleteSurveyTemplate(selectedTemplateId);
       setDraft(createBlankSurveyTemplate(draft.audience));
-      const nextTemplates = await refreshTemplates(null);
-      await refreshAnalytics(getFirstSurveyTemplateIdForAudience(nextTemplates, 'client'));
+      await refreshTemplates(null);
+      await refreshAnalytics();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось удалить опрос.');
     } finally {

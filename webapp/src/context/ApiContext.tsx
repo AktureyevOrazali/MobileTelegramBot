@@ -9,6 +9,7 @@ import React, {
 import { ApiClient } from '../api/ApiClient';
 import { AuthSession } from '../types';
 import { normalizeAssignmentsFromStorage } from '../utils/converters';
+import { isAdminLikeRole, normalizeRole, roleCanReply } from '../utils/roles';
 import { sanitizeUiText } from '../utils/text';
 
 interface ApiContextValue {
@@ -31,7 +32,7 @@ function loadSessionFromStorage(): AuthSession | null {
 
     const parsed = JSON.parse(stored);
     if (parsed && typeof parsed === 'object' && typeof parsed.token === 'string' && parsed.user) {
-      const role: string = parsed.user.role ?? 'operator';
+      const role = normalizeRole(parsed.user.role);
       const favoriteRaw = parsed.user.favoriteDialogIds ?? parsed.user.favorite_dialog_ids;
       const favoriteDialogIds: number[] = Array.isArray(favoriteRaw)
         ? (favoriteRaw as unknown[])
@@ -53,8 +54,8 @@ function loadSessionFromStorage(): AuthSession | null {
           sections: Array.isArray(parsed.user.sections) ? parsed.user.sections : [],
           bins: normalizedBins,
           favoriteDialogIds,
-          isAdmin: role === 'admin' || role === 'moderator',
-          canReply: role === 'admin' || role === 'moderator' || role === 'operator',
+          isAdmin: isAdminLikeRole(role),
+          canReply: roleCanReply(role),
           role,
           isApproved: parsed.user.isApproved ?? parsed.user.is_approved ?? true,
         },

@@ -22,6 +22,7 @@ import {
   UserBinAssignment,
   UserBinAssignmentRaw,
 } from '../types';
+import { isAdminLikeRole, normalizeRole, roleCanReply } from './roles';
 import { sanitizeUiText } from './text';
 
 /**
@@ -39,9 +40,9 @@ interface StoredBinEntry {
 }
 
 export function mapUserProfile(raw: UserProfileRaw): UserProfile {
-  const role = raw.role || 'operator';
-  const isAdmin = role === 'admin' || role === 'moderator';
-  const canReply = role === 'admin' || role === 'moderator' || role === 'operator';
+  const role = normalizeRole(raw.role);
+  const isAdmin = isAdminLikeRole(role);
+  const canReply = roleCanReply(role);
   const mapAssignments = (
     entries: (string | UserBinAssignmentRaw)[] | undefined,
   ): UserBinAssignment[] => {

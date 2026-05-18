@@ -10,6 +10,7 @@ export const roleLabels: Record<string, string> = {
     admin: 'Администратор',
     moderator: 'Модератор',
     operator: 'Оператор',
+    hr: 'Кадровик',
 };
 
 /**

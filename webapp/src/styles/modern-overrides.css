@@ -6549,3 +6549,210 @@
 .app-shell--surveys .surveys-page--app-sidebar > .surveys-assessment::-webkit-scrollbar {
   width: 8px;
 }
+
+/* Surveys dark theme consistency. */
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar {
+  color: var(--text-color);
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-hero,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-tabs,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-subtabs,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-segmented,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-panel,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-card,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-score-card,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-trend-card,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-kpi-grid,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-kpi,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-template-card,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-sidebar,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-scale-strip__chip,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-matrix-cell,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-empty,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-card,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-response-detail__item {
+  border-color: var(--border-color) !important;
+  background: var(--surface-color) !important;
+  color: var(--text-color) !important;
+  box-shadow: var(--card-shadow) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-panel__body,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-editor,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card.is-expanded,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-response-detail-row td {
+  background: var(--surface-soft-color) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-template-card:hover,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-tabs__button:hover,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-subtabs button:hover,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-segmented button:hover,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-button:hover,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-link-button:hover,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-icon-button:hover {
+  background: var(--surface-raised-color) !important;
+  color: var(--text-heading) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-tabs__button.is-active,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-subtabs button.is-active,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-segmented button.is-active,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-template-card.is-active,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-launch-option.is-active {
+  border-color: var(--border-strong) !important;
+  background: color-mix(in srgb, var(--brand-color) 18%, var(--surface-color)) !important;
+  color: var(--text-heading) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-button,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-link-button,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-icon-button {
+  border-color: var(--border-color) !important;
+  background: var(--surface-overlay) !important;
+  color: var(--text-heading) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-button--primary,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-scale-strip__chip.is-active,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card.is-expanded .surveys-question-card__number {
+  border-color: var(--brand-hover) !important;
+  background: var(--brand-hover) !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-button--danger-text {
+  background: transparent !important;
+  color: var(--badge-error-text) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-field input,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-field select,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-option-row input,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-comment-preview textarea,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-filter select,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-field .pill,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card .pill,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-field input,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card input {
+  border-color: var(--input-border) !important;
+  background: var(--input-bg) !important;
+  color: var(--text-color) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-hero h1,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-panel h2,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-card h3,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-head h3,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-template-card strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question__top strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__copy strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-kpi strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-score-card h3,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-trend-card h3,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-score-card__value strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-top-list strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-tone-row strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-matrix-cell strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-detail-list strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-hero h2,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-card h3,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-score strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-criteria__row strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-progress strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-ops strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-donut__center strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-table td strong,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-response-detail__item span {
+  color: var(--text-heading) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-hero p,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-panel__head p,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-head p,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-muted,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-eyebrow,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-tabs__button,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-subtabs button,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-segmented button,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-field span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-check span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-template-card span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__meta span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__meta small,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-kpi span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-kpi small,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-score-card p,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-score-card__value span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-tone-row span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-tone-row small,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-top-list li,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-matrix-cell span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-matrix-cell small,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-detail-list span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-filter span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-eyebrow,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-hero p,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-card p,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-hero__stats span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-score span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-criteria__row span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-progress span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-ops span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-character span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-legend span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-series span,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-table td small,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-date,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-percent {
+  color: var(--text-muted) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-panel__head,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card__editor,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-tone-row,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-top-list li,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-table th,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-table td,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-table th,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-table td,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-ops span {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-table-wrap,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-table-wrap {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-table th,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-table th {
+  background: var(--surface-raised-color) !important;
+  color: var(--text-muted) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-table td,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-table td {
+  color: var(--text-color) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-table tr:hover td {
+  background: var(--surface-raised-color) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-criteria__row div,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-progress em {
+  background: var(--progress-track) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-alert {
+  border-color: color-mix(in srgb, var(--badge-error-text) 34%, transparent) !important;
+  background: var(--badge-error-bg) !important;
+  color: var(--badge-error-text) !important;
+}

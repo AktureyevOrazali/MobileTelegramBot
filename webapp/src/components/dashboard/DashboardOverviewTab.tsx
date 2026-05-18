@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 
 import Modal from '../Modal';
 import EChartsWrapper from '../EChartsWrapper';
+import LoadingEstimate from '../LoadingEstimate';
 import RegionActivityMap from '../RegionActivityMap';
 import { useDashboardData } from '../../hooks/useDashboardData';
 import type { BinDetailed, ChatSummary, DashboardDialogMetric } from '../../types';
@@ -279,7 +280,12 @@ const DashboardOverviewTab: React.FC<DashboardOverviewTabProps> = ({
         </div>
         <div className="dashboard-map-widget__body">
           {mapLoading ? (
-            <div className="dashboard-empty dashboard-empty--map">{MAP_LOADING_LABEL}</div>
+            <div className="dashboard-empty dashboard-empty--map">
+              <LoadingEstimate
+                title={'\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043c BIN-\u0434\u0430\u043d\u043d\u044b\u0435 \u0438\u0437 \u0433\u043e\u0441\u0437\u0430\u043a\u0443\u043f\u0430'}
+                description={MAP_LOADING_LABEL}
+              />
+            </div>
           ) : (
             <RegionActivityMap
               counts={dashboardRegionCounts}

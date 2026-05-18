@@ -7,6 +7,7 @@ from . import customer_surveys, database
 _send_channel_message: Callable[..., None] | None = None
 _persist_telegram_message: Callable[..., None] | None = None
 SKIP_OPTION_LABEL = "Пропустить"
+EMPLOYEE_EXCLUSION_NONE_LABEL = "Нет таких сотрудников"
 
 
 def configure_survey_runtime(
@@ -70,9 +71,11 @@ def _question_options(question: Mapping[str, Any], session: Mapping[str, Any] | 
     question_type = customer_surveys.normalize_question_type(question.get("question_type"))
     config = question.get("config") or {}
     if question_type == customer_surveys.QUESTION_TYPE_EMPLOYEE_EXCLUSION:
+        none_option = {"id": EMPLOYEE_EXCLUSION_NONE_LABEL, "label": EMPLOYEE_EXCLUSION_NONE_LABEL, "score": None}
         employee_options = _employee_options_from_session(session)
         if employee_options:
-            return employee_options
+            return [none_option, *employee_options]
+        return [none_option]
     if isinstance(config, Mapping):
         return customer_surveys.normalize_options(config)
     return []
@@ -174,6 +177,8 @@ def _parse_answer(
             return customer_surveys.SurveyAnswerParseResult(raw_text="")
         return customer_surveys.SurveyAnswerParseResult(raw_text=text)
     if question_type == customer_surveys.QUESTION_TYPE_EMPLOYEE_EXCLUSION:
+        if text.casefold() == EMPLOYEE_EXCLUSION_NONE_LABEL.casefold():
+            return customer_surveys.SurveyAnswerParseResult(raw_text=EMPLOYEE_EXCLUSION_NONE_LABEL)
         label = _match_option_label(_question_options(question, session), text)
         if label:
             return customer_surveys.SurveyAnswerParseResult(raw_text=label, selected_employee_name=label)

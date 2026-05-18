@@ -204,6 +204,12 @@ class OneCChatFlowTests(unittest.TestCase):
 
         self.assertIn("ЭтоВопросВыбораСотрудникаОпроса", integration_code)
         self.assertIn("СформироватьHTMLКнопокСотрудниковОпроса", integration_code)
+        employee_buttons_fn = integration_code[
+            integration_code.index("Функция СформироватьHTMLКнопокСотрудниковОпроса"):
+            integration_code.index("Функция СформироватьHTMLКнопокОпроса")
+        ]
+        self.assertIn("Нет таких сотрудников", employee_buttons_fn)
+        self.assertIn("data-answer-label='Нет таких сотрудников'", employee_buttons_fn)
         self.assertIn("ЭтоВопросКомментарияОпроса", integration_code)
         self.assertIn("СформироватьHTMLКнопкиПропуститьОпрос", integration_code)
         self.assertIn("СформироватьHTMLКнопокОпроса(QuickReplies, ТекстИсходный, Сообщения)", integration_code)
@@ -341,8 +347,25 @@ class OneCChatFlowTests(unittest.TestCase):
 
         self.assertEqual(
             [(reply["label"], reply["value"]) for reply in replies],
-            [("Арайлым", "Арайлым"), ("Баглан", "Баглан")],
+            [("Нет таких сотрудников", "Нет таких сотрудников"), ("Арайлым", "Арайлым"), ("Баглан", "Баглан")],
         )
+
+    def test_employee_exclusion_none_option_does_not_select_employee(self):
+        question = {
+            "question_type": customer_surveys.QUESTION_TYPE_EMPLOYEE_EXCLUSION,
+            "config": {},
+        }
+        session = {
+            "operators": [
+                {"operator_name": "Арайлым"},
+            ]
+        }
+
+        answer = survey_service._parse_answer(question, "Нет таких сотрудников", session=session)
+
+        self.assertIsNotNone(answer)
+        self.assertEqual(answer.raw_text, "Нет таких сотрудников")
+        self.assertIsNone(answer.selected_employee_name)
 
     def test_optional_text_comment_can_be_skipped(self):
         question = {

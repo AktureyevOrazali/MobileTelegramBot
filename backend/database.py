@@ -388,6 +388,189 @@ def _user_columns(prefix: str | None = None) -> str:
     return ", ".join(USER_COLUMN_NAMES)
 
 
+def _ensure_default_after_csat_survey_template() -> None:
+    with _lock:
+        now = datetime.now(timezone.utc).isoformat()
+        default_questions = customer_surveys.default_after_csat_questions()
+        template_row = execute(
+            """
+            SELECT st.id, st.title, st.trigger_type, COUNT(DISTINCT sq.id) AS question_count,
+                   COUNT(DISTINCT ss.id) AS session_count
+            FROM survey_templates st
+            LEFT JOIN survey_questions sq ON sq.template_id = st.id
+            LEFT JOIN survey_sessions ss ON ss.template_id = st.id
+            WHERE st.audience = %s
+              AND st.status = %s
+              AND st.trigger_type = %s
+            GROUP BY st.id, st.title, st.trigger_type
+            ORDER BY CASE WHEN st.title = %s THEN 0 ELSE 1 END,
+                     COUNT(DISTINCT sq.id) DESC, st.updated_at DESC, st.id DESC
+            LIMIT 1
+            """,
+            (
+                customer_surveys.SURVEY_AUDIENCE_CLIENT,
+                customer_surveys.SURVEY_STATUS_ACTIVE,
+                customer_surveys.SURVEY_TRIGGER_AFTER_EMPLOYEE_CSAT,
+                customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
+            ),
+        ).fetchone()
+
+        template_id: int | None = None
+        should_insert_questions = False
+        if template_row is None:
+            template = execute(
+                """
+                INSERT INTO survey_templates (
+                    title, description, audience, status, trigger_type, periodic_interval,
+                    scheduled_at, launch_rules, is_anonymous, created_by, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
+                    customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
+                    customer_surveys.SURVEY_AUDIENCE_CLIENT,
+                    customer_surveys.SURVEY_STATUS_ACTIVE,
+                    customer_surveys.SURVEY_TRIGGER_AFTER_EMPLOYEE_CSAT,
+                    None,
+                    None,
+                    json.dumps([{"type": customer_surveys.SURVEY_TRIGGER_AFTER_EMPLOYEE_CSAT, "dates": []}], ensure_ascii=False),
+                    False,
+                    None,
+                    now,
+                    now,
+                ),
+            ).fetchone()
+            if template:
+                template_id = int(template["id"])
+                should_insert_questions = True
+        else:
+            existing_questions = execute(
+                """
+                SELECT sort_order, question_type, text, required
+                FROM survey_questions
+                WHERE template_id = %s
+                ORDER BY sort_order ASC, id ASC
+                """,
+                (int(template_row["id"]),),
+            ).fetchall()
+            question_count = int(template_row["question_count"] or 0)
+            session_count = int(template_row["session_count"] or 0)
+            broken_text = "???" in str(template_row.get("title") or "")
+            needs_question_refresh = customer_surveys.default_after_csat_questions_need_refresh(existing_questions)
+            if question_count < len(default_questions) or broken_text or needs_question_refresh:
+                if session_count == 0:
+                    template_id = int(template_row["id"])
+                    execute("DELETE FROM survey_questions WHERE template_id = %s", (template_id,))
+                    execute(
+                        """
+                        UPDATE survey_templates
+                        SET title = %s, description = %s, audience = %s, status = %s, is_anonymous = %s, updated_at = %s
+                        WHERE id = %s
+                        """,
+                        (
+                            customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
+                            customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
+                            customer_surveys.SURVEY_AUDIENCE_CLIENT,
+                            customer_surveys.SURVEY_STATUS_ACTIVE,
+                            False,
+                            now,
+                            template_id,
+                        ),
+                    )
+                    should_insert_questions = True
+                else:
+                    template_id = int(template_row["id"])
+                    execute(
+                        """
+                        UPDATE survey_templates
+                        SET title = %s, description = %s, audience = %s, status = %s, is_anonymous = %s, updated_at = %s
+                        WHERE id = %s
+                        """,
+                        (
+                            customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
+                            customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
+                            customer_surveys.SURVEY_AUDIENCE_CLIENT,
+                            customer_surveys.SURVEY_STATUS_ACTIVE,
+                            False,
+                            now,
+                            template_id,
+                        ),
+                    )
+                    for index, question in enumerate(default_questions, start=1):
+                        cursor = execute(
+                            """
+                            UPDATE survey_questions
+                            SET question_type = %s,
+                                text = %s,
+                                topic = %s,
+                                required = %s,
+                                anonymity_mode = %s,
+                                config = %s,
+                                updated_at = %s
+                            WHERE template_id = %s AND sort_order = %s
+                            """,
+                            (
+                                question["question_type"],
+                                question["text"],
+                                question.get("topic"),
+                                bool(question.get("required", True)),
+                                customer_surveys.normalize_question_anonymity_mode(question.get("anonymity_mode")),
+                                json.dumps(question.get("config") or {}, ensure_ascii=False),
+                                now,
+                                template_id,
+                                index,
+                            ),
+                        )
+                        if cursor.rowcount == 0:
+                            execute(
+                                """
+                                INSERT INTO survey_questions (
+                                    template_id, sort_order, question_type, text, topic,
+                                    required, anonymity_mode, config, created_at, updated_at
+                                )
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                """,
+                                (
+                                    template_id,
+                                    index,
+                                    question["question_type"],
+                                    question["text"],
+                                    question.get("topic"),
+                                    bool(question.get("required", True)),
+                                    customer_surveys.normalize_question_anonymity_mode(question.get("anonymity_mode")),
+                                    json.dumps(question.get("config") or {}, ensure_ascii=False),
+                                    now,
+                                    now,
+                                ),
+                            )
+
+        if template_id is not None and should_insert_questions:
+            for index, question in enumerate(default_questions, start=1):
+                execute(
+                    """
+                    INSERT INTO survey_questions (
+                        template_id, sort_order, question_type, text, topic,
+                        required, anonymity_mode, config, created_at, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        template_id,
+                        index,
+                        question["question_type"],
+                        question["text"],
+                        question.get("topic"),
+                        bool(question.get("required", True)),
+                        customer_surveys.normalize_question_anonymity_mode(question.get("anonymity_mode")),
+                        json.dumps(question.get("config") or {}, ensure_ascii=False),
+                        now,
+                        now,
+                    ),
+                )
+
+
 def _init_db() -> None:
     tables_sql = [
         """
@@ -1897,189 +2080,7 @@ def _init_db() -> None:
                     (title, text, sort_order, now),
                 )
 
-    with _lock:
-        now = datetime.now(timezone.utc).isoformat()
-        default_questions = customer_surveys.default_after_csat_questions()
-        template_row = execute(
-            """
-            SELECT st.id, st.title, st.trigger_type, COUNT(DISTINCT sq.id) AS question_count,
-                   COUNT(DISTINCT ss.id) AS session_count
-            FROM survey_templates st
-            LEFT JOIN survey_questions sq ON sq.template_id = st.id
-            LEFT JOIN survey_sessions ss ON ss.template_id = st.id
-            WHERE st.audience = %s
-              AND st.status = %s
-              AND (st.trigger_type = %s OR st.title = %s)
-            GROUP BY st.id, st.title, st.trigger_type
-            ORDER BY CASE WHEN st.title = %s THEN 0 ELSE 1 END,
-                     COUNT(DISTINCT sq.id) DESC, st.updated_at DESC, st.id DESC
-            LIMIT 1
-            """,
-            (
-                customer_surveys.SURVEY_AUDIENCE_CLIENT,
-                customer_surveys.SURVEY_STATUS_ACTIVE,
-                customer_surveys.SURVEY_TRIGGER_PERIODIC,
-                customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
-                customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
-            ),
-        ).fetchone()
-
-        template_id: int | None = None
-        should_insert_questions = False
-        if template_row is None:
-            template = execute(
-                """
-                INSERT INTO survey_templates (
-                    title, description, audience, status, trigger_type, periodic_interval,
-                    scheduled_at, launch_rules, is_anonymous, created_by, created_at, updated_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (
-                    customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
-                    customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
-                    customer_surveys.SURVEY_AUDIENCE_CLIENT,
-                    customer_surveys.SURVEY_STATUS_ACTIVE,
-                    customer_surveys.SURVEY_TRIGGER_AFTER_EMPLOYEE_CSAT,
-                    None,
-                    None,
-                    json.dumps([{"type": customer_surveys.SURVEY_TRIGGER_AFTER_EMPLOYEE_CSAT, "dates": []}], ensure_ascii=False),
-                    False,
-                    None,
-                    now,
-                    now,
-                ),
-            ).fetchone()
-            if template:
-                template_id = int(template["id"])
-                should_insert_questions = True
-        else:
-            existing_questions = execute(
-                """
-                SELECT sort_order, question_type, text, required
-                FROM survey_questions
-                WHERE template_id = %s
-                ORDER BY sort_order ASC, id ASC
-                """,
-                (int(template_row["id"]),),
-            ).fetchall()
-            question_count = int(template_row["question_count"] or 0)
-            session_count = int(template_row["session_count"] or 0)
-            is_periodic_seed = template_row.get("trigger_type") == customer_surveys.SURVEY_TRIGGER_PERIODIC
-            is_default_seed = is_periodic_seed or template_row.get("title") == customer_surveys.DEFAULT_AFTER_CSAT_TITLE
-            broken_text = "???" in str(template_row.get("title") or "")
-            needs_question_refresh = customer_surveys.default_after_csat_questions_need_refresh(existing_questions)
-            if is_default_seed and (question_count < len(default_questions) or broken_text or needs_question_refresh):
-                if session_count == 0:
-                    template_id = int(template_row["id"])
-                    execute("DELETE FROM survey_questions WHERE template_id = %s", (template_id,))
-                    execute(
-                        """
-                        UPDATE survey_templates
-                        SET title = %s, description = %s, audience = %s, status = %s, is_anonymous = %s, updated_at = %s
-                        WHERE id = %s
-                        """,
-                        (
-                            customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
-                            customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
-                            customer_surveys.SURVEY_AUDIENCE_CLIENT,
-                            customer_surveys.SURVEY_STATUS_ACTIVE,
-                            False,
-                            now,
-                            template_id,
-                        ),
-                    )
-                    should_insert_questions = True
-                else:
-                    template_id = int(template_row["id"])
-                    execute(
-                        """
-                        UPDATE survey_templates
-                        SET title = %s, description = %s, audience = %s, status = %s, is_anonymous = %s, updated_at = %s
-                        WHERE id = %s
-                        """,
-                        (
-                            customer_surveys.DEFAULT_AFTER_CSAT_TITLE,
-                            customer_surveys.DEFAULT_AFTER_CSAT_DESCRIPTION,
-                            customer_surveys.SURVEY_AUDIENCE_CLIENT,
-                            customer_surveys.SURVEY_STATUS_ACTIVE,
-                            False,
-                            now,
-                            template_id,
-                        ),
-                    )
-                    for index, question in enumerate(default_questions, start=1):
-                        cursor = execute(
-                            """
-                            UPDATE survey_questions
-                            SET question_type = %s,
-                                text = %s,
-                                topic = %s,
-                                required = %s,
-                                anonymity_mode = %s,
-                                config = %s,
-                                updated_at = %s
-                            WHERE template_id = %s AND sort_order = %s
-                            """,
-                            (
-                                question["question_type"],
-                                question["text"],
-                                question.get("topic"),
-                                bool(question.get("required", True)),
-                                customer_surveys.normalize_question_anonymity_mode(question.get("anonymity_mode")),
-                                json.dumps(question.get("config") or {}, ensure_ascii=False),
-                                now,
-                                template_id,
-                                index,
-                            ),
-                        )
-                        if cursor.rowcount == 0:
-                            execute(
-                                """
-                                INSERT INTO survey_questions (
-                                    template_id, sort_order, question_type, text, topic,
-                                    required, anonymity_mode, config, created_at, updated_at
-                                )
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                """,
-                                (
-                                    template_id,
-                                    index,
-                                    question["question_type"],
-                                    question["text"],
-                                    question.get("topic"),
-                                    bool(question.get("required", True)),
-                                    customer_surveys.normalize_question_anonymity_mode(question.get("anonymity_mode")),
-                                    json.dumps(question.get("config") or {}, ensure_ascii=False),
-                                    now,
-                                    now,
-                                ),
-                            )
-
-        if template_id is not None and should_insert_questions:
-            for index, question in enumerate(default_questions, start=1):
-                execute(
-                    """
-                    INSERT INTO survey_questions (
-                        template_id, sort_order, question_type, text, topic,
-                        required, anonymity_mode, config, created_at, updated_at
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        template_id,
-                        index,
-                        question["question_type"],
-                        question["text"],
-                        question.get("topic"),
-                        bool(question.get("required", True)),
-                        customer_surveys.normalize_question_anonymity_mode(question.get("anonymity_mode")),
-                        json.dumps(question.get("config") or {}, ensure_ascii=False),
-                        now,
-                        now,
-                    ),
-                )
+    _ensure_default_after_csat_survey_template()
 
 
 def _sync_sequence(table: str, column: str = "id") -> None:
@@ -3534,6 +3535,16 @@ def list_operator_rating_targets(
                 """,
                 (appeal_id,),
             ).fetchall()
+            if not rows:
+                rows = execute(
+                    """
+                    SELECT id, operator_name, messages_sent, response_count
+                    FROM dialog_operator_stats
+                    WHERE dialog_id = %s AND appeal_id IS NULL
+                    ORDER BY messages_sent DESC, response_count DESC, operator_name ASC
+                    """,
+                    (dialog_id,),
+                ).fetchall()
         else:
             rows = execute(
                 """
@@ -5174,12 +5185,12 @@ def ensure_active_chat_dialog(
             # Update section if provided
             if section:
                 execute(
-                    "UPDATE chat_dialogs SET section = %s, operator_mode = 0, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
+                    "UPDATE chat_dialogs SET section = %s, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
                     (section, now, dialog_id),
                 )
             else:
                 execute(
-                    "UPDATE chat_dialogs SET operator_mode = 0, last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
+                    "UPDATE chat_dialogs SET last_message_at = COALESCE(last_message_at, %s) WHERE id = %s",
                     (now, dialog_id),
                 )
             execute(
@@ -8188,16 +8199,21 @@ def duplicate_survey_template(template_id: int, *, created_by: int | None = None
 
 
 def delete_survey_template(template_id: int) -> bool:
+    now = datetime.now(timezone.utc).isoformat()
     with _lock:
         row = execute(
             "SELECT status FROM survey_templates WHERE id = %s",
             (int(template_id),),
         ).fetchone()
-        if row is None or row.get("status") != customer_surveys.SURVEY_STATUS_DRAFT:
+        if row is None:
             return False
-        if _has_survey_sessions(int(template_id)):
-            return False
-        cursor = execute("DELETE FROM survey_templates WHERE id = %s", (int(template_id),))
+        if row.get("status") == customer_surveys.SURVEY_STATUS_DRAFT and not _has_survey_sessions(int(template_id)):
+            cursor = execute("DELETE FROM survey_templates WHERE id = %s", (int(template_id),))
+        else:
+            cursor = execute(
+                "UPDATE survey_templates SET status = %s, updated_at = %s WHERE id = %s",
+                (customer_surveys.SURVEY_STATUS_ARCHIVED, now, int(template_id)),
+            )
     return cursor.rowcount > 0
 
 

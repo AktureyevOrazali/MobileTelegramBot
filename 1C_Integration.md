@@ -1001,7 +1001,10 @@
 &НаСервере
 Функция СформироватьHTMLКнопокСотрудниковОпроса(Сообщения)
     Результат = "<div class='msg-buttons survey-buttons'>";
-    ЕстьКнопки = Ложь;
+    Результат = Результат +
+        "<a href='#' class='qa-btn qa-survey-choice' data-button-id='SurveyAnswer_Нет таких сотрудников' " +
+        "data-answer-label='Нет таких сотрудников' onclick='return false;'>Нет таких сотрудников</a>";
+    ЕстьКнопки = Истина;
     УжеДобавлены = ",";
 
     Попытка

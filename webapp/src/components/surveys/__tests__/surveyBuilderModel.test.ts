@@ -37,7 +37,7 @@ const question = (patch: Partial<SurveyQuestion> = {}): SurveyQuestion => ({
 });
 
 describe('surveyBuilderModel', () => {
-  it('separates active template from saved templates', () => {
+  it('separates active template from visible saved templates', () => {
     const groups = buildBuilderTemplateGroups([
       template({ id: 1, status: 'active', title: 'Active survey' }),
       template({ id: 2, status: 'draft', title: 'Draft survey' }),
@@ -45,7 +45,7 @@ describe('surveyBuilderModel', () => {
     ]);
 
     expect(groups.activeTemplate?.title).toBe('Active survey');
-    expect(groups.savedTemplates.map((item) => item.title)).toEqual(['Draft survey', 'Archive survey']);
+    expect(groups.savedTemplates.map((item) => item.title)).toEqual(['Draft survey']);
   });
 
   it('builds compact previews for every approved question type', () => {

@@ -3,6 +3,7 @@ import type { EChartsOption } from 'echarts';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiClient } from '../api/ApiClient';
 import EChartsWrapper from '../components/EChartsWrapper';
+import LoadingEstimate from '../components/LoadingEstimate';
 import { SurveyBuilderSection } from '../components/surveys/SurveyBuilderSection';
 import {
   createBlankSurveyQuestion,
@@ -338,7 +339,7 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
   const [ledgerFilters, setLedgerFilters] = useState<RatingLedgerFilters>({ limit: 50, offset: 0 });
 
   const templates = useMemo(
-    () => data.templates.filter((template) => template.audience === builderAudience),
+    () => data.templates.filter((template) => template.audience === builderAudience && template.status !== 'archived'),
     [builderAudience, data.templates],
   );
   const selectedLedgerEntry = useMemo<RatingLedgerEntry | null>(
@@ -501,8 +502,14 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
           <button
             type="button"
             className="surveys-button surveys-button--primary"
-            onClick={() => void (activeSection === 'employees' ? loadEmployeeAnalytics() : data.load())}
-            disabled={activeSection === 'employees' ? employeeLoading : data.isLoading}
+            onClick={() => void (
+              activeSection === 'employees'
+                ? loadEmployeeAnalytics()
+                : activeSection === 'ratings'
+                  ? loadRatings()
+                  : data.load()
+            )}
+            disabled={activeSection === 'employees' ? employeeLoading : activeSection === 'ratings' ? ratingsLoading : data.isLoading}
           >
             Обновить
           </button>
@@ -560,7 +567,7 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
       ) : null}
 
       {activeSection === 'employees' ? (
-        <EmployeeSurveyAnalytics analytics={employeeAnalytics} error={employeeError} />
+        <EmployeeSurveyAnalytics analytics={employeeAnalytics} error={employeeError} isLoading={employeeLoading} />
       ) : null}
 
       {activeSection === 'ratings' ? (
@@ -913,6 +920,7 @@ const ClientSurveyAnalytics: React.FC<{
 }> = ({
   analytics,
   error,
+  isLoading,
   title = 'Аналитика опроса клиентов',
   emptyText = 'Пока нет завершенных клиентских опросов.',
   scoreTitle = 'Клиентский CSAT',
@@ -978,7 +986,14 @@ const ClientSurveyAnalytics: React.FC<{
       </div>
 
       {error ? <div className="surveys-alert">{error}</div> : null}
-      {!hasAnalytics ? (
+      {isLoading ? (
+        <LoadingEstimate
+          title="Загружаем аналитику опросов"
+          description="Собираем ответы, оценки и динамику по анкетам."
+          className="loading-estimate--panel"
+        />
+      ) : null}
+      {!hasAnalytics && !isLoading ? (
         <div className="surveys-assessment-card">
           <EmptyState text={emptyText} />
         </div>
@@ -1131,7 +1146,8 @@ const ClientSurveyAnalytics: React.FC<{
 const EmployeeSurveyAnalytics: React.FC<{
   analytics: EmployeeClientAssessmentAnalytics | null;
   error: string | null;
-}> = ({ analytics, error }) => {
+  isLoading?: boolean;
+}> = ({ analytics, error, isLoading = false }) => {
   const monthlyScores = analytics?.monthlyScores ?? [];
   const lineOption = useMemo(() => createAssessmentLineOption(
     monthlyScores.map((item) => formatShortMonth(item.month)),
@@ -1162,6 +1178,7 @@ const EmployeeSurveyAnalytics: React.FC<{
     { label: 'Повторы', value: (analytics?.repeatedRequestShare ?? 0) * 100 },
     { label: 'Первые обращения', value: (analytics?.firstContactShare ?? 0) * 100 },
   ];
+  const hasEmployeeAnalytics = Boolean(analytics && analytics.totalAssessments > 0);
 
   return (
     <section className="surveys-assessment">
@@ -1178,11 +1195,18 @@ const EmployeeSurveyAnalytics: React.FC<{
       </div>
 
       {error ? <div className="surveys-alert">{error}</div> : null}
-      {!analytics || analytics.totalAssessments === 0 ? (
+      {isLoading ? (
+        <LoadingEstimate
+          title="Загружаем аналитику опросов сотрудников"
+          description="Собираем внутренние оценки, причины и динамику."
+          className="loading-estimate--panel"
+        />
+      ) : null}
+      {!hasEmployeeAnalytics && !isLoading ? (
         <div className="surveys-assessment-card">
           <EmptyState text="Пока нет заполненных опросов сотрудников." />
         </div>
-      ) : (
+      ) : hasEmployeeAnalytics && analytics ? (
         <>
           <div className="surveys-assessment-grid surveys-assessment-grid--hero">
             <section className="surveys-assessment-card surveys-assessment-card--quality">
@@ -1337,7 +1361,7 @@ const EmployeeSurveyAnalytics: React.FC<{
             </section>
           </div>
         </>
-      )}
+      ) : null}
     </section>
   );
 };
@@ -1464,6 +1488,13 @@ const RatingsAnalytics: React.FC<{
         </div>
 
         {error ? <div className="surveys-alert">{error}</div> : null}
+        {isLoading ? (
+          <LoadingEstimate
+            title="Загружаем сводную аналитику"
+            description="Собираем опросы, оценки ИИ, матрицу и реестр."
+            className="loading-estimate--panel"
+          />
+        ) : null}
 
         <div className="surveys-ratings-entities">
           <EntitySummaryCard

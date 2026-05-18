@@ -22,6 +22,16 @@ describe('surveys app-sidebar layout', () => {
     expect(normalizedCss).toContain('.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-panel > .surveys-panel__body {\n  min-height: 0 !important;\n  overflow-y: auto !important;');
     expect(normalizedCss).toContain('.app-shell--surveys .surveys-page--app-sidebar > .surveys-assessment {\n  min-height: 0 !important;\n  overflow-y: auto !important;');
   });
+
+  it('overrides survey sidebar surfaces and form controls in dark theme', () => {
+    expect(normalizedCss).toContain('[data-theme=\'dark\'] .app-shell--surveys .surveys-page--app-sidebar {');
+    expect(normalizedCss).toContain('[data-theme=\'dark\'] .app-shell--surveys .surveys-page--app-sidebar .surveys-hero,');
+    expect(normalizedCss).toContain('[data-theme=\'dark\'] .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card,');
+    expect(normalizedCss).toContain('[data-theme=\'dark\'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-card,');
+    expect(normalizedCss).toContain('background: var(--surface-color) !important;');
+    expect(normalizedCss).toContain('[data-theme=\'dark\'] .app-shell--surveys .surveys-page--app-sidebar .surveys-field input,');
+    expect(normalizedCss).toContain('background: var(--input-bg) !important;');
+  });
 });
 
 describe('employee assessment analytics styling', () => {

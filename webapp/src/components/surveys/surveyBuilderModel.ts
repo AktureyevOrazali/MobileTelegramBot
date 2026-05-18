@@ -14,7 +14,9 @@ const launchLabels: Record<string, string> = {
 
 export function buildBuilderTemplateGroups(templates: SurveyTemplate[]): BuilderTemplateGroups {
   const activeTemplate = templates.find((template) => template.status === 'active') ?? null;
-  const savedTemplates = templates.filter((template) => template.id !== activeTemplate?.id);
+  const savedTemplates = templates.filter((template) => (
+    template.status !== 'archived' && template.id !== activeTemplate?.id
+  ));
   return { activeTemplate, savedTemplates };
 }
 

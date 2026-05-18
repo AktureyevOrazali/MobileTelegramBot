@@ -19,6 +19,7 @@ SUPPLIER_BIN = os.getenv("SUPPLIER_BIN", "").strip()
 
 CACHE_TTL_SECONDS = 300
 BATCH_CACHE_TTL_SECONDS = 1800
+CONTRACT_PAGE_LIMIT = 200
 
 _contract_cache: Dict[str, Dict[str, Any]] = {}
 _contract_cache_expiry: Dict[str, float] = {}
@@ -74,10 +75,11 @@ def _get_customer_name_ru(contract: Dict[str, Any]) -> str | None:
     return customer.get("nameRu")
 
 
-def _build_contract_query_payload(supplier_bin: str) -> Dict[str, Any]:
+def _build_contract_query_payload(supplier_bin: str, *, after: int | None = None) -> Dict[str, Any]:
     query = """
-    query Contract($supplierBiin: String!) {
-        Contract(filter: { supplierBiin: $supplierBiin }) {
+    query Contract($supplierBiin: String!, $limit: Int, $after: Int) {
+        Contract(filter: { supplierBiin: $supplierBiin }, limit: $limit, after: $after) {
+            id
             customerLegalAddress
             customerBankNameRu
             customerBin
@@ -89,9 +91,15 @@ def _build_contract_query_payload(supplier_bin: str) -> Dict[str, Any]:
         }
     }
     """
+    variables: Dict[str, Any] = {
+        "supplierBiin": supplier_bin,
+        "limit": CONTRACT_PAGE_LIMIT,
+    }
+    if after is not None:
+        variables["after"] = after
     return {
         "query": query,
-        "variables": {"supplierBiin": supplier_bin},
+        "variables": variables,
     }
 
 
@@ -102,14 +110,53 @@ def _fetch_contracts_for_supplier(supplier_bin: str) -> List[Dict[str, Any]]:
         "Authorization": f"Bearer {GOSZAKUP_API_TOKEN}",
     }
 
-    payload = _build_contract_query_payload(supplier_bin)
-
+    contracts_data: List[Dict[str, Any]] = []
+    after: int | None = None
+    seen_after: set[int] = set()
     with httpx.Client(timeout=30.0) as client:
-        response = client.post(GOSZAKUP_API_URL, json=payload, headers=headers)
-        response.raise_for_status()
-        data = response.json()
+        while True:
+            payload = _build_contract_query_payload(supplier_bin, after=after)
+            response = client.post(GOSZAKUP_API_URL, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
 
-    contracts_data = data.get("data", {}).get("Contract", []) or []
+            errors = data.get("errors")
+            if errors:
+                raise RuntimeError(f"Goszakup GraphQL errors for supplier {supplier_bin}: {errors}")
+
+            page_contracts = data.get("data", {}).get("Contract", []) or []
+            contracts_data.extend(page_contracts)
+
+            page_info = (data.get("extensions") or {}).get("pageInfo") or {}
+            page_info_present = bool(page_info)
+            has_next_page = bool(page_info.get("hasNextPage"))
+            next_after = page_info.get("lastId") if has_next_page else None
+
+            if page_info_present and not has_next_page:
+                break
+
+            if next_after is None and len(page_contracts) >= CONTRACT_PAGE_LIMIT:
+                ids = [
+                    int(contract["id"])
+                    for contract in page_contracts
+                    if contract.get("id") is not None
+                ]
+                next_after = min(ids) if ids else None
+
+            if next_after is None:
+                break
+
+            next_after = int(next_after)
+            if next_after in seen_after:
+                logger.warning(
+                    "Stopping contract pagination for supplier %s after repeated cursor %s",
+                    supplier_bin,
+                    next_after,
+                )
+                break
+            seen_after.add(next_after)
+            after = next_after
+
     logger.info("Loaded %d contracts for supplier %s", len(contracts_data), supplier_bin)
     return contracts_data
 
@@ -234,4 +281,3 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
 
     _store_cached_contract(customer_bin, result)
     return result
-

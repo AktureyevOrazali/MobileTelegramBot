@@ -4,14 +4,10 @@
  */
 
 import { UserBinAssignment } from '../types';
+import { ROLE_LABELS } from './roles';
 
 /** Maps a role ID to a human-readable Russian label. */
-export const roleLabels: Record<string, string> = {
-    admin: 'Администратор',
-    moderator: 'Модератор',
-    operator: 'Оператор',
-    hr: 'Кадровик',
-};
+export const roleLabels: Record<string, string> = ROLE_LABELS;
 
 /**
  * Formats a Date for a `<input type="datetime-local">` value string.

@@ -2,6 +2,7 @@
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useApi } from './context/ApiContext';
 import AuthPage from './pages/AuthPage';
+import { getRoleLabel } from './utils/roles';
 import { sanitizeUiText } from './utils/text';
 
 const DialogsPage = React.lazy(() => import('./pages/DialogsPage'));
@@ -53,12 +54,7 @@ const App: React.FC = () => {
 
   const currentUser = session?.user ?? null;
   const isAdmin = currentUser?.isAdmin ?? false;
-  const currentRoleLabel =
-    currentUser?.role === 'admin'
-      ? 'Администратор'
-      : currentUser?.role === 'moderator'
-        ? 'Модератор'
-        : 'Оператор';
+  const currentRoleLabel = getRoleLabel(currentUser?.role);
   const safeCurrentUserName = useMemo(
     () => sanitizeUiText(currentUser?.name) || sanitizeUiText(currentUser?.login) || 'Пользователь',
     [currentUser?.login, currentUser?.name],

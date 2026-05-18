@@ -1,4 +1,4 @@
-export type AppRole = 'admin' | 'moderator' | 'operator' | 'hr' | string;
+export type KnownAppRole = 'admin' | 'moderator' | 'operator' | 'hr';
 
 export const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',

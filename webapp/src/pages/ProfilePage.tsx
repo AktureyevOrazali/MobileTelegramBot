@@ -4,6 +4,7 @@ import { AuthSession } from '../types';
 import Modal from '../components/Modal';
 import { formatDateTime } from '../utils/date';
 import { extractErrorMessage } from '../utils/errors';
+import { getRoleLabel } from '../utils/roles';
 import { validatePassword, validatePasswordMatch } from '../utils/validation';
 
 interface ProfilePageProps {
@@ -57,7 +58,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
   }, [banner]);
 
   const isAdmin = useMemo(() => user.role === 'admin', [user.role]);
-  const roleLabel = user.role === 'admin' ? '\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440' : user.role === 'moderator' ? '\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440' : '\u041e\u043f\u0435\u0440\u0430\u0442\u043e\u0440';
+  const roleLabel = getRoleLabel(user.role);
 
   const saveProfile = async () => {
     setSaving(true);

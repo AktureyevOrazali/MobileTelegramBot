@@ -370,10 +370,11 @@
 
 .hr-employee-card {
   min-height: 210px;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   min-width: 0;
-  flex-direction: column;
   align-items: flex-start;
+  align-content: start;
   gap: 8px;
   padding: 16px;
   border: 1px solid var(--border-color);
@@ -386,19 +387,28 @@
 }
 
 .hr-employee-card .hr-avatar {
+  grid-column: 1;
+  grid-row: 1;
   width: 54px;
   height: 54px;
 }
 
 .hr-employee-card__completion {
-  margin-left: auto;
-  margin-top: -62px;
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
   color: var(--brand-color);
   font-size: 1.25rem;
   font-weight: 800;
 }
 
+.hr-employee-card > strong,
+.hr-employee-card > span:not(.hr-employee-card__completion):not(.hr-employee-card__badges) {
+  grid-column: 1 / -1;
+}
+
 .hr-employee-card__badges {
+  grid-column: 1 / -1;
   margin-top: auto;
 }
 

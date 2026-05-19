@@ -31,4 +31,20 @@ describe('HR mock data', () => {
     expect(new Set(hrRequests.map((request) => request.status))).toContain('new');
     expect(new Set(hrRequests.map((request) => request.status))).toContain('needsInfo');
   });
+
+  it('keeps request and calendar employee references consistent', () => {
+    const employeesById = new Map(hrEmployees.map((employee) => [employee.id, employee]));
+
+    for (const request of hrRequests) {
+      const employee = employeesById.get(request.employeeId);
+      expect(employee, request.employeeId).toBeDefined();
+      expect(request.employeeName).toBe(employee?.fullName);
+      expect(request.employeePhotoUrl).toBe(employee?.photoUrl);
+      expect(request.department).toBe(employee?.department);
+    }
+
+    for (const event of hrCalendarEvents) {
+      expect(employeesById.has(event.employeeId), event.employeeId).toBe(true);
+    }
+  });
 });

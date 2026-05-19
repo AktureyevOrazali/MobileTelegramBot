@@ -2,13 +2,9 @@ import React, { useState } from 'react';
 import { hrEmployees } from './hrMockData';
 import type { HrEmployee } from './hrTypes';
 
-const completenessLabel = (employee: HrEmployee) => {
-  if (employee.documentCompleteness >= 90) {
-    return 'Документы готовы';
-  }
-
-  return employee.id === 'emp-bota-aitzhanova' ? 'Документы неполные' : 'Документы требуют обновления';
-};
+const completenessLabel = (employee: HrEmployee) => (
+  employee.documentCompleteness < 90 ? 'Документы неполные' : 'Документы готовы'
+);
 
 const HrEmployeesTab: React.FC = () => {
   const [selectedEmployee, setSelectedEmployee] = useState<HrEmployee | null>(null);
@@ -22,6 +18,7 @@ const HrEmployeesTab: React.FC = () => {
             data-testid="hr-employee-card"
             key={employee.id}
             type="button"
+            aria-pressed={selectedEmployee?.id === employee.id}
             onClick={() => setSelectedEmployee(employee)}
           >
             <img className="hr-avatar" src={employee.photoUrl} alt="" />

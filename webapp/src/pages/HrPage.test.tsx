@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import HrPage from './HrPage';
+import { hrRequests, hrTemplates } from './hr/hrMockData';
 
 describe('HrPage', () => {
   it('renders compact header stats and HR tabs', () => {
@@ -29,7 +30,7 @@ describe('HrPage', () => {
   it('shows request details and quick actions on the requests tab', () => {
     render(<HrPage />);
 
-    expect(screen.getByText('Ежегодный оплачиваемый отпуск на 6 рабочих дней.')).toBeInTheDocument();
+    expect(screen.getByText(hrRequests[0].summary)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Одобрить' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Отклонить' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Запросить данные' })).toBeInTheDocument();
@@ -41,7 +42,7 @@ describe('HrPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Сотрудники' }));
 
     expect(screen.getByText('Арман Темирланов')).toBeInTheDocument();
-    expect(screen.getByText('Документы неполные')).toBeInTheDocument();
+    expect(screen.getAllByText('Документы неполные').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByTestId('hr-employee-card').length).toBeGreaterThanOrEqual(6);
   });
 
@@ -52,9 +53,9 @@ describe('HrPage', () => {
     expect(screen.getByText('Пн 18')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Шаблоны' }));
-    expect(screen.getByText('Заявление на отпуск')).toBeInTheDocument();
+    expect(screen.getAllByText(hrTemplates[0].title).length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
-    expect(screen.getByText('decision-date')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Дата/ })).toBeInTheDocument();
   });
 });

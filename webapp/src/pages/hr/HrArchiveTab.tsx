@@ -9,7 +9,7 @@ const HrArchiveTab: React.FC = () => (
           <th scope="col">Сотрудник</th>
           <th scope="col">Тип</th>
           <th scope="col">Статус</th>
-          <th scope="col">Дата <span className="sr-only">decision-date</span></th>
+          <th scope="col">Дата</th>
           <th scope="col">Ответственный</th>
         </tr>
       </thead>

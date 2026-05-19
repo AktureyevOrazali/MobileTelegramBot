@@ -1,10 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { hrTemplates, requestTypeLabels } from './hrMockData';
 
-const getTemplateTitle = (templateId: string, title: string) => (
-  templateId === 'tpl-vacation-standard' ? 'Заявление на отпуск' : title
-);
-
 const HrTemplatesTab: React.FC = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState(hrTemplates[0]?.id ?? '');
 
@@ -25,9 +21,10 @@ const HrTemplatesTab: React.FC = () => {
             className={`hr-template-item ${template.id === selectedTemplate.id ? 'hr-template-item--active' : ''}`}
             key={template.id}
             type="button"
+            aria-pressed={template.id === selectedTemplate.id}
             onClick={() => setSelectedTemplateId(template.id)}
           >
-            <strong>{getTemplateTitle(template.id, template.title)}</strong>
+            <strong>{template.title}</strong>
             <span className="hr-badge">{requestTypeLabels[template.type]}</span>
             <time dateTime={template.updatedAt}>{template.updatedAt}</time>
           </button>

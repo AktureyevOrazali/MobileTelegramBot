@@ -20,10 +20,6 @@ const HrRequestsTab: React.FC = () => {
     return null;
   }
 
-  const selectedSummary = selectedRequest.id === 'req-2026-001'
-    ? 'Ежегодный оплачиваемый отпуск на 6 рабочих дней.'
-    : selectedRequest.summary;
-
   return (
     <div className="hr-requests-grid">
       <div className="hr-request-list" aria-label="Заявления сотрудников">
@@ -31,6 +27,7 @@ const HrRequestsTab: React.FC = () => {
           <button
             key={request.id}
             type="button"
+            aria-pressed={request.id === selectedRequest.id}
             className={`hr-request-row ${request.id === selectedRequest.id ? 'hr-request-row--active' : ''}`}
             onClick={() => setSelectedRequestId(request.id)}
           >
@@ -54,7 +51,7 @@ const HrRequestsTab: React.FC = () => {
           <span className={`hr-status hr-status--${selectedRequest.status}`}>{requestStatusLabels[selectedRequest.status]}</span>
         </div>
         <h3>{selectedRequest.employeeName}</h3>
-        <p>{selectedSummary}</p>
+        <p>{selectedRequest.summary}</p>
 
         <dl className="hr-meta-list">
           <div>

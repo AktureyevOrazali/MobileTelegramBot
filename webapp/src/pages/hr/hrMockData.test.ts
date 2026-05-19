@@ -44,7 +44,9 @@ describe('HR mock data', () => {
     }
 
     for (const event of hrCalendarEvents) {
-      expect(employeesById.has(event.employeeId), event.employeeId).toBe(true);
+      const employee = employeesById.get(event.employeeId);
+      expect(employee, event.employeeId).toBeDefined();
+      expect(event.employeeName).toBe(employee?.fullName);
     }
   });
 });

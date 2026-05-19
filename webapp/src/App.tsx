@@ -2,7 +2,7 @@
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useApi } from './context/ApiContext';
 import AuthPage from './pages/AuthPage';
-import { canAccessHr, getDefaultRouteForRole, getRoleLabel } from './utils/roles';
+import { canAccessHr, getDefaultRouteForRole, getRoleLabel, roleCanReply } from './utils/roles';
 import { sanitizeUiText } from './utils/text';
 
 const DialogsPage = React.lazy(() => import('./pages/DialogsPage'));
@@ -56,6 +56,8 @@ const App: React.FC = () => {
   const currentUser = session?.user ?? null;
   const isAdmin = currentUser?.isAdmin ?? false;
   const canOpenHr = canAccessHr(currentUser?.role);
+  const canOpenDialogs = roleCanReply(currentUser?.role);
+  const defaultRoute = getDefaultRouteForRole(currentUser?.role);
   const currentRoleLabel = getRoleLabel(currentUser?.role);
   const safeCurrentUserName = useMemo(
     () => sanitizeUiText(currentUser?.name) || sanitizeUiText(currentUser?.login) || 'Пользователь',
@@ -64,8 +66,9 @@ const App: React.FC = () => {
 
   const navigationTabs = useMemo(() => {
     if (!currentUser) return [] as { path: string; label: string; icon: React.ReactNode }[];
-    const tabs: { path: string; label: string; icon: React.ReactNode }[] = [
-      {
+    const tabs: { path: string; label: string; icon: React.ReactNode }[] = [];
+    if (canOpenDialogs) {
+      tabs.push({
         path: '/dialogs',
         label: 'Диалоги',
         icon: (
@@ -73,8 +76,8 @@ const App: React.FC = () => {
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
         ),
-      },
-    ];
+      });
+    }
     if (isAdmin) {
       tabs.push({
         path: '/dashboard',
@@ -125,7 +128,7 @@ const App: React.FC = () => {
       });
     }
     return tabs;
-  }, [canOpenHr, currentUser, isAdmin]);
+  }, [canOpenDialogs, canOpenHr, currentUser, isAdmin]);
 
   const profileInitials = useMemo(() => {
     const source = safeCurrentUserName.trim() || 'MB';
@@ -289,29 +292,32 @@ const App: React.FC = () => {
             <div key={location.pathname} className="app-page-transition">
               <Suspense fallback={<PageLoader />}>
                 <Routes location={location}>
-                  <Route path="/" element={<Navigate to={getDefaultRouteForRole(currentUser!.role)} replace />} />
-                  <Route path="/dialogs" element={<DialogsPage apiClient={apiClient} session={session} />} />
+                  <Route path="/" element={<Navigate to={defaultRoute} replace />} />
+                  <Route
+                    path="/dialogs"
+                    element={canOpenDialogs ? <DialogsPage apiClient={apiClient} session={session} /> : <Navigate to={defaultRoute} replace />}
+                  />
                   <Route
                     path="/dashboard"
-                    element={isAdmin ? <DashboardPage apiClient={apiClient} /> : <Navigate to="/dialogs" replace />}
+                    element={isAdmin ? <DashboardPage apiClient={apiClient} /> : <Navigate to={defaultRoute} replace />}
                   />
                   <Route
                     path="/admin"
-                    element={isAdmin ? <AdminPage apiClient={apiClient} currentUser={currentUser!} /> : <Navigate to="/dialogs" replace />}
+                    element={isAdmin ? <AdminPage apiClient={apiClient} currentUser={currentUser!} /> : <Navigate to={defaultRoute} replace />}
                   />
                   <Route
                     path="/surveys/*"
-                    element={isAdmin ? <SurveysPage apiClient={apiClient} /> : <Navigate to="/dialogs" replace />}
+                    element={isAdmin ? <SurveysPage apiClient={apiClient} /> : <Navigate to={defaultRoute} replace />}
                   />
                   <Route
                     path="/hr/*"
-                    element={canOpenHr ? <HrPage /> : <Navigate to={getDefaultRouteForRole(currentUser!.role)} replace />}
+                    element={canOpenHr ? <HrPage /> : <Navigate to={defaultRoute} replace />}
                   />
                   <Route
                     path="/profile"
                     element={<ProfilePage apiClient={apiClient} session={session} onSessionUpdate={setSession} onLogout={logout} />}
                   />
-                  <Route path="*" element={<Navigate to={getDefaultRouteForRole(currentUser!.role)} replace />} />
+                  <Route path="*" element={<Navigate to={defaultRoute} replace />} />
                 </Routes>
               </Suspense>
             </div>

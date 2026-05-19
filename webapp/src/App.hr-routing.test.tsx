@@ -77,9 +77,18 @@ describe('App HR routing', () => {
     expect(await screen.findByRole('heading', { name: 'Кадры' })).toBeInTheDocument();
     expect(screen.getByText('Кадровик')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Кадры/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('link')).toHaveLength(1);
     expect(screen.queryByRole('link', { name: /Дашборд/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Сотрудники/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Опросы/ })).not.toBeInTheDocument();
+  });
+
+  it('redirects HR users away from dialogs', async () => {
+    renderAppAt('/dialogs');
+
+    expect(await screen.findByRole('heading', { name: 'Кадры' })).toBeInTheDocument();
+    expect(screen.queryByTestId('dialogs-page')).not.toBeInTheDocument();
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/hr');
   });
 
   it('keeps HR users on the HR page for nested HR routes', async () => {

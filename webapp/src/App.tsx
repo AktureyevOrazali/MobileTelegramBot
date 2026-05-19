@@ -304,7 +304,7 @@ const App: React.FC = () => {
                     element={isAdmin ? <SurveysPage apiClient={apiClient} /> : <Navigate to="/dialogs" replace />}
                   />
                   <Route
-                    path="/hr"
+                    path="/hr/*"
                     element={canOpenHr ? <HrPage /> : <Navigate to={getDefaultRouteForRole(currentUser!.role)} replace />}
                   />
                   <Route

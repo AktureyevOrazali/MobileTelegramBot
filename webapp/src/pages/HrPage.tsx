@@ -1,5 +1,10 @@
 import React, { useMemo, useState } from 'react';
+import HrArchiveTab from './hr/HrArchiveTab';
+import HrCalendarTab from './hr/HrCalendarTab';
+import HrEmployeesTab from './hr/HrEmployeesTab';
 import { hrEmployees, hrRequests } from './hr/hrMockData';
+import HrRequestsTab from './hr/HrRequestsTab';
+import HrTemplatesTab from './hr/HrTemplatesTab';
 
 type HrTab = 'requests' | 'employees' | 'calendar' | 'templates' | 'archive';
 
@@ -59,11 +64,11 @@ const HrPage: React.FC = () => {
       </header>
 
       <section className="hr-panel">
-        {activeTab === 'requests' && <div>Заявления сотрудников</div>}
-        {activeTab === 'employees' && <div>Карточки сотрудников</div>}
-        {activeTab === 'calendar' && <div>Календарь сотрудников</div>}
-        {activeTab === 'templates' && <div>Шаблоны документов</div>}
-        {activeTab === 'archive' && <div>Архив заявлений</div>}
+        {activeTab === 'requests' && <HrRequestsTab />}
+        {activeTab === 'employees' && <HrEmployeesTab />}
+        {activeTab === 'calendar' && <HrCalendarTab />}
+        {activeTab === 'templates' && <HrTemplatesTab />}
+        {activeTab === 'archive' && <HrArchiveTab />}
       </section>
     </div>
   );

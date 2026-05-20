@@ -351,6 +351,14 @@ export interface UserProfile {
   canReply: boolean;
 }
 
+export interface HrEmployeeRaw extends UserProfileRaw {
+  schedule?: string;
+}
+
+export interface HrEmployee extends UserProfile {
+  schedule: string;
+}
+
 export interface AuthSession {
   token: string;
   user: UserProfile;
@@ -689,6 +697,78 @@ export interface ReplyTemplate {
   sortOrder: number;
   createdBy?: number | null;
   createdAt: Date;
+}
+
+export type HrRequestType = 'vacation' | 'advance' | 'sickLeave' | 'businessTrip' | 'certificate' | 'serviceLetter';
+export type HrRequestStatus = 'new' | 'review' | 'needsInfo' | 'approved' | 'rejected' | 'archived';
+export type HrTemplateStatus = 'active' | 'archived';
+
+export interface HrTemplateRaw {
+  id: number;
+  title: string;
+  type: HrRequestType;
+  description: string;
+  body: string;
+  variables: string[];
+  status: HrTemplateStatus;
+  created_by?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HrTemplate {
+  id: number;
+  title: string;
+  type: HrRequestType;
+  description: string;
+  body: string;
+  variables: string[];
+  status: HrTemplateStatus;
+  createdBy: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface HrRequestRaw {
+  id: number;
+  template_id?: number | null;
+  template_title: string;
+  type: HrRequestType;
+  employee_id?: number | null;
+  employee_name: string;
+  department: string;
+  status: HrRequestStatus;
+  values: Record<string, unknown>;
+  rendered_text: string;
+  summary: string;
+  period: string;
+  submitted_at: string;
+  updated_at: string;
+  decided_at?: string | null;
+  decided_by?: number | null;
+  decided_by_name?: string | null;
+  decision_comment: string;
+}
+
+export interface HrRequest {
+  id: number;
+  templateId: number | null;
+  templateTitle: string;
+  type: HrRequestType;
+  employeeId: number | null;
+  employeeName: string;
+  department: string;
+  status: HrRequestStatus;
+  values: Record<string, unknown>;
+  renderedText: string;
+  summary: string;
+  period: string;
+  submittedAt: Date;
+  updatedAt: Date;
+  decidedAt: Date | null;
+  decidedBy: number | null;
+  decidedByName: string | null;
+  decisionComment: string;
 }
 
 

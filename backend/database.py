@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import json
+import re
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -253,6 +254,8 @@ BACKEND_SCHEMA_TABLES: tuple[str, ...] = (
     "client_bins",
     "appeals",
     "reply_templates",
+    "hr_request_templates",
+    "hr_requests",
 )
 
 # Central catalog for schema governance. It lets us keep the "core vs analytics"
@@ -281,6 +284,8 @@ BACKEND_SCHEMA_TABLE_STATUS: dict[str, str] = {
     "organizations_without_contracts": TABLE_STATUS_DICTIONARY,
     "client_bins": TABLE_STATUS_LINK,
     "reply_templates": TABLE_STATUS_DICTIONARY,
+    "hr_request_templates": TABLE_STATUS_CORE,
+    "hr_requests": TABLE_STATUS_CORE,
     "outbox_onec": TABLE_STATUS_INTEGRATION,
     "dialog_stats": TABLE_STATUS_ANALYTICS,
     "dialog_operator_stats": TABLE_STATUS_ANALYTICS,
@@ -1051,6 +1056,48 @@ def _init_db() -> None:
             created_at TEXT NOT NULL
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS hr_request_templates (
+            id BIGSERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            request_type TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            body TEXT NOT NULL,
+            variables TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'active',
+            created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS hr_requests (
+            id BIGSERIAL PRIMARY KEY,
+            template_id BIGINT REFERENCES hr_request_templates(id) ON DELETE SET NULL,
+            employee_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            employee_name TEXT NOT NULL,
+            department TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'new',
+            values_json TEXT NOT NULL DEFAULT '{}',
+            rendered_text TEXT NOT NULL,
+            summary TEXT DEFAULT '',
+            period TEXT DEFAULT '',
+            submitted_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            decided_at TEXT,
+            decided_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            decided_by_name TEXT,
+            decision_comment TEXT DEFAULT ''
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_hr_requests_status_updated
+        ON hr_requests(status, updated_at DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_hr_requests_employee
+        ON hr_requests(employee_id, updated_at DESC)
+        """,
     ]
 
     with _lock:
@@ -1079,6 +1126,29 @@ def _init_db() -> None:
     _ensure_column("user_bins", "expires_at", "TEXT")
     _ensure_column("user_bins", "assigned_by", "BIGINT")
     _ensure_column("organizations_without_contracts", "customer_name_ru", "TEXT")
+    _ensure_column("hr_request_templates", "request_type", "TEXT")
+    _ensure_column("hr_request_templates", "description", "TEXT DEFAULT ''")
+    _ensure_column("hr_request_templates", "body", "TEXT")
+    _ensure_column("hr_request_templates", "variables", "TEXT DEFAULT '[]'")
+    _ensure_column("hr_request_templates", "status", "TEXT DEFAULT 'active'")
+    _ensure_column("hr_request_templates", "created_by", "BIGINT")
+    _ensure_column("hr_request_templates", "created_at", "TEXT")
+    _ensure_column("hr_request_templates", "updated_at", "TEXT")
+    _ensure_column("hr_requests", "template_id", "BIGINT")
+    _ensure_column("hr_requests", "employee_id", "BIGINT")
+    _ensure_column("hr_requests", "employee_name", "TEXT")
+    _ensure_column("hr_requests", "department", "TEXT DEFAULT ''")
+    _ensure_column("hr_requests", "status", "TEXT DEFAULT 'new'")
+    _ensure_column("hr_requests", "values_json", "TEXT DEFAULT '{}'")
+    _ensure_column("hr_requests", "rendered_text", "TEXT")
+    _ensure_column("hr_requests", "summary", "TEXT DEFAULT ''")
+    _ensure_column("hr_requests", "period", "TEXT DEFAULT ''")
+    _ensure_column("hr_requests", "submitted_at", "TEXT")
+    _ensure_column("hr_requests", "updated_at", "TEXT")
+    _ensure_column("hr_requests", "decided_at", "TEXT")
+    _ensure_column("hr_requests", "decided_by", "BIGINT")
+    _ensure_column("hr_requests", "decided_by_name", "TEXT")
+    _ensure_column("hr_requests", "decision_comment", "TEXT DEFAULT ''")
 
     # dialog_stats migration (extend existing table with new metric columns)
     _ensure_column("dialog_stats", "msg_total", "INTEGER DEFAULT 0")
@@ -1611,6 +1681,38 @@ def _init_db() -> None:
         constraint_name="fk_reply_templates_created_by_users",
         on_delete="SET NULL",
     )
+    _ensure_foreign_key(
+        "hr_request_templates",
+        "created_by",
+        "users",
+        "id",
+        constraint_name="fk_hr_request_templates_created_by_users",
+        on_delete="SET NULL",
+    )
+    _ensure_foreign_key(
+        "hr_requests",
+        "template_id",
+        "hr_request_templates",
+        "id",
+        constraint_name="fk_hr_requests_template_id_hr_request_templates",
+        on_delete="SET NULL",
+    )
+    _ensure_foreign_key(
+        "hr_requests",
+        "employee_id",
+        "users",
+        "id",
+        constraint_name="fk_hr_requests_employee_id_users",
+        on_delete="SET NULL",
+    )
+    _ensure_foreign_key(
+        "hr_requests",
+        "decided_by",
+        "users",
+        "id",
+        constraint_name="fk_hr_requests_decided_by_users",
+        on_delete="SET NULL",
+    )
 
     _ensure_check_constraint(
         "users",
@@ -1656,6 +1758,21 @@ def _init_db() -> None:
         "dialog_feedback_ratings",
         constraint_name="chk_dialog_feedback_ratings_rating_range",
         expression='"rating" BETWEEN 1 AND 5',
+    )
+    _ensure_check_constraint(
+        "hr_request_templates",
+        constraint_name="chk_hr_request_templates_status_known",
+        expression=_build_nullable_enum_check("status", HR_TEMPLATE_STATUSES),
+    )
+    _ensure_check_constraint(
+        "hr_request_templates",
+        constraint_name="chk_hr_request_templates_type_known",
+        expression=_build_nullable_enum_check("request_type", HR_REQUEST_TYPES),
+    )
+    _ensure_check_constraint(
+        "hr_requests",
+        constraint_name="chk_hr_requests_status_known",
+        expression=_build_nullable_enum_check("status", HR_REQUEST_STATUSES),
     )
     _ensure_check_constraint(
         "dialog_feedback_ratings",
@@ -2277,11 +2394,98 @@ def _ensure_column(table: str, column: str, definition: str) -> None:
 ROLE_ADMIN = "admin"
 ROLE_MODERATOR = "moderator"
 ROLE_OPERATOR = "operator"
-ALL_ROLES: Iterable[str] = (ROLE_ADMIN, ROLE_MODERATOR, ROLE_OPERATOR)
+ROLE_HR = "hr"
+ALL_ROLES: Iterable[str] = (ROLE_ADMIN, ROLE_MODERATOR, ROLE_OPERATOR, ROLE_HR)
+
+HR_REQUEST_TYPES: tuple[str, ...] = (
+    "vacation",
+    "advance",
+    "sickLeave",
+    "businessTrip",
+    "certificate",
+    "serviceLetter",
+)
+HR_TEMPLATE_STATUSES: tuple[str, ...] = ("active", "archived")
+HR_REQUEST_STATUSES: tuple[str, ...] = (
+    "new",
+    "review",
+    "needsInfo",
+    "approved",
+    "rejected",
+    "archived",
+)
+
+DEFAULT_HR_REQUEST_TEMPLATES: tuple[dict[str, Any], ...] = (
+    {
+        "title": "Заявление на отпуск",
+        "type": "vacation",
+        "description": "Ежегодный оплачиваемый отпуск или отпуск за свой счет.",
+        "body": "Прошу предоставить отпуск сотруднику {employee_name} с {start_date} по {end_date}. Основание: {reason}.",
+        "variables": ["start_date", "end_date", "reason"],
+    },
+    {
+        "title": "Заявление на командировку",
+        "type": "businessTrip",
+        "description": "Служебная командировка с указанием города и периода.",
+        "body": "Прошу оформить командировку для {employee_name} в город {city} на период {start_date} - {end_date}. Цель поездки: {purpose}.",
+        "variables": ["city", "start_date", "end_date", "purpose"],
+    },
+    {
+        "title": "Заявление на аванс",
+        "type": "advance",
+        "description": "Запрос аванса по заработной плате.",
+        "body": "Прошу выдать аванс сотруднику {employee_name} в размере {amount}. Причина: {reason}.",
+        "variables": ["amount", "reason"],
+    },
+    {
+        "title": "Справка с места работы",
+        "type": "certificate",
+        "description": "Справка для банка, визового центра или другой организации.",
+        "body": "Прошу подготовить справку с места работы для {employee_name}. Организация-получатель: {recipient}.",
+        "variables": ["recipient"],
+    },
+)
 
 
 def is_admin_like(role: str) -> bool:
     return role in (ROLE_ADMIN, ROLE_MODERATOR)
+
+
+def is_hr_staff(role: str) -> bool:
+    return role == ROLE_HR
+
+
+def can_manage_hr(role: str) -> bool:
+    return is_admin_like(role) or is_hr_staff(role)
+
+
+def _ensure_default_hr_request_templates() -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        row = execute("SELECT COUNT(*) AS cnt FROM hr_request_templates").fetchone()
+        if row and int(row["cnt"] or 0) > 0:
+            return
+        for template in DEFAULT_HR_REQUEST_TEMPLATES:
+            execute(
+                """
+                INSERT INTO hr_request_templates (
+                    title, request_type, description, body, variables, status,
+                    created_by, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    template["title"],
+                    template["type"],
+                    template["description"],
+                    template["body"],
+                    json.dumps(template["variables"], ensure_ascii=False),
+                    "active",
+                    None,
+                    now,
+                    now,
+                ),
+            )
 
 
 def _ensure_admin_account() -> None:
@@ -2328,6 +2532,7 @@ def _ensure_admin_account() -> None:
 _init_db()
 _sync_sequences()
 _ensure_admin_account()
+_ensure_default_hr_request_templates()
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -6192,6 +6397,32 @@ def list_users(query: str | None = None) -> List[dict]:
     ]
 
 
+def list_hr_employees(query: str | None = None) -> List[dict]:
+    filters: List[str] = ["COALESCE(u.is_approved, 0) = 1"]
+    params: List[object] = []
+    if query:
+        normalized = f"%{query.strip().lower()}%"
+        filters.append(
+            "(LOWER(u.email) LIKE %s OR LOWER(u.login) LIKE %s OR LOWER(u.name) LIKE %s OR LOWER(COALESCE(u.job_title, '')) LIKE %s)"
+        )
+        params.extend([normalized, normalized, normalized, normalized])
+    with _lock:
+        sql = [
+            f"SELECT {_user_columns('u')}",
+            "FROM users u",
+            "WHERE " + " AND ".join(filters),
+            "ORDER BY LOWER(u.name), u.created_at ASC",
+        ]
+        rows = execute("\n".join(sql), params).fetchall()
+    return [
+        {
+            **_sanitize_user_payload(_row_to_user(row)),  # type: ignore[arg-type]
+            "schedule": "09:00-18:00",
+        }
+        for row in rows
+    ]
+
+
 def list_pending_users() -> List[dict]:
     with _lock:
         rows = execute(
@@ -7810,6 +8041,351 @@ def delete_reply_template(template_id: int) -> bool:
             (template_id,),
         )
     return cursor.rowcount > 0
+
+
+# ============================================================================
+# HR Requests
+# ============================================================================
+
+
+def _load_hr_json(value: Any, fallback: Any) -> Any:
+    if value in (None, ""):
+        return fallback
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def render_hr_template(body: str, values: Mapping[str, Any]) -> str:
+    """Replace known {variables}; keep unknown markers visible for HR review."""
+    rendered = repair_text(body) or body or ""
+    for key, value in values.items():
+        if not re.fullmatch(r"[A-Za-z0-9_]+", str(key)):
+            continue
+        rendered = rendered.replace("{" + str(key) + "}", str(value if value is not None else ""))
+    return rendered
+
+
+HR_TEMPLATE_AUTO_VARIABLES = {"employee_name", "position", "department"}
+
+
+def normalize_hr_template_variables(body: str, variables: Sequence[str] | None = None) -> list[str]:
+    normalized: list[str] = []
+
+    def append_variable(raw_value: Any) -> None:
+        variable = str(raw_value or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_]+", variable):
+            return
+        if variable in HR_TEMPLATE_AUTO_VARIABLES or variable in normalized:
+            return
+        normalized.append(variable)
+
+    for variable in variables or []:
+        append_variable(variable)
+    for match in re.finditer(r"\{([A-Za-z0-9_]+)\}", body or ""):
+        append_variable(match.group(1))
+    return normalized
+
+
+def _hr_template_from_row(row: Mapping[str, Any] | None) -> dict | None:
+    if row is None:
+        return None
+    variables = _load_hr_json(row.get("variables"), [])
+    if not isinstance(variables, list):
+        variables = []
+    return {
+        "id": int(row["id"]),
+        "title": repair_text(row["title"]) or row["title"],
+        "type": row["request_type"],
+        "description": repair_text(row.get("description", "")) or "",
+        "body": repair_text(row["body"]) or row["body"],
+        "variables": [str(variable) for variable in variables],
+        "status": row.get("status") or "active",
+        "created_by": int(row["created_by"]) if row.get("created_by") else None,
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _hr_request_from_row(row: Mapping[str, Any] | None) -> dict | None:
+    if row is None:
+        return None
+    values = _load_hr_json(row.get("values_json"), {})
+    if not isinstance(values, dict):
+        values = {}
+    return {
+        "id": int(row["id"]),
+        "template_id": int(row["template_id"]) if row.get("template_id") else None,
+        "template_title": repair_text(row.get("template_title", "")) or row.get("template_title", ""),
+        "type": row.get("request_type") or "serviceLetter",
+        "employee_id": int(row["employee_id"]) if row.get("employee_id") else None,
+        "employee_name": repair_text(row["employee_name"]) or row["employee_name"],
+        "department": repair_text(row.get("department", "")) or "",
+        "status": row.get("status") or "new",
+        "values": values,
+        "rendered_text": repair_text(row.get("rendered_text", "")) or "",
+        "summary": repair_text(row.get("summary", "")) or "",
+        "period": repair_text(row.get("period", "")) or "",
+        "submitted_at": row["submitted_at"],
+        "updated_at": row["updated_at"],
+        "decided_at": row.get("decided_at"),
+        "decided_by": int(row["decided_by"]) if row.get("decided_by") else None,
+        "decided_by_name": repair_text(row.get("decided_by_name", "")) or row.get("decided_by_name"),
+        "decision_comment": repair_text(row.get("decision_comment", "")) or "",
+    }
+
+
+def list_hr_templates(*, active_only: bool = False) -> List[dict]:
+    where = "WHERE status = %s" if active_only else ""
+    params: tuple[Any, ...] = ("active",) if active_only else ()
+    with _lock:
+        rows = execute(
+            f"""
+            SELECT id, title, request_type, description, body, variables, status,
+                   created_by, created_at, updated_at
+            FROM hr_request_templates
+            {where}
+            ORDER BY updated_at DESC, id DESC
+            """,
+            params,
+        ).fetchall()
+    return [template for row in rows if (template := _hr_template_from_row(row)) is not None]
+
+
+def create_hr_template(
+    *,
+    title: str,
+    type: str,
+    body: str,
+    variables: Sequence[str] | None = None,
+    description: str = "",
+    status: str = "active",
+    created_by: int | None = None,
+) -> dict:
+    if type not in HR_REQUEST_TYPES:
+        raise ValueError("Invalid HR request type")
+    if status not in HR_TEMPLATE_STATUSES:
+        raise ValueError("Invalid HR template status")
+    now = datetime.now(timezone.utc).isoformat()
+    title_value = repair_text(title) or title
+    body_value = repair_text(body) or body
+    description_value = repair_text(description or "") or ""
+    normalized_variables = normalize_hr_template_variables(body_value, variables)
+    variables_json = json.dumps(normalized_variables, ensure_ascii=False)
+    with _lock:
+        row = execute(
+            """
+            INSERT INTO hr_request_templates (
+                title, request_type, description, body, variables, status,
+                created_by, created_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, title, request_type, description, body, variables, status,
+                      created_by, created_at, updated_at
+            """,
+            (
+                title_value,
+                type,
+                description_value,
+                body_value,
+                variables_json,
+                status,
+                created_by,
+                now,
+                now,
+            ),
+        ).fetchone()
+    template = _hr_template_from_row(row)
+    if template is None:
+        raise RuntimeError("Failed to create HR template")
+    return template
+
+
+def update_hr_template(
+    template_id: int,
+    *,
+    title: str,
+    type: str,
+    body: str,
+    variables: Sequence[str] | None = None,
+    description: str = "",
+    status: str = "active",
+) -> dict:
+    if type not in HR_REQUEST_TYPES:
+        raise ValueError("Invalid HR request type")
+    if status not in HR_TEMPLATE_STATUSES:
+        raise ValueError("Invalid HR template status")
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        row = execute(
+            """
+            UPDATE hr_request_templates
+            SET title = %s, request_type = %s, description = %s, body = %s,
+                variables = %s, status = %s, updated_at = %s
+            WHERE id = %s
+            RETURNING id, title, request_type, description, body, variables, status,
+                      created_by, created_at, updated_at
+            """,
+            (
+                repair_text(title) or title,
+                type,
+                repair_text(description or "") or "",
+                repair_text(body) or body,
+                json.dumps(normalize_hr_template_variables(body, variables), ensure_ascii=False),
+                status,
+                now,
+                int(template_id),
+            ),
+        ).fetchone()
+    template = _hr_template_from_row(row)
+    if template is None:
+        raise ValueError("HR template not found")
+    return template
+
+
+def list_hr_requests(*, employee_id: int | None = None) -> List[dict]:
+    where = ""
+    params: tuple[Any, ...] = ()
+    if employee_id is not None:
+        where = "WHERE r.employee_id = %s"
+        params = (int(employee_id),)
+    with _lock:
+        rows = execute(
+            f"""
+            SELECT r.id, r.template_id, t.title AS template_title, t.request_type,
+                   r.employee_id, r.employee_name, r.department, r.status,
+                   r.values_json, r.rendered_text, r.summary, r.period,
+                   r.submitted_at, r.updated_at, r.decided_at, r.decided_by,
+                   r.decided_by_name, r.decision_comment
+            FROM hr_requests r
+            LEFT JOIN hr_request_templates t ON t.id = r.template_id
+            {where}
+            ORDER BY r.updated_at DESC, r.id DESC
+            """,
+            params,
+        ).fetchall()
+    return [request for row in rows if (request := _hr_request_from_row(row)) is not None]
+
+
+def create_hr_request(
+    *,
+    template_id: int,
+    employee_id: int,
+    employee_name: str,
+    department: str = "",
+    values: Mapping[str, Any] | None = None,
+    summary: str = "",
+    period: str = "",
+) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        template_row = execute(
+            """
+            SELECT id, title, request_type, body
+            FROM hr_request_templates
+            WHERE id = %s AND status = %s
+            LIMIT 1
+            """,
+            (int(template_id), "active"),
+        ).fetchone()
+        if template_row is None:
+            raise ValueError("HR template not found")
+        merged_values = {
+            **dict(values or {}),
+            "employee_name": employee_name,
+            "position": department,
+            "department": department,
+        }
+        rendered_text = render_hr_template(template_row["body"], merged_values)
+        row = execute(
+            """
+            INSERT INTO hr_requests (
+                template_id, employee_id, employee_name, department, status,
+                values_json, rendered_text, summary, period, submitted_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                int(template_id),
+                int(employee_id),
+                repair_text(employee_name) or employee_name,
+                repair_text(department or "") or "",
+                "new",
+                json.dumps(dict(values or {}), ensure_ascii=False),
+                rendered_text,
+                repair_text(summary or "") or "",
+                repair_text(period or "") or "",
+                now,
+                now,
+            ),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Failed to create HR request")
+    request = get_hr_request(int(row["id"]))
+    if request is None:
+        raise RuntimeError("Failed to load HR request")
+    return request
+
+
+def get_hr_request(request_id: int) -> dict | None:
+    with _lock:
+        row = execute(
+            """
+            SELECT r.id, r.template_id, t.title AS template_title, t.request_type,
+                   r.employee_id, r.employee_name, r.department, r.status,
+                   r.values_json, r.rendered_text, r.summary, r.period,
+                   r.submitted_at, r.updated_at, r.decided_at, r.decided_by,
+                   r.decided_by_name, r.decision_comment
+            FROM hr_requests r
+            LEFT JOIN hr_request_templates t ON t.id = r.template_id
+            WHERE r.id = %s
+            LIMIT 1
+            """,
+            (int(request_id),),
+        ).fetchone()
+    return _hr_request_from_row(row)
+
+
+def decide_hr_request(
+    request_id: int,
+    *,
+    status: str,
+    decided_by: int,
+    decided_by_name: str,
+    comment: str = "",
+) -> dict:
+    if status not in {"approved", "rejected", "needsInfo"}:
+        raise ValueError("Invalid HR decision status")
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        row = execute(
+            """
+            UPDATE hr_requests
+            SET status = %s, decided_at = %s, decided_by = %s, decided_by_name = %s,
+                decision_comment = %s, updated_at = %s
+            WHERE id = %s
+            RETURNING id
+            """,
+            (
+                status,
+                now if status in {"approved", "rejected"} else None,
+                int(decided_by),
+                repair_text(decided_by_name) or decided_by_name,
+                repair_text(comment or "") or "",
+                now,
+                int(request_id),
+            ),
+        ).fetchone()
+    if row is None:
+        raise ValueError("HR request not found")
+    request = get_hr_request(int(request_id))
+    if request is None:
+        raise ValueError("HR request not found")
+    return request
 
 
 

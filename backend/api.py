@@ -8,6 +8,7 @@ import logging
 
 import base64
 import hashlib
+import html
 
 import hmac
 
@@ -254,6 +255,8 @@ ROLE_LABELS: Dict[str, str] = {
     database.ROLE_MODERATOR: "\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440",
 
     database.ROLE_OPERATOR: "\u041e\u043f\u0435\u0440\u0430\u0442\u043e\u0440",
+
+    database.ROLE_HR: "\u041a\u0430\u0434\u0440\u043e\u0432\u0438\u043a",
 
 }
 
@@ -1341,6 +1344,20 @@ def require_admin_or_moderator(
 
 
 
+def require_hr_access(
+
+    current_user: Dict[str, object] = Depends(get_current_user),
+
+) -> Dict[str, object]:
+
+    if not database.can_manage_hr(str(current_user["role"])):
+
+        raise HTTPException(status_code=403, detail="HR role required")
+
+    return current_user
+
+
+
 
 
 def _ensure_moderator_can_manage(current_user: Dict[str, object], target_user: Dict[str, object]) -> None:
@@ -2247,6 +2264,384 @@ def list_faq(_: Dict[str, object] = Depends(get_current_user)):
 
 
 
+
+
+class HrTemplateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    type: Literal["vacation", "advance", "sickLeave", "businessTrip", "certificate", "serviceLetter"]
+    body: str = Field(min_length=1, max_length=5000)
+    variables: List[str] = Field(default_factory=list)
+    description: str = Field(default="", max_length=1000)
+    status: Literal["active", "archived"] = "active"
+
+
+class HrTemplateResponse(BaseModel):
+    id: int
+    title: str
+    type: str
+    description: str = ""
+    body: str
+    variables: List[str] = Field(default_factory=list)
+    status: str
+    created_by: int | None = None
+    created_at: str
+    updated_at: str
+
+
+class HrRequestSubmit(BaseModel):
+    template_id: int
+    values: Dict[str, Any] = Field(default_factory=dict)
+    summary: str = Field(default="", max_length=1000)
+    period: str = Field(default="", max_length=240)
+
+
+class HrDecisionRequest(BaseModel):
+    status: Literal["approved", "rejected", "needsInfo"]
+    comment: str = Field(default="", max_length=1000)
+
+
+class HrRequestResponse(BaseModel):
+    id: int
+    template_id: int | None = None
+    template_title: str = ""
+    type: str
+    employee_id: int | None = None
+    employee_name: str
+    department: str = ""
+    status: str
+    values: Dict[str, Any] = Field(default_factory=dict)
+    rendered_text: str
+    summary: str = ""
+    period: str = ""
+    submitted_at: str
+    updated_at: str
+    decided_at: str | None = None
+    decided_by: int | None = None
+    decided_by_name: str | None = None
+    decision_comment: str = ""
+
+
+class HrEmployeeResponse(BaseModel):
+    id: int
+    email: EmailStr
+    login: str
+    name: str
+    created_at: str
+    job_title: str = ""
+    phone: str = ""
+    bio: str = ""
+    role: str
+    is_approved: bool = True
+    sections: List[str] = Field(default_factory=list)
+    bins: List[BinAssignmentResponse] = Field(default_factory=list)
+    favorite_dialog_ids: List[int] = []
+    schedule: str = "09:00-18:00"
+
+
+def _ensure_can_view_hr_request(current_user: Dict[str, object], hr_request: dict | None) -> dict:
+    if hr_request is None:
+        raise HTTPException(status_code=404, detail="HR request not found")
+    role = str(current_user.get("role", ""))
+    if database.can_manage_hr(role) or int(hr_request.get("employee_id") or 0) == int(current_user["id"]):
+        return hr_request
+    raise HTTPException(status_code=403, detail="Нет доступа к заявлению")
+
+
+def _normalize_hr_statement(value: str) -> str:
+    statement = re.sub(r"\s+", " ", (value or "").strip())
+    if not statement:
+        return ""
+    if statement[-1] not in ".!?":
+        statement += "."
+    return statement
+
+
+def _build_hr_statement(hr_request: dict) -> str:
+    values = hr_request.get("values") if isinstance(hr_request.get("values"), dict) else {}
+    explicit_statement = str(values.get("statement") or "").strip()
+    if explicit_statement:
+        return _normalize_hr_statement(explicit_statement)
+
+    rendered_text = str(hr_request.get("rendered_text") or "").strip()
+    if re.match(r"^я,\s", rendered_text, flags=re.IGNORECASE):
+        return _normalize_hr_statement(rendered_text)
+
+    employee_name = str(hr_request.get("employee_name") or "")
+    period = str(hr_request.get("period") or "")
+    reason = str(hr_request.get("summary") or "").strip()
+    prefix = f"Я, {employee_name},"
+    request_type = str(hr_request.get("type") or "")
+    if request_type == "advance":
+        return _normalize_hr_statement(f"{prefix} запрашиваю аванс {reason or period}")
+    if request_type == "vacation":
+        return _normalize_hr_statement(f"{prefix} прошу предоставить отпуск на период {period} в связи с {reason}")
+    if request_type == "businessTrip":
+        return _normalize_hr_statement(f"{prefix} прошу оформить командировку на период {period} с целью {reason}")
+    if request_type == "certificate":
+        return _normalize_hr_statement(f"{prefix} прошу подготовить справку с места работы для {reason or 'предоставления по месту требования'}")
+    if request_type == "sickLeave":
+        return _normalize_hr_statement(f"{prefix} прошу оформить отсутствие по болезни на период {period} по причине {reason}")
+    return _normalize_hr_statement(f"{prefix} прошу рассмотреть заявление на период {period} по причине {reason}")
+
+
+def _hr_document_context(hr_request: dict) -> dict[str, str]:
+    values = hr_request.get("values") if isinstance(hr_request.get("values"), dict) else {}
+    organization = str(values.get("organization") or "организации").strip()
+    document_date = str(values.get("document_date") or "").strip() or datetime.now(timezone.utc).strftime("%d.%m.%Y")
+    return {
+        "to": "Директору",
+        "organization": organization,
+        "from": str(hr_request.get("employee_name") or ""),
+        "position": str(hr_request.get("department") or ""),
+        "title": "Заявление",
+        "body": _build_hr_statement(hr_request),
+        "date": document_date,
+    }
+
+
+def _hr_document_html(hr_request: dict) -> str:
+    context = {key: html.escape(value) for key, value in _hr_document_context(hr_request).items()}
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{context['title']}</title>
+  <style>
+    @page {{ size: A4; margin: 24mm 20mm; }}
+    body {{ font-family: Arial, sans-serif; color: #111827; font-size: 14pt; line-height: 1.55; }}
+    .addressee {{ width: 44%; margin-left: auto; margin-bottom: 46mm; font-size: 12pt; line-height: 1.45; }}
+    h1 {{ margin: 0 0 16mm; text-align: center; font-size: 18pt; letter-spacing: 0; }}
+    .body {{ margin: 0 auto; max-width: 160mm; text-align: justify; }}
+    .footer {{ display: table; width: 100%; margin-top: 38mm; font-size: 12pt; }}
+    .footer > div {{ display: table-cell; width: 50%; vertical-align: top; }}
+    .signature {{ text-align: right; }}
+  </style>
+</head>
+<body>
+  <div class="addressee">
+    <div>{context['to']}</div>
+    <div>{context['organization']}</div>
+  </div>
+  <h1>{context['title']}</h1>
+  <div class="body">
+    <p>{context['body']}</p>
+  </div>
+  <div class="footer">
+    <div>{context['date']}</div>
+    <div class="signature">________________ / {context['from']} /</div>
+  </div>
+</body>
+</html>"""
+
+
+def _find_reportlab_font() -> tuple[str, str | None]:
+    env_font = os.getenv("HR_DOCUMENT_FONT", "").strip()
+    candidates = [
+        Path(env_font) if env_font else None,
+        Path("C:/Windows/Fonts/arial.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+    ]
+    for candidate in candidates:
+        if candidate is not None and candidate.is_file():
+            return "HrDocumentFont", str(candidate)
+    return "Helvetica", None
+
+
+def _wrap_pdf_text(text: str, max_width: float, font_name: str, font_size: int) -> list[str]:
+    from reportlab.pdfbase import pdfmetrics
+
+    lines: list[str] = []
+    for paragraph in text.splitlines() or [""]:
+        words = paragraph.split()
+        current = ""
+        for word in words:
+            probe = f"{current} {word}".strip()
+            if pdfmetrics.stringWidth(probe, font_name, font_size) <= max_width:
+                current = probe
+                continue
+            if current:
+                lines.append(current)
+            current = word
+        lines.append(current)
+    return lines
+
+
+def _hr_document_pdf(hr_request: dict) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfgen import canvas
+
+    font_name, font_path = _find_reportlab_font()
+    if font_path:
+        pdfmetrics.registerFont(TTFont(font_name, font_path))
+
+    context = _hr_document_context(hr_request)
+    buffer = io.BytesIO()
+    page = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    margin_x = 56
+    y = height - 70
+
+    page.setFont(font_name, 11)
+    x_right = width - 245
+    for line in [context["to"], context["organization"]]:
+        page.drawString(x_right, y, line)
+        y -= 18
+
+    y -= 120
+    page.setFont(font_name, 16)
+    page.drawCentredString(width / 2, y, context["title"])
+
+    y -= 46
+    page.setFont(font_name, 12)
+    for line in _wrap_pdf_text(context["body"], width - margin_x * 2, font_name, 12):
+        if y < 110:
+            page.showPage()
+            page.setFont(font_name, 12)
+            y = height - 70
+        page.drawString(margin_x, y, line)
+        y -= 19
+
+    page.drawString(margin_x, 74, context["date"])
+    page.drawRightString(width - margin_x, 74, f"________________ / {context['from']} /")
+    page.save()
+    return buffer.getvalue()
+
+
+@router.get("/hr/employees", response_model=List[HrEmployeeResponse])
+def list_hr_employees(
+    query: str | None = None,
+    _: Dict[str, object] = Depends(require_hr_access),
+):
+    employees = database.list_hr_employees(query=query)
+    return [HrEmployeeResponse(**employee) for employee in employees]
+
+
+@router.get("/hr/templates", response_model=List[HrTemplateResponse])
+def list_hr_templates(current_user: Dict[str, object] = Depends(get_current_user)):
+    templates = database.list_hr_templates(
+        active_only=not database.can_manage_hr(str(current_user.get("role", "")))
+    )
+    return [HrTemplateResponse(**template) for template in templates]
+
+
+@router.post("/hr/templates", response_model=HrTemplateResponse)
+def create_hr_template(
+    request: HrTemplateRequest,
+    current_user: Dict[str, object] = Depends(require_hr_access),
+):
+    try:
+        template = database.create_hr_template(
+            title=request.title,
+            type=request.type,
+            body=request.body,
+            variables=request.variables,
+            description=request.description,
+            status=request.status,
+            created_by=int(current_user["id"]),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return HrTemplateResponse(**template)
+
+
+@router.put("/hr/templates/{template_id}", response_model=HrTemplateResponse)
+def update_hr_template(
+    template_id: int,
+    request: HrTemplateRequest,
+    _: Dict[str, object] = Depends(require_hr_access),
+):
+    try:
+        template = database.update_hr_template(
+            template_id,
+            title=request.title,
+            type=request.type,
+            body=request.body,
+            variables=request.variables,
+            description=request.description,
+            status=request.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return HrTemplateResponse(**template)
+
+
+@router.get("/hr/requests", response_model=List[HrRequestResponse])
+def list_hr_requests(current_user: Dict[str, object] = Depends(get_current_user)):
+    employee_id = None if database.can_manage_hr(str(current_user.get("role", ""))) else int(current_user["id"])
+    requests = database.list_hr_requests(employee_id=employee_id)
+    return [HrRequestResponse(**request) for request in requests]
+
+
+@router.get("/hr/requests/{request_id}/document.doc")
+def download_hr_request_doc(
+    request_id: int,
+    current_user: Dict[str, object] = Depends(get_current_user),
+):
+    hr_request = _ensure_can_view_hr_request(current_user, database.get_hr_request(int(request_id)))
+    content = _hr_document_html(hr_request).encode("utf-8")
+    headers = {"Content-Disposition": f'attachment; filename="hr-request-{request_id}.doc"'}
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/msword; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.get("/hr/requests/{request_id}/document.pdf")
+def download_hr_request_pdf(
+    request_id: int,
+    current_user: Dict[str, object] = Depends(get_current_user),
+):
+    hr_request = _ensure_can_view_hr_request(current_user, database.get_hr_request(int(request_id)))
+    content = _hr_document_pdf(hr_request)
+    headers = {"Content-Disposition": f'attachment; filename="hr-request-{request_id}.pdf"'}
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/pdf",
+        headers=headers,
+    )
+
+
+@router.post("/hr/requests", response_model=HrRequestResponse)
+def create_hr_request(
+    request: HrRequestSubmit,
+    current_user: Dict[str, object] = Depends(get_current_user),
+):
+    try:
+        hr_request = database.create_hr_request(
+            template_id=request.template_id,
+            employee_id=int(current_user["id"]),
+            employee_name=str(current_user.get("name") or current_user.get("login") or ""),
+            department=str(current_user.get("job_title") or ""),
+            values=request.values,
+            summary=request.summary,
+            period=request.period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return HrRequestResponse(**hr_request)
+
+
+@router.post("/hr/requests/{request_id}/decision", response_model=HrRequestResponse)
+def decide_hr_request(
+    request_id: int,
+    request: HrDecisionRequest,
+    current_user: Dict[str, object] = Depends(require_hr_access),
+):
+    try:
+        hr_request = database.decide_hr_request(
+            request_id,
+            status=request.status,
+            decided_by=int(current_user["id"]),
+            decided_by_name=str(current_user.get("name") or current_user.get("login") or ""),
+            comment=request.comment,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return HrRequestResponse(**hr_request)
 
 
 class ReplyTemplateRequest(BaseModel):

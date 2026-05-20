@@ -11,6 +11,7 @@ const AdminPage = React.lazy(() => import('./pages/AdminPage'));
 const SurveysPage = React.lazy(() => import('./pages/SurveysPage'));
 const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
 const HrPage = React.lazy(() => import('./pages/HrPage'));
+const EmployeeRequestsPage = React.lazy(() => import('./pages/EmployeeRequestsPage'));
 
 type ThemeMode = 'light' | 'dark';
 
@@ -126,6 +127,19 @@ const App: React.FC = () => {
           </svg>
         ),
       });
+    } else {
+      tabs.push({
+        path: '/employee-requests',
+        label: 'Заявления',
+        icon: (
+          <svg className="app-sidebar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+            <path d="M9 15h6" />
+            <path d="M9 11h2" />
+          </svg>
+        ),
+      });
     }
     return tabs;
   }, [canOpenDialogs, canOpenHr, currentUser, isAdmin]);
@@ -146,6 +160,7 @@ const App: React.FC = () => {
   const isProfileRoute = location.pathname.startsWith('/profile');
   const isSurveysRoute = location.pathname.startsWith('/surveys');
   const isHrRoute = location.pathname.startsWith('/hr');
+  const isEmployeeRequestsRoute = location.pathname.startsWith('/employee-requests');
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -192,7 +207,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className={`app-shell app-shell--sidebar ${isSidebarCollapsed ? 'app-shell--sidebar-collapsed' : ''} ${isDashboardRoute ? 'app-shell--dashboard' : ''} ${isAdminRoute ? 'app-shell--admin' : ''} ${isProfileRoute ? 'app-shell--profile' : ''} ${isSurveysRoute ? 'app-shell--surveys' : ''} ${isHrRoute ? 'app-shell--hr' : ''}`}>
+    <div className={`app-shell app-shell--sidebar ${isSidebarCollapsed ? 'app-shell--sidebar-collapsed' : ''} ${isDashboardRoute ? 'app-shell--dashboard' : ''} ${isAdminRoute ? 'app-shell--admin' : ''} ${isProfileRoute ? 'app-shell--profile' : ''} ${isSurveysRoute ? 'app-shell--surveys' : ''} ${isHrRoute || isEmployeeRequestsRoute ? 'app-shell--hr' : ''}`}>
       <div className="app-shell__ambient app-shell__ambient--one" aria-hidden="true" />
       <div className="app-shell__ambient app-shell__ambient--two" aria-hidden="true" />
 
@@ -311,7 +326,11 @@ const App: React.FC = () => {
                   />
                   <Route
                     path="/hr/*"
-                    element={canOpenHr ? <HrPage /> : <Navigate to={defaultRoute} replace />}
+                    element={canOpenHr ? <HrPage apiClient={apiClient} /> : <Navigate to={defaultRoute} replace />}
+                  />
+                  <Route
+                    path="/employee-requests"
+                    element={<EmployeeRequestsPage apiClient={apiClient} session={session} />}
                   />
                   <Route
                     path="/profile"

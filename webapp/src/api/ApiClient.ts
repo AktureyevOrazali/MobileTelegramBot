@@ -24,6 +24,13 @@ import {
   EmployeeClientAssessmentSubmitPayload,
   EmployeeRatingsAnalytics,
   EmployeeRatingsAnalyticsRaw,
+  HrEmployee,
+  HrEmployeeRaw,
+  HrRequest,
+  HrRequestRaw,
+  HrRequestStatus,
+  HrTemplate,
+  HrTemplateRaw,
   Message,
   MessageNotification,
   MutualRatingMatrix,
@@ -952,6 +959,143 @@ export class ApiClient {
       method: 'DELETE',
       expectJson: false,
     });
+  }
+
+  // ---------- HR Requests ----------
+
+  private mapHrTemplate(raw: HrTemplateRaw): HrTemplate {
+    return {
+      id: raw.id,
+      title: sanitizeUiText(raw.title) || raw.title,
+      type: raw.type,
+      description: sanitizeUiText(raw.description) || '',
+      body: raw.body,
+      variables: raw.variables ?? [],
+      status: raw.status,
+      createdBy: raw.created_by ?? null,
+      createdAt: new Date(raw.created_at),
+      updatedAt: new Date(raw.updated_at),
+    };
+  }
+
+  private mapHrRequest(raw: HrRequestRaw): HrRequest {
+    return {
+      id: raw.id,
+      templateId: raw.template_id ?? null,
+      templateTitle: sanitizeUiText(raw.template_title) || raw.template_title || '',
+      type: raw.type,
+      employeeId: raw.employee_id ?? null,
+      employeeName: sanitizeUiText(raw.employee_name) || raw.employee_name,
+      department: sanitizeUiText(raw.department) || '',
+      status: raw.status,
+      values: raw.values ?? {},
+      renderedText: sanitizeUiText(raw.rendered_text) || raw.rendered_text,
+      summary: sanitizeUiText(raw.summary) || '',
+      period: sanitizeUiText(raw.period) || '',
+      submittedAt: new Date(raw.submitted_at),
+      updatedAt: new Date(raw.updated_at),
+      decidedAt: raw.decided_at ? new Date(raw.decided_at) : null,
+      decidedBy: raw.decided_by ?? null,
+      decidedByName: raw.decided_by_name ? sanitizeUiText(raw.decided_by_name) || raw.decided_by_name : null,
+      decisionComment: sanitizeUiText(raw.decision_comment) || '',
+    };
+  }
+
+  async fetchHrTemplates(): Promise<HrTemplate[]> {
+    const response = await this.request<HrTemplateRaw[]>('hr/templates', { method: 'GET' });
+    return response.map((template) => this.mapHrTemplate(template));
+  }
+
+  async fetchHrEmployees(query?: string): Promise<HrEmployee[]> {
+    const response = await this.request<HrEmployeeRaw[]>('hr/employees', {
+      method: 'GET',
+      query: query ? { query } : undefined,
+    });
+    return response.map((employee) => ({
+      ...mapUserProfile(employee),
+      schedule: sanitizeUiText(employee.schedule) || '09:00-18:00',
+    }));
+  }
+
+  async createHrTemplate(data: Omit<HrTemplate, 'id' | 'createdBy' | 'createdAt' | 'updatedAt'>): Promise<HrTemplate> {
+    const response = await this.request<HrTemplateRaw>('hr/templates', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: data.title,
+        type: data.type,
+        description: data.description,
+        body: data.body,
+        variables: data.variables,
+        status: data.status,
+      }),
+    });
+    return this.mapHrTemplate(response);
+  }
+
+  async updateHrTemplate(id: number, data: Omit<HrTemplate, 'id' | 'createdBy' | 'createdAt' | 'updatedAt'>): Promise<HrTemplate> {
+    const response = await this.request<HrTemplateRaw>(`hr/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        title: data.title,
+        type: data.type,
+        description: data.description,
+        body: data.body,
+        variables: data.variables,
+        status: data.status,
+      }),
+    });
+    return this.mapHrTemplate(response);
+  }
+
+  async fetchHrRequests(): Promise<HrRequest[]> {
+    const response = await this.request<HrRequestRaw[]>('hr/requests', { method: 'GET' });
+    return response.map((request) => this.mapHrRequest(request));
+  }
+
+  async createHrRequest(data: { templateId: number; values: Record<string, unknown>; summary?: string; period?: string }): Promise<HrRequest> {
+    const response = await this.request<HrRequestRaw>('hr/requests', {
+      method: 'POST',
+      body: JSON.stringify({
+        template_id: data.templateId,
+        values: data.values,
+        summary: data.summary ?? '',
+        period: data.period ?? '',
+      }),
+    });
+    return this.mapHrRequest(response);
+  }
+
+  async decideHrRequest(
+    id: number,
+    data: { status: Extract<HrRequestStatus, 'approved' | 'rejected' | 'needsInfo'>; comment?: string },
+  ): Promise<HrRequest> {
+    const response = await this.request<HrRequestRaw>(`hr/requests/${id}/decision`, {
+      method: 'POST',
+      body: JSON.stringify({ status: data.status, comment: data.comment ?? '' }),
+    });
+    return this.mapHrRequest(response);
+  }
+
+  async downloadHrRequestDocument(id: number, format: 'doc' | 'pdf'): Promise<void> {
+    const url = this.buildUrl(`hr/requests/${id}/document.${format}`);
+    const response = await fetch(url, {
+      headers: {
+        'X-Api-Token': this.apiToken,
+        ...(this.session?.token ? { 'X-Session-Token': this.session.token } : {}),
+      },
+    });
+    if (!response.ok) {
+      throw new ApiError('Не удалось скачать заявление.', response.status);
+    }
+
+    const blob = await response.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `hr-request-${id}.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
   }
 
   // ---------- Customer Surveys ----------

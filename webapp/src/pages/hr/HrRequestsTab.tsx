@@ -1,12 +1,55 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { HrRequest } from '../../types';
-import { requestStatusLabels } from './hrMockData';
+import { requestStatusLabels, requestTypeLabels } from './hrMockData';
 
 interface HrRequestsTabProps {
   requests: HrRequest[];
-  onDecide?: (requestId: number, status: 'approved' | 'rejected' | 'needsInfo') => Promise<void> | void;
+  isLoading?: boolean;
+  onDecide?: (requestId: number, status: 'approved' | 'rejected' | 'needsInfo', comment?: string) => Promise<void> | void;
   onDownload?: (requestId: number, format: 'doc' | 'pdf') => Promise<void> | void;
 }
+
+const skeletonItems = Array.from({ length: 7 }, (_, index) => index);
+const skeletonStyle = (index: number) => ({ '--skeleton-index': index } as React.CSSProperties);
+
+const HrRequestsLoadingSkeleton: React.FC = () => (
+  <div className="hr-requests-grid" role="status" aria-live="polite" aria-busy="true">
+    <span className="sr-only">Loading HR requests</span>
+    <div className="hr-request-list" aria-hidden="true">
+      {skeletonItems.map((item) => (
+        <div
+          className="hr-request-row hr-request-row--skeleton skeleton-unit"
+          data-testid="hr-request-row-skeleton"
+          key={item}
+          style={skeletonStyle(item)}
+        />
+      ))}
+    </div>
+
+    <article className="hr-detail-card hr-detail-card--loading" aria-hidden="true">
+      <div className="hr-detail-card__header">
+        <span className="skeleton-unit hr-detail-card__title-skeleton" />
+        <div className="hr-detail-card__header-actions">
+          <span className="skeleton-unit hr-detail-card__pill-skeleton" />
+          <span className="skeleton-unit hr-detail-card__button-skeleton" />
+          <span className="skeleton-unit hr-detail-card__button-skeleton" />
+        </div>
+      </div>
+      <div className="hr-document-preview-shell">
+        <article
+          className="hr-document-preview hr-document-preview--skeleton skeleton-unit"
+          data-testid="hr-document-preview-skeleton"
+        />
+      </div>
+      <span className="skeleton-unit hr-decision-comment-skeleton" />
+      <div className="hr-detail-card__actions">
+        <span className="skeleton-unit hr-detail-card__button-skeleton hr-detail-card__button-skeleton--primary" />
+        <span className="skeleton-unit hr-detail-card__button-skeleton" />
+        <span className="skeleton-unit hr-detail-card__button-skeleton hr-detail-card__button-skeleton--wide" />
+      </div>
+    </article>
+  </div>
+);
 
 const formatDate = (value: Date | string) => new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit',
@@ -53,8 +96,25 @@ const requestOrganization = (request: HrRequest) => (
     : 'организации'
 );
 
-const HrRequestsTab: React.FC<HrRequestsTabProps> = ({ requests, onDecide, onDownload }) => {
+const requestEmployeePosition = (request: HrRequest) => {
+  const position = request.values.position ?? request.values.jobTitle ?? request.values.job_title;
+  return typeof position === 'string' && position.trim() ? position.trim() : 'сотрудника';
+};
+
+const eventActionLabel = (action: HrRequest['events'][number]['action']) => {
+  if (action === 'created') return 'Создано';
+  return requestStatusLabels[action];
+};
+
+const HrRequestsTab: React.FC<HrRequestsTabProps> = ({
+  requests,
+  isLoading = false,
+  onDecide,
+  onDownload,
+}) => {
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(requests[0]?.id ?? null);
+  const [decisionComment, setDecisionComment] = useState('');
+  const [isDeciding, setIsDeciding] = useState(false);
 
   useEffect(() => {
     if (selectedRequestId === null || !requests.some((request) => request.id === selectedRequestId)) {
@@ -66,6 +126,25 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({ requests, onDecide, onDow
     () => requests.find((request) => request.id === selectedRequestId) ?? requests[0],
     [requests, selectedRequestId],
   );
+
+  useEffect(() => {
+    setDecisionComment('');
+  }, [selectedRequest?.id]);
+
+  const handleDecision = async (status: 'approved' | 'rejected' | 'needsInfo') => {
+    if (!onDecide || !selectedRequest || isDeciding) return;
+    setIsDeciding(true);
+    try {
+      await onDecide(selectedRequest.id, status, decisionComment.trim());
+      setDecisionComment('');
+    } finally {
+      setIsDeciding(false);
+    }
+  };
+
+  if (isLoading) {
+    return <HrRequestsLoadingSkeleton />;
+  }
 
   if (!selectedRequest) {
     return <div className="hr-detail-card">Заявлений пока нет.</div>;
@@ -89,7 +168,7 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({ requests, onDecide, onDow
               <strong>{request.employeeName}</strong>
               <span>{request.department}</span>
               <span className="hr-request-row__meta">
-                <span className="hr-badge">Заявление</span>
+                <span className="hr-badge">{requestTypeLabels[request.type]}</span>
                 <span className={`hr-status hr-status--${request.status}`}>{requestStatusLabels[request.status]}</span>
               </span>
             </span>
@@ -100,37 +179,29 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({ requests, onDecide, onDow
 
       <article className="hr-detail-card">
         <div className="hr-detail-card__header">
-          <span className="hr-badge">Заявление</span>
+          <span className="hr-detail-card__employee">{selectedRequest.employeeName}</span>
           <div className="hr-detail-card__header-actions">
             <span className={`hr-status hr-status--${selectedRequest.status}`}>{requestStatusLabels[selectedRequest.status]}</span>
             <button className="button secondary hr-export-button" type="button" onClick={() => onDownload?.(selectedRequest.id, 'doc')}>Word</button>
             <button className="button secondary hr-export-button" type="button" onClick={() => onDownload?.(selectedRequest.id, 'pdf')}>PDF</button>
           </div>
         </div>
-        <h3>{selectedRequest.employeeName}</h3>
-        <article className="hr-document-preview" aria-label="Форма заявления">
-          <div className="hr-document-preview__to">
-            <span>Директору</span>
-            <span>{requestOrganization(selectedRequest)}</span>
-          </div>
-          <h3>Заявление</h3>
-          <p>{requestStatement(selectedRequest)}</p>
-          <div className="hr-document-preview__footer">
-            <span>{formatDocumentDate()}</span>
-            <span>________________ / {selectedRequest.employeeName} /</span>
-          </div>
-        </article>
-
-        <dl className="hr-meta-list">
-          <div>
-            <dt>Период</dt>
-            <dd>{selectedRequest.period || 'Не указан'}</dd>
-          </div>
-          <div>
-            <dt>Подано</dt>
-            <dd><time dateTime={selectedRequest.submittedAt.toISOString()}>{formatDate(selectedRequest.submittedAt)}</time></dd>
-          </div>
-        </dl>
+        <div className="hr-document-preview-shell">
+          <article className="hr-document-preview" aria-label="Форма заявления">
+            <div className="hr-document-preview__to">
+              <span>Директору организации "{requestOrganization(selectedRequest)}"</span>
+              <span>от {requestEmployeePosition(selectedRequest)} {selectedRequest.employeeName}</span>
+            </div>
+            <div className="hr-document-preview__body">
+              <h3>Заявление</h3>
+              <p>{requestStatement(selectedRequest)}</p>
+            </div>
+            <div className="hr-document-preview__footer">
+              <span>{formatDocumentDate()}</span>
+              <span>________________ / {selectedRequest.employeeName} /</span>
+            </div>
+          </article>
+        </div>
 
         {selectedRequest.decisionComment && (
           <div className="hr-approval-chain" aria-label="Решение HR">
@@ -138,10 +209,42 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({ requests, onDecide, onDow
           </div>
         )}
 
+        {selectedRequest.events.length > 0 && (
+          <section className="hr-request-history" aria-label="HR request history">
+            <h4>История</h4>
+            <ol>
+              {selectedRequest.events.map((event) => (
+                <li key={event.id}>
+                  <span className="hr-request-history__marker" aria-hidden="true" />
+                  <div>
+                    <div className="hr-request-history__header">
+                      <strong>{event.actorName || 'HR'}</strong>
+                      <span>{eventActionLabel(event.action)}</span>
+                    </div>
+                    {event.comment && <p>{event.comment}</p>}
+                    <time dateTime={event.createdAt.toISOString()}>{formatDate(event.createdAt)}</time>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+
+        <label className="hr-field hr-decision-comment">
+          <span>Комментарий HR</span>
+          <textarea
+            aria-label="HR comment"
+            rows={3}
+            value={decisionComment}
+            onChange={(event) => setDecisionComment(event.target.value)}
+            placeholder="Например: приложите справку или уточните период"
+          />
+        </label>
+
         <div className="hr-detail-card__actions">
-          <button className="button" type="button" data-testid="hr-approve-request" onClick={() => onDecide?.(selectedRequest.id, 'approved')}>Одобрить</button>
-          <button className="button secondary" type="button" onClick={() => onDecide?.(selectedRequest.id, 'rejected')}>Отклонить</button>
-          <button className="button secondary" type="button" onClick={() => onDecide?.(selectedRequest.id, 'needsInfo')}>Запросить данные</button>
+          <button className="button" type="button" data-testid="hr-approve-request" disabled={isDeciding} onClick={() => handleDecision('approved')}>Одобрить</button>
+          <button className="button secondary" type="button" disabled={isDeciding} onClick={() => handleDecision('rejected')}>Отклонить</button>
+          <button className="button secondary" type="button" disabled={isDeciding} onClick={() => handleDecision('needsInfo')}>Запросить данные</button>
         </div>
       </article>
     </div>

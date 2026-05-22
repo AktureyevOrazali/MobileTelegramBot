@@ -716,6 +716,8 @@ class UserResponse(BaseModel):
 
     job_title: str = ""
 
+    organization: str = "ТОО Азия-Сервис"
+
     phone: str = ""
 
     bio: str = ""
@@ -1404,6 +1406,8 @@ def _sanitize_user(user: Dict[str, object]) -> Dict[str, object]:
 
         "job_title": user.get("job_title", ""),
 
+        "organization": user.get("organization", database.DEFAULT_EMPLOYEE_ORGANIZATION),
+
         "phone": user.get("phone", ""),
 
         "bio": user.get("bio", ""),
@@ -1528,6 +1532,8 @@ class ProfileUpdateRequest(BaseModel):
 
     job_title: str | None = Field(default=None, max_length=120)
 
+    organization: str | None = Field(default=None, max_length=160)
+
     phone: str | None = Field(default=None, max_length=50)
 
     bio: str | None = Field(default=None, max_length=500)
@@ -1554,6 +1560,8 @@ def update_profile(
 
         "job_title": request.job_title if request.job_title is not None else current_user.get("job_title", ""),
 
+        "organization": request.organization if request.organization is not None else current_user.get("organization", database.DEFAULT_EMPLOYEE_ORGANIZATION),
+
         "phone": request.phone if request.phone is not None else current_user.get("phone", ""),
 
         "bio": request.bio if request.bio is not None else current_user.get("bio", ""),
@@ -1571,6 +1579,8 @@ def update_profile(
             name=payload["name"],
 
             job_title=payload["job_title"],
+
+            organization=payload["organization"],
 
             phone=payload["phone"],
 
@@ -2300,6 +2310,20 @@ class HrDecisionRequest(BaseModel):
     comment: str = Field(default="", max_length=1000)
 
 
+class HrEmployeeOrganizationRequest(BaseModel):
+    organization: Literal["ТОО Азия-Сервис"]
+
+
+class HrRequestEventResponse(BaseModel):
+    id: int
+    request_id: int
+    action: str
+    actor_id: int | None = None
+    actor_name: str = ""
+    comment: str = ""
+    created_at: str
+
+
 class HrRequestResponse(BaseModel):
     id: int
     template_id: int | None = None
@@ -2319,6 +2343,7 @@ class HrRequestResponse(BaseModel):
     decided_by: int | None = None
     decided_by_name: str | None = None
     decision_comment: str = ""
+    events: List[HrRequestEventResponse] = Field(default_factory=list)
 
 
 class HrEmployeeResponse(BaseModel):
@@ -2328,6 +2353,7 @@ class HrEmployeeResponse(BaseModel):
     name: str
     created_at: str
     job_title: str = ""
+    organization: str = "ТОО Азия-Сервис"
     phone: str = ""
     bio: str = ""
     role: str
@@ -2519,6 +2545,21 @@ def list_hr_employees(
     return [HrEmployeeResponse(**employee) for employee in employees]
 
 
+@router.put("/hr/employees/{employee_id}/organization", response_model=HrEmployeeResponse)
+def set_hr_employee_organization(
+    employee_id: int,
+    request: HrEmployeeOrganizationRequest,
+    _: Dict[str, object] = Depends(require_hr_access),
+):
+    if database.get_user_by_id(employee_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        employee = database.update_user_organization(employee_id, request.organization)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return HrEmployeeResponse(**{**employee, "schedule": "09:00-18:00"})
+
+
 @router.get("/hr/templates", response_model=List[HrTemplateResponse])
 def list_hr_templates(current_user: Dict[str, object] = Depends(get_current_user)):
     templates = database.list_hr_templates(
@@ -2578,7 +2619,7 @@ def list_hr_requests(current_user: Dict[str, object] = Depends(get_current_user)
 @router.get("/hr/requests/{request_id}/document.doc")
 def download_hr_request_doc(
     request_id: int,
-    current_user: Dict[str, object] = Depends(get_current_user),
+    current_user: Dict[str, object] = Depends(require_hr_access),
 ):
     hr_request = _ensure_can_view_hr_request(current_user, database.get_hr_request(int(request_id)))
     content = _hr_document_html(hr_request).encode("utf-8")
@@ -2593,7 +2634,7 @@ def download_hr_request_doc(
 @router.get("/hr/requests/{request_id}/document.pdf")
 def download_hr_request_pdf(
     request_id: int,
-    current_user: Dict[str, object] = Depends(get_current_user),
+    current_user: Dict[str, object] = Depends(require_hr_access),
 ):
     hr_request = _ensure_can_view_hr_request(current_user, database.get_hr_request(int(request_id)))
     content = _hr_document_pdf(hr_request)
@@ -2611,12 +2652,14 @@ def create_hr_request(
     current_user: Dict[str, object] = Depends(get_current_user),
 ):
     try:
+        values = dict(request.values or {})
+        values["organization"] = str(current_user.get("organization") or database.DEFAULT_EMPLOYEE_ORGANIZATION)
         hr_request = database.create_hr_request(
             template_id=request.template_id,
             employee_id=int(current_user["id"]),
             employee_name=str(current_user.get("name") or current_user.get("login") or ""),
             department=str(current_user.get("job_title") or ""),
-            values=request.values,
+            values=values,
             summary=request.summary,
             period=request.period,
         )

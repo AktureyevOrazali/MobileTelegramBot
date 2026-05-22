@@ -4,6 +4,7 @@ import { ApiClient } from '../api/ApiClient';
 import { ChatSummary } from '../types';
 import { useChatConversation } from '../hooks/useChatConversation';
 import { formatDateTime } from '../utils/date';
+import DataLoadingState from './DataLoadingState';
 import Modal from './Modal';
 
 interface ChatDetailModalProps {
@@ -102,7 +103,12 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
 
         <div className="modal__scroll" ref={scrollRef}>
           {loading ? (
-            <div style={{ padding: '24px 0', textAlign: 'center' }}>{TEXT.loading}</div>
+            <DataLoadingState
+              className="chat-modal-loading-state"
+              title={TEXT.loading}
+              skeletonRows={7}
+              variant="chat"
+            />
           ) : (
             <div className="message-list">
               {messages.length === 0 && <div className="text-muted">{TEXT.empty}</div>}

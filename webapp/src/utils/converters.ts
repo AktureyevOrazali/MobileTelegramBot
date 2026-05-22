@@ -22,6 +22,7 @@ import {
   UserBinAssignment,
   UserBinAssignmentRaw,
 } from '../types';
+import { DEFAULT_EMPLOYEE_ORGANIZATION } from '../constants/hrOrganizations';
 import { isAdminLikeRole, normalizeRole, roleCanReply } from './roles';
 import { sanitizeUiText } from './text';
 
@@ -99,6 +100,7 @@ export function mapUserProfile(raw: UserProfileRaw): UserProfile {
     name: sanitizeUiText(raw.name) ?? raw.name,
     createdAt: new Date(raw.created_at),
     jobTitle: sanitizeUiText(raw.job_title) ?? raw.job_title,
+    organization: sanitizeUiText(raw.organization) ?? raw.organization ?? DEFAULT_EMPLOYEE_ORGANIZATION,
     phone: sanitizeUiText(raw.phone) ?? raw.phone,
     bio: sanitizeUiText(raw.bio) ?? raw.bio,
     role,

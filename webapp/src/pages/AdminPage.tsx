@@ -5,6 +5,7 @@ import { extractErrorMessage } from '../utils/errors';
 import { cloneAssignment, formatDateTimeLocalInput, parseDateTimeLocalInput } from '../utils/admin-helpers';
 import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
+import DataLoadingState from '../components/DataLoadingState';
 import AdminUserCard from '../components/AdminUserCard';
 import EmployeeProfileAnalyticsModal from '../components/EmployeeProfileAnalyticsModal';
 import SurveyEntityAnalyticsPanel from '../components/SurveyEntityAnalyticsPanel';
@@ -285,10 +286,11 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
       <div className="admin-content-shell">
         <div className="admin-content">
           {admin.loading ? (
-        <div className="admin-empty-state">
-          <div className="admin-empty-state__icon">⏳</div>
-          <p>Загружаем данные…</p>
-        </div>
+        <DataLoadingState
+          title="Загружаем сотрудников"
+          skeletonRows={6}
+          variant="adminUsers"
+        />
           ) : admin.error ? (
         <div className="admin-empty-state">
           <div className="admin-empty-state__icon">⚠️</div>
@@ -452,7 +454,10 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
 
           {admin.binInfoLoading ? (
             <div className="bin-info-panel">
-              <span className="text-muted">Загрузка...</span>
+              <DataLoadingState
+                title="Загружаем БИН"
+                variant="form"
+              />
             </div>
           ) : admin.selectedBinInfo ? (
             <div className="bin-info-panel">
@@ -521,7 +526,10 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
 
           {admin.binInfoLoading ? (
             <div className="bin-info-panel">
-              <span className="text-muted">Загрузка...</span>
+              <DataLoadingState
+                title="Загружаем БИН"
+                variant="form"
+              />
             </div>
           ) : admin.selectedBinInfo ? (
             <div className="bin-info-panel">
@@ -740,7 +748,10 @@ const AdminPage: React.FC<AdminPageProps> = ({ apiClient, currentUser }) => {
 
           {admin.binInfoLoading ? (
             <div className="bin-info-panel">
-              <span className="text-muted">Загрузка...</span>
+              <DataLoadingState
+                title="Загружаем БИН"
+                variant="form"
+              />
             </div>
           ) : admin.selectedBinInfo ? (
             <div className="bin-info-panel">

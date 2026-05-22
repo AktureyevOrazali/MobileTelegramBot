@@ -5,6 +5,7 @@ import { requestTypeLabels } from './hrMockData';
 interface HrCalendarTabProps {
   requests: HrRequest[];
   employees: HrEmployee[];
+  isLoading?: boolean;
 }
 
 const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -32,7 +33,7 @@ const parseRequestStart = (request: HrRequest) => {
   return request.submittedAt;
 };
 
-const HrCalendarTab: React.FC<HrCalendarTabProps> = ({ requests, employees }) => {
+const HrCalendarTab: React.FC<HrCalendarTabProps> = ({ requests, employees, isLoading = false }) => {
   const [cursor, setCursor] = useState(() => new Date());
 
   const days = useMemo(() => {
@@ -74,22 +75,26 @@ const HrCalendarTab: React.FC<HrCalendarTabProps> = ({ requests, employees }) =>
           const key = toDateKey(day);
           const isMuted = day.getMonth() !== cursor.getMonth();
           const isToday = key === toDateKey(new Date());
-          const events = eventsByDay.get(key) ?? [];
+          const events = isLoading ? [] : eventsByDay.get(key) ?? [];
 
           return (
             <section
-              className={`hr-calendar-day ${isMuted ? 'hr-calendar-day--muted' : ''} ${isToday ? 'hr-calendar-day--today' : ''}`}
+              className={`hr-calendar-day ${isMuted ? 'hr-calendar-day--muted' : ''} ${isToday ? 'hr-calendar-day--today' : ''} ${isLoading ? 'hr-calendar-day--skeleton' : ''}`}
+              data-testid={isLoading ? 'hr-calendar-day-skeleton' : undefined}
               key={key}
               aria-labelledby={`hr-day-${key}`}
             >
               <h3 id={`hr-day-${key}`}>{day.getDate()}</h3>
+              {isLoading && (
+                <span className="hr-calendar-event hr-calendar-event--skeleton skeleton-unit" aria-hidden="true" />
+              )}
               {events.map((request) => (
                 <article className={`hr-calendar-event hr-calendar-event--${request.type}`} key={request.id}>
                   <strong>{request.employeeName}</strong>
                   <span>{requestTypeLabels[request.type]}</span>
                 </article>
               ))}
-              {!events.length && day.getDay() !== 0 && day.getDay() !== 6 && employees.length > 0 && (
+              {!isLoading && !events.length && day.getDay() !== 0 && day.getDay() !== 6 && employees.length > 0 && (
                 <span className="hr-calendar-empty">09:00-18:00</span>
               )}
             </section>

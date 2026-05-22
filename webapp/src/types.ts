@@ -63,6 +63,7 @@ export interface UserProfileRaw {
   name: string;
   created_at: string;
   job_title: string;
+  organization?: string;
   phone: string;
   bio: string;
   role: string;
@@ -340,6 +341,7 @@ export interface UserProfile {
   name: string;
   createdAt: Date;
   jobTitle: string;
+  organization: string;
   phone: string;
   bio: string;
   role: string;
@@ -701,6 +703,7 @@ export interface ReplyTemplate {
 
 export type HrRequestType = 'vacation' | 'advance' | 'sickLeave' | 'businessTrip' | 'certificate' | 'serviceLetter';
 export type HrRequestStatus = 'new' | 'review' | 'needsInfo' | 'approved' | 'rejected' | 'archived';
+export type HrRequestEventAction = HrRequestStatus | 'created';
 export type HrTemplateStatus = 'active' | 'archived';
 
 export interface HrTemplateRaw {
@@ -729,6 +732,26 @@ export interface HrTemplate {
   updatedAt: Date;
 }
 
+export interface HrRequestEventRaw {
+  id: number;
+  request_id: number;
+  action: HrRequestEventAction;
+  actor_id?: number | null;
+  actor_name: string;
+  comment: string;
+  created_at: string;
+}
+
+export interface HrRequestEvent {
+  id: number;
+  requestId: number;
+  action: HrRequestEventAction;
+  actorId: number | null;
+  actorName: string;
+  comment: string;
+  createdAt: Date;
+}
+
 export interface HrRequestRaw {
   id: number;
   template_id?: number | null;
@@ -748,6 +771,7 @@ export interface HrRequestRaw {
   decided_by?: number | null;
   decided_by_name?: string | null;
   decision_comment: string;
+  events?: HrRequestEventRaw[];
 }
 
 export interface HrRequest {
@@ -769,6 +793,7 @@ export interface HrRequest {
   decidedBy: number | null;
   decidedByName: string | null;
   decisionComment: string;
+  events: HrRequestEvent[];
 }
 
 

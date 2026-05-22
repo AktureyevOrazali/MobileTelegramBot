@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { ApiClient } from '../api/ApiClient';
 import type { HrEmployee, HrRequest, HrTemplate } from '../types';
+import { DEFAULT_EMPLOYEE_ORGANIZATION } from '../constants/hrOrganizations';
 import HrArchiveTab from './hr/HrArchiveTab';
 import HrCalendarTab from './hr/HrCalendarTab';
 import HrEmployeesTab from './hr/HrEmployeesTab';
@@ -41,6 +42,7 @@ const mockRequests: HrRequest[] = hrRequests.map((request, index) => ({
   decidedBy: null,
   decidedByName: null,
   decisionComment: '',
+  events: [],
 }));
 
 const mockTemplates: HrTemplate[] = hrTemplates.map((template, index) => ({
@@ -63,6 +65,7 @@ const mockEmployees: HrEmployee[] = hrEmployees.map((employee, index) => ({
   name: employee.fullName,
   createdAt: new Date(employee.hireDate),
   jobTitle: employee.position,
+  organization: DEFAULT_EMPLOYEE_ORGANIZATION,
   phone: employee.phone,
   bio: '',
   role: 'operator',
@@ -77,18 +80,26 @@ const mockEmployees: HrEmployee[] = hrEmployees.map((employee, index) => ({
 
 const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
   const [activeTab, setActiveTab] = useState<HrTab>('requests');
-  const [requests, setRequests] = useState<HrRequest[]>(mockRequests);
-  const [templates, setTemplates] = useState<HrTemplate[]>(mockTemplates);
-  const [employees, setEmployees] = useState<HrEmployee[]>(mockEmployees);
+  const [requests, setRequests] = useState<HrRequest[]>(() => (apiClient ? [] : mockRequests));
+  const [templates, setTemplates] = useState<HrTemplate[]>(() => (apiClient ? [] : mockTemplates));
+  const [employees, setEmployees] = useState<HrEmployee[]>(() => (apiClient ? [] : mockEmployees));
+  const [isHrDataLoading, setIsHrDataLoading] = useState(Boolean(apiClient));
   const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!apiClient) return;
+    if (!apiClient) {
+      setIsHrDataLoading(false);
+      return;
+    }
     const client = apiClient;
     let cancelled = false;
     async function loadHrData() {
+      setIsHrDataLoading(true);
       setIsEmployeesLoading(true);
+      setTemplates([]);
+      setRequests([]);
+      setEmployees([]);
       try {
         const [nextTemplates, nextRequests, nextEmployees] = await Promise.all([
           client.fetchHrTemplates(),
@@ -102,7 +113,10 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Не удалось загрузить HR-данные.');
       } finally {
-        if (!cancelled) setIsEmployeesLoading(false);
+        if (!cancelled) {
+          setIsHrDataLoading(false);
+          setIsEmployeesLoading(false);
+        }
       }
     }
     loadHrData();
@@ -121,9 +135,9 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
     [requests, employees],
   );
 
-  const handleDecision = async (requestId: number, status: 'approved' | 'rejected' | 'needsInfo') => {
+  const handleDecision = async (requestId: number, status: 'approved' | 'rejected' | 'needsInfo', comment = '') => {
     if (!apiClient) return;
-    const updated = await apiClient.decideHrRequest(requestId, { status, comment: '' });
+    const updated = await apiClient.decideHrRequest(requestId, { status, comment });
     setRequests((current) => current.map((request) => (request.id === updated.id ? updated : request)));
   };
 
@@ -139,9 +153,16 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
     setTemplates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
   };
 
-  const handleUpdateEmployee = (updatedEmployee: HrEmployee) => {
+  const handleUpdateEmployee = async (updatedEmployee: HrEmployee) => {
+    let nextEmployee = updatedEmployee;
+    if (apiClient) {
+      const previousEmployee = employees.find((employee) => employee.id === updatedEmployee.id);
+      if (previousEmployee?.organization !== updatedEmployee.organization) {
+        nextEmployee = await apiClient.updateHrEmployeeOrganization(updatedEmployee.id, updatedEmployee.organization);
+      }
+    }
     setEmployees((current) => current.map((employee) => (
-      employee.id === updatedEmployee.id ? updatedEmployee : employee
+      employee.id === nextEmployee.id ? { ...employee, ...nextEmployee } : employee
     )));
   };
 
@@ -156,7 +177,7 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
 
   return (
     <div className="hr-page" data-testid="hr-page-shell">
-      <header className="hr-header">
+      <header className={`hr-header ${isHrDataLoading ? 'hr-header--loading' : ''}`}>
         <div className="hr-header__top">
           <h2 className="hr-header__title">Кадры</h2>
           <div className="hr-header__actions" aria-label="Действия кадровика">
@@ -188,25 +209,28 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
         </div>
       </header>
 
-      <section className={`hr-panel hr-panel--${activeTab}`}>
+      <section key={activeTab} className={`hr-panel hr-panel--${activeTab}`} data-hr-tab={activeTab}>
         {error && <div className="form-error">{error}</div>}
-        {activeTab === 'requests' && <HrRequestsTab requests={requests} onDecide={handleDecision} onDownload={handleDownload} />}
-        {activeTab === 'employees' && (
-          <HrEmployeesTab
-            employees={employees}
-            isLoading={isEmployeesLoading}
-            onUpdateEmployee={handleUpdateEmployee}
-          />
-        )}
-        {activeTab === 'calendar' && <HrCalendarTab requests={requests} employees={employees} />}
-        {activeTab === 'templates' && (
-          <HrTemplatesTab
-            templates={templates}
-            onCreateTemplate={apiClient ? handleCreateTemplate : undefined}
-            onUpdateTemplate={apiClient ? handleUpdateTemplate : undefined}
-          />
-        )}
-        {activeTab === 'archive' && <HrArchiveTab />}
+        <>
+            {activeTab === 'requests' && <HrRequestsTab requests={requests} isLoading={isHrDataLoading} onDecide={handleDecision} onDownload={handleDownload} />}
+            {activeTab === 'employees' && (
+              <HrEmployeesTab
+                employees={employees}
+                isLoading={isHrDataLoading || isEmployeesLoading}
+                onUpdateEmployee={handleUpdateEmployee}
+              />
+            )}
+            {activeTab === 'calendar' && <HrCalendarTab requests={requests} employees={employees} isLoading={isHrDataLoading} />}
+            {activeTab === 'templates' && (
+              <HrTemplatesTab
+                templates={templates}
+                isLoading={isHrDataLoading}
+                onCreateTemplate={apiClient ? handleCreateTemplate : undefined}
+                onUpdateTemplate={apiClient ? handleUpdateTemplate : undefined}
+              />
+            )}
+            {activeTab === 'archive' && <HrArchiveTab requests={requests} isLoading={isHrDataLoading} />}
+        </>
       </section>
     </div>
   );

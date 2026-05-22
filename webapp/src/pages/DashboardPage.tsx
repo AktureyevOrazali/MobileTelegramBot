@@ -17,6 +17,7 @@ import SelectPill from '../components/SelectPill';
 import DashboardContentState from '../components/dashboard/DashboardContentState';
 import DashboardHero from '../components/dashboard/DashboardHero';
 import DashboardOverviewTab from '../components/dashboard/DashboardOverviewTab';
+import DashboardSkeletonState from '../components/dashboard/DashboardSkeletonState';
 import { OperatorMetricKey, useDashboardData } from '../hooks/useDashboardData';
 
 interface DashboardPageProps {
@@ -119,7 +120,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       <div className="dashboard-content-shell">
         {/* Tab content */}
         <div className="dashboard-content">
-          {!d.hasData ? (
+          {!d.hasData && d.loading && !d.error ? (
+            <DashboardSkeletonState tab={d.dashboardTab} />
+          ) : !d.hasData ? (
             <DashboardContentState
               loading={d.loading}
               error={d.error}
@@ -675,7 +678,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                               data: activeBins.map(item => item.bin || 'Анонимно'),
                               axisLine: { show: false },
                               axisTick: { show: false },
-                              axisLabel: { fontSize: 11, fontFamily: 'monospace', color: 'var(--text-color)', margin: 12 },
+                              axisLabel: { fontSize: 11, fontFamily: 'Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif', color: 'var(--text-color)', margin: 12 },
                               inverse: true
                             },
                             series: [
@@ -798,5 +801,3 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
 };
 
 export default DashboardPage;
-
-

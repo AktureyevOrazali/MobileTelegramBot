@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { HrEmployee } from '../../types';
+import { DEFAULT_EMPLOYEE_ORGANIZATION, EMPLOYEE_ORGANIZATIONS } from '../../constants/hrOrganizations';
 
 interface HrEmployeesTabProps {
   employees: HrEmployee[];
@@ -8,9 +9,11 @@ interface HrEmployeesTabProps {
 }
 
 const initials = (name: string) => name.trim().slice(0, 2).toUpperCase() || 'HR';
+const skeletonStyle = (index: number) => ({ '--skeleton-index': index } as React.CSSProperties);
 
 const createDraft = (employee: HrEmployee) => ({
   jobTitle: employee.jobTitle || 'Сотрудник',
+  organization: employee.organization || DEFAULT_EMPLOYEE_ORGANIZATION,
   role: employee.role,
   phone: employee.phone,
   email: employee.email,
@@ -62,6 +65,7 @@ const HrEmployeesTab: React.FC<HrEmployeesTabProps> = ({ employees, isLoading = 
     await onUpdateEmployee?.({
       ...selectedEmployee,
       jobTitle: draft.jobTitle.trim(),
+      organization: draft.organization,
       role: draft.role.trim(),
       phone: draft.phone.trim(),
       email: draft.email.trim(),
@@ -83,9 +87,16 @@ const HrEmployeesTab: React.FC<HrEmployeesTabProps> = ({ employees, isLoading = 
         </label>
 
         <div className="hr-employee-grid" aria-label="Карточки сотрудников">
-          {isLoading && <div className="hr-detail-card">Загружаем сотрудников...</div>}
+          {isLoading && Array.from({ length: 6 }, (_, index) => (
+            <div
+              className="hr-employee-card hr-employee-card--skeleton skeleton-unit"
+              data-testid="hr-employee-card-skeleton"
+              key={index}
+              style={skeletonStyle(index)}
+            />
+          ))}
           {!isLoading && filteredEmployees.length === 0 && <div className="hr-detail-card">Сотрудники не найдены.</div>}
-          {filteredEmployees.map((employee) => (
+          {!isLoading && filteredEmployees.map((employee) => (
             <button
               className="hr-employee-card"
               data-testid="hr-employee-card"
@@ -106,8 +117,28 @@ const HrEmployeesTab: React.FC<HrEmployeesTabProps> = ({ employees, isLoading = 
         </div>
       </div>
 
-      {selectedEmployee && (
-        <aside className="hr-side-panel" aria-label="Профиль сотрудника">
+      {isLoading && (
+        <aside className="hr-side-panel hr-side-panel--skeleton" aria-hidden="true">
+          <div className="hr-side-panel__identity">
+            <span className="hr-avatar hr-avatar--initials skeleton-unit" />
+            <div>
+              <span className="skeleton-unit hr-detail-card__title-skeleton" />
+              <span className="skeleton-unit hr-employee-side-line-skeleton" />
+            </div>
+          </div>
+          <div className="hr-form-grid">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div className="hr-employee-side-field-skeleton skeleton-unit" key={index} style={skeletonStyle(index)} />
+            ))}
+          </div>
+          <div className="hr-side-panel__footer">
+            <span className="skeleton-unit hr-detail-card__button-skeleton hr-detail-card__button-skeleton--wide" />
+          </div>
+        </aside>
+      )}
+
+      {!isLoading && selectedEmployee && (
+        <aside key={selectedEmployee.id} className="hr-side-panel" aria-label="Профиль сотрудника">
           <div className="hr-side-panel__actions">
             <button className="hr-side-panel__close" type="button" onClick={() => setSelectedEmployeeId(null)}>
               Закрыть
@@ -132,6 +163,14 @@ const HrEmployeesTab: React.FC<HrEmployeesTabProps> = ({ employees, isLoading = 
               <label className="hr-field">
                 <span>Должность</span>
                 <input value={draft.jobTitle} onChange={(event) => updateDraft('jobTitle', event.target.value)} />
+              </label>
+              <label className="hr-field">
+                <span>Организация</span>
+                <select value={draft.organization} onChange={(event) => updateDraft('organization', event.target.value)}>
+                  {EMPLOYEE_ORGANIZATIONS.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>
               </label>
               <label className="hr-field">
                 <span>Роль</span>
@@ -160,6 +199,10 @@ const HrEmployeesTab: React.FC<HrEmployeesTabProps> = ({ employees, isLoading = 
                 <div>
                   <dt>Должность</dt>
                   <dd>{selectedEmployee.jobTitle || 'Сотрудник'}</dd>
+                </div>
+                <div>
+                  <dt>Организация</dt>
+                  <dd>{selectedEmployee.organization || DEFAULT_EMPLOYEE_ORGANIZATION}</dd>
                 </div>
                 <div>
                   <dt>Роль</dt>

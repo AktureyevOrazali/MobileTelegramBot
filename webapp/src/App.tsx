@@ -1,5 +1,6 @@
 ﻿import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import DataLoadingState from './components/DataLoadingState';
 import { useApi } from './context/ApiContext';
 import AuthPage from './pages/AuthPage';
 import { canAccessHr, getDefaultRouteForRole, getRoleLabel, roleCanReply } from './utils/roles';
@@ -20,7 +21,11 @@ const SIDEBAR_COLLAPSE_STORAGE_KEY = 'mobilebot-app-sidebar-collapsed';
 
 const PageLoader: React.FC = () => (
   <div className="page-loader">
-    <p className="text-muted">Загрузка...</p>
+    <DataLoadingState
+      title="Загружаем страницу"
+      skeletonRows={4}
+      variant="page"
+    />
   </div>
 );
 
@@ -330,7 +335,7 @@ const App: React.FC = () => {
                   />
                   <Route
                     path="/employee-requests"
-                    element={<EmployeeRequestsPage apiClient={apiClient} session={session} />}
+                    element={!canOpenHr ? <EmployeeRequestsPage apiClient={apiClient} session={session} /> : <Navigate to={defaultRoute} replace />}
                   />
                   <Route
                     path="/profile"

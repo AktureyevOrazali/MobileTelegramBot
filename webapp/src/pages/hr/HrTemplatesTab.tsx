@@ -4,6 +4,7 @@ import { requestTypeLabels } from './hrMockData';
 
 interface HrTemplatesTabProps {
   templates: HrTemplate[];
+  isLoading?: boolean;
   onCreateTemplate?: (template: Omit<HrTemplate, 'id' | 'createdBy' | 'createdAt' | 'updatedAt'>) => Promise<void> | void;
   onUpdateTemplate?: (id: number, template: Omit<HrTemplate, 'id' | 'createdBy' | 'createdAt' | 'updatedAt'>) => Promise<void> | void;
 }
@@ -37,31 +38,43 @@ const templatePresets: Record<HrRequestType, { variables: string; body: string }
   },
 };
 
-const HrTemplatesTab: React.FC<HrTemplatesTabProps> = ({ templates, onCreateTemplate, onUpdateTemplate }) => {
+const skeletonStyle = (index: number) => ({ '--skeleton-index': index } as React.CSSProperties);
+type TemplateMode = 'view' | 'edit' | 'create';
+
+const HrTemplatesTab: React.FC<HrTemplatesTabProps> = ({ templates, isLoading = false, onCreateTemplate, onUpdateTemplate }) => {
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(templates[0]?.id ?? null);
+  const [mode, setMode] = useState<TemplateMode>('view');
   const [title, setTitle] = useState('');
   const [type, setType] = useState<HrRequestType>('vacation');
   const [variables, setVariables] = useState('employee_name,start_date,end_date');
   const [body, setBody] = useState('Прошу рассмотреть заявление для {employee_name}.');
 
   const selectedTemplate = useMemo(
-    () => (selectedTemplateId === null ? null : templates.find((template) => template.id === selectedTemplateId) ?? null),
-    [selectedTemplateId, templates],
+    () => {
+      if (selectedTemplateId === null) return mode === 'create' ? null : templates[0] ?? null;
+      return templates.find((template) => template.id === selectedTemplateId) ?? null;
+    },
+    [mode, selectedTemplateId, templates],
   );
 
   useEffect(() => {
+    if (selectedTemplateId === null && templates[0] && mode !== 'create') {
+      setSelectedTemplateId(templates[0].id);
+      return;
+    }
     if (selectedTemplateId !== null && !templates.some((template) => template.id === selectedTemplateId)) {
       setSelectedTemplateId(templates[0]?.id ?? null);
+      setMode('view');
     }
-  }, [templates, selectedTemplateId]);
+  }, [mode, templates, selectedTemplateId]);
 
   useEffect(() => {
-    if (!selectedTemplate) return;
+    if (!selectedTemplate || mode === 'create') return;
     setTitle(selectedTemplate.title);
     setType(selectedTemplate.type);
     setVariables(selectedTemplate.variables.join(','));
     setBody(selectedTemplate.body);
-  }, [selectedTemplate]);
+  }, [mode, selectedTemplate]);
 
   const applyPreset = (requestType: HrRequestType) => {
     setType(requestType);
@@ -70,11 +83,21 @@ const HrTemplatesTab: React.FC<HrTemplatesTabProps> = ({ templates, onCreateTemp
   };
 
   const startNewTemplate = () => {
+    setMode('create');
     setSelectedTemplateId(null);
     setTitle('');
     setType('vacation');
     setVariables(templatePresets.vacation.variables);
     setBody(templatePresets.vacation.body);
+  };
+
+  const startEditingTemplate = () => {
+    if (!selectedTemplate) return;
+    setTitle(selectedTemplate.title);
+    setType(selectedTemplate.type);
+    setVariables(selectedTemplate.variables.join(','));
+    setBody(selectedTemplate.body);
+    setMode('edit');
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -88,30 +111,58 @@ const HrTemplatesTab: React.FC<HrTemplatesTabProps> = ({ templates, onCreateTemp
       variables: variables.split(',').map((variable) => variable.trim()).filter(Boolean),
       status: 'active',
     };
-    if (selectedTemplate && onUpdateTemplate) {
+    if (mode === 'edit' && selectedTemplate && onUpdateTemplate) {
       await onUpdateTemplate(selectedTemplate.id, payload);
+      setMode('view');
       return;
     }
-    if (!selectedTemplate && onCreateTemplate) {
+    if (mode === 'create' && onCreateTemplate) {
       await onCreateTemplate(payload);
-      setTitle('');
+      setMode('view');
     }
   };
+
+  const isFormOpen = mode === 'edit' || mode === 'create';
+  const formTitle = mode === 'create' ? 'Новый шаблон' : 'Редактирование шаблона';
 
   return (
     <div className="hr-template-layout hr-template-layout--manager">
       <div className="hr-template-list" aria-label="Шаблоны документов">
         <div className="hr-template-list__header">
           <strong>Шаблоны</strong>
-          <span>{templates.length}</span>
+          <div className="hr-template-list__tools">
+            <span>{templates.length}</span>
+            {onCreateTemplate && !isLoading && (
+              <button
+                className="hr-icon-button"
+                type="button"
+                aria-label="Добавить шаблон"
+                title="Добавить шаблон"
+                onClick={startNewTemplate}
+              >
+                +
+              </button>
+            )}
+          </div>
         </div>
-        {templates.map((template) => (
+        {isLoading && Array.from({ length: 5 }, (_, index) => (
+          <div
+            className="hr-template-item hr-template-item--skeleton skeleton-unit"
+            data-testid="hr-template-item-skeleton"
+            key={index}
+            style={skeletonStyle(index)}
+          />
+        ))}
+        {!isLoading && templates.map((template) => (
           <button
             className={`hr-template-item ${template.id === selectedTemplate?.id ? 'hr-template-item--active' : ''}`}
             key={template.id}
             type="button"
             aria-pressed={template.id === selectedTemplate?.id}
-            onClick={() => setSelectedTemplateId(template.id)}
+            onClick={() => {
+              setMode('view');
+              setSelectedTemplateId(template.id);
+            }}
           >
             <strong>{template.title}</strong>
             <span className="hr-badge">{requestTypeLabels[template.type]}</span>
@@ -121,28 +172,57 @@ const HrTemplatesTab: React.FC<HrTemplatesTabProps> = ({ templates, onCreateTemp
       </div>
 
       <article className="hr-template-preview">
-        {selectedTemplate ? (
+        {isLoading ? (
+          <div className="hr-template-preview-skeleton" data-testid="hr-template-preview-skeleton" aria-hidden="true">
+            <span className="skeleton-unit hr-detail-card__pill-skeleton" />
+            <span className="skeleton-unit hr-detail-card__title-skeleton" />
+            <span className="skeleton-unit hr-template-line-skeleton hr-template-line-skeleton--wide" />
+            <span className="skeleton-unit hr-template-line-skeleton" />
+            <div className="hr-template-preview__variables">
+              <span className="skeleton-unit hr-detail-card__pill-skeleton" />
+              <span className="skeleton-unit hr-detail-card__pill-skeleton" />
+              <span className="skeleton-unit hr-detail-card__pill-skeleton" />
+            </div>
+          </div>
+        ) : selectedTemplate && !isFormOpen ? (
           <>
-            <span className="hr-badge">{requestTypeLabels[selectedTemplate.type]}</span>
-            <h3>{selectedTemplate.title}</h3>
-            <p>{selectedTemplate.body}</p>
+            <div className="hr-template-preview__header">
+              <span className="hr-badge">{requestTypeLabels[selectedTemplate.type]}</span>
+              {onUpdateTemplate && (
+                <button className="button secondary" type="button" onClick={startEditingTemplate}>Редактировать</button>
+              )}
+            </div>
+            <div className="hr-document-preview-shell hr-document-preview-shell--template">
+              <article className="hr-document-preview" aria-label="Предпросмотр шаблона">
+                <div className="hr-document-preview__to">
+                  <span>Получателю документа</span>
+                  <span>от {'{employee_name}'}</span>
+                </div>
+                <div className="hr-document-preview__body">
+                  <h3>{selectedTemplate.title}</h3>
+                  <p>{selectedTemplate.body}</p>
+                </div>
+                <div className="hr-document-preview__footer">
+                  <span>{new Intl.DateTimeFormat('ru-RU').format(new Date())}</span>
+                  <span>________________ / {'{employee_name}'} /</span>
+                </div>
+              </article>
+            </div>
             <div className="hr-template-preview__variables" aria-label="Переменные шаблона">
               {selectedTemplate.variables.map((variable) => (
                 <span className="hr-badge" key={variable}>{variable}</span>
               ))}
             </div>
           </>
-        ) : (
+        ) : !isFormOpen ? (
           <p>Шаблонов пока нет.</p>
-        )}
+        ) : null}
 
-        {(onCreateTemplate || onUpdateTemplate) && (
+        {!isLoading && isFormOpen && (onCreateTemplate || onUpdateTemplate) && (
           <form className="hr-template-form" onSubmit={handleSubmit}>
             <div className="hr-template-form__header">
-              <h3>{selectedTemplate ? 'Редактирование шаблона' : 'Новый шаблон'}</h3>
-              {selectedTemplate && (
-                <button className="button secondary" type="button" onClick={startNewTemplate}>Новый шаблон</button>
-              )}
+              <h3>{formTitle}</h3>
+              <button className="button secondary" type="button" onClick={() => setMode('view')}>Отмена</button>
             </div>
             <div className="hr-template-preset-grid" aria-label="Быстрые формы">
               {requestTypes.map((requestType) => (
@@ -178,7 +258,7 @@ const HrTemplatesTab: React.FC<HrTemplatesTabProps> = ({ templates, onCreateTemp
             </label>
             <div className="hr-template-preview__actions">
               <button className="button" type="submit">
-                {selectedTemplate ? 'Сохранить изменения' : 'Создать шаблон'}
+                {mode === 'edit' ? 'Сохранить изменения' : 'Создать шаблон'}
               </button>
             </div>
           </form>

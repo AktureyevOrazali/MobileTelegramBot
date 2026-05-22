@@ -1,0 +1,2 @@
+export const DEFAULT_EMPLOYEE_ORGANIZATION = 'ТОО Азия-Сервис';
+export const EMPLOYEE_ORGANIZATIONS = [DEFAULT_EMPLOYEE_ORGANIZATION] as const;

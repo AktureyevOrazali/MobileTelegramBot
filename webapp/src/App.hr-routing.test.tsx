@@ -18,6 +18,7 @@ function makeUser(role: string): UserProfile {
     name: role === 'hr' ? 'HR User' : 'Оператор',
     createdAt: new Date('2026-01-01T00:00:00Z'),
     jobTitle: '',
+    organization: 'ТОО Азия-Сервис',
     phone: '',
     bio: '',
     role,
@@ -48,6 +49,7 @@ vi.mock('./pages/DashboardPage', () => ({ default: () => <div data-testid="dashb
 vi.mock('./pages/AdminPage', () => ({ default: () => <div data-testid="admin-page">Admin</div> }));
 vi.mock('./pages/SurveysPage', () => ({ default: () => <div data-testid="surveys-page">Surveys</div> }));
 vi.mock('./pages/ProfilePage', () => ({ default: () => <div data-testid="profile-page">Profile</div> }));
+vi.mock('./pages/EmployeeRequestsPage', () => ({ default: () => <div data-testid="employee-requests-page">Employee requests</div> }));
 
 function renderAppAt(path: string) {
   return render(
@@ -88,6 +90,14 @@ describe('App HR routing', () => {
 
     expect(await screen.findByRole('heading', { name: 'Кадры' })).toBeInTheDocument();
     expect(screen.queryByTestId('dialogs-page')).not.toBeInTheDocument();
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/hr');
+  });
+
+  it('redirects HR users away from employee request submission', async () => {
+    renderAppAt('/employee-requests');
+
+    expect(await screen.findByRole('heading', { name: 'Кадры' })).toBeInTheDocument();
+    expect(screen.queryByTestId('employee-requests-page')).not.toBeInTheDocument();
     expect(screen.getByTestId('current-path')).toHaveTextContent('/hr');
   });
 

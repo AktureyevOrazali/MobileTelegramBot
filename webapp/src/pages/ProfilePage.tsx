@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient } from '../api/ApiClient';
 import { AuthSession } from '../types';
 import Modal from '../components/Modal';
+import { DEFAULT_EMPLOYEE_ORGANIZATION, EMPLOYEE_ORGANIZATIONS } from '../constants/hrOrganizations';
 import { formatDateTime } from '../utils/date';
 import { extractErrorMessage } from '../utils/errors';
 import { getRoleLabel } from '../utils/roles';
@@ -20,6 +21,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
   const [name, setName] = useState(user.name || '');
   const [email, setEmail] = useState(user.email || '');
   const [position, setPosition] = useState(user.jobTitle || '');
+  const [organization, setOrganization] = useState(user.organization || DEFAULT_EMPLOYEE_ORGANIZATION);
   const [phone, setPhone] = useState(user.phone || '');
   const [bio, setBio] = useState(user.bio || '');
 
@@ -68,6 +70,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
         name: name.trim(),
         email: email.trim(),
         jobTitle: position.trim(),
+        organization,
         phone: phone.trim(),
         bio: bio.trim(),
       });
@@ -75,6 +78,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
       setName(updated.name || '');
       setEmail(updated.email || '');
       setPosition(updated.jobTitle || '');
+      setOrganization(updated.organization || DEFAULT_EMPLOYEE_ORGANIZATION);
       setPhone(updated.phone || '');
       setBio(updated.bio || '');
       setBanner('\u041f\u0440\u043e\u0444\u0438\u043b\u044c \u043e\u0431\u043d\u043e\u0432\u043b\u0451\u043d');
@@ -158,6 +162,15 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiClient, session, onSession
               <label className="profile-field">
                 <span className="profile-field__label">{'\u0414\u043e\u043b\u0436\u043d\u043e\u0441\u0442\u044c'}</span>
                 <input className="input" value={position} onChange={e => setPosition(e.target.value)} autoComplete="organization-title" />
+              </label>
+
+              <label className="profile-field">
+                <span className="profile-field__label">Организация</span>
+                <select className="input" value={organization} onChange={e => setOrganization(e.target.value)}>
+                  {EMPLOYEE_ORGANIZATIONS.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>
               </label>
 
               <label className="profile-field">

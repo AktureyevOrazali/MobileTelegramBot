@@ -3,6 +3,7 @@ import { ApiClient } from '../api/ApiClient';
 import type { SurveyAnalytics, SurveyAnalyticsAnswer, SurveyAnalyticsTopItemRaw, SurveyQuestionAnalytics } from '../types';
 import { formatDateTime } from '../utils/date';
 import { extractErrorMessage } from '../utils/errors';
+import DataLoadingState from './DataLoadingState';
 
 type SurveyAnalyticsTarget =
   | { kind: 'employee'; label: string; operatorName: string }
@@ -142,7 +143,14 @@ const SurveyEntityAnalyticsPanel: React.FC<SurveyEntityAnalyticsPanelProps> = ({
         {target ? <span className="badge">{target.label}</span> : null}
       </div>
 
-      {loading ? <div className="survey-entity-analytics__empty">Загрузка аналитики...</div> : null}
+      {loading ? (
+        <DataLoadingState
+          className="survey-entity-analytics__loading"
+          title="Загружаем аналитику"
+          skeletonRows={2}
+          variant="dashboard"
+        />
+      ) : null}
       {error ? <div className="alert error">{error}</div> : null}
       {!loading && !error && !hasData ? (
         <div className="survey-entity-analytics__empty">По этому сотруднику или БИНу пока нет ответов на опросы.</div>

@@ -24,6 +24,7 @@ function makeUser(name: string): UserProfile {
     name,
     createdAt: new Date('2026-04-13T00:00:00Z'),
     jobTitle: '',
+    organization: 'ТОО Азия-Сервис',
     phone: '',
     bio: '',
     role: 'admin',

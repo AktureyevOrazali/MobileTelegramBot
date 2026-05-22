@@ -33,6 +33,7 @@ def _employee_user():
         "role": "operator",
         "created_at": "2026-05-19T00:00:00+00:00",
         "job_title": "Operator",
+        "organization": "ТОО Азия-Сервис",
         "phone": "",
         "bio": "",
         "is_approved": True,
@@ -96,7 +97,7 @@ class HrRequestsApiTests(unittest.TestCase):
             "employee_name": "Employee User",
             "department": "Operator",
             "status": "new",
-            "values": {"start_date": "2026-06-01", "end_date": "2026-06-10"},
+            "values": {"start_date": "2026-06-01", "end_date": "2026-06-10", "organization": "ТОО Азия-Сервис"},
             "rendered_text": "Please approve Employee User from 2026-06-01.",
             "summary": "Annual leave",
             "period": "2026-06-01 - 2026-06-10",
@@ -106,6 +107,17 @@ class HrRequestsApiTests(unittest.TestCase):
             "decided_by": None,
             "decided_by_name": None,
             "decision_comment": "",
+            "events": [
+                {
+                    "id": 101,
+                    "request_id": 31,
+                    "action": "created",
+                    "actor_id": 20,
+                    "actor_name": "Employee User",
+                    "comment": "Annual leave",
+                    "created_at": "2026-05-19T10:10:00+00:00",
+                }
+            ],
         }
         captured = {}
 
@@ -128,6 +140,55 @@ class HrRequestsApiTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "new")
         self.assertEqual(captured["employee_id"], 20)
         self.assertEqual(captured["employee_name"], "Employee User")
+        self.assertEqual(response.json()["events"][0]["action"], "created")
+        self.assertEqual(response.json()["events"][0]["actor_name"], "Employee User")
+        self.assertEqual(captured["values"]["organization"], "ТОО Азия-Сервис")
+
+    def test_employee_cannot_download_request_documents(self):
+        api.app.dependency_overrides[api.get_current_user] = _employee_user
+        request_row = {
+            "id": 31,
+            "template_id": 7,
+            "template_title": "Vacation request",
+            "type": "vacation",
+            "employee_id": 20,
+            "employee_name": "Employee User",
+            "department": "Operator",
+            "status": "approved",
+            "values": {},
+            "rendered_text": "Please approve Employee User.",
+            "summary": "Annual leave",
+            "period": "2026-06-01 - 2026-06-10",
+            "submitted_at": "2026-05-19T10:10:00+00:00",
+            "updated_at": "2026-05-19T10:20:00+00:00",
+            "decided_at": "2026-05-19T10:20:00+00:00",
+            "decided_by": 10,
+            "decided_by_name": "HR User",
+            "decision_comment": "Approved",
+            "events": [],
+        }
+
+        with patch.object(api.database, "get_hr_request", return_value=request_row):
+            response = self.client.get("/api/hr/requests/31/document.doc")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_hr_can_set_employee_organization(self):
+        updated = {**_employee_user(), "organization": "ТОО Азия-Сервис"}
+
+        with patch.object(api.database, "get_user_by_id", return_value=_employee_user()), patch.object(
+            api.database,
+            "update_user_organization",
+            return_value=updated,
+        ) as update_organization:
+            response = self.client.put(
+                "/api/hr/employees/20/organization",
+                json={"organization": "ТОО Азия-Сервис"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["organization"], "ТОО Азия-Сервис")
+        update_organization.assert_called_once_with(20, "ТОО Азия-Сервис")
 
     def test_hr_can_approve_request(self):
         decided = {
@@ -149,6 +210,17 @@ class HrRequestsApiTests(unittest.TestCase):
             "decided_by": 10,
             "decided_by_name": "HR User",
             "decision_comment": "Approved",
+            "events": [
+                {
+                    "id": 102,
+                    "request_id": 31,
+                    "action": "approved",
+                    "actor_id": 10,
+                    "actor_name": "HR User",
+                    "comment": "Approved",
+                    "created_at": "2026-05-19T10:20:00+00:00",
+                }
+            ],
         }
 
         with patch.object(api.database, "decide_hr_request", return_value=decided) as decide:
@@ -159,6 +231,7 @@ class HrRequestsApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "approved")
+        self.assertEqual(response.json()["events"][0]["comment"], "Approved")
         decide.assert_called_once_with(
             31,
             status="approved",

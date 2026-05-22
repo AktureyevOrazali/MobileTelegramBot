@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import HrPage from './HrPage';
 import { hrRequests, hrTemplates } from './hr/hrMockData';
@@ -40,10 +40,66 @@ const apiRequests: HrRequest[] = [
     decidedBy: null,
     decidedByName: null,
     decisionComment: '',
+    events: [
+      {
+        id: 101,
+        requestId: 31,
+        action: 'created',
+        actorId: 20,
+        actorName: 'Employee User',
+        comment: 'Annual leave',
+        createdAt: new Date('2026-05-19T10:10:00Z'),
+      },
+    ],
   },
 ];
 
 describe('HrPage', () => {
+  it('keeps the HR request panels while backend data is loading', () => {
+    const apiClient = {
+      fetchHrTemplates: vi.fn(() => new Promise<HrTemplate[]>(() => {})),
+      fetchHrRequests: vi.fn(() => new Promise<HrRequest[]>(() => {})),
+      fetchHrEmployees: vi.fn(() => new Promise<any[]>(() => {})),
+      decideHrRequest: vi.fn(),
+      createHrTemplate: vi.fn(),
+      updateHrTemplate: vi.fn(),
+    };
+
+    const { container } = render(<HrPage apiClient={apiClient as any} />);
+
+    expect(container.querySelector('.hr-requests-grid')).toBeInTheDocument();
+    expect(container.querySelector('.hr-request-list')).toBeInTheDocument();
+    expect(container.querySelector('.hr-detail-card')).toBeInTheDocument();
+    expect(screen.getAllByTestId('hr-request-row-skeleton')).toHaveLength(7);
+    expect(screen.getByTestId('hr-document-preview-skeleton')).toBeInTheDocument();
+    expect(container.querySelector('.data-loading-state--dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByText(hrRequests[0].employeeName)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['Сотрудники', '.hr-employees-layout', 'hr-employee-card-skeleton'],
+    ['Календарь', '.hr-calendar-shell', 'hr-calendar-day-skeleton'],
+    ['Шаблоны', '.hr-template-layout', 'hr-template-item-skeleton'],
+    ['Архив', '.hr-archive-table-wrap', 'hr-archive-row-skeleton'],
+  ])('keeps the %s tab layout while backend data is loading', (tabName, layoutSelector, skeletonTestId) => {
+    const apiClient = {
+      fetchHrTemplates: vi.fn(() => new Promise<HrTemplate[]>(() => {})),
+      fetchHrRequests: vi.fn(() => new Promise<HrRequest[]>(() => {})),
+      fetchHrEmployees: vi.fn(() => new Promise<any[]>(() => {})),
+      decideHrRequest: vi.fn(),
+      createHrTemplate: vi.fn(),
+      updateHrTemplate: vi.fn(),
+    };
+
+    const { container } = render(<HrPage apiClient={apiClient as any} />);
+
+    fireEvent.click(screen.getByRole('tab', { name: tabName }));
+
+    expect(container.querySelector(layoutSelector)).toBeInTheDocument();
+    expect(screen.getAllByTestId(skeletonTestId).length).toBeGreaterThan(0);
+    expect(container.querySelector('.data-loading-state--dashboard')).not.toBeInTheDocument();
+  });
+
   it('renders compact header stats and HR tabs', () => {
     render(<HrPage />);
 
@@ -61,11 +117,14 @@ describe('HrPage', () => {
     const { container } = render(<HrPage />);
 
     expect(container.querySelector('.hr-panel--requests')).toBeInTheDocument();
+    expect(container.querySelector('.hr-panel--requests')).toHaveAttribute('data-hr-tab', 'requests');
     fireEvent.click(screen.getByRole('tab', { name: 'Сотрудники' }));
 
     expect(screen.getByRole('tab', { name: 'Сотрудники' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('hr-page-shell')).toBeInTheDocument();
-    expect(container.querySelector('.hr-panel--employees')).toBeInTheDocument();
+    const employeesPanel = container.querySelector('.hr-panel--employees');
+    expect(employeesPanel).toBeInTheDocument();
+    expect(employeesPanel).toHaveAttribute('data-hr-tab', 'employees');
   });
 
   it('shows request details and quick actions on the requests tab', () => {
@@ -130,8 +189,36 @@ describe('HrPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
     expect(screen.getByRole('columnheader', { name: /Дата/ })).toBeInTheDocument();
   });
+  it('lets HR assign the employee organization from the side panel', async () => {
+    const { container } = render(<HrPage />);
+
+    fireEvent.click(screen.getAllByRole('tab')[1]);
+    fireEvent.click(container.querySelector('.hr-side-panel__footer .button') as HTMLButtonElement);
+    fireEvent.change(screen.getByLabelText('Организация'), { target: { value: 'ТОО Азия-Сервис' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Сохранить' })).not.toBeInTheDocument());
+    expect(screen.getByText('ТОО Азия-Сервис')).toBeInTheDocument();
+  });
+
   it('approves a backend HR request', async () => {
-    const approved = { ...apiRequests[0], status: 'approved' as const, decisionComment: 'Approved' };
+    const approved = {
+      ...apiRequests[0],
+      status: 'approved' as const,
+      decisionComment: 'Approved',
+      events: [
+        ...apiRequests[0].events,
+        {
+          id: 102,
+          requestId: 31,
+          action: 'approved',
+          actorId: 10,
+          actorName: 'HR User',
+          comment: 'Approved',
+          createdAt: new Date('2026-05-19T10:20:00Z'),
+        },
+      ],
+    };
     const apiClient = {
       fetchHrTemplates: vi.fn().mockResolvedValue(apiTemplates),
       fetchHrRequests: vi.fn().mockResolvedValue(apiRequests),
@@ -143,11 +230,83 @@ describe('HrPage', () => {
 
     render(<HrPage apiClient={apiClient as any} />);
 
-    expect(await screen.findByText((text) => text.includes('Annual leave'))).toBeInTheDocument();
+    expect((await screen.findAllByText((text) => text.includes('Annual leave'))).length).toBeGreaterThanOrEqual(1);
     fireEvent.click(screen.getByTestId('hr-approve-request'));
 
     expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'approved', comment: '' });
-    expect(await screen.findByText('Approved')).toBeInTheDocument();
+    expect((await screen.findAllByText('Approved')).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('sends an HR comment when requesting additional data', async () => {
+    const apiClient = {
+      fetchHrTemplates: vi.fn().mockResolvedValue(apiTemplates),
+      fetchHrRequests: vi.fn().mockResolvedValue(apiRequests),
+      fetchHrEmployees: vi.fn().mockResolvedValue([]),
+      decideHrRequest: vi.fn().mockResolvedValue({
+        ...apiRequests[0],
+        status: 'needsInfo',
+        decisionComment: 'Attach certificate',
+      }),
+      createHrTemplate: vi.fn(),
+      updateHrTemplate: vi.fn(),
+    };
+
+    render(<HrPage apiClient={apiClient as any} />);
+
+    expect((await screen.findAllByText((text) => text.includes('Annual leave'))).length).toBeGreaterThanOrEqual(1);
+    fireEvent.change(screen.getByLabelText('HR comment'), { target: { value: 'Attach certificate' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Запросить данные' }));
+
+    await waitFor(() => {
+      expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'needsInfo', comment: 'Attach certificate' });
+    });
+  });
+
+  it('shows the HR request event history in the detail panel', async () => {
+    const apiClient = {
+      fetchHrTemplates: vi.fn().mockResolvedValue(apiTemplates),
+      fetchHrRequests: vi.fn().mockResolvedValue(apiRequests),
+      fetchHrEmployees: vi.fn().mockResolvedValue([]),
+      decideHrRequest: vi.fn(),
+      createHrTemplate: vi.fn(),
+      updateHrTemplate: vi.fn(),
+    };
+
+    render(<HrPage apiClient={apiClient as any} />);
+
+    const history = await screen.findByLabelText('HR request history');
+    expect(within(history).getByText('Employee User')).toBeInTheDocument();
+    expect(within(history).getByText('Annual leave')).toBeInTheDocument();
+  });
+
+  it('renders archive rows from loaded HR requests instead of demo archive items', async () => {
+    const approvedRequest: HrRequest = {
+      ...apiRequests[0],
+      status: 'approved',
+      decidedAt: new Date('2026-05-19T10:20:00Z'),
+      decidedBy: 10,
+      decidedByName: 'HR User',
+      decisionComment: 'Approved',
+      updatedAt: new Date('2026-05-19T10:20:00Z'),
+    };
+    const apiClient = {
+      fetchHrTemplates: vi.fn().mockResolvedValue(apiTemplates),
+      fetchHrRequests: vi.fn().mockResolvedValue([approvedRequest]),
+      fetchHrEmployees: vi.fn().mockResolvedValue([]),
+      decideHrRequest: vi.fn(),
+      createHrTemplate: vi.fn(),
+      updateHrTemplate: vi.fn(),
+    };
+
+    render(<HrPage apiClient={apiClient as any} />);
+
+    await waitFor(() => expect(apiClient.fetchHrRequests).toHaveBeenCalledTimes(1));
+    expect(screen.getAllByText('Employee User').length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
+
+    expect(screen.getByRole('cell', { name: 'Employee User' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'HR User' })).toBeInTheDocument();
+    expect(screen.queryByText('Р‘РѕС‚Р° РђР№С‚Р¶Р°РЅРѕРІР°')).not.toBeInTheDocument();
   });
 
   it('updates an existing HR template from the templates tab', async () => {
@@ -170,6 +329,10 @@ describe('HrPage', () => {
 
     fireEvent.click(screen.getAllByRole('tab')[3]);
 
+    expect(await screen.findByLabelText('Предпросмотр шаблона')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Vacation request')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }));
+
     expect(await screen.findByDisplayValue('Vacation request')).toBeInTheDocument();
 
     fireEvent.change(screen.getByDisplayValue('employee_name'), {
@@ -190,6 +353,45 @@ describe('HrPage', () => {
       status: 'active',
     });
     expect(apiClient.createHrTemplate).not.toHaveBeenCalled();
-    expect(await screen.findAllByText('Please prepare a certificate for {employee_name} to {recipient}.')).toHaveLength(2);
+    expect(await screen.findByLabelText('Предпросмотр шаблона')).toBeInTheDocument();
+    expect(screen.getByText('Please prepare a certificate for {employee_name} to {recipient}.')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Please prepare a certificate for {employee_name} to {recipient}.')).not.toBeInTheDocument();
+  });
+
+  it('creates HR templates from the plus button in the template list', async () => {
+    const newTemplate: HrTemplate = {
+      ...apiTemplates[0],
+      id: 8,
+      title: 'New certificate',
+      type: 'certificate',
+      body: 'Prepare certificate for {employee_name}.',
+      variables: ['employee_name'],
+      updatedAt: new Date('2026-05-21T10:00:00Z'),
+    };
+    const apiClient = {
+      fetchHrTemplates: vi.fn().mockResolvedValue(apiTemplates),
+      fetchHrRequests: vi.fn().mockResolvedValue(apiRequests),
+      fetchHrEmployees: vi.fn().mockResolvedValue([]),
+      decideHrRequest: vi.fn(),
+      createHrTemplate: vi.fn().mockResolvedValue(newTemplate),
+      updateHrTemplate: vi.fn(),
+    };
+
+    render(<HrPage apiClient={apiClient as any} />);
+
+    fireEvent.click(screen.getAllByRole('tab')[3]);
+    expect(await screen.findByLabelText('Предпросмотр шаблона')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Новый шаблон' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить шаблон' }));
+
+    expect(await screen.findByRole('heading', { name: 'Новый шаблон' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'New certificate' } });
+    fireEvent.change(screen.getByLabelText('Текст шаблона'), { target: { value: 'Prepare certificate for {employee_name}.' } });
+    const createForm = screen.getByRole('heading', { name: 'Новый шаблон' }).closest('form') as HTMLFormElement;
+    fireEvent.click(within(createForm).getByRole('button', { name: 'Создать шаблон' }));
+
+    await waitFor(() => expect(apiClient.createHrTemplate).toHaveBeenCalledTimes(1));
+    expect(apiClient.updateHrTemplate).not.toHaveBeenCalled();
   });
 });

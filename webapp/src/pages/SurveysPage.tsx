@@ -3,7 +3,7 @@ import type { EChartsOption } from 'echarts';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiClient } from '../api/ApiClient';
 import EChartsWrapper from '../components/EChartsWrapper';
-import LoadingEstimate from '../components/LoadingEstimate';
+import DataLoadingState from '../components/DataLoadingState';
 import { SurveyBuilderSection } from '../components/surveys/SurveyBuilderSection';
 import {
   createBlankSurveyQuestion,
@@ -987,10 +987,12 @@ const ClientSurveyAnalytics: React.FC<{
 
       {error ? <div className="surveys-alert">{error}</div> : null}
       {isLoading ? (
-        <LoadingEstimate
+        <DataLoadingState
           title="Загружаем аналитику опросов"
           description="Собираем ответы, оценки и динамику по анкетам."
-          className="loading-estimate--panel"
+          className="surveys-loading-skeleton"
+          skeletonRows={3}
+          variant="dashboard"
         />
       ) : null}
       {!hasAnalytics && !isLoading ? (
@@ -1196,10 +1198,12 @@ const EmployeeSurveyAnalytics: React.FC<{
 
       {error ? <div className="surveys-alert">{error}</div> : null}
       {isLoading ? (
-        <LoadingEstimate
+        <DataLoadingState
           title="Загружаем аналитику опросов сотрудников"
           description="Собираем внутренние оценки, причины и динамику."
-          className="loading-estimate--panel"
+          className="surveys-loading-skeleton"
+          skeletonRows={3}
+          variant="dashboard"
         />
       ) : null}
       {!hasEmployeeAnalytics && !isLoading ? (
@@ -1489,10 +1493,12 @@ const RatingsAnalytics: React.FC<{
 
         {error ? <div className="surveys-alert">{error}</div> : null}
         {isLoading ? (
-          <LoadingEstimate
+          <DataLoadingState
             title="Загружаем сводную аналитику"
             description="Собираем опросы, оценки ИИ, матрицу и реестр."
-            className="loading-estimate--panel"
+            className="surveys-loading-skeleton"
+            skeletonRows={4}
+            variant="dashboard"
           />
         ) : null}
 

@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import { ApiClient } from '../api/ApiClient';
 import { AuthSession } from '../types';
+import { DEFAULT_EMPLOYEE_ORGANIZATION } from '../constants/hrOrganizations';
 import { normalizeAssignmentsFromStorage } from '../utils/converters';
 import { isAdminLikeRole, normalizeRole, roleCanReply } from '../utils/roles';
 import { sanitizeUiText } from '../utils/text';
@@ -48,6 +49,7 @@ function loadSessionFromStorage(): AuthSession | null {
           login: sanitizeUiText(parsed.user.login) ?? parsed.user.login ?? '',
           name: sanitizeUiText(parsed.user.name) ?? parsed.user.name ?? '',
           jobTitle: sanitizeUiText(parsed.user.jobTitle ?? parsed.user.job_title) ?? parsed.user.jobTitle ?? parsed.user.job_title ?? '',
+          organization: sanitizeUiText(parsed.user.organization) ?? parsed.user.organization ?? DEFAULT_EMPLOYEE_ORGANIZATION,
           phone: sanitizeUiText(parsed.user.phone) ?? parsed.user.phone ?? '',
           bio: sanitizeUiText(parsed.user.bio) ?? parsed.user.bio ?? '',
           createdAt: new Date(parsed.user.createdAt ?? parsed.user.created_at ?? new Date().toISOString()),

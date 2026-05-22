@@ -6,6 +6,7 @@ import { useChatConversation } from '../hooks/useChatConversation';
 import { extractErrorMessage } from '../utils/errors';
 import { getChatAvatarGradient, getChatAvatarLabel } from '../utils/chatParticipantAvatar';
 import { sanitizeMessageText, sanitizeUiText } from '../utils/text';
+import DataLoadingState from './DataLoadingState';
 import EmployeeClientAssessmentCard from './EmployeeClientAssessmentCard';
 
 interface InlineChatPanelProps {
@@ -282,7 +283,12 @@ const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ apiClient, chat, onTo
 
       <div className="chat-inline__scroll chat-inline__scroll--minimal" ref={scrollRef}>
         {loading ? (
-          <div className="chat-inline__loading">{TEXT.loading}</div>
+          <DataLoadingState
+            className="chat-inline__loading-state"
+            title={TEXT.loading}
+            skeletonRows={8}
+            variant="chat"
+          />
         ) : messages.length === 0 ? (
           <div className="chat-inline__placeholder">{TEXT.emptyMessages}</div>
         ) : (

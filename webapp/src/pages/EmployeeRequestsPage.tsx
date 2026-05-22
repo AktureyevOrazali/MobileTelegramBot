@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { ApiClient } from '../api/ApiClient';
 import type { AuthSession, HrRequest, HrTemplate } from '../types';
+import { DEFAULT_EMPLOYEE_ORGANIZATION } from '../constants/hrOrganizations';
 import { requestStatusLabels, requestTypeLabels } from './hr/hrMockData';
 
 interface EmployeeRequestsPageProps {
@@ -14,12 +15,7 @@ const formatInputDate = (value: string) => {
 };
 
 const formatToday = () => new Intl.DateTimeFormat('ru-RU').format(new Date());
-
-const organizations = [
-  'ТОО "Smart Hub"',
-  'ТОО "Операционный центр"',
-  'АО "Информационные системы"',
-];
+const skeletonStyle = (index: number) => ({ '--skeleton-index': index } as React.CSSProperties);
 
 const countDays = (startDate: string, endDate: string) => {
   if (!startDate || !endDate) return '';
@@ -74,6 +70,45 @@ const buildAutoValues = (
   return values;
 };
 
+const previewDatePlaceholder = 'дд.мм.гггг';
+const previewReasonPlaceholder = 'укажите причину';
+const previewValuePlaceholder = 'укажите значение';
+
+const getPreviewPlaceholder = (variable: string) => {
+  if (variable.includes('date') || variable.endsWith('_at')) return previewDatePlaceholder;
+  if (variable === 'days_count') return '0';
+  if (variable === 'period') return `с ${previewDatePlaceholder} по ${previewDatePlaceholder}`;
+  if (
+    variable.includes('reason')
+    || variable === 'purpose'
+    || variable === 'recipient'
+    || variable === 'manager_name'
+    || variable === 'payroll_month'
+    || variable === 'amount'
+    || variable === 'destination'
+    || variable === 'city'
+    || variable === 'system_name'
+    || variable === 'monthly_income'
+  ) {
+    return previewReasonPlaceholder;
+  }
+  return previewValuePlaceholder;
+};
+
+const buildPreviewValues = (
+  template: HrTemplate | null,
+  values: Record<string, string>,
+) => {
+  const previewValues = { ...values };
+  Object.keys(previewValues).forEach((key) => {
+    if (!previewValues[key]) previewValues[key] = getPreviewPlaceholder(key);
+  });
+  template?.variables.forEach((variable) => {
+    if (!previewValues[variable]) previewValues[variable] = getPreviewPlaceholder(variable);
+  });
+  return previewValues;
+};
+
 const normalizeSentence = (value: string) => {
   const sentence = value.trim().replace(/\s+/g, ' ');
   if (!sentence) return '';
@@ -119,7 +154,6 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
   const [templates, setTemplates] = useState<HrTemplate[]>([]);
   const [requests, setRequests] = useState<HrRequest[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
-  const [organization, setOrganization] = useState(organizations[0]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
@@ -156,17 +190,23 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
     () => templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null,
     [selectedTemplateId, templates],
   );
+  const organization = session.user.organization || DEFAULT_EMPLOYEE_ORGANIZATION;
   const period = useMemo(() => buildPeriodLabel(startDate, endDate), [startDate, endDate]);
+  const isDateRangeInvalid = Boolean(startDate && endDate && endDate < startDate);
   const values = useMemo(
     () => buildAutoValues(selectedTemplate, session, startDate, endDate, reason, organization),
     [selectedTemplate, session, startDate, endDate, reason, organization],
   );
-  const previewText = buildRequestStatement(selectedTemplate, session.user.name, period, reason)
-    || (selectedTemplate ? renderTemplate(selectedTemplate.body, values) : '');
+  const previewValues = useMemo(
+    () => buildPreviewValues(selectedTemplate, values),
+    [selectedTemplate, values],
+  );
+  const renderedTemplateText = selectedTemplate ? normalizeSentence(renderTemplate(selectedTemplate.body, previewValues)) : '';
+  const previewText = renderedTemplateText || buildRequestStatement(selectedTemplate, session.user.name, period, reason);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedTemplate || !period || !reason.trim()) return;
+    if (!selectedTemplate || !period || !reason.trim() || isDateRangeInvalid) return;
     setIsSubmitting(true);
     setError('');
     try {
@@ -187,14 +227,6 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
     }
   };
 
-  const handleDownload = async (requestId: number, format: 'doc' | 'pdf') => {
-    try {
-      await apiClient.downloadHrRequestDocument(requestId, format);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось скачать заявление.');
-    }
-  };
-
   return (
     <div className="hr-page hr-page--employee" data-testid="employee-requests-page">
       <header className="hr-header">
@@ -208,102 +240,158 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
 
       {error && <div className="form-error">{error}</div>}
 
-      <section className="hr-request-wizard">
-        <div className="hr-template-list" aria-label="Шаблоны заявлений">
-          {templates.map((template) => (
-            <button
-              className={`hr-template-item ${template.id === selectedTemplate?.id ? 'hr-template-item--active' : ''}`}
-              key={template.id}
-              type="button"
-              aria-pressed={template.id === selectedTemplate?.id}
-              onClick={() => setSelectedTemplateId(template.id)}
-            >
-              <strong>{template.title}</strong>
-              <span className="hr-badge">{requestTypeLabels[template.type]}</span>
-            </button>
+      <main className="hr-employee-requests-layout">
+        <section className="hr-request-wizard">
+          <div className="hr-template-list" aria-label="Шаблоны заявлений">
+            {isLoading && Array.from({ length: 4 }, (_, index) => (
+              <div
+                className="hr-template-item hr-template-item--skeleton skeleton-unit"
+                data-testid="employee-template-item-skeleton"
+                key={index}
+                style={skeletonStyle(index)}
+              />
+            ))}
+            {!isLoading && templates.map((template) => (
+              <button
+                className={`hr-template-item ${template.id === selectedTemplate?.id ? 'hr-template-item--active' : ''}`}
+                key={template.id}
+                type="button"
+                aria-pressed={template.id === selectedTemplate?.id}
+                onClick={() => setSelectedTemplateId(template.id)}
+              >
+                <strong>{template.title}</strong>
+                <span className="hr-badge">{requestTypeLabels[template.type]}</span>
+              </button>
+            ))}
+          </div>
+
+          <form className="hr-template-preview" onSubmit={handleSubmit}>
+            {isLoading ? (
+              <div className="hr-employee-request-preview-skeleton" aria-hidden="true">
+                <div className="hr-detail-card__header">
+                  <span className="skeleton-unit hr-detail-card__pill-skeleton" />
+                  <span className="skeleton-unit hr-detail-card__pill-skeleton" />
+                </div>
+                <span className="skeleton-unit hr-detail-card__title-skeleton" />
+                <span className="skeleton-unit hr-template-field-skeleton" />
+                <div className="hr-form-grid hr-form-grid--two">
+                  <span className="skeleton-unit hr-template-field-skeleton" />
+                  <span className="skeleton-unit hr-template-field-skeleton" />
+                </div>
+                <span className="skeleton-unit hr-template-field-skeleton hr-template-field-skeleton--textarea" />
+                <article
+                  className="hr-document-preview hr-document-preview--skeleton skeleton-unit"
+                  data-testid="employee-statement-preview-skeleton"
+                />
+                <div className="hr-template-preview__actions">
+                  <span className="skeleton-unit hr-detail-card__button-skeleton hr-detail-card__button-skeleton--wide" />
+                </div>
+              </div>
+            ) : selectedTemplate ? (
+              <>
+                <div className="hr-detail-card__header">
+                  <span className="hr-badge">Заявление</span>
+                  <span className="hr-status">Автозаполнение</span>
+                </div>
+                <div className="hr-employee-request-editor">
+                  <article className="hr-document-preview" aria-label="Предпросмотр заявления">
+                    <div className="hr-document-preview__to">
+                      <span>Директору</span>
+                      <span>{organization}</span>
+                    </div>
+                    <h3>Заявление</h3>
+                    <p>{previewText}</p>
+                    <div className="hr-document-preview__footer">
+                      <span>{formatToday()}</span>
+                      <span>________________ / {session.user.name} /</span>
+                    </div>
+                  </article>
+
+                  <div className="hr-employee-request-fields">
+                    <h3>Заявление</h3>
+                    <label className="hr-field">
+                      <span>Организация</span>
+                      <input value={organization} readOnly />
+                    </label>
+                    <div className="hr-form-grid hr-form-grid--two">
+                      <label className="hr-field">
+                        <span>Дата начала</span>
+                        <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required />
+                      </label>
+                      <label className="hr-field">
+                        <span>Дата окончания</span>
+                        <input
+                          type="date"
+                          value={endDate}
+                          onChange={(event) => setEndDate(event.target.value)}
+                          aria-invalid={isDateRangeInvalid}
+                          required
+                        />
+                      </label>
+                    </div>
+                    {isDateRangeInvalid && (
+                      <p className="form-error" role="alert">Дата окончания не может быть раньше даты начала.</p>
+                    )}
+                    <label className="hr-field hr-employee-request-reason">
+                      <span>Причина</span>
+                      <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} required />
+                    </label>
+
+                    <div className="hr-template-preview__actions">
+                      <button className="button" type="submit" disabled={isSubmitting || !period || !reason.trim() || isDateRangeInvalid}>
+                        Отправить заявление
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p>Кадровик еще не создал активные шаблоны заявлений.</p>
+            )}
+          </form>
+        </section>
+
+        <section className="hr-request-list hr-request-list--employee" aria-label="Мои отправленные заявления">
+          <div className="hr-template-list__header">
+            <strong>Отправленные</strong>
+            <span>{requests.length}</span>
+          </div>
+          {isLoading && Array.from({ length: 3 }, (_, index) => (
+            <article
+              className="hr-request-row hr-request-row--employee hr-request-row--skeleton skeleton-unit"
+              data-testid="employee-request-row-skeleton"
+              key={index}
+              style={skeletonStyle(index)}
+            />
           ))}
-        </div>
-
-        <form className="hr-template-preview" onSubmit={handleSubmit}>
-          {isLoading ? (
-            <p>Загружаем шаблоны заявлений...</p>
-          ) : selectedTemplate ? (
-            <>
-              <div className="hr-detail-card__header">
-                <span className="hr-badge">Заявление</span>
-                <span className="hr-status">Автозаполнение</span>
-              </div>
-              <h3>Заявление</h3>
-              <label className="hr-field">
-                <span>Организация</span>
-                <select value={organization} onChange={(event) => setOrganization(event.target.value)}>
-                  {organizations.map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="hr-form-grid hr-form-grid--two">
-                <label className="hr-field">
-                  <span>Дата начала</span>
-                  <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required />
-                </label>
-                <label className="hr-field">
-                  <span>Дата окончания</span>
-                  <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} required />
-                </label>
-              </div>
-              <label className="hr-field">
-                <span>Причина</span>
-                <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} required />
-              </label>
-
-              <article className="hr-document-preview" aria-label="Предпросмотр заявления">
-                <div className="hr-document-preview__to">
-                  <span>Директору</span>
-                  <span>{organization}</span>
-                </div>
-                <h3>Заявление</h3>
-                <p>{previewText}</p>
-                <div className="hr-document-preview__footer">
-                  <span>{formatToday()}</span>
-                  <span>________________ / {session.user.name} /</span>
-                </div>
-              </article>
-
-              <div className="hr-template-preview__actions">
-                <button className="button" type="submit" disabled={isSubmitting || !period || !reason.trim()}>
-                  Отправить заявление
-                </button>
-              </div>
-            </>
-          ) : (
-            <p>Кадровик еще не создал активные шаблоны заявлений.</p>
+          {!isLoading && requests.length === 0 && (
+            <article className="hr-detail-card">
+              <p>Вы еще не отправляли заявления.</p>
+            </article>
           )}
-        </form>
-      </section>
-
-      <section className="hr-request-list" aria-label="Мои отправленные заявления">
-        {!isLoading && requests.length === 0 && (
-          <article className="hr-detail-card">
-            <p>Вы еще не отправляли заявления.</p>
-          </article>
-        )}
-        {requests.map((request) => (
-          <article className="hr-request-row hr-request-row--document" key={request.id}>
-            <span className="hr-request-row__body">
-              <strong>Заявление</strong>
-              <span>{request.period || request.summary}</span>
-              <span className="hr-request-row__meta">
-                <span className={`hr-status hr-status--${request.status}`}>{requestStatusLabels[request.status]}</span>
+          {!isLoading && requests.map((request) => (
+            <article className="hr-request-row hr-request-row--employee" key={request.id}>
+              <span className="hr-request-row__body">
+                <span className="hr-request-row__meta">
+                  <span className="hr-badge">{requestTypeLabels[request.type]}</span>
+                  <span className={`hr-status hr-status--${request.status}`}>{requestStatusLabels[request.status]}</span>
+                </span>
+                <strong>{request.templateTitle || 'Заявление'}</strong>
+                <span>{request.period || request.summary}</span>
+                {request.renderedText && (
+                  <p className="hr-request-row__statement">{request.renderedText}</p>
+                )}
+                {request.decisionComment && (
+                  <span className="hr-request-row__decision">
+                    <span>Комментарий кадровика</span>
+                    <span>{request.decisionComment}</span>
+                  </span>
+                )}
               </span>
-            </span>
-            <span className="hr-request-row__actions">
-              <button className="button secondary" type="button" onClick={() => handleDownload(request.id, 'doc')}>Word</button>
-              <button className="button secondary" type="button" onClick={() => handleDownload(request.id, 'pdf')}>PDF</button>
-            </span>
-          </article>
-        ))}
-      </section>
+            </article>
+          ))}
+        </section>
+      </main>
     </div>
   );
 };

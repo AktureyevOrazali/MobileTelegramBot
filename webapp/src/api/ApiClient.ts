@@ -410,10 +410,11 @@ export class ApiClient {
     return profile;
   }
 
-  async updateProfile(payload: { name?: string; jobTitle?: string; phone?: string; bio?: string; email?: string }): Promise<UserProfile> {
+  async updateProfile(payload: { name?: string; jobTitle?: string; organization?: string; phone?: string; bio?: string; email?: string }): Promise<UserProfile> {
     const body = {
       name: payload.name,
       job_title: payload.jobTitle,
+      organization: payload.organization,
       phone: payload.phone,
       bio: payload.bio,
       email: payload.email,
@@ -998,6 +999,15 @@ export class ApiClient {
       decidedBy: raw.decided_by ?? null,
       decidedByName: raw.decided_by_name ? sanitizeUiText(raw.decided_by_name) || raw.decided_by_name : null,
       decisionComment: sanitizeUiText(raw.decision_comment) || '',
+      events: (raw.events ?? []).map((event) => ({
+        id: event.id,
+        requestId: event.request_id,
+        action: event.action,
+        actorId: event.actor_id ?? null,
+        actorName: sanitizeUiText(event.actor_name) || event.actor_name,
+        comment: sanitizeUiText(event.comment) || '',
+        createdAt: new Date(event.created_at),
+      })),
     };
   }
 
@@ -1015,6 +1025,17 @@ export class ApiClient {
       ...mapUserProfile(employee),
       schedule: sanitizeUiText(employee.schedule) || '09:00-18:00',
     }));
+  }
+
+  async updateHrEmployeeOrganization(userId: number, organization: string): Promise<HrEmployee> {
+    const response = await this.request<HrEmployeeRaw>(`hr/employees/${userId}/organization`, {
+      method: 'PUT',
+      body: JSON.stringify({ organization }),
+    });
+    return {
+      ...mapUserProfile(response),
+      schedule: sanitizeUiText(response.schedule) || '09:00-18:00',
+    };
   }
 
   async createHrTemplate(data: Omit<HrTemplate, 'id' | 'createdBy' | 'createdAt' | 'updatedAt'>): Promise<HrTemplate> {

@@ -16,6 +16,7 @@ const makeUser = (name: string): UserProfile => ({
   name,
   createdAt: new Date('2026-05-06T00:00:00Z'),
   jobTitle: '',
+  organization: 'ТОО Азия-Сервис',
   phone: '',
   bio: '',
   role: 'admin',

@@ -15,6 +15,23 @@ interface DialogsPageProps {
 }
 
 const LIST_PANEL_COLLAPSE_STORAGE_KEY = 'mobilebot-dialogs-list-collapsed';
+const dialogSkeletonItems = Array.from({ length: 6 }, (_, index) => index);
+const skeletonStyle = (index: number) => ({ '--skeleton-index': index } as React.CSSProperties);
+
+const DialogsLoadingSkeleton: React.FC = () => (
+  <div className="dialogs-loading-state dialogs-loading-state--fit" role="status" aria-live="polite" aria-busy="true">
+    <span className="sr-only">Loading dialogs</span>
+    {dialogSkeletonItems.map((item) => (
+      <div
+        className="skeleton-unit dialogs-loading-state__row"
+        data-testid="dialog-row-skeleton"
+        key={item}
+        style={skeletonStyle(item)}
+        aria-hidden="true"
+      />
+    ))}
+  </div>
+);
 
 const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -299,10 +316,7 @@ const DialogsPage: React.FC<DialogsPageProps> = ({ apiClient, session }) => {
 
             <div className="dialogs-list-panel__scroll dialogs-list-panel__scroll--minimal dialogs-list-panel__scroll--reference">
               {loading ? (
-                <div className="dialogs-state-card">
-                  <span className="dialogs-state-card__icon dialogs-loading-pulse">⏳</span>
-                  <p className="dialogs-state-card__title">Загрузка диалогов...</p>
-                </div>
+                <DialogsLoadingSkeleton />
               ) : error ? (
                 <div className="dialogs-state-card">
                   <span className="dialogs-state-card__icon">⚠️</span>

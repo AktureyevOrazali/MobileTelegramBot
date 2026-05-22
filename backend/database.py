@@ -205,6 +205,7 @@ USER_COLUMN_NAMES = (
     "password_hash",
     "created_at",
     "job_title",
+    "organization",
     "phone",
     "bio",
     "login",
@@ -385,6 +386,8 @@ RATING_CHANNELS: tuple[str, ...] = (
 
 SURVEY_ANALYTICS_ANSWERS_PREVIEW_LIMIT = 1000
 SURVEY_ANALYTICS_FETCH_BATCH_SIZE = 500
+DEFAULT_EMPLOYEE_ORGANIZATION = "ТОО Азия-Сервис"
+HR_EMPLOYEE_ORGANIZATIONS: tuple[str, ...] = (DEFAULT_EMPLOYEE_ORGANIZATION,)
 
 
 def _user_columns(prefix: str | None = None) -> str:
@@ -639,6 +642,7 @@ def _init_db() -> None:
             password_hash TEXT NOT NULL,
             created_at TEXT NOT NULL,
             job_title TEXT,
+            organization TEXT DEFAULT 'ТОО Азия-Сервис',
             phone TEXT,
             bio TEXT,
             login TEXT UNIQUE,
@@ -1091,12 +1095,27 @@ def _init_db() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS hr_request_events (
+            id BIGSERIAL PRIMARY KEY,
+            request_id BIGINT NOT NULL REFERENCES hr_requests(id) ON DELETE CASCADE,
+            action TEXT NOT NULL,
+            actor_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            actor_name TEXT DEFAULT '',
+            comment TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
         CREATE INDEX IF NOT EXISTS idx_hr_requests_status_updated
         ON hr_requests(status, updated_at DESC)
         """,
         """
         CREATE INDEX IF NOT EXISTS idx_hr_requests_employee
         ON hr_requests(employee_id, updated_at DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_hr_request_events_request_created
+        ON hr_request_events(request_id, created_at ASC, id ASC)
         """,
     ]
 
@@ -1118,6 +1137,7 @@ def _init_db() -> None:
     _ensure_column("chat_dialogs", "section", "TEXT")
     _ensure_column("chat_dialogs", "purged_at", "TEXT")
     _ensure_column("users", "job_title", "TEXT")
+    _ensure_column("users", "organization", "TEXT DEFAULT 'ТОО Азия-Сервис'")
     _ensure_column("users", "phone", "TEXT")
     _ensure_column("users", "bio", "TEXT")
     _ensure_column("users", "login", "TEXT")
@@ -1149,6 +1169,12 @@ def _init_db() -> None:
     _ensure_column("hr_requests", "decided_by", "BIGINT")
     _ensure_column("hr_requests", "decided_by_name", "TEXT")
     _ensure_column("hr_requests", "decision_comment", "TEXT DEFAULT ''")
+    _ensure_column("hr_request_events", "request_id", "BIGINT")
+    _ensure_column("hr_request_events", "action", "TEXT")
+    _ensure_column("hr_request_events", "actor_id", "BIGINT")
+    _ensure_column("hr_request_events", "actor_name", "TEXT DEFAULT ''")
+    _ensure_column("hr_request_events", "comment", "TEXT DEFAULT ''")
+    _ensure_column("hr_request_events", "created_at", "TEXT")
 
     # dialog_stats migration (extend existing table with new metric columns)
     _ensure_column("dialog_stats", "msg_total", "INTEGER DEFAULT 0")
@@ -2414,6 +2440,7 @@ HR_REQUEST_STATUSES: tuple[str, ...] = (
     "rejected",
     "archived",
 )
+HR_REQUEST_EVENT_ACTIONS: tuple[str, ...] = ("created", "review", "needsInfo", "approved", "rejected", "archived")
 
 DEFAULT_HR_REQUEST_TEMPLATES: tuple[dict[str, Any], ...] = (
     {
@@ -6183,6 +6210,7 @@ def _row_to_user(row: Mapping[str, Any] | None) -> dict | None:
         "password_hash": row["password_hash"],
         "created_at": row["created_at"],
         "job_title": row["job_title"] or "",
+        "organization": row.get("organization") or DEFAULT_EMPLOYEE_ORGANIZATION,
         "phone": row["phone"] or "",
         "bio": row["bio"] or "",
         "login": row["login"],
@@ -6200,6 +6228,7 @@ def _sanitize_user_payload(user: dict | None, *, include_sections: bool = True) 
         "name": repair_text(user["name"]) or user["name"],
         "created_at": user["created_at"],
         "job_title": repair_text(user.get("job_title", "")) or "",
+        "organization": repair_text(user.get("organization", "")) or DEFAULT_EMPLOYEE_ORGANIZATION,
         "phone": repair_text(user.get("phone", "")) or "",
         "bio": repair_text(user.get("bio", "")) or "",
         "login": repair_text(user.get("login", "")) or "",
@@ -6214,12 +6243,22 @@ def _sanitize_user_payload(user: dict | None, *, include_sections: bool = True) 
     return sanitized
 
 
+def normalize_hr_employee_organization(value: str | None) -> str:
+    organization = (repair_text(value or "") or value or "").strip()
+    if not organization:
+        return DEFAULT_EMPLOYEE_ORGANIZATION
+    if organization not in HR_EMPLOYEE_ORGANIZATIONS:
+        raise ValueError("Unknown employee organization")
+    return organization
+
+
 def create_user(
     email: str,
     name: str,
     password_hash: str,
     *,
     job_title: str | None = None,
+    organization: str | None = None,
     phone: str | None = None,
     bio: str | None = None,
     login: str | None = None,
@@ -6231,6 +6270,7 @@ def create_user(
     email_value = (repair_text(email) or email).strip()
     name_value = (repair_text(name) or name).strip()
     job_title_value = repair_text(job_title or "") or ""
+    organization_value = normalize_hr_employee_organization(organization)
     phone_value = repair_text(phone or "") or ""
     bio_value = repair_text(bio or "") or ""
     login_value = (repair_text(login or email_value) or (login or email_value)).strip()
@@ -6241,8 +6281,8 @@ def create_user(
     with _lock:
         cursor = execute(
             """
-            INSERT INTO users (email, name, password_hash, created_at, job_title, phone, bio, login, role, is_approved)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO users (email, name, password_hash, created_at, job_title, organization, phone, bio, login, role, is_approved)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -6251,6 +6291,7 @@ def create_user(
                 password_hash,
                 now,
                 job_title_value,
+                organization_value,
                 phone_value,
                 bio_value,
                 login_value,
@@ -6269,6 +6310,7 @@ def create_user(
             "name": name_value,
             "created_at": now,
             "job_title": job_title_value,
+            "organization": organization_value,
             "phone": phone_value,
             "bio": bio_value,
             "login": login_value,
@@ -6352,12 +6394,14 @@ def update_user_profile(
     *,
     name: str,
     job_title: str,
+    organization: str,
     phone: str,
     bio: str,
     email: str | None,
 ) -> dict:
     name_value = repair_text(name) or name
     job_title_value = repair_text(job_title) or job_title
+    organization_value = normalize_hr_employee_organization(organization)
     phone_value = repair_text(phone) or phone
     bio_value = repair_text(bio) or bio
     email_value = repair_text(email or "") or (email or "")
@@ -6366,13 +6410,25 @@ def update_user_profile(
             execute(
                 """
                 UPDATE users
-                SET name = %s, job_title = %s, phone = %s, bio = %s, email = %s
+                SET name = %s, job_title = %s, organization = %s, phone = %s, bio = %s, email = %s
                 WHERE id = %s
                 """,
-                (name_value, job_title_value, phone_value, bio_value, email_value, user_id),
+                (name_value, job_title_value, organization_value, phone_value, bio_value, email_value, user_id),
             )
         except psycopg2.errors.UniqueViolation as exc:
             raise ValueError("Этот email уже используется") from exc
+    return _sanitize_user_payload(get_user_by_id(user_id))
+
+
+def update_user_organization(user_id: int, organization: str) -> dict:
+    organization_value = normalize_hr_employee_organization(organization)
+    with _lock:
+        cursor = execute(
+            "UPDATE users SET organization = %s WHERE id = %s",
+            (organization_value, int(user_id)),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError("User not found")
     return _sanitize_user_payload(get_user_by_id(user_id))
 
 
@@ -8110,6 +8166,64 @@ def _hr_template_from_row(row: Mapping[str, Any] | None) -> dict | None:
     }
 
 
+def _hr_request_event_from_row(row: Mapping[str, Any] | None) -> dict | None:
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "request_id": int(row["request_id"]),
+        "action": str(row.get("action") or ""),
+        "actor_id": int(row["actor_id"]) if row.get("actor_id") else None,
+        "actor_name": repair_text(row.get("actor_name", "")) or "",
+        "comment": repair_text(row.get("comment", "")) or "",
+        "created_at": row["created_at"],
+    }
+
+
+def list_hr_request_events(request_id: int) -> List[dict]:
+    with _lock:
+        rows = execute(
+            """
+            SELECT id, request_id, action, actor_id, actor_name, comment, created_at
+            FROM hr_request_events
+            WHERE request_id = %s
+            ORDER BY created_at ASC, id ASC
+            """,
+            (int(request_id),),
+        ).fetchall()
+    return [event for row in rows if (event := _hr_request_event_from_row(row)) is not None]
+
+
+def _append_hr_request_event(
+    *,
+    request_id: int,
+    action: str,
+    actor_id: int | None,
+    actor_name: str,
+    comment: str = "",
+    created_at: str | None = None,
+) -> None:
+    if action not in HR_REQUEST_EVENT_ACTIONS:
+        raise ValueError("Invalid HR request event action")
+    execute(
+        """
+        INSERT INTO hr_request_events (
+            request_id, action, actor_id, actor_name, comment, created_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """,
+        (
+            int(request_id),
+            action,
+            int(actor_id) if actor_id is not None else None,
+            repair_text(actor_name or "") or "",
+            repair_text(comment or "") or "",
+            created_at or datetime.now(timezone.utc).isoformat(),
+        ),
+    ).fetchone()
+
+
 def _hr_request_from_row(row: Mapping[str, Any] | None) -> dict | None:
     if row is None:
         return None
@@ -8135,6 +8249,7 @@ def _hr_request_from_row(row: Mapping[str, Any] | None) -> dict | None:
         "decided_by": int(row["decided_by"]) if row.get("decided_by") else None,
         "decided_by_name": repair_text(row.get("decided_by_name", "")) or row.get("decided_by_name"),
         "decision_comment": repair_text(row.get("decision_comment", "")) or "",
+        "events": [],
     }
 
 
@@ -8267,7 +8382,10 @@ def list_hr_requests(*, employee_id: int | None = None) -> List[dict]:
             """,
             params,
         ).fetchall()
-    return [request for row in rows if (request := _hr_request_from_row(row)) is not None]
+    requests = [request for row in rows if (request := _hr_request_from_row(row)) is not None]
+    for request in requests:
+        request["events"] = list_hr_request_events(int(request["id"]))
+    return requests
 
 
 def create_hr_request(
@@ -8323,6 +8441,15 @@ def create_hr_request(
                 now,
             ),
         ).fetchone()
+        if row is not None:
+            _append_hr_request_event(
+                request_id=int(row["id"]),
+                action="created",
+                actor_id=int(employee_id),
+                actor_name=employee_name,
+                comment=summary,
+                created_at=now,
+            )
     if row is None:
         raise RuntimeError("Failed to create HR request")
     request = get_hr_request(int(row["id"]))
@@ -8347,7 +8474,10 @@ def get_hr_request(request_id: int) -> dict | None:
             """,
             (int(request_id),),
         ).fetchone()
-    return _hr_request_from_row(row)
+    request = _hr_request_from_row(row)
+    if request is not None:
+        request["events"] = list_hr_request_events(int(request_id))
+    return request
 
 
 def decide_hr_request(
@@ -8380,6 +8510,15 @@ def decide_hr_request(
                 int(request_id),
             ),
         ).fetchone()
+        if row is not None:
+            _append_hr_request_event(
+                request_id=int(request_id),
+                action=status,
+                actor_id=int(decided_by),
+                actor_name=decided_by_name,
+                comment=comment,
+                created_at=now,
+            )
     if row is None:
         raise ValueError("HR request not found")
     request = get_hr_request(int(request_id))

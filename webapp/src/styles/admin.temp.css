@@ -398,7 +398,7 @@
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--text-primary);
-  font-family: 'SF Mono', 'Roboto Mono', monospace;
+  font-family: var(--font-sans);
   letter-spacing: 0.5px;
 }
 
@@ -783,7 +783,7 @@ body,
 
 /* ===== BIN Cards Fix: Prevent Text Wrapping ===== */
 .bin-chip--compact .bin-chip__title {
-  font-family: 'Consolas', 'SF Mono', monospace;
+  font-family: var(--font-sans);
   font-size: 0.8rem;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -1157,7 +1157,7 @@ body,
 }
 
 .bin-chip--detailed .bin-chip__title {
-  font-family: 'Consolas', 'SF Mono', monospace;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 600;
   white-space: nowrap;
@@ -1252,7 +1252,7 @@ body,
 }
 
 .section-chip--detailed .section-chip__meta {
-  font-family: 'Consolas', 'SF Mono', monospace;
+  font-family: var(--font-sans);
   font-size: 0.65rem;
   color: var(--text-muted);
   white-space: nowrap;
@@ -1437,7 +1437,7 @@ body,
 /* ===== Assignment Modal ===== */
 
 .admin-assign-modal__bin-label {
-  font-family: 'Consolas', 'SF Mono', monospace;
+  font-family: var(--font-sans);
   font-size: 1.15rem;
   font-weight: 700;
   color: var(--brand-color);

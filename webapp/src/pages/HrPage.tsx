@@ -15,6 +15,8 @@ interface HrPageProps {
   apiClient?: ApiClient;
 }
 
+const activeRequestStatuses = new Set<HrRequest['status']>(['new', 'review', 'needsInfo']);
+
 const tabs: { id: HrTab; label: string }[] = [
   { id: 'requests', label: 'Заявления' },
   { id: 'employees', label: 'Сотрудники' },
@@ -135,6 +137,11 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
     [requests, employees],
   );
 
+  const activeRequests = useMemo(
+    () => requests.filter((request) => activeRequestStatuses.has(request.status)),
+    [requests],
+  );
+
   const handleDecision = async (requestId: number, status: 'approved' | 'rejected' | 'needsInfo', comment = '') => {
     if (!apiClient) return;
     const updated = await apiClient.decideHrRequest(requestId, { status, comment });
@@ -212,7 +219,7 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
       <section key={activeTab} className={`hr-panel hr-panel--${activeTab}`} data-hr-tab={activeTab}>
         {error && <div className="form-error">{error}</div>}
         <>
-            {activeTab === 'requests' && <HrRequestsTab requests={requests} isLoading={isHrDataLoading} onDecide={handleDecision} onDownload={handleDownload} />}
+            {activeTab === 'requests' && <HrRequestsTab requests={activeRequests} isLoading={isHrDataLoading} onDecide={handleDecision} onDownload={handleDownload} />}
             {activeTab === 'employees' && (
               <HrEmployeesTab
                 employees={employees}
@@ -229,7 +236,7 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
                 onUpdateTemplate={apiClient ? handleUpdateTemplate : undefined}
               />
             )}
-            {activeTab === 'archive' && <HrArchiveTab requests={requests} isLoading={isHrDataLoading} />}
+            {activeTab === 'archive' && <HrArchiveTab requests={requests} isLoading={isHrDataLoading} onDecide={handleDecision} />}
         </>
       </section>
     </div>

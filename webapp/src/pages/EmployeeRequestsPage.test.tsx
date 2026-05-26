@@ -109,7 +109,10 @@ describe('EmployeeRequestsPage', () => {
         summary: 'Annual leave',
       }));
     });
-    expect(await screen.findByText('с 01.06.2026 по 10.06.2026')).toBeInTheDocument();
+    const sentRequests = screen.getByLabelText('Мои отправленные заявления');
+    expect(await screen.findByText('19.05.2026')).toBeInTheDocument();
+    expect(sentRequests).toHaveTextContent('Отпуск');
+    expect(sentRequests).toHaveTextContent('Новое');
   });
 
   it('uses the selected HR template body for preview and submitted statement', async () => {
@@ -164,8 +167,15 @@ describe('EmployeeRequestsPage', () => {
     const preview = await screen.findByLabelText('Предпросмотр заявления');
     expect(preview).toHaveTextContent('Кадровику: оформить отпуск для Employee User с дд.мм.гггг по дд.мм.гггг. Причина: укажите причину.');
     const editor = container.querySelector('.hr-employee-request-editor');
-    expect(editor?.firstElementChild).toHaveAttribute('aria-label', 'Предпросмотр заявления');
+    const documentColumn = editor?.querySelector('.hr-employee-request-document-column');
+    const documentBody = preview.querySelector('.hr-document-preview__body');
+    expect(documentColumn?.firstElementChild).toHaveAttribute('aria-label', 'Предпросмотр заявления');
+    expect(documentBody).toContainElement(preview.querySelector('h3'));
+    expect(documentBody).toContainElement(preview.querySelector('p'));
+    expect(editor?.querySelector('.hr-employee-request-bottom .hr-employee-request-reason')).toBeInTheDocument();
+    expect(editor?.querySelector('.hr-employee-request-bottom .hr-template-preview__actions')).toBeInTheDocument();
     expect(editor?.querySelector('.hr-employee-request-fields')).toBeInTheDocument();
+    expect(editor?.querySelector('.hr-employee-request-date-stack')).toBeInTheDocument();
   });
 
   it('shows a clear empty state when HR has not created active templates yet', async () => {
@@ -216,7 +226,7 @@ describe('EmployeeRequestsPage', () => {
     expect(await screen.findByText('Вы еще не отправляли заявления.')).toBeInTheDocument();
   });
 
-  it('shows only the submitted statement status and HR decision result for an employee', async () => {
+  it('shows only the request type, status, and submitted date for an employee', async () => {
     const decidedRequest: HrRequest = {
       ...submittedRequest,
       id: 41,
@@ -236,9 +246,12 @@ describe('EmployeeRequestsPage', () => {
 
     render(<EmployeeRequestsPage apiClient={apiClient as any} session={session} />);
 
-    expect(await screen.findByText('Прошу предоставить отпуск с 01.06.2026 по 10.06.2026.')).toBeInTheDocument();
-    expect(screen.getByText('Одобрено')).toBeInTheDocument();
-    expect(screen.getByText('Согласовано кадровиком.')).toBeInTheDocument();
+    const sentRequests = screen.getByLabelText('Мои отправленные заявления');
+    await waitFor(() => expect(sentRequests).toHaveTextContent('Отпуск'));
+    expect(sentRequests).toHaveTextContent('Одобрено');
+    expect(sentRequests).toHaveTextContent('19.05.2026');
+    expect(screen.queryByText('Прошу предоставить отпуск с 01.06.2026 по 10.06.2026.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Согласовано кадровиком.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Word' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'PDF' })).not.toBeInTheDocument();
     expect(apiClient.downloadHrRequestDocument).not.toHaveBeenCalled();

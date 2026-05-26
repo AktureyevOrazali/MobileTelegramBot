@@ -50,20 +50,22 @@ describe('HR layout CSS', () => {
 
   it('keeps the employee requests page compact and evenly aligned', () => {
     expect(css).toContain('.hr-employee-requests-layout {\n  display: grid;');
-    expect(css).toContain('grid-template-columns: minmax(260px, 300px) minmax(420px, 1fr) minmax(340px, 420px);');
+    expect(css).toContain('grid-template-columns: minmax(250px, 300px) minmax(640px, 1fr) minmax(280px, 360px);');
     expect(css).toContain('.hr-page--employee .hr-request-wizard {\n  display: contents;');
-    expect(css).toContain('.hr-page--employee .hr-template-preview {\n  gap: 9px;');
+    expect(css).toContain('.hr-page--employee .hr-template-preview {\n  gap: 12px;');
     expect(css).toContain('.hr-employee-request-editor {\n  display: grid;');
-    expect(css).toContain('grid-template-columns: minmax(260px, 340px) minmax(270px, 1fr);');
+    expect(css).toContain('grid-template-columns: minmax(500px, 1fr) minmax(250px, 320px);');
+    expect(css).toContain('.hr-employee-request-document-column {\n  display: grid;');
     expect(css).toContain('.hr-employee-request-fields {\n  display: grid;');
+    expect(css).toContain('.hr-employee-request-date-stack {\n  display: grid;');
+    expect(css).toContain('.hr-employee-request-bottom {\n  display: grid;');
     expect(css).toContain('.hr-employee-request-reason {\n  grid-column: 1 / -1;');
-    expect(css).toContain('.hr-page--employee .hr-document-preview {\n  width: min(100%, 340px, 40dvh);');
+    expect(css).toContain('.hr-page--employee .hr-document-preview {\n  width: min(100%, 410px, 44dvh);');
     expect(css).toContain('aspect-ratio: 210 / 297;');
     expect(css).toContain('.hr-request-row--employee {\n  grid-template-columns: minmax(0, 1fr);');
-    expect(css).toContain('height: 132px;');
+    expect(css).toContain('min-height: 62px;');
     expect(css).toContain('overflow: hidden;');
-    expect(css).toContain('.hr-request-row__statement {\n  display: -webkit-box;');
-    expect(css).toContain('-webkit-line-clamp: 2;');
+    expect(css).toContain('.hr-request-row__summary {\n  display: grid;');
   });
 
   it('fits non-employee HR sections into the available viewport', () => {

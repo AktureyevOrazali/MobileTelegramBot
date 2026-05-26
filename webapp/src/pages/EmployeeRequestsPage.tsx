@@ -15,6 +15,7 @@ const formatInputDate = (value: string) => {
 };
 
 const formatToday = () => new Intl.DateTimeFormat('ru-RU').format(new Date());
+const formatRequestDate = (value: Date) => new Intl.DateTimeFormat('ru-RU').format(value);
 const skeletonStyle = (index: number) => ({ '--skeleton-index': index } as React.CSSProperties);
 
 const countDays = (startDate: string, endDate: string) => {
@@ -294,18 +295,23 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                   <span className="hr-status">Автозаполнение</span>
                 </div>
                 <div className="hr-employee-request-editor">
-                  <article className="hr-document-preview" aria-label="Предпросмотр заявления">
-                    <div className="hr-document-preview__to">
-                      <span>Директору</span>
-                      <span>{organization}</span>
-                    </div>
-                    <h3>Заявление</h3>
-                    <p>{previewText}</p>
-                    <div className="hr-document-preview__footer">
-                      <span>{formatToday()}</span>
-                      <span>________________ / {session.user.name} /</span>
-                    </div>
-                  </article>
+                  <div className="hr-employee-request-document-column">
+                    <article className="hr-document-preview" aria-label="Предпросмотр заявления">
+                      <div className="hr-document-preview__to">
+                        <span>Директору</span>
+                        <span>{organization}</span>
+                      </div>
+                      <div className="hr-document-preview__body">
+                        <h3>Заявление</h3>
+                        <p>{previewText}</p>
+                      </div>
+                      <div className="hr-document-preview__footer">
+                        <span>{formatToday()}</span>
+                        <span>________________ / {session.user.name} /</span>
+                      </div>
+                    </article>
+
+                  </div>
 
                   <div className="hr-employee-request-fields">
                     <h3>Заявление</h3>
@@ -313,7 +319,7 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                       <span>Организация</span>
                       <input value={organization} readOnly />
                     </label>
-                    <div className="hr-form-grid hr-form-grid--two">
+                    <div className="hr-employee-request-date-stack">
                       <label className="hr-field">
                         <span>Дата начала</span>
                         <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required />
@@ -323,6 +329,7 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                         <input
                           type="date"
                           value={endDate}
+                          min={startDate || undefined}
                           onChange={(event) => setEndDate(event.target.value)}
                           aria-invalid={isDateRangeInvalid}
                           required
@@ -332,6 +339,9 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                     {isDateRangeInvalid && (
                       <p className="form-error" role="alert">Дата окончания не может быть раньше даты начала.</p>
                     )}
+                  </div>
+
+                  <div className="hr-employee-request-bottom">
                     <label className="hr-field hr-employee-request-reason">
                       <span>Причина</span>
                       <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} required />
@@ -372,21 +382,13 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
           {!isLoading && requests.map((request) => (
             <article className="hr-request-row hr-request-row--employee" key={request.id}>
               <span className="hr-request-row__body">
-                <span className="hr-request-row__meta">
-                  <span className="hr-badge">{requestTypeLabels[request.type]}</span>
+                <span className="hr-request-row__summary">
+                  <strong>{requestTypeLabels[request.type]}</strong>
                   <span className={`hr-status hr-status--${request.status}`}>{requestStatusLabels[request.status]}</span>
                 </span>
-                <strong>{request.templateTitle || 'Заявление'}</strong>
-                <span>{request.period || request.summary}</span>
-                {request.renderedText && (
-                  <p className="hr-request-row__statement">{request.renderedText}</p>
-                )}
-                {request.decisionComment && (
-                  <span className="hr-request-row__decision">
-                    <span>Комментарий кадровика</span>
-                    <span>{request.decisionComment}</span>
-                  </span>
-                )}
+                <time className="hr-request-row__date" dateTime={request.submittedAt.toISOString()}>
+                  {formatRequestDate(request.submittedAt)}
+                </time>
               </span>
             </article>
           ))}

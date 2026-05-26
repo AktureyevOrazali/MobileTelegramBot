@@ -206,6 +206,7 @@ describe('HrPage', () => {
       ...apiRequests[0],
       status: 'approved' as const,
       decisionComment: 'Approved',
+      decidedByName: 'HR User',
       events: [
         ...apiRequests[0].events,
         {
@@ -234,7 +235,60 @@ describe('HrPage', () => {
     fireEvent.click(screen.getByTestId('hr-approve-request'));
 
     expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'approved', comment: '' });
-    expect((await screen.findAllByText('Approved')).length).toBeGreaterThanOrEqual(1);
+    await waitFor(() => expect(screen.queryByText('Employee User')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
+    expect(screen.getByRole('cell', { name: 'Employee User' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'HR User' })).toBeInTheDocument();
+  });
+
+  it('lets HR change an archived request decision', async () => {
+    const approvedRequest: HrRequest = {
+      ...apiRequests[0],
+      status: 'approved',
+      decidedAt: new Date('2026-05-19T10:20:00Z'),
+      decidedBy: 10,
+      decidedByName: 'HR User',
+      decisionComment: 'Approved',
+      updatedAt: new Date('2026-05-19T10:20:00Z'),
+    };
+    const rejectedRequest: HrRequest = {
+      ...approvedRequest,
+      status: 'rejected',
+      decisionComment: 'Changed decision',
+      updatedAt: new Date('2026-05-19T10:30:00Z'),
+      events: [
+        ...approvedRequest.events,
+        {
+          id: 103,
+          requestId: 31,
+          action: 'rejected',
+          actorId: 10,
+          actorName: 'HR User',
+          comment: 'Changed decision',
+          createdAt: new Date('2026-05-19T10:30:00Z'),
+        },
+      ],
+    };
+    const apiClient = {
+      fetchHrTemplates: vi.fn().mockResolvedValue(apiTemplates),
+      fetchHrRequests: vi.fn().mockResolvedValue([approvedRequest]),
+      fetchHrEmployees: vi.fn().mockResolvedValue([]),
+      decideHrRequest: vi.fn().mockResolvedValue(rejectedRequest),
+      createHrTemplate: vi.fn(),
+      updateHrTemplate: vi.fn(),
+    };
+
+    render(<HrPage apiClient={apiClient as any} />);
+
+    await waitFor(() => expect(apiClient.fetchHrRequests).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Employee User')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
+    fireEvent.click(screen.getByTestId('hr-archive-reject-31'));
+
+    await waitFor(() => {
+      expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'rejected', comment: '' });
+    });
+    expect(screen.getByRole('cell', { name: 'Employee User' })).toBeInTheDocument();
   });
 
   it('sends an HR comment when requesting additional data', async () => {
@@ -301,7 +355,7 @@ describe('HrPage', () => {
     render(<HrPage apiClient={apiClient as any} />);
 
     await waitFor(() => expect(apiClient.fetchHrRequests).toHaveBeenCalledTimes(1));
-    expect(screen.getAllByText('Employee User').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('Employee User')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
 
     expect(screen.getByRole('cell', { name: 'Employee User' })).toBeInTheDocument();

@@ -1,11 +1,17 @@
 import React from 'react';
-import type { HrRequest } from '../../types';
+import type { HrRequest, HrSignature } from '../../types';
 import { requestStatusLabels, requestTypeLabels } from './hrMockData';
+import { signWithNcalayer } from '../../services/ncalayer';
 
 interface HrArchiveTabProps {
   requests: HrRequest[];
   isLoading?: boolean;
-  onDecide?: (requestId: number, status: 'approved' | 'rejected', comment?: string) => Promise<void> | void;
+  onDecide?: (
+    requestId: number,
+    status: 'approved' | 'rejected',
+    comment?: string,
+    hrSignature?: HrSignature | null,
+  ) => Promise<void> | void;
 }
 
 const archiveStatuses = new Set<HrRequest['status']>(['approved', 'rejected', 'archived']);
@@ -18,9 +24,20 @@ const HrArchiveTab: React.FC<HrArchiveTabProps> = ({ requests, isLoading = false
 
   const handleDecision = async (requestId: number, status: 'approved' | 'rejected') => {
     if (!onDecide || decidingRequestId !== null) return;
+    const request = requests.find((item) => item.id === requestId);
+    if (!request) return;
     setDecidingRequestId(requestId);
     try {
-      await onDecide(requestId, status, '');
+      const signature = await signWithNcalayer({
+        action: status,
+        requestId: request.id,
+        employeeId: request.employeeId,
+        employeeName: request.employeeName,
+        requestStatus: request.status,
+        statement: request.renderedText || request.values.statement || request.summary,
+        comment: '',
+      });
+      await onDecide(requestId, status, '', signature);
     } finally {
       setDecidingRequestId(null);
     }

@@ -106,6 +106,14 @@ class _PooledLock:
 
 
 _lock = _PooledLock()
+_contract_sync_lock = threading.Lock()
+
+try:
+    BIN_CONTRACT_SYNC_MAX_AGE_SECONDS = int(require_env("BIN_CONTRACT_SYNC_MAX_AGE_SECONDS", default="3600"))
+except ValueError as exc:  # pragma: no cover - defensive
+    raise RuntimeError("BIN_CONTRACT_SYNC_MAX_AGE_SECONDS must be an integer") from exc
+if BIN_CONTRACT_SYNC_MAX_AGE_SECONDS < 0:
+    raise RuntimeError("BIN_CONTRACT_SYNC_MAX_AGE_SECONDS must be >= 0")
 
 
 def execute(query: str, params: Sequence[Any] | None = None):
@@ -1018,6 +1026,11 @@ def _init_db() -> None:
         CREATE TABLE IF NOT EXISTS all_bins (
             id BIGSERIAL PRIMARY KEY,
             bin TEXT NOT NULL UNIQUE,
+            has_contract BOOLEAN,
+            customer_legal_address TEXT,
+            customer_bank_name_ru TEXT,
+            customer_name_ru TEXT,
+            contract_checked_at TEXT,
             created_at TEXT NOT NULL
         )
         """,
@@ -1091,7 +1104,19 @@ def _init_db() -> None:
             decided_at TEXT,
             decided_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
             decided_by_name TEXT,
-            decision_comment TEXT DEFAULT ''
+            decision_comment TEXT DEFAULT '',
+            employee_signature TEXT,
+            employee_signed_payload TEXT,
+            employee_signed_at TEXT,
+            employee_certificate_subject TEXT,
+            employee_certificate_serial TEXT,
+            employee_certificate_pem TEXT,
+            hr_signature TEXT,
+            hr_signed_payload TEXT,
+            hr_signed_at TEXT,
+            hr_certificate_subject TEXT,
+            hr_certificate_serial TEXT,
+            hr_certificate_pem TEXT
         )
         """,
         """
@@ -1145,6 +1170,11 @@ def _init_db() -> None:
     _ensure_column("users", "is_approved", "INTEGER DEFAULT 1")
     _ensure_column("user_bins", "expires_at", "TEXT")
     _ensure_column("user_bins", "assigned_by", "BIGINT")
+    _ensure_column("all_bins", "has_contract", "BOOLEAN")
+    _ensure_column("all_bins", "customer_legal_address", "TEXT")
+    _ensure_column("all_bins", "customer_bank_name_ru", "TEXT")
+    _ensure_column("all_bins", "customer_name_ru", "TEXT")
+    _ensure_column("all_bins", "contract_checked_at", "TEXT")
     _ensure_column("organizations_without_contracts", "customer_name_ru", "TEXT")
     _ensure_column("hr_request_templates", "request_type", "TEXT")
     _ensure_column("hr_request_templates", "description", "TEXT DEFAULT ''")
@@ -1169,6 +1199,18 @@ def _init_db() -> None:
     _ensure_column("hr_requests", "decided_by", "BIGINT")
     _ensure_column("hr_requests", "decided_by_name", "TEXT")
     _ensure_column("hr_requests", "decision_comment", "TEXT DEFAULT ''")
+    _ensure_column("hr_requests", "employee_signature", "TEXT")
+    _ensure_column("hr_requests", "employee_signed_payload", "TEXT")
+    _ensure_column("hr_requests", "employee_signed_at", "TEXT")
+    _ensure_column("hr_requests", "employee_certificate_subject", "TEXT")
+    _ensure_column("hr_requests", "employee_certificate_serial", "TEXT")
+    _ensure_column("hr_requests", "employee_certificate_pem", "TEXT")
+    _ensure_column("hr_requests", "hr_signature", "TEXT")
+    _ensure_column("hr_requests", "hr_signed_payload", "TEXT")
+    _ensure_column("hr_requests", "hr_signed_at", "TEXT")
+    _ensure_column("hr_requests", "hr_certificate_subject", "TEXT")
+    _ensure_column("hr_requests", "hr_certificate_serial", "TEXT")
+    _ensure_column("hr_requests", "hr_certificate_pem", "TEXT")
     _ensure_column("hr_request_events", "request_id", "BIGINT")
     _ensure_column("hr_request_events", "action", "TEXT")
     _ensure_column("hr_request_events", "actor_id", "BIGINT")
@@ -2441,6 +2483,8 @@ HR_REQUEST_STATUSES: tuple[str, ...] = (
     "archived",
 )
 HR_REQUEST_EVENT_ACTIONS: tuple[str, ...] = ("created", "review", "needsInfo", "approved", "rejected", "archived")
+LEGACY_ADVANCE_TEMPLATE_BODY = "Прошу выдать аванс сотруднику {employee_name} в размере {amount}. Причина: {reason}."
+DEFAULT_ADVANCE_TEMPLATE_BODY = "Прошу выдать аванс сотруднику {employee_name}. Причина: {reason}."
 
 DEFAULT_HR_REQUEST_TEMPLATES: tuple[dict[str, Any], ...] = (
     {
@@ -2461,8 +2505,8 @@ DEFAULT_HR_REQUEST_TEMPLATES: tuple[dict[str, Any], ...] = (
         "title": "Заявление на аванс",
         "type": "advance",
         "description": "Запрос аванса по заработной плате.",
-        "body": "Прошу выдать аванс сотруднику {employee_name} в размере {amount}. Причина: {reason}.",
-        "variables": ["amount", "reason"],
+        "body": DEFAULT_ADVANCE_TEMPLATE_BODY,
+        "variables": ["reason"],
     },
     {
         "title": "Справка с места работы",
@@ -2489,6 +2533,20 @@ def can_manage_hr(role: str) -> bool:
 def _ensure_default_hr_request_templates() -> None:
     now = datetime.now(timezone.utc).isoformat()
     with _lock:
+        execute(
+            """
+            UPDATE hr_request_templates
+            SET body = %s, variables = %s, updated_at = %s
+            WHERE request_type = %s AND body = %s
+            """,
+            (
+                DEFAULT_ADVANCE_TEMPLATE_BODY,
+                json.dumps(["reason"], ensure_ascii=False),
+                now,
+                "advance",
+                LEGACY_ADVANCE_TEMPLATE_BODY,
+            ),
+        )
         row = execute("SELECT COUNT(*) AS cnt FROM hr_request_templates").fetchone()
         if row and int(row["cnt"] or 0) > 0:
             return
@@ -5808,6 +5866,105 @@ def list_bins(query: str | None = None) -> List[str]:
     return [row["bin"] for row in rows]
 
 
+def upsert_bin_contract_snapshot(
+    bin_value: str,
+    *,
+    has_contract: bool,
+    customer_legal_address: str | None = None,
+    customer_bank_name_ru: str | None = None,
+    customer_name_ru: str | None = None,
+) -> None:
+    normalized = (bin_value or "").strip()
+    if not normalized:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    execute(
+        """
+        INSERT INTO all_bins
+            (bin, has_contract, customer_legal_address, customer_bank_name_ru, customer_name_ru, contract_checked_at, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (bin) DO UPDATE
+        SET has_contract = EXCLUDED.has_contract,
+            customer_legal_address = COALESCE(EXCLUDED.customer_legal_address, all_bins.customer_legal_address),
+            customer_bank_name_ru = COALESCE(EXCLUDED.customer_bank_name_ru, all_bins.customer_bank_name_ru),
+            customer_name_ru = COALESCE(EXCLUDED.customer_name_ru, all_bins.customer_name_ru),
+            contract_checked_at = EXCLUDED.contract_checked_at
+        """,
+        (
+            normalized,
+            bool(has_contract),
+            customer_legal_address,
+            customer_bank_name_ru,
+            customer_name_ru,
+            now,
+            now,
+        ),
+    )
+
+
+def list_bin_contract_snapshots(query: str | None = None) -> List[Dict[str, Any]]:
+    clauses = [
+        """
+        SELECT
+            ab.bin AS bin,
+            CASE WHEN owc.customer_bin IS NULL THEN COALESCE(ab.has_contract, FALSE) ELSE FALSE END AS has_contract,
+            CASE WHEN owc.customer_bin IS NULL THEN ab.customer_legal_address ELSE owc.customer_legal_address END AS customer_legal_address,
+            CASE WHEN owc.customer_bin IS NULL THEN ab.customer_bank_name_ru ELSE owc.customer_bank_name_ru END AS customer_bank_name_ru,
+            CASE WHEN owc.customer_bin IS NULL THEN ab.customer_name_ru ELSE owc.customer_name_ru END AS customer_name_ru
+        FROM all_bins ab
+        LEFT JOIN organizations_without_contracts owc ON owc.customer_bin = ab.bin
+        WHERE ab.bin IS NOT NULL AND TRIM(ab.bin) != ''
+        """
+    ]
+    params: List[object] = []
+    if query:
+        clauses.append("AND ab.bin LIKE %s")
+        params.append(f"%{query.strip()}%")
+    clauses.append("ORDER BY ab.bin ASC")
+    with _lock:
+        rows = execute("\n".join(clauses), params).fetchall()
+    return [
+        {
+            "bin": row["bin"],
+            "has_contract": bool(row["has_contract"]),
+            "customer_legal_address": row["customer_legal_address"],
+            "customer_bank_name_ru": row["customer_bank_name_ru"],
+            "customer_name_ru": row["customer_name_ru"],
+        }
+        for row in rows
+    ]
+
+
+def get_bin_contract_sync_freshness(max_age_seconds: int | None = None) -> Dict[str, Any]:
+    ttl_seconds = BIN_CONTRACT_SYNC_MAX_AGE_SECONDS if max_age_seconds is None else int(max_age_seconds)
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max(0, ttl_seconds))).isoformat()
+    with _lock:
+        row = execute(
+            """
+            SELECT
+                COUNT(*) AS total_bins,
+                COALESCE(SUM(CASE WHEN COALESCE(has_contract, FALSE) THEN 1 ELSE 0 END), 0) AS bins_with_contracts,
+                COALESCE(SUM(CASE WHEN contract_checked_at IS NULL OR contract_checked_at < %s THEN 1 ELSE 0 END), 0) AS stale_bins,
+                MIN(contract_checked_at) AS oldest_checked_at,
+                MAX(contract_checked_at) AS latest_checked_at
+            FROM all_bins
+            WHERE bin IS NOT NULL AND TRIM(bin) != ''
+            """,
+            (cutoff,),
+        ).fetchone()
+    total_bins = int(row["total_bins"] or 0) if row else 0
+    stale_bins = int(row["stale_bins"] or 0) if row else 0
+    return {
+        "is_fresh": stale_bins == 0,
+        "total_bins": total_bins,
+        "bins_with_contracts": int(row["bins_with_contracts"] or 0) if row else 0,
+        "stale_bins": stale_bins,
+        "oldest_checked_at": row["oldest_checked_at"] if row else None,
+        "latest_checked_at": row["latest_checked_at"] if row else None,
+        "max_age_seconds": ttl_seconds,
+    }
+
+
 def add_bin(bin_value: str) -> bool:
     """Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµРЎвЂљ Р вЂР ВР Сњ Р Р† РЎвЂљР В°Р В±Р В»Р С‘РЎвЂ РЎС“ all_bins."""
     normalized = (bin_value or "").strip()
@@ -7938,7 +8095,43 @@ def remove_organization_without_contract(customer_bin: str) -> bool:
     return cursor.rowcount > 0
 
 
-def sync_bins_with_contracts() -> Dict[str, Any]:
+def sync_bins_with_contracts(
+    *,
+    force: bool = False,
+    max_age_seconds: int | None = None,
+) -> Dict[str, Any]:
+    if not force:
+        freshness = get_bin_contract_sync_freshness(max_age_seconds)
+        if freshness["is_fresh"]:
+            return {
+                "added": 0,
+                "removed": 0,
+                "total_bins": freshness["total_bins"],
+                "bins_with_contracts": freshness["bins_with_contracts"],
+                "stale_bins": freshness["stale_bins"],
+                "skipped": True,
+            }
+
+    with _contract_sync_lock:
+        if not force:
+            freshness = get_bin_contract_sync_freshness(max_age_seconds)
+            if freshness["is_fresh"]:
+                return {
+                    "added": 0,
+                    "removed": 0,
+                    "total_bins": freshness["total_bins"],
+                    "bins_with_contracts": freshness["bins_with_contracts"],
+                    "stale_bins": freshness["stale_bins"],
+                    "skipped": True,
+                }
+
+        result = _sync_bins_with_contracts_uncached()
+        result["stale_bins"] = 0
+        result["skipped"] = False
+        return result
+
+
+def _sync_bins_with_contracts_uncached() -> Dict[str, Any]:
     """
     Р РЋР С‘Р Р…РЎвЂ¦РЎР‚Р С•Р Р…Р С‘Р В·Р С‘РЎР‚РЎС“Р ВµРЎвЂљ Р Р†РЎРѓР Вµ Р вЂР ВР СњРЎвЂ№ РЎРѓ Р С‘Р Р…РЎвЂћР С•РЎР‚Р СР В°РЎвЂ Р С‘Р ВµР в„– Р С• Р Т‘Р С•Р С–Р С•Р Р†Р С•РЎР‚Р В°РЎвЂ¦.
     Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµРЎвЂљ Р вЂР ВР СњРЎвЂ№ Р В±Р ВµР В· Р Т‘Р С•Р С–Р С•Р Р†Р С•РЎР‚Р В° Р Р† organizations_without_contracts,
@@ -7957,6 +8150,14 @@ def sync_bins_with_contracts() -> Dict[str, Any]:
     
     for bin_value in all_bins:
         if bin_value in bins_with_contracts:
+            contract_info = bins_with_contracts[bin_value]
+            upsert_bin_contract_snapshot(
+                bin_value,
+                has_contract=True,
+                customer_legal_address=contract_info.get("customer_legal_address"),
+                customer_bank_name_ru=contract_info.get("customer_bank_name_ru"),
+                customer_name_ru=contract_info.get("customer_name_ru"),
+            )
             # Р Р€ Р вЂР ВР СњР В° Р ВµРЎРѓРЎвЂљРЎРЉ Р Т‘Р С•Р С–Р С•Р Р†Р С•РЎР‚ - РЎС“Р Т‘Р В°Р В»РЎРЏР ВµР С Р С‘Р В· Р В±Р ВµР В· Р Т‘Р С•Р С–Р С•Р Р†Р С•РЎР‚Р В° Р ВµРЎРѓР В»Р С‘ Р ВµРЎРѓРЎвЂљРЎРЉ
             if remove_organization_without_contract(bin_value):
                 removed += 1
@@ -7965,6 +8166,13 @@ def sync_bins_with_contracts() -> Dict[str, Any]:
             if not has_organization_without_contract(bin_value):
                 # Р СџР С•Р В»РЎС“РЎвЂЎР В°Р ВµР С Р С‘Р Р…РЎвЂћР С•РЎР‚Р СР В°РЎвЂ Р С‘РЎР‹ Р С•Р В± Р В°Р Т‘РЎР‚Р ВµРЎРѓР Вµ/Р В±Р В°Р Р…Р С”Р Вµ Р С‘Р В· Р С‘РЎРѓРЎвЂљР С•РЎР‚Р С‘РЎвЂЎР ВµРЎРѓР С”Р С‘РЎвЂ¦ Р Т‘Р В°Р Р…Р Р…РЎвЂ№РЎвЂ¦
                 contract_data = contract_checker.check_customer_contracts(bin_value)
+                upsert_bin_contract_snapshot(
+                    bin_value,
+                    has_contract=False,
+                    customer_legal_address=contract_data.get("customer_legal_address"),
+                    customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
+                    customer_name_ru=contract_data.get("customer_name_ru"),
+                )
                 add_organization_without_contract(
                     bin_value,
                     customer_legal_address=contract_data.get("customer_legal_address"),
@@ -8224,6 +8432,22 @@ def _append_hr_request_event(
     ).fetchone()
 
 
+def _hr_signature_from_row(row: Mapping[str, Any], prefix: str) -> dict | None:
+    signature = row.get(f"{prefix}_signature")
+    signed_payload = row.get(f"{prefix}_signed_payload")
+    signed_at = row.get(f"{prefix}_signed_at")
+    if not signature or not signed_payload or not signed_at:
+        return None
+    return {
+        "signature": str(signature),
+        "signed_payload": str(signed_payload),
+        "signed_at": str(signed_at),
+        "certificate_subject": row.get(f"{prefix}_certificate_subject"),
+        "certificate_serial": row.get(f"{prefix}_certificate_serial"),
+        "certificate_pem": row.get(f"{prefix}_certificate_pem"),
+    }
+
+
 def _hr_request_from_row(row: Mapping[str, Any] | None) -> dict | None:
     if row is None:
         return None
@@ -8249,6 +8473,8 @@ def _hr_request_from_row(row: Mapping[str, Any] | None) -> dict | None:
         "decided_by": int(row["decided_by"]) if row.get("decided_by") else None,
         "decided_by_name": repair_text(row.get("decided_by_name", "")) or row.get("decided_by_name"),
         "decision_comment": repair_text(row.get("decision_comment", "")) or "",
+        "employee_signature": _hr_signature_from_row(row, "employee"),
+        "hr_signature": _hr_signature_from_row(row, "hr"),
         "events": [],
     }
 
@@ -8374,7 +8600,11 @@ def list_hr_requests(*, employee_id: int | None = None) -> List[dict]:
                    r.employee_id, r.employee_name, r.department, r.status,
                    r.values_json, r.rendered_text, r.summary, r.period,
                    r.submitted_at, r.updated_at, r.decided_at, r.decided_by,
-                   r.decided_by_name, r.decision_comment
+                   r.decided_by_name, r.decision_comment,
+                   r.employee_signature, r.employee_signed_payload, r.employee_signed_at,
+                   r.employee_certificate_subject, r.employee_certificate_serial, r.employee_certificate_pem,
+                   r.hr_signature, r.hr_signed_payload, r.hr_signed_at,
+                   r.hr_certificate_subject, r.hr_certificate_serial, r.hr_certificate_pem
             FROM hr_requests r
             LEFT JOIN hr_request_templates t ON t.id = r.template_id
             {where}
@@ -8397,7 +8627,10 @@ def create_hr_request(
     values: Mapping[str, Any] | None = None,
     summary: str = "",
     period: str = "",
+    employee_signature: Mapping[str, Any] | None = None,
 ) -> dict:
+    if not employee_signature:
+        raise ValueError("Employee signature is required")
     now = datetime.now(timezone.utc).isoformat()
     with _lock:
         template_row = execute(
@@ -8422,9 +8655,11 @@ def create_hr_request(
             """
             INSERT INTO hr_requests (
                 template_id, employee_id, employee_name, department, status,
-                values_json, rendered_text, summary, period, submitted_at, updated_at
+                values_json, rendered_text, summary, period, submitted_at, updated_at,
+                employee_signature, employee_signed_payload, employee_signed_at,
+                employee_certificate_subject, employee_certificate_serial, employee_certificate_pem
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -8439,6 +8674,12 @@ def create_hr_request(
                 repair_text(period or "") or "",
                 now,
                 now,
+                str(employee_signature.get("signature") or ""),
+                str(employee_signature.get("signed_payload") or ""),
+                str(employee_signature.get("signed_at") or ""),
+                employee_signature.get("certificate_subject"),
+                employee_signature.get("certificate_serial"),
+                employee_signature.get("certificate_pem"),
             ),
         ).fetchone()
         if row is not None:
@@ -8466,7 +8707,11 @@ def get_hr_request(request_id: int) -> dict | None:
                    r.employee_id, r.employee_name, r.department, r.status,
                    r.values_json, r.rendered_text, r.summary, r.period,
                    r.submitted_at, r.updated_at, r.decided_at, r.decided_by,
-                   r.decided_by_name, r.decision_comment
+                   r.decided_by_name, r.decision_comment,
+                   r.employee_signature, r.employee_signed_payload, r.employee_signed_at,
+                   r.employee_certificate_subject, r.employee_certificate_serial, r.employee_certificate_pem,
+                   r.hr_signature, r.hr_signed_payload, r.hr_signed_at,
+                   r.hr_certificate_subject, r.hr_certificate_serial, r.hr_certificate_pem
             FROM hr_requests r
             LEFT JOIN hr_request_templates t ON t.id = r.template_id
             WHERE r.id = %s
@@ -8487,29 +8732,60 @@ def decide_hr_request(
     decided_by: int,
     decided_by_name: str,
     comment: str = "",
+    hr_signature: Mapping[str, Any] | None = None,
 ) -> dict:
     if status not in {"approved", "rejected", "needsInfo"}:
         raise ValueError("Invalid HR decision status")
     now = datetime.now(timezone.utc).isoformat()
     with _lock:
-        row = execute(
-            """
-            UPDATE hr_requests
-            SET status = %s, decided_at = %s, decided_by = %s, decided_by_name = %s,
-                decision_comment = %s, updated_at = %s
-            WHERE id = %s
-            RETURNING id
-            """,
-            (
-                status,
-                now if status in {"approved", "rejected"} else None,
-                int(decided_by),
-                repair_text(decided_by_name) or decided_by_name,
-                repair_text(comment or "") or "",
-                now,
-                int(request_id),
-            ),
-        ).fetchone()
+        if status in {"approved", "rejected"}:
+            if not hr_signature:
+                raise ValueError("HR signature is required")
+            row = execute(
+                """
+                UPDATE hr_requests
+                SET status = %s, decided_at = %s, decided_by = %s, decided_by_name = %s,
+                    decision_comment = %s, updated_at = %s,
+                    hr_signature = %s, hr_signed_payload = %s, hr_signed_at = %s,
+                    hr_certificate_subject = %s, hr_certificate_serial = %s, hr_certificate_pem = %s
+                WHERE id = %s
+                RETURNING id
+                """,
+                (
+                    status,
+                    now,
+                    int(decided_by),
+                    repair_text(decided_by_name) or decided_by_name,
+                    repair_text(comment or "") or "",
+                    now,
+                    str(hr_signature.get("signature") or ""),
+                    str(hr_signature.get("signed_payload") or ""),
+                    str(hr_signature.get("signed_at") or ""),
+                    hr_signature.get("certificate_subject"),
+                    hr_signature.get("certificate_serial"),
+                    hr_signature.get("certificate_pem"),
+                    int(request_id),
+                ),
+            ).fetchone()
+        else:
+            row = execute(
+                """
+                UPDATE hr_requests
+                SET status = %s, decided_at = %s, decided_by = %s, decided_by_name = %s,
+                    decision_comment = %s, updated_at = %s
+                WHERE id = %s
+                RETURNING id
+                """,
+                (
+                    status,
+                    None,
+                    int(decided_by),
+                    repair_text(decided_by_name) or decided_by_name,
+                    repair_text(comment or "") or "",
+                    now,
+                    int(request_id),
+                ),
+            ).fetchone()
         if row is not None:
             _append_hr_request_event(
                 request_id=int(request_id),

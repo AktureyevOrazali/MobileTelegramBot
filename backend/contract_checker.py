@@ -75,26 +75,39 @@ def _get_customer_name_ru(contract: Dict[str, Any]) -> str | None:
     return customer.get("nameRu")
 
 
-def _build_contract_query_payload(supplier_bin: str, *, after: int | None = None) -> Dict[str, Any]:
-    query = """
-    query Contract($supplierBiin: String!, $limit: Int, $after: Int) {
-        Contract(filter: { supplierBiin: $supplierBiin }, limit: $limit, after: $after) {
+def _build_contract_query_payload(
+    supplier_bin: str,
+    *,
+    after: int | None = None,
+    customer_bin: str | None = None,
+) -> Dict[str, Any]:
+    variable_defs = "$supplierBiin: String!, $limit: Int, $after: Int"
+    filter_fields = "supplierBiin: $supplierBiin"
+    if customer_bin:
+        variable_defs = "$supplierBiin: String!, $customerBin: String!, $limit: Int, $after: Int"
+        filter_fields = "supplierBiin: $supplierBiin, customerBin: $customerBin"
+
+    query = f"""
+    query Contract({variable_defs}) {{
+        Contract(filter: {{ {filter_fields} }}, limit: $limit, after: $after) {{
             id
             customerLegalAddress
             customerBankNameRu
             customerBin
-            Customer {
+            Customer {{
                 nameRu
-            }
+            }}
             contractNumber
             signDate
-        }
-    }
+        }}
+    }}
     """
     variables: Dict[str, Any] = {
         "supplierBiin": supplier_bin,
         "limit": CONTRACT_PAGE_LIMIT,
     }
+    if customer_bin:
+        variables["customerBin"] = customer_bin
     if after is not None:
         variables["after"] = after
     return {
@@ -103,8 +116,12 @@ def _build_contract_query_payload(supplier_bin: str, *, after: int | None = None
     }
 
 
-def _fetch_contracts_for_supplier(supplier_bin: str) -> List[Dict[str, Any]]:
-    """Load all contracts for a single supplier BIN."""
+def _fetch_contracts(
+    supplier_bin: str,
+    *,
+    customer_bin: str | None = None,
+) -> List[Dict[str, Any]]:
+    """Load contracts for a supplier, optionally scoped to one customer BIN."""
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {GOSZAKUP_API_TOKEN}",
@@ -115,14 +132,15 @@ def _fetch_contracts_for_supplier(supplier_bin: str) -> List[Dict[str, Any]]:
     seen_after: set[int] = set()
     with httpx.Client(timeout=30.0) as client:
         while True:
-            payload = _build_contract_query_payload(supplier_bin, after=after)
+            payload = _build_contract_query_payload(supplier_bin, after=after, customer_bin=customer_bin)
             response = client.post(GOSZAKUP_API_URL, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
 
             errors = data.get("errors")
             if errors:
-                raise RuntimeError(f"Goszakup GraphQL errors for supplier {supplier_bin}: {errors}")
+                scope = f" and customer {customer_bin}" if customer_bin else ""
+                raise RuntimeError(f"Goszakup GraphQL errors for supplier {supplier_bin}{scope}: {errors}")
 
             page_contracts = data.get("data", {}).get("Contract", []) or []
             contracts_data.extend(page_contracts)
@@ -157,8 +175,26 @@ def _fetch_contracts_for_supplier(supplier_bin: str) -> List[Dict[str, Any]]:
             seen_after.add(next_after)
             after = next_after
 
-    logger.info("Loaded %d contracts for supplier %s", len(contracts_data), supplier_bin)
+    if customer_bin:
+        logger.info(
+            "Loaded %d contracts for supplier %s and customer %s",
+            len(contracts_data),
+            supplier_bin,
+            customer_bin,
+        )
+    else:
+        logger.info("Loaded %d contracts for supplier %s", len(contracts_data), supplier_bin)
     return contracts_data
+
+
+def _fetch_contracts_for_supplier(supplier_bin: str) -> List[Dict[str, Any]]:
+    """Load all contracts for a single supplier BIN."""
+    return _fetch_contracts(supplier_bin)
+
+
+def _fetch_contracts_for_customer(supplier_bin: str, customer_bin: str) -> List[Dict[str, Any]]:
+    """Load contracts for one supplier/customer BIN pair."""
+    return _fetch_contracts(supplier_bin, customer_bin=customer_bin)
 
 
 def _get_all_contracts() -> List[Dict[str, Any]]:
@@ -238,9 +274,16 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
     }
 
     try:
-        contracts_data = _get_all_contracts()
+        contracts_data: List[Dict[str, Any]] = []
+        supplier_bins = get_supplier_bins()
+        for supplier_bin in supplier_bins:
+            contracts_data.extend(_fetch_contracts_for_customer(supplier_bin, customer_bin))
         if not contracts_data:
-            logger.info("No contracts found for supplier BINs %s", ", ".join(get_supplier_bins()))
+            logger.info(
+                "No contracts found for customer %s under supplier BINs %s",
+                customer_bin,
+                ", ".join(supplier_bins),
+            )
             _store_cached_contract(customer_bin, result)
             return result
 

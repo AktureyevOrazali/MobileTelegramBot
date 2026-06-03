@@ -870,8 +870,6 @@ class BinDetailedResponse(BaseModel):
 
 
 
-
-
 class MessageResponse(BaseModel):
 
     id: int
@@ -2038,125 +2036,31 @@ def list_bins_detailed_endpoint(
 
     """Return BINs enriched with contract-availability information."""
 
-    bins = database.list_bins(query)
-
-    
-
-    # Загружаем все контракты одним запросом (кэш 30 минут)
-
-    bins_with_contracts = contract_checker.get_all_customer_bins_with_contracts()
-
-    
-
-    # Get organizations without contracts for quick lookup
-
-    orgs_without_contracts = {
-
-        org["customer_bin"]: org
-
-        for org in database.list_organizations_without_contracts()
-
-    }
-
-    
-
-    result = []
-
-    for bin_value in bins:
-
-        org_data = orgs_without_contracts.get(bin_value)
-
-        
-
-        if bin_value in bins_with_contracts:
-
-            # Has contract - use preloaded data
-
-            # If a BIN was previously marked as contractless but now has a contract, remove it.
-
-            if org_data:
-
-                database.remove_organization_without_contract(bin_value)
-
-            contract_info = bins_with_contracts[bin_value]
-
-            result.append(BinDetailedResponse(
-
-                bin=bin_value,
-
-                has_contract=True,
-
-                customer_legal_address=contract_info.get("customer_legal_address"),
-
-                customer_bank_name_ru=contract_info.get("customer_bank_name_ru"),
-                customer_name_ru=contract_info.get("customer_name_ru"),
-
-            ))
-
-        elif org_data:
-
-            # No contract - already in organizations_without_contracts
-
-            result.append(BinDetailedResponse(
-
-                bin=bin_value,
-
-                has_contract=False,
-
-                customer_legal_address=org_data.get("customer_legal_address"),
-
-                customer_bank_name_ru=org_data.get("customer_bank_name_ru"),
-                customer_name_ru=org_data.get("customer_name_ru"),
-
-            ))
-
-        else:
-
-            # No contract and not in without-contracts table
-
-            # Get info from any historical contract for this BIN and ADD to table
-
-            contract_data = contract_checker.check_customer_contracts(bin_value)
-
-            has_contract = contract_data.get("has_contract", False)
-
-            
-
-            if not has_contract:
-
-                # Автоматически добавляем в таблицу organizations_without_contracts
-
-                database.add_organization_without_contract(
-
-                    bin_value,
-
-                    customer_legal_address=contract_data.get("customer_legal_address"),
-
-                    customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
-
-                    customer_name_ru=contract_data.get("customer_name_ru"),
-
-                )
-
-            
-
-            result.append(BinDetailedResponse(
-
-                bin=bin_value,
-
-                has_contract=has_contract,
-
-                customer_legal_address=contract_data.get("customer_legal_address"),
-
-                customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
-                customer_name_ru=contract_data.get("customer_name_ru"),
-
-            ))
-
-    return result
+    return [
+        BinDetailedResponse(**item)
+        for item in database.list_bin_contract_snapshots(query)
+    ]
 
 
-
+def _persist_bin_contract_result(bin_value: str, contract_data: Dict[str, Any]) -> bool:
+    has_contract = bool(contract_data.get("has_contract", False))
+    database.upsert_bin_contract_snapshot(
+        bin_value,
+        has_contract=has_contract,
+        customer_legal_address=contract_data.get("customer_legal_address"),
+        customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
+        customer_name_ru=contract_data.get("customer_name_ru"),
+    )
+    if has_contract:
+        database.remove_organization_without_contract(bin_value)
+    else:
+        database.add_organization_without_contract(
+            customer_bin=bin_value,
+            customer_legal_address=contract_data.get("customer_legal_address"),
+            customer_bank_name_ru=contract_data.get("customer_bank_name_ru"),
+            customer_name_ru=contract_data.get("customer_name_ru"),
+        )
+    return has_contract
 
 
 @router.get("/bins/{bin_value}/info", response_model=BinDetailedResponse)
@@ -2172,12 +2076,13 @@ def get_bin_info_endpoint(
     """Return BIN details together with the GraphQL contract check result."""
 
     contract_data = contract_checker.check_customer_contracts(bin_value)
+    has_contract = _persist_bin_contract_result(bin_value, contract_data)
 
     return BinDetailedResponse(
 
         bin=bin_value,
 
-        has_contract=contract_data.get("has_contract", False),
+        has_contract=has_contract,
 
         customer_legal_address=contract_data.get("customer_legal_address"),
 
@@ -2208,13 +2113,15 @@ def list_unassigned_bins_endpoint(
 
 def sync_bins_with_contracts_endpoint(
 
+    force: bool = False,
+
     _: Dict[str, object] = Depends(require_admin_or_moderator),
 
 ):
 
     """Synchronize all BINs with the latest contract information."""
 
-    result = database.sync_bins_with_contracts()
+    result = database.sync_bins_with_contracts(force=force)
 
     return {
 
@@ -2298,16 +2205,27 @@ class HrTemplateResponse(BaseModel):
     updated_at: str
 
 
+class HrSignaturePayload(BaseModel):
+    signature: str = Field(min_length=1)
+    signed_payload: str = Field(min_length=1)
+    signed_at: str = Field(min_length=1)
+    certificate_subject: str | None = None
+    certificate_serial: str | None = None
+    certificate_pem: str | None = None
+
+
 class HrRequestSubmit(BaseModel):
     template_id: int
     values: Dict[str, Any] = Field(default_factory=dict)
     summary: str = Field(default="", max_length=1000)
     period: str = Field(default="", max_length=240)
+    employee_signature: HrSignaturePayload
 
 
 class HrDecisionRequest(BaseModel):
     status: Literal["approved", "rejected", "needsInfo"]
     comment: str = Field(default="", max_length=1000)
+    hr_signature: HrSignaturePayload | None = None
 
 
 class HrEmployeeOrganizationRequest(BaseModel):
@@ -2343,6 +2261,8 @@ class HrRequestResponse(BaseModel):
     decided_by: int | None = None
     decided_by_name: str | None = None
     decision_comment: str = ""
+    employee_signature: HrSignaturePayload | None = None
+    hr_signature: HrSignaturePayload | None = None
     events: List[HrRequestEventResponse] = Field(default_factory=list)
 
 
@@ -2662,6 +2582,7 @@ def create_hr_request(
             values=values,
             summary=request.summary,
             period=request.period,
+            employee_signature=request.employee_signature.model_dump(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -2675,12 +2596,15 @@ def decide_hr_request(
     current_user: Dict[str, object] = Depends(require_hr_access),
 ):
     try:
+        if request.status in {"approved", "rejected"} and request.hr_signature is None:
+            raise HTTPException(status_code=400, detail="HR signature is required for approval or rejection")
         hr_request = database.decide_hr_request(
             request_id,
             status=request.status,
             decided_by=int(current_user["id"]),
             decided_by_name=str(current_user.get("name") or current_user.get("login") or ""),
             comment=request.comment,
+            hr_signature=request.hr_signature.model_dump() if request.hr_signature else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -5276,25 +5200,14 @@ def create_onec_message(
     else:
         existing_messages = database.get_messages(chat_id, limit=2, dialog_id=dialog_id)
         is_first_message_in_dialog = len(existing_messages) <= 1
-        has_contract = not database.has_organization_without_contract(bin_value)
+        has_contract = False if is_first_message_in_dialog else not database.has_organization_without_contract(bin_value)
     response_message = None
 
     if is_first_message_in_dialog:
         logger.info("Checking contract for 1C customer BIN: %s", bin_value)
         contract_result = contract_checker.check_customer_contracts(bin_value)
-        has_contract = contract_result.get("has_contract", False)
+        has_contract = _persist_bin_contract_result(bin_value, contract_result)
         logger.info("Contract check result for %s: has_contract=%s", bin_value, has_contract)
-
-        if has_contract:
-            database.remove_organization_without_contract(bin_value)
-        else:
-            database.add_organization_without_contract(
-                customer_bin=bin_value,
-                customer_legal_address=contract_result.get("customer_legal_address"),
-                customer_bank_name_ru=contract_result.get("customer_bank_name_ru"),
-                customer_name_ru=contract_result.get("customer_name_ru"),
-            )
-            logger.info("1C Organization %s saved as organization without contract", bin_value)
         response_message = _build_onec_contract_status_text(
             has_contract=bool(has_contract),
             year=contract_checker.ACTIVE_CONTRACT_YEAR,

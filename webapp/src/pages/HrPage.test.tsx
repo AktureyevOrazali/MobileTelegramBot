@@ -1,9 +1,23 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import HrPage from './HrPage';
 import { hrRequests, hrTemplates } from './hr/hrMockData';
+import { signWithNcalayer } from '../services/ncalayer';
 import type { HrRequest, HrTemplate } from '../types';
+
+vi.mock('../services/ncalayer', () => ({
+  signWithNcalayer: vi.fn(),
+}));
+
+const hrSignature = {
+  signature: 'HRMIICMS',
+  signedPayload: '{"action":"approved"}',
+  signedAt: '2026-05-26T10:05:00.000Z',
+  certificateSubject: 'CN=HR User',
+  certificateSerial: '654321',
+  certificatePem: null,
+};
 
 const apiTemplates: HrTemplate[] = [
   {
@@ -40,6 +54,8 @@ const apiRequests: HrRequest[] = [
     decidedBy: null,
     decidedByName: null,
     decisionComment: '',
+    employeeSignature: null,
+    hrSignature: null,
     events: [
       {
         id: 101,
@@ -55,6 +71,10 @@ const apiRequests: HrRequest[] = [
 ];
 
 describe('HrPage', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('keeps the HR request panels while backend data is loading', () => {
     const apiClient = {
       fetchHrTemplates: vi.fn(() => new Promise<HrTemplate[]>(() => {})),
@@ -232,9 +252,12 @@ describe('HrPage', () => {
     render(<HrPage apiClient={apiClient as any} />);
 
     expect((await screen.findAllByText((text) => text.includes('Annual leave'))).length).toBeGreaterThanOrEqual(1);
+    vi.mocked(signWithNcalayer).mockResolvedValue(hrSignature);
+    fireEvent.click(screen.getByRole('button', { name: 'Подписать одобрение ЭЦП' }));
+    await screen.findByText('Решение подписано ЭЦП');
     fireEvent.click(screen.getByTestId('hr-approve-request'));
 
-    expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'approved', comment: '' });
+    expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'approved', comment: '', hrSignature });
     await waitFor(() => expect(screen.queryByText('Employee User')).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
     expect(screen.getByRole('cell', { name: 'Employee User' })).toBeInTheDocument();
@@ -283,10 +306,17 @@ describe('HrPage', () => {
     await waitFor(() => expect(apiClient.fetchHrRequests).toHaveBeenCalledTimes(1));
     expect(screen.queryByText('Employee User')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
+    vi.mocked(signWithNcalayer).mockResolvedValue(hrSignature);
     fireEvent.click(screen.getByTestId('hr-archive-reject-31'));
 
     await waitFor(() => {
-      expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'rejected', comment: '' });
+      expect(signWithNcalayer).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'rejected',
+        requestId: 31,
+        employeeId: 20,
+        employeeName: 'Employee User',
+      }));
+      expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'rejected', comment: '', hrSignature });
     });
     expect(screen.getByRole('cell', { name: 'Employee User' })).toBeInTheDocument();
   });
@@ -312,7 +342,7 @@ describe('HrPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Запросить данные' }));
 
     await waitFor(() => {
-      expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'needsInfo', comment: 'Attach certificate' });
+      expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'needsInfo', comment: 'Attach certificate', hrSignature: null });
     });
   });
 

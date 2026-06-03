@@ -13,6 +13,18 @@ class HrDatabaseTests(unittest.TestCase):
         self.assertTrue(database.can_manage_hr(database.ROLE_HR))
         self.assertFalse(database.can_manage_hr(database.ROLE_OPERATOR))
 
+    def test_default_advance_template_uses_reason_without_amount_placeholder(self):
+        advance_template = next(
+            template for template in database.DEFAULT_HR_REQUEST_TEMPLATES
+            if template["type"] == "advance"
+        )
+
+        self.assertEqual(
+            advance_template["body"],
+            "Прошу выдать аванс сотруднику {employee_name}. Причина: {reason}.",
+        )
+        self.assertEqual(advance_template["variables"], ["reason"])
+
     def test_render_hr_template_replaces_known_values_and_keeps_missing_markers(self):
         rendered = database.render_hr_template(
             "Please approve {employee_name} from {start_date} to {end_date}.",
@@ -86,6 +98,7 @@ class HrDatabaseTests(unittest.TestCase):
                 return self._rows
 
         inserted_events: list[tuple] = []
+        inserted_requests: list[tuple] = []
 
         def fake_execute(query, params=None):
             normalized_query = " ".join(query.split())
@@ -99,6 +112,7 @@ class HrDatabaseTests(unittest.TestCase):
                     }
                 )
             if "INSERT INTO hr_requests" in normalized_query:
+                inserted_requests.append(tuple(params or ()))
                 return _Cursor({"id": 31})
             if "INSERT INTO hr_request_events" in normalized_query:
                 inserted_events.append(tuple(params or ()))
@@ -124,6 +138,18 @@ class HrDatabaseTests(unittest.TestCase):
                         "decided_by": None,
                         "decided_by_name": None,
                         "decision_comment": "",
+                        "employee_signature": "MIICMS",
+                        "employee_signed_payload": '{"action":"submit"}',
+                        "employee_signed_at": "2026-05-26T10:00:00+00:00",
+                        "employee_certificate_subject": "CN=Employee User",
+                        "employee_certificate_serial": "123456",
+                        "employee_certificate_pem": None,
+                        "hr_signature": None,
+                        "hr_signed_payload": None,
+                        "hr_signed_at": None,
+                        "hr_certificate_subject": None,
+                        "hr_certificate_serial": None,
+                        "hr_certificate_pem": None,
                     }
                 )
             if "FROM hr_request_events" in normalized_query:
@@ -156,12 +182,23 @@ class HrDatabaseTests(unittest.TestCase):
                     values={},
                     summary="Annual leave",
                     period="2026-06-01 - 2026-06-10",
+                    employee_signature={
+                        "signature": "MIICMS",
+                        "signed_payload": '{"action":"submit"}',
+                        "signed_at": "2026-05-26T10:00:00+00:00",
+                        "certificate_subject": "CN=Employee User",
+                        "certificate_serial": "123456",
+                        "certificate_pem": None,
+                    },
                 )
         finally:
             database._lock = original_lock
 
         self.assertEqual(inserted_events[0][1], "created")
         self.assertEqual(inserted_events[0][3], "Employee User")
+        self.assertIn("MIICMS", inserted_requests[0])
+        self.assertIn("123456", inserted_requests[0])
+        self.assertEqual(hr_request["employee_signature"]["signature"], "MIICMS")
         self.assertEqual(hr_request["events"][0]["action"], "created")
         self.assertEqual(hr_request["events"][0]["comment"], "Annual leave")
 
@@ -207,6 +244,18 @@ class HrDatabaseTests(unittest.TestCase):
                         "decided_by": 10,
                         "decided_by_name": "HR User",
                         "decision_comment": "Attach certificate",
+                        "employee_signature": None,
+                        "employee_signed_payload": None,
+                        "employee_signed_at": None,
+                        "employee_certificate_subject": None,
+                        "employee_certificate_serial": None,
+                        "employee_certificate_pem": None,
+                        "hr_signature": None,
+                        "hr_signed_payload": None,
+                        "hr_signed_at": None,
+                        "hr_certificate_subject": None,
+                        "hr_certificate_serial": None,
+                        "hr_certificate_pem": None,
                     }
                 )
             if "FROM hr_request_events" in normalized_query:

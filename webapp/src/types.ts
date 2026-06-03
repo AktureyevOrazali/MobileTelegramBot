@@ -56,6 +56,26 @@ export interface BinDetailed {
   customerNameRu: string | null;
 }
 
+export interface BinContractSyncResult {
+  status: string;
+  added?: number;
+  removed?: number;
+  totalBins?: number;
+  binsWithContracts?: number;
+  staleBins?: number;
+  skipped?: boolean;
+}
+
+export interface BinContractSyncResultRaw {
+  status: string;
+  added?: number;
+  removed?: number;
+  total_bins?: number;
+  bins_with_contracts?: number;
+  stale_bins?: number;
+  skipped?: boolean;
+}
+
 export interface UserProfileRaw {
   id: number;
   email: string;
@@ -752,6 +772,24 @@ export interface HrRequestEvent {
   createdAt: Date;
 }
 
+export interface HrSignatureRaw {
+  signature: string;
+  signed_payload: string;
+  signed_at: string;
+  certificate_subject?: string | null;
+  certificate_serial?: string | null;
+  certificate_pem?: string | null;
+}
+
+export interface HrSignature {
+  signature: string;
+  signedPayload: string;
+  signedAt: string;
+  certificateSubject: string | null;
+  certificateSerial: string | null;
+  certificatePem: string | null;
+}
+
 export interface HrRequestRaw {
   id: number;
   template_id?: number | null;
@@ -771,6 +809,8 @@ export interface HrRequestRaw {
   decided_by?: number | null;
   decided_by_name?: string | null;
   decision_comment: string;
+  employee_signature?: HrSignatureRaw | null;
+  hr_signature?: HrSignatureRaw | null;
   events?: HrRequestEventRaw[];
 }
 
@@ -793,6 +833,8 @@ export interface HrRequest {
   decidedBy: number | null;
   decidedByName: string | null;
   decisionComment: string;
+  employeeSignature: HrSignature | null;
+  hrSignature: HrSignature | null;
   events: HrRequestEvent[];
 }
 

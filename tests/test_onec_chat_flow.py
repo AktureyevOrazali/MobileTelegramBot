@@ -29,14 +29,14 @@ class OneCChatFlowTests(unittest.TestCase):
             patch.object(api.database, "get_message_attachments_map", return_value={}),
             patch.object(api.database, "set_chat_section"),
             patch.object(api.database, "get_messages", return_value=[{"id": 501}]),
-            patch.object(api.database, "has_organization_without_contract", return_value=False),
             patch.object(api.contract_checker, "ACTIVE_CONTRACT_YEAR", 2026),
             patch.object(
                 api.contract_checker,
                 "check_customer_contracts",
                 return_value={"has_contract": False},
-            ),
-            patch.object(api.database, "add_organization_without_contract"),
+            ) as check_contracts,
+            patch.object(api.database, "add_organization_without_contract") as add_without_contract,
+            patch.object(api.database, "upsert_bin_contract_snapshot") as upsert_snapshot,
             patch.object(api, "_store_onec_outgoing_text_message", side_effect=lambda **kwargs: stored_messages.append(kwargs) or 900),
             patch.object(api, "_process_onec_incoming_message"),
         ):
@@ -52,6 +52,74 @@ class OneCChatFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("действующий договор", response.json()["response_message"].lower())
         self.assertNotIn("No active", response.json()["response_message"])
+        self.assertEqual(stored_messages[0]["text"], response.json()["response_message"])
+        check_contracts.assert_called_once_with("181818181818")
+        upsert_snapshot.assert_called_once_with(
+            "181818181818",
+            has_contract=False,
+            customer_legal_address=None,
+            customer_bank_name_ru=None,
+            customer_name_ru=None,
+        )
+        add_without_contract.assert_called_once_with(
+            customer_bin="181818181818",
+            customer_legal_address=None,
+            customer_bank_name_ru=None,
+            customer_name_ru=None,
+        )
+
+    def test_onec_first_message_checks_only_current_bin_and_saves_snapshot(self):
+        stored_messages: list[dict] = []
+
+        with (
+            patch.object(api, "_resolve_onec_chat_id", return_value=1001),
+            patch.object(api.database, "upsert_chat"),
+            patch.object(api.database, "ensure_active_chat_dialog", return_value=77),
+            patch.object(api.database, "save_message", return_value=501),
+            patch.object(api.database, "get_message_attachments_map", return_value={}),
+            patch.object(api.database, "set_chat_section"),
+            patch.object(api.database, "get_messages", return_value=[{"id": 501}]),
+            patch.object(api.contract_checker, "ACTIVE_CONTRACT_YEAR", 2026),
+            patch.object(
+                api.contract_checker,
+                "check_customer_contracts",
+                return_value={
+                    "has_contract": True,
+                    "customer_legal_address": "Atyrau",
+                    "customer_bank_name_ru": "Bank",
+                    "customer_name_ru": "Customer",
+                },
+            ) as check_contracts,
+            patch.object(api.contract_checker, "get_all_customer_bins_with_contracts") as get_all_contract_bins,
+            patch.object(api.database, "add_organization_without_contract") as add_without_contract,
+            patch.object(api.database, "remove_organization_without_contract") as remove_without_contract,
+            patch.object(api.database, "upsert_bin_contract_snapshot") as upsert_snapshot,
+            patch.object(api, "_store_onec_outgoing_text_message", side_effect=lambda **kwargs: stored_messages.append(kwargs) or 900),
+            patch.object(api, "_process_onec_incoming_message"),
+        ):
+            response = self.client.post(
+                "/integrations/1c/messages",
+                json={
+                    "external_chat_id": "onec-chat",
+                    "bin": "181818181818",
+                    "text": "РџРµСЂРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["has_contract"])
+        self.assertIsNotNone(response.json()["response_message"])
+        check_contracts.assert_called_once_with("181818181818")
+        get_all_contract_bins.assert_not_called()
+        upsert_snapshot.assert_called_once_with(
+            "181818181818",
+            has_contract=True,
+            customer_legal_address="Atyrau",
+            customer_bank_name_ru="Bank",
+            customer_name_ru="Customer",
+        )
+        add_without_contract.assert_not_called()
+        remove_without_contract.assert_called_once_with("181818181818")
         self.assertEqual(stored_messages[0]["text"], response.json()["response_message"])
 
     def test_onec_outbox_payload_can_include_quick_replies(self):

@@ -26,6 +26,8 @@ const request: HrRequest = {
   decidedBy: null,
   decidedByName: null,
   decisionComment: '',
+  employeeSignature: null,
+  hrSignature: null,
   events: [],
 };
 

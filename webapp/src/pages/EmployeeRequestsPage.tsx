@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { ApiClient } from '../api/ApiClient';
-import type { AuthSession, HrRequest, HrTemplate } from '../types';
+import type { AuthSession, HrRequest, HrSignature, HrTemplate } from '../types';
 import { DEFAULT_EMPLOYEE_ORGANIZATION } from '../constants/hrOrganizations';
 import { requestStatusLabels, requestTypeLabels } from './hr/hrMockData';
+import { signWithNcalayer } from '../services/ncalayer';
 
 interface EmployeeRequestsPageProps {
   apiClient: ApiClient;
@@ -25,6 +26,12 @@ const countDays = (startDate: string, endDate: string) => {
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return '';
   return String(Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1);
 };
+
+const requestTypeRequiresDates = (template: HrTemplate | null) => (
+  template?.type === 'vacation'
+  || template?.type === 'businessTrip'
+  || template?.type === 'sickLeave'
+);
 
 const buildPeriodLabel = (startDate: string, endDate: string) => {
   const start = formatInputDate(startDate);
@@ -59,7 +66,6 @@ const buildAutoValues = (
     manager_name: reason,
     payroll_month: reason,
     repayment_date: formatInputDate(endDate),
-    amount: reason,
     destination: reason,
     city: reason,
     system_name: reason,
@@ -116,6 +122,16 @@ const normalizeSentence = (value: string) => {
   return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
 };
 
+const normalizeEmployeeTemplateBody = (template: HrTemplate) => {
+  if (
+    template.type === 'advance'
+    && template.body.trim() === 'Прошу выдать аванс сотруднику {employee_name} в размере {amount}. Причина: {reason}.'
+  ) {
+    return 'Прошу выдать аванс сотруднику {employee_name}. Причина: {reason}.';
+  }
+  return template.body;
+};
+
 const buildRequestStatement = (
   template: HrTemplate | null,
   employeeName: string,
@@ -160,6 +176,8 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
   const [reason, setReason] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
+  const [employeeSignature, setEmployeeSignature] = useState<HrSignature | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -192,22 +210,62 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
     [selectedTemplateId, templates],
   );
   const organization = session.user.organization || DEFAULT_EMPLOYEE_ORGANIZATION;
+  const requiresDates = requestTypeRequiresDates(selectedTemplate);
   const period = useMemo(() => buildPeriodLabel(startDate, endDate), [startDate, endDate]);
-  const isDateRangeInvalid = Boolean(startDate && endDate && endDate < startDate);
+  const effectivePeriod = requiresDates ? period : '';
+  const isDateRangeInvalid = Boolean(requiresDates && startDate && endDate && endDate < startDate);
   const values = useMemo(
-    () => buildAutoValues(selectedTemplate, session, startDate, endDate, reason, organization),
-    [selectedTemplate, session, startDate, endDate, reason, organization],
+    () => buildAutoValues(
+      selectedTemplate,
+      session,
+      requiresDates ? startDate : '',
+      requiresDates ? endDate : '',
+      reason,
+      organization,
+    ),
+    [selectedTemplate, session, requiresDates, startDate, endDate, reason, organization],
   );
   const previewValues = useMemo(
     () => buildPreviewValues(selectedTemplate, values),
     [selectedTemplate, values],
   );
-  const renderedTemplateText = selectedTemplate ? normalizeSentence(renderTemplate(selectedTemplate.body, previewValues)) : '';
-  const previewText = renderedTemplateText || buildRequestStatement(selectedTemplate, session.user.name, period, reason);
+  const renderedTemplateText = selectedTemplate
+    ? normalizeSentence(renderTemplate(normalizeEmployeeTemplateBody(selectedTemplate), previewValues))
+    : '';
+  const previewText = renderedTemplateText || buildRequestStatement(selectedTemplate, session.user.name, effectivePeriod, reason);
+  const canSignRequest = Boolean(selectedTemplate && (!requiresDates || effectivePeriod) && reason.trim() && !isDateRangeInvalid);
+
+  useEffect(() => {
+    setEmployeeSignature(null);
+  }, [selectedTemplate?.id, startDate, endDate, reason, previewText]);
+
+  const handleSign = async () => {
+    if (!selectedTemplate || !canSignRequest) return;
+    setIsSigning(true);
+    setError('');
+    try {
+      const signature = await signWithNcalayer({
+        action: 'submit',
+        templateId: selectedTemplate.id,
+        employeeId: session.user.id,
+        employeeName: session.user.name,
+        values,
+        period: effectivePeriod,
+        summary: reason.trim(),
+        statement: previewText,
+      });
+      setEmployeeSignature(signature);
+    } catch (err) {
+      setEmployeeSignature(null);
+      setError(err instanceof Error ? err.message : 'Не удалось подписать заявление через NCALayer.');
+    } finally {
+      setIsSigning(false);
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedTemplate || !period || !reason.trim() || isDateRangeInvalid) return;
+    if (!selectedTemplate || (requiresDates && !effectivePeriod) || !reason.trim() || isDateRangeInvalid || !employeeSignature) return;
     setIsSubmitting(true);
     setError('');
     try {
@@ -215,7 +273,8 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
         templateId: selectedTemplate.id,
         values: { ...values, statement: previewText },
         summary: reason.trim(),
-        period,
+        period: effectivePeriod,
+        employeeSignature,
       });
       setRequests((current) => [created, ...current]);
       setReason('');
@@ -319,23 +378,25 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                       <span>Организация</span>
                       <input value={organization} readOnly />
                     </label>
-                    <div className="hr-employee-request-date-stack">
-                      <label className="hr-field">
-                        <span>Дата начала</span>
-                        <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required />
-                      </label>
-                      <label className="hr-field">
-                        <span>Дата окончания</span>
-                        <input
-                          type="date"
-                          value={endDate}
-                          min={startDate || undefined}
-                          onChange={(event) => setEndDate(event.target.value)}
-                          aria-invalid={isDateRangeInvalid}
-                          required
-                        />
-                      </label>
-                    </div>
+                    {requiresDates && (
+                      <div className="hr-employee-request-date-stack">
+                        <label className="hr-field">
+                          <span>Дата начала</span>
+                          <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required />
+                        </label>
+                        <label className="hr-field">
+                          <span>Дата окончания</span>
+                          <input
+                            type="date"
+                            value={endDate}
+                            min={startDate || undefined}
+                            onChange={(event) => setEndDate(event.target.value)}
+                            aria-invalid={isDateRangeInvalid}
+                            required
+                          />
+                        </label>
+                      </div>
+                    )}
                     {isDateRangeInvalid && (
                       <p className="form-error" role="alert">Дата окончания не может быть раньше даты начала.</p>
                     )}
@@ -348,7 +409,11 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                     </label>
 
                     <div className="hr-template-preview__actions">
-                      <button className="button" type="submit" disabled={isSubmitting || !period || !reason.trim() || isDateRangeInvalid}>
+                      <button className="button secondary" type="button" disabled={isSigning || !canSignRequest} onClick={handleSign}>
+                        {isSigning ? 'Подписание...' : 'Подписать ЭЦП'}
+                      </button>
+                      {employeeSignature && <span className="hr-badge">ЭЦП подписано</span>}
+                      <button className="button" type="submit" disabled={isSubmitting || !canSignRequest || !employeeSignature}>
                         Отправить заявление
                       </button>
                     </div>

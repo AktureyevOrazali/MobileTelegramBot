@@ -71,6 +71,22 @@ export function useAdminData(apiClient: ApiClient) {
                 setPendingRegistrations(loadedPending);
                 setOrganizationsWithoutContracts(loadedOrganizations);
                 setBinsDetailed(loadedBinsDetailed);
+                void apiClient.syncBinsWithContracts()
+                    .then(() => Promise.all([
+                        apiClient.fetchBins(),
+                        apiClient.fetchUnassignedBins(),
+                        apiClient.fetchOrganizationsWithoutContracts(),
+                        apiClient.getBinsDetailed(),
+                    ]))
+                    .then(([refreshedBins, refreshedUnassignedBins, refreshedOrganizations, refreshedBinsDetailed]) => {
+                        setBins(refreshedBins);
+                        setUnassignedBins(refreshedUnassignedBins);
+                        setOrganizationsWithoutContracts(refreshedOrganizations);
+                        setBinsDetailed(refreshedBinsDetailed);
+                    })
+                    .catch((syncError) => {
+                        console.warn('Не удалось обновить данные БИН из goszakup', syncError);
+                    });
             } catch (err) {
                 setError(extractErrorMessage(err, 'Не удалось загрузить данные администратора'));
             } finally {

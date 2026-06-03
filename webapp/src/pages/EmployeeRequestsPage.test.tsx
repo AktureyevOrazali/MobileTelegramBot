@@ -1,10 +1,24 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import EmployeeRequestsPage from './EmployeeRequestsPage';
 import type { AuthSession, HrRequest, HrTemplate } from '../types';
+import { signWithNcalayer } from '../services/ncalayer';
+
+vi.mock('../services/ncalayer', () => ({
+  signWithNcalayer: vi.fn(),
+}));
 
 const employeeOrganization = 'ТОО Азия-Сервис';
+
+const signature = {
+  signature: 'MIICMS',
+  signedPayload: '{"action":"submit"}',
+  signedAt: '2026-05-26T10:00:00.000Z',
+  certificateSubject: 'CN=Employee User',
+  certificateSerial: '123456',
+  certificatePem: null,
+};
 
 const template: HrTemplate = {
   id: 7,
@@ -38,6 +52,8 @@ const submittedRequest: HrRequest = {
   decidedBy: null,
   decidedByName: null,
   decisionComment: '',
+  employeeSignature: signature,
+  hrSignature: null,
   events: [],
 };
 
@@ -64,6 +80,10 @@ const session: AuthSession = {
 };
 
 describe('EmployeeRequestsPage', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('keeps template and statement panels while employee request data is loading', () => {
     const apiClient = {
       fetchHrTemplates: vi.fn(() => new Promise<HrTemplate[]>(() => {})),
@@ -100,6 +120,9 @@ describe('EmployeeRequestsPage', () => {
     fireEvent.change(dateInputs[0], { target: { value: '2026-06-01' } });
     fireEvent.change(dateInputs[1], { target: { value: '2026-06-10' } });
     fireEvent.change(container.querySelector('textarea') as HTMLTextAreaElement, { target: { value: 'Annual leave' } });
+    vi.mocked(signWithNcalayer).mockResolvedValue(signature);
+    fireEvent.click(screen.getByRole('button', { name: 'Подписать ЭЦП' }));
+    await screen.findByText('ЭЦП подписано');
     fireEvent.click(screen.getByRole('button', { name: 'Отправить заявление' }));
 
     await waitFor(() => {
@@ -107,6 +130,7 @@ describe('EmployeeRequestsPage', () => {
         templateId: 7,
         values: expect.objectContaining({ organization: employeeOrganization }),
         summary: 'Annual leave',
+        employeeSignature: signature,
       }));
     });
     const sentRequests = screen.getByLabelText('Мои отправленные заявления');
@@ -141,11 +165,59 @@ describe('EmployeeRequestsPage', () => {
     const expectedStatement = 'Кадровику: оформить отпуск для Employee User с 01.06.2026 по 10.06.2026. Причина: Annual leave.';
     expect(screen.getByText(expectedStatement)).toBeInTheDocument();
 
+    vi.mocked(signWithNcalayer).mockResolvedValue(signature);
+    fireEvent.click(screen.getByRole('button', { name: 'Подписать ЭЦП' }));
+    await screen.findByText('ЭЦП подписано');
     fireEvent.click(screen.getByRole('button', { name: 'Отправить заявление' }));
 
     await waitFor(() => {
       expect(apiClient.createHrRequest).toHaveBeenCalledWith(expect.objectContaining({
         values: expect.objectContaining({ statement: expectedStatement }),
+        employeeSignature: signature,
+      }));
+    });
+  });
+
+  it('allows submitting an advance request without dates and keeps the reason text readable', async () => {
+    const advanceTemplate: HrTemplate = {
+      ...template,
+      title: 'Заявление на аванс',
+      type: 'advance',
+      body: 'Прошу выдать аванс сотруднику {employee_name} в размере {amount}. Причина: {reason}.',
+      variables: ['amount', 'reason'],
+    };
+    const apiClient = {
+      fetchHrTemplates: vi.fn().mockResolvedValue([advanceTemplate]),
+      fetchHrRequests: vi.fn().mockResolvedValue([]),
+      createHrRequest: vi.fn().mockResolvedValue({
+        ...submittedRequest,
+        type: 'advance',
+        templateTitle: 'Заявление на аванс',
+        period: '',
+        renderedText: 'Прошу выдать аванс сотруднику Employee User. Причина: Срочно.',
+      }),
+    };
+
+    const { container } = render(<EmployeeRequestsPage apiClient={apiClient as any} session={session} />);
+
+    await screen.findByText('Заявление на аванс');
+    fireEvent.change(container.querySelector('textarea') as HTMLTextAreaElement, { target: { value: 'Срочно' } });
+
+    const expectedStatement = 'Прошу выдать аванс сотруднику Employee User. Причина: Срочно.';
+    expect(screen.getByText(expectedStatement)).toBeInTheDocument();
+
+    vi.mocked(signWithNcalayer).mockResolvedValue(signature);
+    fireEvent.click(screen.getByRole('button', { name: 'Подписать ЭЦП' }));
+    await screen.findByText('ЭЦП подписано');
+    fireEvent.click(screen.getByRole('button', { name: 'Отправить заявление' }));
+
+    await waitFor(() => {
+      expect(apiClient.createHrRequest).toHaveBeenCalledWith(expect.objectContaining({
+        templateId: 7,
+        period: '',
+        values: expect.objectContaining({ statement: expectedStatement }),
+        summary: 'Срочно',
+        employeeSignature: signature,
       }));
     });
   });

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { ApiClient } from '../api/ApiClient';
-import type { HrEmployee, HrRequest, HrTemplate } from '../types';
+import type { HrEmployee, HrRequest, HrSignature, HrTemplate } from '../types';
 import { DEFAULT_EMPLOYEE_ORGANIZATION } from '../constants/hrOrganizations';
 import HrArchiveTab from './hr/HrArchiveTab';
 import HrCalendarTab from './hr/HrCalendarTab';
@@ -44,6 +44,8 @@ const mockRequests: HrRequest[] = hrRequests.map((request, index) => ({
   decidedBy: null,
   decidedByName: null,
   decisionComment: '',
+  employeeSignature: null,
+  hrSignature: null,
   events: [],
 }));
 
@@ -142,9 +144,14 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
     [requests],
   );
 
-  const handleDecision = async (requestId: number, status: 'approved' | 'rejected' | 'needsInfo', comment = '') => {
+  const handleDecision = async (
+    requestId: number,
+    status: 'approved' | 'rejected' | 'needsInfo',
+    comment = '',
+    hrSignature?: HrSignature | null,
+  ) => {
     if (!apiClient) return;
-    const updated = await apiClient.decideHrRequest(requestId, { status, comment });
+    const updated = await apiClient.decideHrRequest(requestId, { status, comment, hrSignature });
     setRequests((current) => current.map((request) => (request.id === updated.id ? updated : request)));
   };
 

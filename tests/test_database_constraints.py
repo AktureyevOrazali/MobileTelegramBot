@@ -171,6 +171,99 @@ class DatabaseConstraintTests(unittest.TestCase):
         self.assertIn(customer_surveys.SURVEY_TRIGGER_AFTER_EMPLOYEE_CSAT, inserted_template_params[0])
         self.assertEqual(len(inserted_questions), len(customer_surveys.default_after_csat_questions()))
 
+    def test_sync_bins_with_contracts_stores_contract_snapshot_for_map_addresses(self):
+        contract_snapshot = {
+            "customer_legal_address": "Aktobe region, Example street",
+            "customer_bank_name_ru": "Contract bank",
+            "customer_name_ru": "Contract customer",
+        }
+
+        with (
+            patch.object(database, "list_bins", return_value=["111111111111"]),
+            patch.object(
+                database,
+                "get_bin_contract_sync_freshness",
+                return_value={"is_fresh": False, "total_bins": 1, "stale_bins": 1, "bins_with_contracts": 0},
+            ),
+            patch("backend.contract_checker.get_all_customer_bins_with_contracts", return_value={"111111111111": contract_snapshot}),
+            patch.object(database, "remove_organization_without_contract", return_value=False),
+            patch.object(database, "upsert_bin_contract_snapshot") as upsert_snapshot,
+        ):
+            result = database.sync_bins_with_contracts()
+
+        upsert_snapshot.assert_called_once_with(
+            "111111111111",
+            has_contract=True,
+            customer_legal_address="Aktobe region, Example street",
+            customer_bank_name_ru="Contract bank",
+            customer_name_ru="Contract customer",
+        )
+        self.assertEqual(result["bins_with_contracts"], 1)
+        self.assertFalse(result["skipped"])
+
+    def test_sync_bins_with_contracts_skips_goszakup_when_snapshots_are_fresh(self):
+        with (
+            patch.object(
+                database,
+                "get_bin_contract_sync_freshness",
+                return_value={"is_fresh": True, "total_bins": 2, "stale_bins": 0, "bins_with_contracts": 1},
+            ),
+            patch.object(database, "list_bins") as list_bins,
+            patch("backend.contract_checker.get_all_customer_bins_with_contracts") as get_contracts,
+        ):
+            result = database.sync_bins_with_contracts()
+
+        self.assertTrue(result["skipped"])
+        self.assertEqual(result["total_bins"], 2)
+        self.assertEqual(result["bins_with_contracts"], 1)
+        self.assertEqual(result["stale_bins"], 0)
+        list_bins.assert_not_called()
+        get_contracts.assert_not_called()
+
+    def test_sync_bins_with_contracts_force_ignores_freshness_cache(self):
+        with (
+            patch.object(
+                database,
+                "get_bin_contract_sync_freshness",
+                return_value={"is_fresh": True, "total_bins": 1, "stale_bins": 0, "bins_with_contracts": 1},
+            ) as freshness,
+            patch.object(database, "list_bins", return_value=[]),
+            patch("backend.contract_checker.get_all_customer_bins_with_contracts", return_value={}) as get_contracts,
+        ):
+            result = database.sync_bins_with_contracts(force=True)
+
+        self.assertFalse(result["skipped"])
+        freshness.assert_not_called()
+        get_contracts.assert_called_once()
+
+    def test_bin_contract_snapshots_do_not_treat_unchecked_bins_as_contracts(self):
+        class _Cursor:
+            def fetchall(self):
+                return [
+                    {
+                        "bin": "111111111111",
+                        "has_contract": None,
+                        "customer_legal_address": None,
+                        "customer_bank_name_ru": None,
+                        "customer_name_ru": None,
+                    }
+                ]
+
+        executed_queries: list[str] = []
+
+        def fake_execute(query, params=None):
+            executed_queries.append(" ".join(query.split()))
+            return _Cursor()
+
+        with patch.object(database, "execute", side_effect=fake_execute):
+            snapshots = database.list_bin_contract_snapshots()
+
+        self.assertFalse(snapshots[0]["has_contract"])
+        self.assertTrue(
+            any("COALESCE(ab.has_contract, FALSE)" in query for query in executed_queries),
+            executed_queries,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

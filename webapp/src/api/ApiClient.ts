@@ -3,6 +3,8 @@ import {
   AiRatingsAnalyticsRaw,
   AuthSession,
   AuthSessionRaw,
+  BinContractSyncResult,
+  BinContractSyncResultRaw,
   BinDetailed,
   BinDetailedRaw,
   ChatSummary,
@@ -29,6 +31,8 @@ import {
   HrRequest,
   HrRequestRaw,
   HrRequestStatus,
+  HrSignature,
+  HrSignatureRaw,
   HrTemplate,
   HrTemplateRaw,
   Message,
@@ -452,6 +456,22 @@ export class ApiClient {
       method: 'GET',
       query: query ? { query } : undefined,
     });
+  }
+
+  async syncBinsWithContracts(options: { force?: boolean } = {}): Promise<BinContractSyncResult> {
+    const response = await this.request<BinContractSyncResultRaw>('bins/sync', {
+      method: 'POST',
+      query: options.force ? { force: true } : undefined,
+    });
+    return {
+      status: response.status,
+      added: response.added,
+      removed: response.removed,
+      totalBins: response.total_bins,
+      binsWithContracts: response.bins_with_contracts,
+      staleBins: response.stale_bins,
+      skipped: response.skipped,
+    };
   }
 
   async fetchUnassignedBins(): Promise<UnassignedBin[]> {
@@ -999,6 +1019,8 @@ export class ApiClient {
       decidedBy: raw.decided_by ?? null,
       decidedByName: raw.decided_by_name ? sanitizeUiText(raw.decided_by_name) || raw.decided_by_name : null,
       decisionComment: sanitizeUiText(raw.decision_comment) || '',
+      employeeSignature: this.mapHrSignature(raw.employee_signature),
+      hrSignature: this.mapHrSignature(raw.hr_signature),
       events: (raw.events ?? []).map((event) => ({
         id: event.id,
         requestId: event.request_id,
@@ -1008,6 +1030,18 @@ export class ApiClient {
         comment: sanitizeUiText(event.comment) || '',
         createdAt: new Date(event.created_at),
       })),
+    };
+  }
+
+  private mapHrSignature(raw?: HrSignatureRaw | null): HrSignature | null {
+    if (!raw) return null;
+    return {
+      signature: raw.signature,
+      signedPayload: raw.signed_payload,
+      signedAt: raw.signed_at,
+      certificateSubject: raw.certificate_subject ?? null,
+      certificateSerial: raw.certificate_serial ?? null,
+      certificatePem: raw.certificate_pem ?? null,
     };
   }
 
@@ -1073,7 +1107,13 @@ export class ApiClient {
     return response.map((request) => this.mapHrRequest(request));
   }
 
-  async createHrRequest(data: { templateId: number; values: Record<string, unknown>; summary?: string; period?: string }): Promise<HrRequest> {
+  async createHrRequest(data: {
+    templateId: number;
+    values: Record<string, unknown>;
+    summary?: string;
+    period?: string;
+    employeeSignature: HrSignature;
+  }): Promise<HrRequest> {
     const response = await this.request<HrRequestRaw>('hr/requests', {
       method: 'POST',
       body: JSON.stringify({
@@ -1081,6 +1121,14 @@ export class ApiClient {
         values: data.values,
         summary: data.summary ?? '',
         period: data.period ?? '',
+        employee_signature: {
+          signature: data.employeeSignature.signature,
+          signed_payload: data.employeeSignature.signedPayload,
+          signed_at: data.employeeSignature.signedAt,
+          certificate_subject: data.employeeSignature.certificateSubject,
+          certificate_serial: data.employeeSignature.certificateSerial,
+          certificate_pem: data.employeeSignature.certificatePem,
+        },
       }),
     });
     return this.mapHrRequest(response);
@@ -1088,11 +1136,28 @@ export class ApiClient {
 
   async decideHrRequest(
     id: number,
-    data: { status: Extract<HrRequestStatus, 'approved' | 'rejected' | 'needsInfo'>; comment?: string },
+    data: {
+      status: Extract<HrRequestStatus, 'approved' | 'rejected' | 'needsInfo'>;
+      comment?: string;
+      hrSignature?: HrSignature | null;
+    },
   ): Promise<HrRequest> {
     const response = await this.request<HrRequestRaw>(`hr/requests/${id}/decision`, {
       method: 'POST',
-      body: JSON.stringify({ status: data.status, comment: data.comment ?? '' }),
+      body: JSON.stringify({
+        status: data.status,
+        comment: data.comment ?? '',
+        ...(data.hrSignature ? {
+          hr_signature: {
+            signature: data.hrSignature.signature,
+            signed_payload: data.hrSignature.signedPayload,
+            signed_at: data.hrSignature.signedAt,
+            certificate_subject: data.hrSignature.certificateSubject,
+            certificate_serial: data.hrSignature.certificateSerial,
+            certificate_pem: data.hrSignature.certificatePem,
+          },
+        } : {}),
+      }),
     });
     return this.mapHrRequest(response);
   }

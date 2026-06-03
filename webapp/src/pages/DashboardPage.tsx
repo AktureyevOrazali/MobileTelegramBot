@@ -42,18 +42,34 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
   React.useEffect(() => {
     let cancelled = false;
     setMapLoading(true);
-    Promise.all([
-      apiClient.getBinsDetailed().catch(() => [] as BinDetailed[]),
-      apiClient.fetchChats().catch(() => [] as ChatSummary[]),
-    ])
-      .then(([bins, chats]) => {
+    const loadMapData = async () => {
+      try {
+        const [bins, chats] = await Promise.all([
+          apiClient.getBinsDetailed().catch(() => [] as BinDetailed[]),
+          apiClient.fetchChats().catch(() => [] as ChatSummary[]),
+        ]);
         if (cancelled) return;
         setMapBins(bins);
         setMapChats(chats);
-      })
-      .finally(() => {
+        void apiClient.syncBinsWithContracts()
+          .then(() => apiClient.getBinsDetailed())
+          .then((refreshedBins) => {
+            if (!cancelled) setMapBins(refreshedBins);
+          })
+          .catch((syncError) => {
+            console.warn('Failed to sync BIN contract snapshots for dashboard map', syncError);
+          });
+      } catch (error) {
+        console.warn('Failed to load dashboard map data', error);
+        if (!cancelled) {
+          setMapBins([]);
+          setMapChats([]);
+        }
+      } finally {
         if (!cancelled) setMapLoading(false);
-      });
+      }
+    };
+    void loadMapData();
 
     return () => {
       cancelled = true;

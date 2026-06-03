@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import DashboardPage from './DashboardPage';
 
@@ -106,6 +106,7 @@ describe('DashboardPage loading skeletons', () => {
     mockedUseDashboardData.mockReturnValue(makeDashboardState(tab) as any);
 
     const apiClient = {
+      syncBinsWithContracts: vi.fn(() => new Promise(() => {})),
       getBinsDetailed: vi.fn(() => new Promise(() => {})),
       fetchChats: vi.fn(() => new Promise(() => {})),
     };
@@ -126,6 +127,7 @@ describe('DashboardPage loading skeletons', () => {
       isLoading: false,
     } as any);
     const apiClient = {
+      syncBinsWithContracts: vi.fn(() => new Promise(() => {})),
       getBinsDetailed: vi.fn(() => new Promise(() => {})),
       fetchChats: vi.fn(() => new Promise(() => {})),
     };
@@ -134,5 +136,26 @@ describe('DashboardPage loading skeletons', () => {
 
     expect(screen.getByTestId('dashboard-map-skeleton')).toBeInTheDocument();
     expect(container.querySelector('.dashboard-card--map .data-loading-state')).not.toBeInTheDocument();
+  });
+
+  it('loads current map BIN details without waiting for a slow contract sync', async () => {
+    mockedUseDashboardData.mockReturnValue({
+      ...makeDashboardState('overview'),
+      hasData: true,
+      loading: false,
+      isLoading: false,
+    } as any);
+    const slowSync = new Promise(() => {});
+    const apiClient = {
+      syncBinsWithContracts: vi.fn(() => slowSync),
+      getBinsDetailed: vi.fn().mockResolvedValue([]),
+      fetchChats: vi.fn().mockResolvedValue([]),
+    };
+
+    render(<DashboardPage apiClient={apiClient as any} />);
+
+    await waitFor(() => expect(apiClient.getBinsDetailed).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('dashboard-map-skeleton')).not.toBeInTheDocument());
+    expect(apiClient.syncBinsWithContracts).toHaveBeenCalled();
   });
 });

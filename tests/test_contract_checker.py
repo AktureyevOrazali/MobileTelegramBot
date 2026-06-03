@@ -32,6 +32,10 @@ class _FakeClient:
 
 
 class ContractCheckerTests(unittest.TestCase):
+    def setUp(self):
+        contract_checker._contract_cache.clear()
+        contract_checker._contract_cache_expiry.clear()
+
     def test_fetch_contracts_for_supplier_reads_all_graphql_pages(self):
         first_page = {
             "data": {
@@ -105,6 +109,44 @@ class ContractCheckerTests(unittest.TestCase):
 
         self.assertEqual(len(contracts), 200)
         self.assertEqual(len(calls), 1)
+
+    def test_build_contract_query_payload_can_filter_by_customer_bin(self):
+        payload = contract_checker._build_contract_query_payload(
+            "980540000496",
+            customer_bin="060740006232",
+        )
+
+        self.assertIn("customerBin", payload["query"])
+        self.assertEqual(
+            payload["variables"],
+            {"supplierBiin": "980540000496", "customerBin": "060740006232", "limit": 200},
+        )
+
+    def test_check_customer_contracts_fetches_only_requested_customer_bin(self):
+        with (
+            patch.object(contract_checker, "get_supplier_bins", return_value=["980540000496"]),
+            patch.object(
+                contract_checker,
+                "_fetch_contracts_for_customer",
+                return_value=[
+                    {
+                        "customerBin": "060740006232",
+                        "signDate": "2026-01-10",
+                        "customerLegalAddress": "Atyrau",
+                        "customerBankNameRu": "Bank",
+                        "Customer": {"nameRu": "Customer"},
+                    }
+                ],
+            ) as fetch_customer,
+            patch.object(contract_checker, "_get_all_contracts") as get_all_contracts,
+            patch.object(contract_checker, "ACTIVE_CONTRACT_YEAR_PREFIX", "2026"),
+        ):
+            result = contract_checker.check_customer_contracts("060740006232")
+
+        self.assertTrue(result["has_contract"])
+        self.assertEqual(result["customer_legal_address"], "Atyrau")
+        fetch_customer.assert_called_once_with("980540000496", "060740006232")
+        get_all_contracts.assert_not_called()
 
 
 if __name__ == "__main__":

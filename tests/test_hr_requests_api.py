@@ -43,6 +43,17 @@ def _employee_user():
     }
 
 
+def _signature_payload(action="submit"):
+    return {
+        "signature": "MIICMS",
+        "signed_payload": f'{{"action":"{action}"}}',
+        "signed_at": "2026-05-26T10:00:00+00:00",
+        "certificate_subject": "CN=Employee User",
+        "certificate_serial": "123456",
+        "certificate_pem": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+    }
+
+
 class HrRequestsApiTests(unittest.TestCase):
     def setUp(self):
         api.app.dependency_overrides[api.get_current_user] = _hr_user
@@ -133,6 +144,7 @@ class HrRequestsApiTests(unittest.TestCase):
                     "values": {"start_date": "2026-06-01", "end_date": "2026-06-10"},
                     "summary": "Annual leave",
                     "period": "2026-06-01 - 2026-06-10",
+                    "employee_signature": _signature_payload("submit"),
                 },
             )
 
@@ -140,9 +152,26 @@ class HrRequestsApiTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "new")
         self.assertEqual(captured["employee_id"], 20)
         self.assertEqual(captured["employee_name"], "Employee User")
+        self.assertEqual(captured["employee_signature"]["signature"], "MIICMS")
+        self.assertEqual(captured["employee_signature"]["certificate_serial"], "123456")
         self.assertEqual(response.json()["events"][0]["action"], "created")
         self.assertEqual(response.json()["events"][0]["actor_name"], "Employee User")
         self.assertEqual(captured["values"]["organization"], "ТОО Азия-Сервис")
+
+    def test_employee_cannot_submit_unsigned_request(self):
+        api.app.dependency_overrides[api.get_current_user] = _employee_user
+
+        response = self.client.post(
+            "/api/hr/requests",
+            json={
+                "template_id": 7,
+                "values": {"start_date": "2026-06-01", "end_date": "2026-06-10"},
+                "summary": "Annual leave",
+                "period": "2026-06-01 - 2026-06-10",
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
 
     def test_employee_cannot_download_request_documents(self):
         api.app.dependency_overrides[api.get_current_user] = _employee_user
@@ -226,7 +255,7 @@ class HrRequestsApiTests(unittest.TestCase):
         with patch.object(api.database, "decide_hr_request", return_value=decided) as decide:
             response = self.client.post(
                 "/api/hr/requests/31/decision",
-                json={"status": "approved", "comment": "Approved"},
+                json={"status": "approved", "comment": "Approved", "hr_signature": _signature_payload("approved")},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -238,6 +267,57 @@ class HrRequestsApiTests(unittest.TestCase):
             decided_by=10,
             decided_by_name="HR User",
             comment="Approved",
+            hr_signature=_signature_payload("approved"),
+        )
+
+    def test_hr_cannot_approve_without_signature(self):
+        response = self.client.post(
+            "/api/hr/requests/31/decision",
+            json={"status": "approved", "comment": "Approved"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("signature", response.json()["detail"].lower())
+
+    def test_hr_can_request_info_without_signature(self):
+        decided = {
+            "id": 31,
+            "template_id": 7,
+            "template_title": "Vacation request",
+            "type": "vacation",
+            "employee_id": 20,
+            "employee_name": "Employee User",
+            "department": "Operator",
+            "status": "needsInfo",
+            "values": {},
+            "rendered_text": "Signed text",
+            "summary": "Annual leave",
+            "period": "2026-06-01 - 2026-06-10",
+            "submitted_at": "2026-05-19T10:10:00+00:00",
+            "updated_at": "2026-05-19T10:20:00+00:00",
+            "decided_at": None,
+            "decided_by": 10,
+            "decided_by_name": "HR User",
+            "decision_comment": "Attach certificate",
+            "employee_signature": None,
+            "hr_signature": None,
+            "events": [],
+        }
+
+        with patch.object(api.database, "decide_hr_request", return_value=decided) as decide:
+            response = self.client.post(
+                "/api/hr/requests/31/decision",
+                json={"status": "needsInfo", "comment": "Attach certificate"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        decide.assert_called_once_with(
+            31,
+            status="needsInfo",
+            decided_by=10,
+            decided_by_name="HR User",
+            comment="Attach certificate",
+            hr_signature=None,
         )
 
 

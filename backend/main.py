@@ -118,7 +118,7 @@ class CleanupThread(threading.Thread):
         logger.info("CleanupThread started (interval=%ds)", self.INTERVAL_SECONDS)
         while not self._stopping.is_set():
             try:
-                removed = database.cleanup_expired_dialogs(max_age_hours=24)
+                removed = database.cleanup_expired_dialogs()
                 if removed:
                     logger.info("CleanupThread: removed %d expired dialog(s)", removed)
             except Exception:

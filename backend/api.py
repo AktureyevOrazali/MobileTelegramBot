@@ -916,6 +916,8 @@ class ChatResponse(BaseModel):
 
     dialog_closed_at: str | None = None
 
+    dialog_purge_at: str | None = None
+
     section: str | None = None
 
     section_title: str | None = None
@@ -954,6 +956,8 @@ class DialogStatusResponse(BaseModel):
     dialog_id: int
 
     dialog_closed_at: str | None = None
+
+    dialog_purge_at: str | None = None
 
     ai_enabled: bool = True
 
@@ -3719,6 +3723,8 @@ def list_chats(
 
                 dialog_closed_at=_normalize(chat.get("dialog_closed_at")) if chat.get("dialog_closed_at") else None,
 
+                dialog_purge_at=_normalize(chat.get("dialog_purge_at")) if chat.get("dialog_purge_at") else None,
+
                 section=section_id,
 
                 section_title=section_title,
@@ -4738,6 +4744,8 @@ def close_dialog(
 
             dialog_closed_at=closed_at,
 
+            dialog_purge_at=database.calculate_dialog_purge_at(closed_at),
+
             ai_enabled=True,
             employee_assessment_id=employee_assessment_id,
             employee_assessment_pending=employee_assessment_id is not None,
@@ -4817,6 +4825,8 @@ def close_dialog(
 
         dialog_closed_at=closed_at,
 
+        dialog_purge_at=database.calculate_dialog_purge_at(closed_at),
+
         ai_enabled=True,
         employee_assessment_id=employee_assessment_id,
         employee_assessment_pending=employee_assessment_id is not None,
@@ -4874,6 +4884,8 @@ def open_dialog(
         dialog_id=dialog_id,
 
         dialog_closed_at=None,
+
+        dialog_purge_at=None,
 
         ai_enabled=not database.is_dialog_in_operator_mode(dialog_id),
 

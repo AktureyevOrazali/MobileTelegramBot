@@ -7,8 +7,10 @@ vi.mock('../components/EChartsWrapper', () => ({
   default: () => <div data-testid="chart" />,
 }));
 
+const regionActivityMapMock = vi.hoisted(() => vi.fn(() => <div data-testid="region-map" />));
+
 vi.mock('../components/RegionActivityMap', () => ({
-  default: () => <div data-testid="region-map" />,
+  default: regionActivityMapMock,
   useIsDarkTheme: () => false,
 }));
 
@@ -157,5 +159,85 @@ describe('DashboardPage loading skeletons', () => {
     await waitFor(() => expect(apiClient.getBinsDetailed).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByTestId('dashboard-map-skeleton')).not.toBeInTheDocument());
     expect(apiClient.syncBinsWithContracts).toHaveBeenCalled();
+  });
+
+  it('passes only BINs with contracts to the dashboard map', async () => {
+    mockedUseDashboardData.mockReturnValue({
+      ...makeDashboardState('overview'),
+      hasData: true,
+      loading: false,
+      isLoading: false,
+    } as any);
+    const apiClient = {
+      syncBinsWithContracts: vi.fn().mockResolvedValue({ status: 'ok' }),
+      getBinsDetailed: vi.fn()
+        .mockResolvedValueOnce([
+          {
+            bin: '111111111111',
+            hasContract: true,
+            customerLegalAddress: 'Алматы',
+            customerBankNameRu: null,
+            customerNameRu: null,
+          },
+          {
+            bin: '222222222222',
+            hasContract: false,
+            customerLegalAddress: 'Алматы',
+            customerBankNameRu: null,
+            customerNameRu: null,
+          },
+          {
+            bin: '333333333333',
+            hasContract: true,
+            customerLegalAddress: 'Астана',
+            customerBankNameRu: null,
+            customerNameRu: null,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            bin: '111111111111',
+            hasContract: true,
+            customerLegalAddress: 'Алматы',
+            customerBankNameRu: null,
+            customerNameRu: null,
+          },
+          {
+            bin: '222222222222',
+            hasContract: false,
+            customerLegalAddress: 'Алматы',
+            customerBankNameRu: null,
+            customerNameRu: null,
+          },
+          {
+            bin: '333333333333',
+            hasContract: true,
+            customerLegalAddress: 'Астана',
+            customerBankNameRu: null,
+            customerNameRu: null,
+          },
+        ]),
+      fetchChats: vi.fn().mockResolvedValue([]),
+    };
+
+    render(<DashboardPage apiClient={apiClient as any} />);
+
+    await waitFor(() => expect(screen.queryByTestId('dashboard-map-skeleton')).not.toBeInTheDocument());
+    await waitFor(() => {
+      expect(regionActivityMapMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          binDetails: expect.arrayContaining([
+            expect.objectContaining({ bin: '111111111111' }),
+            expect.objectContaining({ bin: '333333333333' }),
+          ]),
+        }),
+        {},
+      );
+    });
+    const regionMapCalls = (regionActivityMapMock as any).mock.calls as Array<[{ binDetails: { bin: string }[] }]>;
+    const lastCall = regionMapCalls[regionMapCalls.length - 1];
+    const lastProps = lastCall?.[0] as { binDetails: { bin: string }[] };
+    expect(lastProps.binDetails).toHaveLength(2);
+    expect(lastProps.binDetails.map((item) => item.bin)).not.toContain('222222222222');
   });
 });

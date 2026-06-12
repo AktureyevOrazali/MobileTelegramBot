@@ -76,17 +76,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     };
   }, [apiClient]);
 
+  const contractMapBins = React.useMemo(
+    () => mapBins.filter((detail) => detail.hasContract),
+    [mapBins],
+  );
+
   const dashboardRegionCounts = React.useMemo(() => {
     const counts: Record<string, number> = {};
     GEOJSON_FEATURES.features.forEach((feature) => {
       if (feature.properties?.name) counts[feature.properties.name] = 0;
     });
-    mapBins.forEach((detail) => {
+    contractMapBins.forEach((detail) => {
       const regionKey = detectRegionFromAddress(detail.customerLegalAddress);
       if (regionKey && regionKey in counts) counts[regionKey] += 1;
     });
     return counts;
-  }, [mapBins]);
+  }, [contractMapBins]);
 
   const dashboardMapMaxCount = React.useMemo(
     () => Math.max(1, ...Object.values(dashboardRegionCounts)),
@@ -101,7 +106,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
       regionKeyToSvgId[SVG_ID_TO_REGION_KEY[svgId]] = svgId;
     }
 
-    mapBins.forEach((detail) => {
+    contractMapBins.forEach((detail) => {
       const regionKey = detectRegionFromAddress(detail.customerLegalAddress);
       if (!regionKey) return;
 
@@ -125,7 +130,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
     });
 
     return result;
-  }, [mapBins]);
+  }, [contractMapBins]);
 
   const lastUpdated = d.hasData ? formatDateTime(d.data.updatedAt) : '';
 
@@ -153,7 +158,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ apiClient }) => {
                   dashboardRayonCounts={dashboardRayonCounts}
                   dashboardRegionCounts={dashboardRegionCounts}
                   isDark={isDark}
-                  mapBins={mapBins}
+                  mapBins={contractMapBins}
                   mapChats={mapChats}
                   mapLoading={mapLoading}
                 />

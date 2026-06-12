@@ -125,7 +125,9 @@ describe('HrPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Кадры' })).toBeInTheDocument();
     expect(screen.getByText('Новые заявления')).toBeInTheDocument();
-    expect(screen.getByText('Отпуска на неделе')).toBeInTheDocument();
+    expect(screen.queryByText('Отпуска на неделе')).not.toBeInTheDocument();
+    const inProgressCard = screen.getByText('В работе').closest('.hr-stat-card') as HTMLElement;
+    expect(within(inProgressCard).getByText('5')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Заявления' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'Сотрудники' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Календарь' })).toBeInTheDocument();

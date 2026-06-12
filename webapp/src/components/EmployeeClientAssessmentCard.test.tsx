@@ -14,6 +14,7 @@ const makeChat = (): ChatSummary => ({
   updatedAt: new Date('2026-05-04T08:00:00Z'),
   dialogStartedAt: new Date('2026-05-04T07:00:00Z'),
   dialogClosedAt: new Date('2026-05-04T08:30:00Z'),
+  dialogPurgeAt: new Date('2026-05-05T08:30:00Z'),
   section: 'support',
   sectionTitle: 'Поддержка',
   bin: '123456789012',

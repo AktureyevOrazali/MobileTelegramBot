@@ -117,6 +117,7 @@ export interface ChatSummaryRaw {
   updated_at: string;
   dialog_started_at: string;
   dialog_closed_at?: string | null;
+  dialog_purge_at?: string | null;
   section?: string | null;
   section_title?: string | null;
   bin?: string | null;
@@ -137,6 +138,7 @@ export interface DialogStatusUpdateRaw {
   chat_id: number;
   dialog_id: number;
   dialog_closed_at?: string | null;
+  dialog_purge_at?: string | null;
   ai_enabled?: boolean;
   employee_assessment_id?: number | null;
   employee_assessment_pending?: boolean;
@@ -409,6 +411,7 @@ export interface ChatSummary {
   updatedAt: Date;
   dialogStartedAt: Date;
   dialogClosedAt: Date | null;
+  dialogPurgeAt: Date | null;
   section?: string | null;
   sectionTitle?: string | null;
   bin?: string | null;
@@ -429,6 +432,7 @@ export interface DialogStatusUpdate {
   chatId: number;
   dialogId: number;
   dialogClosedAt: Date | null;
+  dialogPurgeAt: Date | null;
   aiEnabled: boolean;
   employeeAssessmentId: number | null;
   employeeAssessmentPending: boolean;

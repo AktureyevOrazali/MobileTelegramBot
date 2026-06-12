@@ -2637,6 +2637,34 @@ def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
     return parsed.astimezone(timezone.utc)
 
 
+def get_dialog_purge_after_hours() -> int:
+    raw_value = require_env("DIALOG_PURGE_AFTER_HOURS", default="24")
+    try:
+        hours = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError("DIALOG_PURGE_AFTER_HOURS must be an integer") from exc
+    if hours < 1:
+        raise RuntimeError("DIALOG_PURGE_AFTER_HOURS must be >= 1")
+    return hours
+
+
+def calculate_dialog_purge_at(ended_at: object, *, max_age_hours: int | None = None) -> str | None:
+    if ended_at is None:
+        return None
+    if isinstance(ended_at, datetime):
+        closed_at = ended_at
+        if closed_at.tzinfo is None:
+            closed_at = closed_at.replace(tzinfo=timezone.utc)
+        else:
+            closed_at = closed_at.astimezone(timezone.utc)
+    else:
+        closed_at = _parse_datetime(str(ended_at))
+    if closed_at is None:
+        return None
+    hours = get_dialog_purge_after_hours() if max_age_hours is None else int(max_age_hours)
+    return (closed_at + timedelta(hours=hours)).isoformat()
+
+
 def _fetch_user(where_clause: str, *params: object) -> dict | None:
     with _lock:
         row = execute(
@@ -4963,10 +4991,11 @@ def snapshot_dialog_metrics(dialog_id: int) -> None:
             )
 
 
-def cleanup_expired_dialogs(max_age_hours: int = 24) -> int:
+def cleanup_expired_dialogs(max_age_hours: int | None = None) -> int:
     """Purge old dialog content while preserving analytics and ratings."""
+    retention_hours = get_dialog_purge_after_hours() if max_age_hours is None else int(max_age_hours)
     cutoff = (
-        datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        datetime.now(timezone.utc) - timedelta(hours=retention_hours)
     ).isoformat()
 
     with _lock:
@@ -5186,6 +5215,7 @@ def list_chats_for_user(
                 "updated_at": updated_raw,
                 "dialog_started_at": row["dialog_started_at"],
                 "dialog_closed_at": row["dialog_ended_at"],
+                "dialog_purge_at": calculate_dialog_purge_at(row["dialog_ended_at"]),
                 "section": row["section"],
                 "bin": row["dialog_bin"],
                 "is_favorite": bool(row["fav_user_id"]),

@@ -1,7 +1,7 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import type { RoleInfo, UserProfile } from '../types';
+import { act, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { RoleInfo, UserBinAssignment, UserProfile } from '../types';
 import AdminUserCard from './AdminUserCard';
 
 const roles: RoleInfo[] = [
@@ -9,7 +9,10 @@ const roles: RoleInfo[] = [
   { id: 'operator', title: 'Оператор' },
 ];
 
-const makeUser = (name: string): UserProfile => ({
+const makeUser = (
+  name: string,
+  overrides: Partial<Pick<UserProfile, 'sections' | 'bins'>> = {},
+): UserProfile => ({
   id: 1,
   email: 'admin@example.com',
   login: 'admin@example.com',
@@ -21,14 +24,18 @@ const makeUser = (name: string): UserProfile => ({
   bio: '',
   role: 'admin',
   isApproved: true,
-  sections: [],
-  bins: [],
+  sections: overrides.sections ?? [],
+  bins: overrides.bins ?? [],
   favoriteDialogIds: [],
   isAdmin: true,
   canReply: true,
 });
 
 describe('AdminUserCard', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('repairs mojibake in the displayed administrator name', () => {
     render(
       <AdminUserCard
@@ -49,5 +56,50 @@ describe('AdminUserCard', () => {
 
     expect(screen.getByRole('heading', { name: 'Администратор' })).toBeInTheDocument();
     expect(screen.queryByText('PђPґPјPёPЅPёCЃC‚CЂP°C‚PѕCЂ')).not.toBeInTheDocument();
+  });
+
+  it('does not auto-save server-provided sections or BINs after user props refresh', () => {
+    vi.useFakeTimers();
+    const onSectionsSave = vi.fn().mockResolvedValue(undefined);
+    const onBinsSave = vi.fn().mockResolvedValue(undefined);
+    const bins: UserBinAssignment[] = [{
+      bin: '181818181818',
+      assignedAt: new Date('2026-05-06T00:00:00Z'),
+      expiresAt: null,
+    }];
+    const props = {
+      currentUserRole: 'admin',
+      roles,
+      sections: [{ id: 'support', title: 'Support' }],
+      availableBins: ['181818181818'],
+      binDetails: [],
+      onRoleSave: vi.fn().mockResolvedValue(undefined),
+      onSectionsSave,
+      onBinsSave,
+      onPasswordReset: vi.fn().mockResolvedValue(undefined),
+      canDeleteUser: false,
+      onDeleteRequest: vi.fn(),
+    };
+
+    const { rerender } = render(
+      <AdminUserCard
+        {...props}
+        user={makeUser('Admin User')}
+      />,
+    );
+
+    rerender(
+      <AdminUserCard
+        {...props}
+        user={makeUser('Admin User', { sections: ['support'], bins })}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(onSectionsSave).not.toHaveBeenCalled();
+    expect(onBinsSave).not.toHaveBeenCalled();
   });
 });

@@ -92,9 +92,11 @@ export class ApiError extends Error {
   }
 }
 
-const BUILD_TIME_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim();
+const DEFAULT_API_BASE_URL = '/api';
+const BUILD_TIME_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).trim() || DEFAULT_API_BASE_URL;
 const BUILD_TIME_API_TOKEN = (import.meta.env.VITE_API_TOKEN ?? '').trim();
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]']);
+const ABSOLUTE_URL_PATTERN = /^[a-z][a-z\d+\-.]*:/i;
 
 function isLoopbackHost(hostname: string): boolean {
   return LOOPBACK_HOSTS.has(hostname.trim().toLowerCase());
@@ -243,7 +245,10 @@ export class ApiClient {
 
   private buildUrl(path: string, query?: Record<string, string | number | boolean | null | undefined>): string {
     const normalizedPath = path.replace(/^\//, '');
-    const url = new URL(`${this.baseUrl}/${normalizedPath}`);
+    const normalizedBaseUrl = this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`;
+    const url = ABSOLUTE_URL_PATTERN.test(normalizedBaseUrl)
+      ? new URL(`${normalizedBaseUrl}${normalizedPath}`)
+      : new URL(`${normalizedBaseUrl}${normalizedPath}`, window.location.origin);
     if (query) {
       Object.entries(query).forEach(([key, value]) => {
         if (value === undefined || value === null || value === '') {
@@ -686,6 +691,7 @@ export class ApiClient {
       chatId: response.chat_id,
       dialogId: response.dialog_id,
       dialogClosedAt: response.dialog_closed_at ? new Date(response.dialog_closed_at) : new Date(),
+      dialogPurgeAt: response.dialog_purge_at ? new Date(response.dialog_purge_at) : null,
       aiEnabled: response.ai_enabled !== false,
       employeeAssessmentId: typeof response.employee_assessment_id === 'number' ? response.employee_assessment_id : null,
       employeeAssessmentPending: Boolean(response.employee_assessment_pending),
@@ -700,6 +706,7 @@ export class ApiClient {
       chatId: response.chat_id,
       dialogId: response.dialog_id,
       dialogClosedAt: response.dialog_closed_at ? new Date(response.dialog_closed_at) : null,
+      dialogPurgeAt: response.dialog_purge_at ? new Date(response.dialog_purge_at) : null,
       aiEnabled: response.ai_enabled !== false,
       employeeAssessmentId: typeof response.employee_assessment_id === 'number' ? response.employee_assessment_id : null,
       employeeAssessmentPending: Boolean(response.employee_assessment_pending),

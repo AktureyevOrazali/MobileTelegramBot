@@ -132,7 +132,7 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
   const stats = useMemo(
     () => [
       { label: 'Новые заявления', value: requests.filter((request) => request.status === 'new').length },
-      { label: 'Отпуска на неделе', value: requests.filter((request) => request.type === 'vacation').length },
+      { label: 'В работе', value: requests.filter((request) => activeRequestStatuses.has(request.status)).length },
       { label: 'Сотрудники', value: employees.length },
       { label: 'Документы на подпись', value: requests.filter((request) => request.status === 'new' || request.status === 'review').length },
     ],

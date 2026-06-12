@@ -5,6 +5,7 @@ import { Attachment, ChatSummary, EmployeeClientAssessmentSubmitPayload, Message
 import { useChatConversation } from '../hooks/useChatConversation';
 import { extractErrorMessage } from '../utils/errors';
 import { getChatAvatarGradient, getChatAvatarLabel } from '../utils/chatParticipantAvatar';
+import { formatDateTime } from '../utils/date';
 import { sanitizeMessageText, sanitizeUiText } from '../utils/text';
 import DataLoadingState from './DataLoadingState';
 import EmployeeClientAssessmentCard from './EmployeeClientAssessmentCard';
@@ -43,6 +44,8 @@ const TEXT = {
   yesterday: 'Вчера',
   you: 'Вы',
 };
+
+const PURGE_AT_LABEL = '\u0418\u0441\u0442\u043e\u0440\u0438\u044f \u0431\u0443\u0434\u0435\u0442 \u043e\u0447\u0438\u0449\u0435\u043d\u0430';
 
 const formatMessageTime = (value: Date): string => value.toLocaleTimeString('ru-RU', {
   hour: '2-digit',
@@ -264,6 +267,11 @@ const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ apiClient, chat, onTo
               {chat.sectionTitle && <span className="chat-inline__status-chip chat-inline__status-chip--neutral">{chat.sectionTitle}</span>}
               {chat.bin && <span className="chat-inline__status-chip chat-inline__status-chip--neutral">{TEXT.binShort} {chat.bin}</span>}
             </div>
+            {isClosed && chat.dialogPurgeAt && (
+              <p className="chat-inline__purge-note">
+                {PURGE_AT_LABEL} {formatDateTime(chat.dialogPurgeAt)}
+              </p>
+            )}
           </div>
         </div>
 

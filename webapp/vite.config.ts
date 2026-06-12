@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => {
 
   const devHost = getEnv(env, 'DEV_SERVER_HOST', 'localhost');
   const devPort = parsePort(getEnv(env, 'DEV_SERVER_PORT', '5173'), 'DEV_SERVER_PORT');
+  const apiProxyTarget = getEnv(env, 'API_PROXY_TARGET', '');
   const previewHost = getEnv(env, 'PREVIEW_HOST', 'localhost');
   const previewPort = parsePort(getEnv(env, 'PREVIEW_PORT', '4173'), 'PREVIEW_PORT');
 
@@ -54,6 +55,17 @@ export default defineConfig(({ mode }) => {
     server: {
       host: devHost,
       port: devPort,
+      ...(apiProxyTarget
+        ? {
+          proxy: {
+            '/api': {
+              target: apiProxyTarget,
+              changeOrigin: true,
+              secure: false,
+            },
+          },
+        }
+        : {}),
     },
     preview: {
       host: previewHost,

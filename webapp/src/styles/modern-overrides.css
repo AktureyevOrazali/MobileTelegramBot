@@ -4186,6 +4186,13 @@
   border: 1px solid transparent;
 }
 
+.chat-inline__purge-note {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .chat-inline__status-chip--open {
   background: rgba(16, 185, 129, 0.12);
   border-color: rgba(16, 185, 129, 0.22);

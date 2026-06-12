@@ -26,6 +26,14 @@ export interface AdminUserCardProps {
     style?: React.CSSProperties;
 }
 
+const buildSectionKey = (sectionIds: Iterable<string>) => Array.from(sectionIds).sort().join(',');
+
+const buildBinsKey = (assignments: UserBinAssignment[]) =>
+    assignments
+        .map((assignment) => `${assignment.bin}:${assignment.expiresAt ? assignment.expiresAt.toISOString() : ''}`)
+        .sort()
+        .join('|');
+
 const AdminUserCard: React.FC<AdminUserCardProps> = ({
     user,
     currentUserRole,
@@ -57,6 +65,9 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     const [editingBin, setEditingBin] = useState<UserBinAssignment | null>(null);
     const [operatorBinsOpen, setOperatorBinsOpen] = useState(false);
     const [operatorSectionsOpen, setOperatorSectionsOpen] = useState(false);
+    const lastSavedRole = useRef(user.role);
+    const lastSavedSectionKey = useRef(buildSectionKey(user.sections));
+    const lastSavedBinsKey = useRef(buildBinsKey(user.bins));
 
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -68,6 +79,9 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
     const [savingPassword, setSavingPassword] = useState(false);
 
     useEffect(() => {
+        lastSavedRole.current = user.role;
+        lastSavedSectionKey.current = buildSectionKey(user.sections);
+        lastSavedBinsKey.current = buildBinsKey(user.bins);
         setSelectedRole(user.role);
         setSectionIds(new Set(user.sections));
         setSectionToAdd('');
@@ -137,7 +151,6 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
         );
     }, [availableBins, assignedBins, binNameByBin]);
 
-    const lastSavedRole = useRef(selectedRole);
     useEffect(() => {
         if (lastSavedRole.current === selectedRole) return;
         (async () => {
@@ -152,12 +165,14 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
         })();
     }, [selectedRole]);
 
-    const sectionKey = useMemo(() => Array.from(sectionIds).sort().join(','), [sectionIds]);
+    const sectionKey = useMemo(() => buildSectionKey(sectionIds), [sectionIds]);
     useDebouncedEffect(() => {
+        if (lastSavedSectionKey.current === sectionKey) return;
         (async () => {
             try {
                 setError(null);
                 await onSectionsSave(user.id, Array.from(sectionIds));
+                lastSavedSectionKey.current = sectionKey;
                 setSuccessMessage('Разделы обновлены');
             } catch (e) {
                 setError(extractErrorMessage(e, 'Ошибка при сохранении разделов'));
@@ -165,15 +180,10 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
         })();
     }, [sectionKey]);
 
-    const binsKey = useMemo(
-        () =>
-            assignedBins
-                .map((assignment) => `${assignment.bin}:${assignment.expiresAt ? assignment.expiresAt.toISOString() : ''}`)
-                .join('|'),
-        [assignedBins],
-    );
+    const binsKey = useMemo(() => buildBinsKey(assignedBins), [assignedBins]);
 
     useDebouncedEffect(() => {
+        if (lastSavedBinsKey.current === binsKey) return;
         (async () => {
             try {
                 setError(null);
@@ -181,6 +191,7 @@ const AdminUserCard: React.FC<AdminUserCardProps> = ({
                     user.id,
                     assignedBins.map(cloneAssignment),
                 );
+                lastSavedBinsKey.current = binsKey;
                 setSuccessMessage('БИНы обновлены');
             } catch (e) {
                 setError(extractErrorMessage(e, 'Ошибка при сохранении БИНов'));

@@ -1,10 +1,42 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from backend import customer_surveys, database
 
 
 class DatabaseConstraintTests(unittest.TestCase):
+    def test_cleanup_expired_dialogs_uses_configured_retention_hours(self):
+        class _Cursor:
+            def __init__(self, rows=None):
+                self._rows = rows or []
+
+            def fetchall(self):
+                return self._rows
+
+        class _FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 6, 4, 12, 0, 0, tzinfo=timezone.utc)
+
+        select_params: list[object] = []
+
+        def fake_execute(query, params=None):
+            normalized_query = " ".join(query.split())
+            if "SELECT id, chat_id, bin FROM chat_dialogs" in normalized_query:
+                select_params.extend(params or [])
+            return _Cursor([])
+
+        with (
+            patch.object(database, "datetime", _FixedDateTime),
+            patch.object(database, "require_env", return_value="72"),
+            patch.object(database, "execute", side_effect=fake_execute),
+        ):
+            removed = database.cleanup_expired_dialogs()
+
+        self.assertEqual(removed, 0)
+        self.assertEqual(select_params, ["2026-06-01T12:00:00+00:00"])
+
     def test_ensure_check_constraint_recreates_existing_named_constraint(self):
         executed_queries: list[str] = []
 

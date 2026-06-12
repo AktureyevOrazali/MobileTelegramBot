@@ -630,6 +630,7 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
                     ? await apiClient.closeDialog(chat.dialogId)
                     : await apiClient.openDialog(chat.dialogId);
             const closedAt = response.dialogClosedAt ?? null;
+            const purgeAt = response.dialogPurgeAt ?? null;
             const aiEnabled = response.aiEnabled;
             const employeeAssessmentId = action === 'close' ? response.employeeAssessmentId : chat.employeeAssessmentId;
             const employeeAssessmentPending = action === 'close' ? response.employeeAssessmentPending : chat.employeeAssessmentPending;
@@ -637,13 +638,13 @@ export function useDialogsData(apiClient: ApiClient, session: AuthSession): UseD
             setChats((prev) =>
                 prev.map((item) =>
                     item.dialogId === chat.dialogId
-                        ? { ...item, dialogClosedAt: closedAt, aiEnabled, employeeAssessmentId, employeeAssessmentPending }
+                        ? { ...item, dialogClosedAt: closedAt, dialogPurgeAt: purgeAt, aiEnabled, employeeAssessmentId, employeeAssessmentPending }
                         : item,
                 ),
             );
             setActiveChat((prev) =>
                 prev && prev.dialogId === chat.dialogId
-                    ? { ...prev, dialogClosedAt: closedAt, aiEnabled, employeeAssessmentId, employeeAssessmentPending }
+                    ? { ...prev, dialogClosedAt: closedAt, dialogPurgeAt: purgeAt, aiEnabled, employeeAssessmentId, employeeAssessmentPending }
                     : prev,
             );
             setAiManuallyDisabled((prev) => {

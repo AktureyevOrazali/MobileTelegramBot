@@ -185,6 +185,7 @@ export function mapChatSummary(raw: ChatSummaryRaw): ChatSummary {
     updatedAt: new Date(raw.updated_at),
     dialogStartedAt: new Date(raw.dialog_started_at),
     dialogClosedAt: raw.dialog_closed_at ? new Date(raw.dialog_closed_at) : null,
+    dialogPurgeAt: raw.dialog_purge_at ? new Date(raw.dialog_purge_at) : null,
     section: raw.section ?? null,
     sectionTitle: sanitizeUiText(raw.section_title) ?? null,
     bin: raw.bin ?? null,

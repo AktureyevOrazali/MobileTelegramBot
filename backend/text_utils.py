@@ -68,3 +68,22 @@ def repair_text(value: object) -> str | None:
     if any(marker in text for marker in mojibake_markers):
         return repaired
     return text
+
+
+def parse_amount(text: str | None) -> float | None:
+    if not text:
+        return None
+    import re
+    # Remove spaces
+    cleaned = text.replace(" ", "").strip()
+    if "," in cleaned and "." in cleaned:
+        cleaned = cleaned.replace(",", "")
+    else:
+        cleaned = cleaned.replace(",", ".")
+    match = re.search(r'\d+(?:\.\d+)?', cleaned)
+    if match:
+        try:
+            return float(match.group(0))
+        except ValueError:
+            return None
+    return None

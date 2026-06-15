@@ -1142,6 +1142,20 @@ def _init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_hr_request_events_request_created
         ON hr_request_events(request_id, created_at ASC, id ASC)
         """,
+        """
+        CREATE TABLE IF NOT EXISTS contract_amounts (
+            id BIGSERIAL PRIMARY KEY,
+            bin TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            amount NUMERIC NOT NULL,
+            chat_id BIGINT REFERENCES chats(chat_id) ON DELETE SET NULL,
+            dialog_id BIGINT REFERENCES chat_dialogs(id) ON DELETE SET NULL,
+            appeal_id BIGINT REFERENCES appeals(id) ON DELETE SET NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_contract_amounts_bin ON contract_amounts(bin)
+        """,
     ]
 
     with _lock:
@@ -3426,8 +3440,12 @@ def create_appeal(
             )
         else:
             execute(
-                "UPDATE chat_dialogs SET operator_mode = 0 WHERE id = %s",
+                "UPDATE chat_dialogs SET section = NULL, operator_mode = 0 WHERE id = %s",
                 (dialog_id,),
+            )
+            execute(
+                "UPDATE chats SET section = NULL WHERE chat_id = %s",
+                (chat_id,),
             )
         # Close any lingering active appeal for this dialog
         execute(
@@ -6695,10 +6713,8 @@ def update_user_role(user_id: int, role: str) -> dict:
 
 
 SECTIONS: List[dict] = [
-    {"id": "general", "title": "Р С›Р В±РЎвЂ°Р С‘Р Вµ Р Р†Р С•Р С—РЎР‚Р С•РЎРѓРЎвЂ№"},
-    {"id": "finance", "title": "Р В¤Р С‘Р Р…Р В°Р Р…РЎРѓРЎвЂ№"},
-    {"id": "support", "title": "Р СћР ВµРЎвЂ¦Р Р…Р С‘РЎвЂЎР ВµРЎРѓР С”Р В°РЎРЏ Р С—Р С•Р Т‘Р Т‘Р ВµРЎР‚Р В¶Р С”Р В°"},
-    {"id": "hr", "title": "HR Р С‘ Р С”Р В°Р Т‘РЎР‚РЎвЂ№"},
+    {"id": "contract", "title": "Договор"},
+    {"id": "other", "title": "Прочие"},
 ]
 
 
@@ -6731,52 +6747,16 @@ def get_section_by_title(title: str) -> Optional[dict]:
 
 FAQ_ENTRIES: List[dict] = [
     {
-        "section": "general",
-        "question": "Р С™Р В°Р С” Р С—Р С•Р В»РЎС“РЎвЂЎР С‘РЎвЂљРЎРЉ Р Т‘Р С•РЎРѓРЎвЂљРЎС“Р С— Р С” Р С”Р С•Р Р…РЎРѓРЎС“Р В»РЎРЉРЎвЂљР В°РЎвЂ Р С‘РЎРЏР С Р С—Р С• 1Р РЋ%s",
-        "answer": "Р С›РЎвЂљР С—РЎР‚Р В°Р Р†РЎРЉРЎвЂљР Вµ Р Р…Р В°Р С Р Р…Р С•Р СР ВµРЎР‚ Р Т‘Р С•Р С–Р С•Р Р†Р С•РЎР‚Р В° Р С‘Р В»Р С‘ Р вЂР ВР Сњ, Р С‘ Р С”Р С•Р Р…РЎРѓРЎС“Р В»РЎРЉРЎвЂљР В°Р Р…РЎвЂљ Р С•РЎвЂљР С”РЎР‚Р С•Р ВµРЎвЂљ Р Т‘Р С•РЎРѓРЎвЂљРЎС“Р С— Р С” РЎвЂЎР В°РЎвЂљРЎС“ Р С‘ Р Р†Р ВµР В±Р С‘Р Р…Р В°РЎР‚Р В°Р С Р С—Р С• 1Р РЋ.",
-        "keywords": ["Р Т‘Р С•РЎРѓРЎвЂљРЎС“Р С—", "1РЎРѓ", "Р С”Р С•Р Р…РЎРѓРЎС“Р В»РЎРЉРЎвЂљР В°РЎвЂ "],
+        "section": "contract",
+        "question": "Как узнать сумму договора?",
+        "answer": "Сумму договора вы можете уточнить в личном кабинете или спросить у нашего менеджера.",
+        "keywords": ["сумма", "договор", "узнать"],
     },
     {
-        "section": "general",
-        "question": "Р РЋР С”Р С•Р В»РЎРЉР С”Р С• РЎРѓРЎвЂљР С•Р С‘РЎвЂљ РЎРѓР С•Р С—РЎР‚Р С•Р Р†Р С•Р В¶Р Т‘Р ВµР Р…Р С‘Р Вµ%s",
-        "answer": "Р вЂР В°Р В·Р С•Р Р†РЎвЂ№Р в„– РЎвЂљР В°РЎР‚Р С‘РЎвЂћ Р Р†Р С”Р В»РЎР‹РЎвЂЎР В°Р ВµРЎвЂљ 10 Р С”Р С•Р Р…РЎРѓРЎС“Р В»РЎРЉРЎвЂљР В°РЎвЂ Р С‘Р в„– Р Р† Р СР ВµРЎРѓРЎРЏРЎвЂ . Р В Р В°РЎРѓРЎв‚¬Р С‘РЎР‚Р ВµР Р…Р Р…РЎвЂ№Р Вµ Р С—Р В°Р С”Р ВµРЎвЂљРЎвЂ№ РЎС“РЎвЂљР С•РЎвЂЎР Р…Р С‘РЎвЂљР Вµ РЎС“ Р С•Р С—Р ВµРЎР‚Р В°РЎвЂљР С•РЎР‚Р В°.",
-        "keywords": ["РЎРѓРЎвЂљР С•Р С‘Р С", "РЎвЂљР В°РЎР‚Р С‘РЎвЂћ", "РЎвЂ Р ВµР Р…"],
-    },
-    {
-        "section": "finance",
-        "question": "Р С™Р В°Р С” Р Р†РЎвЂ№Р С–РЎР‚РЎС“Р В·Р С‘РЎвЂљРЎРЉ Р С•РЎвЂљРЎвЂЎРЎвЂРЎвЂљ Р С—Р С• Р СњР вЂќР РЋ Р Р† 1Р РЋ%s",
-        "answer": "Р С›РЎвЂљР С”РЎР‚Р С•Р в„–РЎвЂљР Вµ РЎР‚Р В°Р В·Р Т‘Р ВµР В» 'Р С›РЎвЂљРЎвЂЎРЎвЂРЎвЂљР Р…Р С•РЎРѓРЎвЂљРЎРЉ', Р Р†РЎвЂ№Р В±Р ВµРЎР‚Р С‘РЎвЂљР Вµ Р С—Р ВµРЎР‚Р С‘Р С•Р Т‘ Р С‘ Р С‘РЎРѓР С—Р С•Р В»РЎРЉР В·РЎС“Р в„–РЎвЂљР Вµ Р С•РЎвЂљРЎвЂЎРЎвЂРЎвЂљ 'Р вЂќР ВµР С”Р В»Р В°РЎР‚Р В°РЎвЂ Р С‘РЎРЏ Р С—Р С• Р СњР вЂќР РЋ'.",
-        "keywords": ["Р Р…Р Т‘РЎРѓ", "Р С•РЎвЂљРЎвЂЎР ВµРЎвЂљ", "Р Р†РЎвЂ№Р С–РЎР‚РЎС“Р В·"],
-    },
-    {
-        "section": "finance",
-        "question": "Р С™Р В°Р С” Р С‘РЎРѓР С—РЎР‚Р В°Р Р†Р С‘РЎвЂљРЎРЉ Р С•РЎв‚¬Р С‘Р В±Р С”РЎС“ Р С—РЎР‚Р С‘ Р С—РЎР‚Р С•Р Р†Р ВµР Т‘Р ВµР Р…Р С‘Р С‘ Р С—Р В»Р В°РЎвЂљР ВµР В¶Р В°%s",
-        "answer": "Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚РЎРЉРЎвЂљР Вµ РЎР‚Р ВµР С”Р Р†Р С‘Р В·Р С‘РЎвЂљРЎвЂ№ Р С—Р В»Р В°РЎвЂљР ВµР В¶Р В° Р С‘ Р С—Р ВµРЎР‚Р ВµР С—РЎР‚Р С•Р Р†Р ВµР Т‘Р С‘РЎвЂљР Вµ Р Т‘Р С•Р С”РЎС“Р СР ВµР Р…РЎвЂљ. Р вЂўРЎРѓР В»Р С‘ Р С•РЎв‚¬Р С‘Р В±Р С”Р В° РЎРѓР С•РЎвЂ¦РЎР‚Р В°Р Р…РЎРЏР ВµРЎвЂљРЎРѓРЎРЏ РІР‚вЂќ Р Р…Р В°Р С—Р С‘РЎв‚¬Р С‘РЎвЂљР Вµ Р С•Р С—Р ВµРЎР‚Р В°РЎвЂљР С•РЎР‚РЎС“.",
-        "keywords": ["Р С•РЎв‚¬Р С‘Р В±", "Р С—Р В»Р В°РЎвЂљР ВµР В¶", "Р С—РЎР‚Р С•Р Р†Р ВµР Т‘Р ВµР Р…"],
-    },
-    {
-        "section": "support",
-        "question": "1Р РЋ Р Р…Р Вµ Р В·Р В°Р С—РЎС“РЎРѓР С”Р В°Р ВµРЎвЂљРЎРѓРЎРЏ Р С—Р С•РЎРѓР В»Р Вµ Р С•Р В±Р Р…Р С•Р Р†Р В»Р ВµР Р…Р С‘РЎРЏ",
-        "answer": "Р СџР ВµРЎР‚Р ВµР В·Р В°Р С–РЎР‚РЎС“Р В·Р С‘РЎвЂљР Вµ РЎР‚Р В°Р В±Р С•РЎвЂЎРЎС“РЎР‹ РЎРѓРЎвЂљР В°Р Р…РЎвЂ Р С‘РЎР‹ Р С‘ РЎС“Р В±Р ВµР Т‘Р С‘РЎвЂљР ВµРЎРѓРЎРЉ, РЎвЂЎРЎвЂљР С• Р В°Р С–Р ВµР Р…РЎвЂљ Р С•Р В±Р Р…Р С•Р Р†Р В»Р ВµР Р…Р С‘РЎРЏ Р В·Р В°Р Р†Р ВµРЎР‚РЎв‚¬Р С‘Р В» РЎР‚Р В°Р В±Р С•РЎвЂљРЎС“. Р СџРЎР‚Р С‘ Р С—Р С•Р Р†РЎвЂљР С•РЎР‚Р Р…Р С•Р в„– Р С•РЎв‚¬Р С‘Р В±Р С”Р Вµ РЎРѓР Р†РЎРЏР В¶Р С‘РЎвЂљР ВµРЎРѓРЎРЉ РЎРѓ Р С•Р С—Р ВµРЎР‚Р В°РЎвЂљР С•РЎР‚Р С•Р С.",
-        "keywords": ["Р Р…Р Вµ Р В·Р В°Р С—РЎС“РЎРѓР С”Р В°", "Р С•Р В±Р Р…Р С•Р Р†Р В»Р ВµР Р…", "Р С•РЎв‚¬Р С‘Р В±Р С”Р В°", "support"],
-    },
-    {
-        "section": "support",
-        "question": "Р С™Р В°Р С” Р С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ РЎС“Р Т‘Р В°Р В»РЎвЂР Р…Р Р…Р С•Р С–Р С• Р В±РЎС“РЎвЂ¦Р С–Р В°Р В»РЎвЂљР ВµРЎР‚Р В°%s",
-        "answer": "Р вЂќР С•Р В±Р В°Р Р†РЎРЉРЎвЂљР Вµ Р ВµР С–Р С• Р Р† Р С–РЎР‚РЎС“Р С—Р С—РЎС“ Р Т‘Р С•РЎРѓРЎвЂљРЎС“Р С—Р В° Р С‘ Р С•РЎвЂљР С—РЎР‚Р В°Р Р†РЎРЉРЎвЂљР Вµ Р С—РЎР‚Р С‘Р С–Р В»Р В°РЎв‚¬Р ВµР Р…Р С‘Р Вµ Р С‘Р В· РЎР‚Р В°Р В·Р Т‘Р ВµР В»Р В° 'Р РЋР С•РЎвЂљРЎР‚РЎС“Р Т‘Р Р…Р С‘Р С”Р С‘'.",
-        "keywords": ["РЎС“Р Т‘Р В°Р В»Р ВµР Р…", "Р В±РЎС“РЎвЂ¦Р С–Р В°Р В»РЎвЂљР ВµРЎР‚", "Р С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎ"],
-    },
-    {
-        "section": "hr",
-        "question": "Р С™Р В°Р С” Р Р†РЎвЂ№Р С–РЎР‚РЎС“Р В·Р С‘РЎвЂљРЎРЉ РЎвЂћР С•РЎР‚Р СРЎС“ Р Сћ-2%s",
-        "answer": "Р СџР ВµРЎР‚Р ВµР в„–Р Т‘Р С‘РЎвЂљР Вµ Р Р† 'Р С™Р В°Р Т‘РЎР‚Р С•Р Р†РЎвЂ№Р в„– РЎС“РЎвЂЎРЎвЂРЎвЂљ' РІвЂ вЂ™ 'Р РЋР С•РЎвЂљРЎР‚РЎС“Р Т‘Р Р…Р С‘Р С”Р С‘' РІвЂ вЂ™ 'Р С™Р В°РЎР‚РЎвЂљР С•РЎвЂЎР С”Р В° РЎРѓР С•РЎвЂљРЎР‚РЎС“Р Т‘Р Р…Р С‘Р С”Р В°' Р С‘ Р Р…Р В°Р В¶Р СР С‘РЎвЂљР Вµ 'Р СџР ВµРЎвЂЎР В°РЎвЂљРЎРЉ РЎвЂћР С•РЎР‚Р СРЎвЂ№ Р Сћ-2'.",
-        "keywords": ["РЎвЂљ-2", "РЎвЂћР С•РЎР‚Р СР В°", "Р С”Р В°Р Т‘РЎР‚Р С•Р Р†"],
-    },
-    {
-        "section": "hr",
-        "question": "Р С™Р В°Р С” Р С•РЎвЂћР С•РЎР‚Р СР С‘РЎвЂљРЎРЉ Р С•РЎвЂљР С—РЎС“РЎРѓР С” РЎРѓР С•РЎвЂљРЎР‚РЎС“Р Т‘Р Р…Р С‘Р С”РЎС“%s",
-        "answer": "Р РЋР С•Р В·Р Т‘Р В°Р в„–РЎвЂљР Вµ Р Т‘Р С•Р С”РЎС“Р СР ВµР Р…РЎвЂљ 'Р С›РЎвЂљР С—РЎС“РЎРѓР С”' Р Р† РЎР‚Р В°Р В·Р Т‘Р ВµР В»Р Вµ 'Р С™Р В°Р Т‘РЎР‚Р С•Р Р†РЎвЂ№Р в„– РЎС“РЎвЂЎРЎвЂРЎвЂљ', РЎС“Р С”Р В°Р В¶Р С‘РЎвЂљР Вµ Р Т‘Р В°РЎвЂљРЎвЂ№ Р С‘ Р Р†Р С‘Р Т‘ Р С•РЎвЂљР С—РЎС“РЎРѓР С”Р В°, Р В·Р В°РЎвЂљР ВµР С Р С—РЎР‚Р С•Р Р†Р ВµР Т‘Р С‘РЎвЂљР Вµ Р Т‘Р С•Р С”РЎС“Р СР ВµР Р…РЎвЂљ.",
-        "keywords": ["Р С•РЎвЂљР С—РЎС“РЎРѓР С”", "Р С•РЎвЂћР С•РЎР‚Р С"],
+        "section": "other",
+        "question": "Общие вопросы",
+        "answer": "Для прочих вопросов опишите вашу проблему, и наш AI или оператор поможет вам.",
+        "keywords": ["вопрос", "помощь"],
     },
 ]
 
@@ -10960,4 +10940,78 @@ def get_ratings_summary() -> Dict[str, Any]:
         ],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# --- Category and Contract Amount Helpers ---
+
+def save_contract_amount(
+    bin_value: str,
+    amount: float,
+    chat_id: int | None = None,
+    dialog_id: int | None = None,
+    appeal_id: int | None = None,
+) -> int:
+    """Save the contract amount into the database."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        cursor = execute(
+            """
+            INSERT INTO contract_amounts (bin, created_at, amount, chat_id, dialog_id, appeal_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (bin_value, now, amount, chat_id, dialog_id, appeal_id),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError("Failed to save contract amount")
+        return int(row["id"])
+
+
+def get_contract_amounts(
+    bin_value: str | None = None,
+    limit: int = 100,
+) -> List[dict]:
+    """Retrieve contract amounts from the database."""
+    query = "SELECT id, bin, created_at, amount, chat_id, dialog_id, appeal_id FROM contract_amounts"
+    params = []
+    if bin_value:
+        query += " WHERE bin = %s"
+        params.append(bin_value)
+    query += " ORDER BY created_at DESC LIMIT %s"
+    params.append(limit)
+    with _lock:
+        rows = execute(query, params).fetchall()
+    return [
+        {
+            "id": int(row["id"]),
+            "bin": row["bin"],
+            "created_at": row["created_at"],
+            "amount": float(row["amount"]),
+            "chat_id": int(row["chat_id"]) if row.get("chat_id") is not None else None,
+            "dialog_id": int(row["dialog_id"]) if row.get("dialog_id") is not None else None,
+            "appeal_id": int(row["appeal_id"]) if row.get("appeal_id") is not None else None,
+        }
+        for row in rows
+    ]
+
+
+def has_contract_amount(dialog_id: int) -> bool:
+    """Check if a contract amount is already saved for this dialog."""
+    with _lock:
+        row = execute(
+            "SELECT 1 FROM contract_amounts WHERE dialog_id = %s LIMIT 1",
+            (dialog_id,),
+        ).fetchone()
+        return row is not None
+
+
+def get_active_appeal_id(dialog_id: int) -> Optional[int]:
+    """Get active appeal ID for a dialog."""
+    with _lock:
+        row = execute(
+            "SELECT id FROM appeals WHERE dialog_id = %s AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+            (dialog_id,),
+        ).fetchone()
+        return int(row["id"]) if row else None
 

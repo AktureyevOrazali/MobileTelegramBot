@@ -55,6 +55,7 @@ from .media import MediaValidationError, media_service, verify_media_access
 from .telegram_bot import bot, enable_ai_session, send_ai_csat_request, send_csat_request
 
 from . import contract_checker
+from .text_utils import parse_amount
 
 
 
@@ -4982,24 +4983,8 @@ def _process_onec_incoming_message(
 ) -> None:
     try:
         chat_record = database.get_chat(chat_id)
-        chat_section = section_id or (chat_record.get("section") if chat_record else None)
+        chat_section = database.get_dialog_section(chat_id, dialog_id)
         chat_bin = (chat_record.get("bin") if chat_record else None) or bin_value
-
-        language_selection = _normalize_onec_language_command(normalized_text)
-        if language_selection is not None:
-            _, language_notice = language_selection
-            _store_onec_outgoing_text_message(
-                chat_id=chat_id,
-                dialog_id=dialog_id,
-                external_chat_id=external_chat_id,
-                bin_value=chat_bin,
-                text=language_notice,
-                author="System",
-                chat_title=chat_title,
-                section=chat_section,
-                quick_replies=_onec_default_quick_replies(),
-            )
-            return
 
         if _is_onec_operator_request(normalized_text):
             database.set_dialog_operator_mode(dialog_id, True)
@@ -5021,6 +5006,106 @@ def _process_onec_incoming_message(
                 section=chat_section,
                 bin_value=chat_bin,
             )
+            return
+
+        language_selection = _normalize_onec_language_command(normalized_text)
+        if language_selection is not None:
+            _, language_notice = language_selection
+            _store_onec_outgoing_text_message(
+                chat_id=chat_id,
+                dialog_id=dialog_id,
+                external_chat_id=external_chat_id,
+                bin_value=chat_bin,
+                text=language_notice,
+                author="System",
+                chat_title=chat_title,
+                section=chat_section,
+                quick_replies=_onec_default_quick_replies(),
+            )
+            return
+
+        # Check section selection
+        if chat_section is None:
+            normalized_choice = message_text.strip().lower()
+            if "договор" in normalized_choice:
+                database.set_chat_section(chat_id, "contract", dialog_id=dialog_id)
+                _store_onec_outgoing_text_message(
+                    chat_id=chat_id,
+                    dialog_id=dialog_id,
+                    external_chat_id=external_chat_id,
+                    bin_value=chat_bin,
+                    text="Раздел «Договор» выбран.\nПожалуйста, укажите сумму договора (только число):",
+                    author="System",
+                    chat_title=chat_title,
+                    section="contract",
+                )
+                return
+            elif "прочие" in normalized_choice:
+                database.set_chat_section(chat_id, "other", dialog_id=dialog_id)
+                _store_onec_outgoing_text_message(
+                    chat_id=chat_id,
+                    dialog_id=dialog_id,
+                    external_chat_id=external_chat_id,
+                    bin_value=chat_bin,
+                    text="Раздел «Прочие» выбран. Опишите ваш вопрос.",
+                    author="System",
+                    chat_title=chat_title,
+                    section="other",
+                    quick_replies=_onec_default_quick_replies(),
+                )
+                return
+            else:
+                section_quick_replies = [
+                    {"type": "survey_answer", "label": "Договор", "value": "Договор"},
+                    {"type": "survey_answer", "label": "Прочие", "value": "Прочие"}
+                ]
+                _store_onec_outgoing_text_message(
+                    chat_id=chat_id,
+                    dialog_id=dialog_id,
+                    external_chat_id=external_chat_id,
+                    bin_value=chat_bin,
+                    text="Пожалуйста, выберите раздел обращения:",
+                    author="System",
+                    chat_title=chat_title,
+                    section=None,
+                    quick_replies=section_quick_replies,
+                )
+                return
+
+        # Check contract amount input
+        if chat_section == "contract" and not database.has_contract_amount(dialog_id):
+            amount = parse_amount(message_text)
+            if amount is not None:
+                active_appeal_id = database.get_active_appeal_id(dialog_id)
+                database.save_contract_amount(
+                    bin_value=chat_bin,
+                    amount=amount,
+                    chat_id=chat_id,
+                    dialog_id=dialog_id,
+                    appeal_id=active_appeal_id,
+                )
+                _store_onec_outgoing_text_message(
+                    chat_id=chat_id,
+                    dialog_id=dialog_id,
+                    external_chat_id=external_chat_id,
+                    bin_value=chat_bin,
+                    text=f"Сумма договора {amount} успешно сохранена. Опишите ваш вопрос.",
+                    author="System",
+                    chat_title=chat_title,
+                    section="contract",
+                    quick_replies=_onec_default_quick_replies(),
+                )
+            else:
+                _store_onec_outgoing_text_message(
+                    chat_id=chat_id,
+                    dialog_id=dialog_id,
+                    external_chat_id=external_chat_id,
+                    bin_value=chat_bin,
+                    text="Пожалуйста, укажите сумму договора числом (например, 100000):",
+                    author="System",
+                    chat_title=chat_title,
+                    section="contract",
+                )
             return
 
         if survey_service.handle_channel_survey_text_answer(chat_id, message_text):
@@ -5193,18 +5278,40 @@ def create_onec_message(
     if section_id and not is_survey_answer:
         database.set_chat_section(chat_id, section_id, dialog_id=dialog_id)
 
+    section_quick_replies = [
+        {"type": "survey_answer", "label": "Договор", "value": "Договор"},
+        {"type": "survey_answer", "label": "Прочие", "value": "Прочие"}
+    ]
+
     if dialog_resumed:
         _store_onec_outgoing_text_message(
             chat_id=chat_id,
             dialog_id=dialog_id,
             external_chat_id=external_chat_id,
             bin_value=bin_value,
-            text="Диалог возобновлён. Новое обращение открыто, AI снова включён.",
+            text="Диалог возобновлён. Новое обращение открыто.",
             author="System",
             chat_title=chat_title,
-            section=section_id,
-            quick_replies=_onec_default_quick_replies(),
+            section=None,
         )
+        _store_onec_outgoing_text_message(
+            chat_id=chat_id,
+            dialog_id=dialog_id,
+            external_chat_id=external_chat_id,
+            bin_value=bin_value,
+            text="Пожалуйста, выберите раздел обращения:",
+            author="System",
+            chat_title=chat_title,
+            section=None,
+            quick_replies=section_quick_replies,
+        )
+        return {
+            "status": "ok",
+            "has_contract": True,
+            "response_message": "Пожалуйста, выберите раздел обращения:",
+            "chat_id": chat_id,
+            "dialog_id": dialog_id,
+        }
 
     if is_survey_answer:
         is_first_message_in_dialog = False
@@ -5232,9 +5339,26 @@ def create_onec_message(
             text=response_message,
             author="System",
             chat_title=chat_title,
-            section=section_id,
-            quick_replies=_onec_language_quick_replies(),
+            section=None,
         )
+        _store_onec_outgoing_text_message(
+            chat_id=chat_id,
+            dialog_id=dialog_id,
+            external_chat_id=external_chat_id,
+            bin_value=bin_value,
+            text="Пожалуйста, выберите раздел обращения:",
+            author="System",
+            chat_title=chat_title,
+            section=None,
+            quick_replies=section_quick_replies,
+        )
+        return {
+            "status": "ok",
+            "has_contract": has_contract,
+            "response_message": response_message,
+            "chat_id": chat_id,
+            "dialog_id": dialog_id,
+        }
 
     if not message_text:
         return {
@@ -5452,6 +5576,17 @@ def onec_outbox(
 
     return OneCOutboxResponse(items=items)
 
+
+@app.get("/integrations/1c/contract-amounts")
+@router.get("/integrations/1c/contract-amounts")
+def onec_contract_amounts(
+    bin_value: str | None = Query(default=None, alias="bin"),
+    limit: int = Query(default=100, ge=1, le=500),
+    _: None = Depends(require_onec_token),
+):
+    """Return saved contract amounts. Optionally filter by BIN."""
+    rows = database.get_contract_amounts(bin_value=bin_value, limit=limit)
+    return {"items": rows}
 
 
 

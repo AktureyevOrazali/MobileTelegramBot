@@ -43,27 +43,28 @@ class BotPollingThread(threading.Thread):
                 )
             except (
                 requests_exceptions.ReadTimeout,
+                requests_exceptions.ConnectTimeout,
                 requests_exceptions.ConnectionError,
                 ReadTimeoutError,
             ) as exc:
-                # РџРµСЂРµС…РІР°С‚С‹РІР°РµРј СЃРµС‚РµРІС‹Рµ С‚Р°Р№РјР°СѓС‚С‹, С‡С‚РѕР±С‹ РЅРµ РїР°РґР°С‚СЊ Рё РїРµСЂРµР·Р°РїСѓСЃРєР°С‚СЊ polling
+                # Перехватываем сетевые таймауты, чтобы не падать и перезапускать polling
                 logger.warning("Polling interrupted by network timeout, restarting: %s", exc)
                 try:
                     bot.stop_polling()
                 except Exception:
                     pass
-                # РќРµР±РѕР»СЊС€Р°СЏ РїР°СѓР·Р°, С‡С‚РѕР±С‹ РЅРµ РїРѕРїР°СЃС‚СЊ РІ Р±РµСЃРєРѕРЅРµС‡РЅС‹Р№ С†РёРєР» РїСЂРё РЅРµСЃС‚Р°Р±РёР»СЊРЅРѕР№ СЃРµС‚Рё
-                self._stopping.wait(timeout=2)
+                # Небольшая пауза, чтобы не попасть в бесконечный цикл при нестабильной сети
+                self._stopping.wait(timeout=5)
                 continue
             except BaseException as exc:  # pylint: disable=broad-except
                 self._exception = exc
                 break
             else:
-                # infinity_polling Р·Р°РІРµСЂС€РёР»РѕСЃСЊ Р±РµР· РѕС€РёР±РѕРє (РЅР°РїСЂРёРјРµСЂ, РїСЂРё РѕСЃС‚Р°РЅРѕРІРєРµ)
+                # infinity_polling завершилось без ошибок (например, при остановке)
                 break
 
     def stop(self) -> None:
-        # Р‘РµР·РѕРїР°СЃРЅРѕ РїСЂРѕСЃРёРј Р±РѕС‚Р° РѕСЃС‚Р°РЅРѕРІРёС‚СЊСЃСЏ
+        # Безопасно просим бота остановиться
         try:
             bot.stop_polling()
         except Exception:
@@ -106,7 +107,7 @@ class SurveyDispatchThread(threading.Thread):
 
 
 class CleanupThread(threading.Thread):
-    """Р¤РѕРЅРѕРІС‹Р№ РїРѕС‚РѕРє: РєР°Р¶РґС‹Р№ С‡Р°СЃ СѓРґР°Р»СЏРµС‚ Р·Р°РєСЂС‹С‚С‹Рµ РґРёР°Р»РѕРіРё СЃС‚Р°СЂС€Рµ 24 С‡Р°СЃРѕРІ."""
+    """Фоновый поток: каждый час удаляет закрытые диалоги старше 24 часов."""
 
     INTERVAL_SECONDS = 3600  # 1 hour
 
@@ -147,21 +148,21 @@ def main() -> None:
     survey_dispatch_thread = SurveyDispatchThread()
     survey_dispatch_thread.start()
 
-    # РљРѕРЅС„РёРіСѓСЂРёСЂСѓРµРј uvicorn РєР°Рє СѓРїСЂР°РІР»СЏРµРјС‹Р№ СЃРµСЂРІРµСЂ, С‡С‚РѕР±С‹ РїРµСЂРµС…РІР°С‚С‹РІР°С‚СЊ СЃРёРіРЅР°Р»С‹ Рё Р·Р°РІРµСЂС€Р°С‚СЊСЃСЏ РєРѕСЂСЂРµРєС‚РЅРѕ
+    # Конфигурируем uvicorn как управляемый сервер, чтобы перехватывать сигналы и завершаться корректно
     config = uvicorn.Config(
         app,
         host=host,
         port=port,
         log_level=log_level,
-        workers=1,                      # РїСЂРё РІСЃС‚СЂРѕРµРЅРЅРѕРј Р·Р°РїСѓСЃРєРµ РѕСЃС‚Р°РІР»СЏРµРј 1 РїСЂРѕС†РµСЃСЃ
+        workers=1,                      # при встроенном запуске оставляем 1 процесс
         loop="auto",
-        lifespan="on",                  # С‡С‚РѕР±С‹ fastapi lifespan-СЃРѕР±С‹С‚РёСЏ РѕС‚СЂР°Р±Р°С‚С‹РІР°Р»Рё
+        lifespan="on",                  # чтобы fastapi lifespan-события отрабатывали
         proxy_headers=True,
         forwarded_allow_ips="*",
     )
     server = uvicorn.Server(config)
 
-    # Р¤Р»Р°РіРё Р·Р°РІРµСЂС€РµРЅРёСЏ РїРѕ СЃРёРіРЅР°Р»Р°Рј
+    # Флаги завершения по сигналам
     def _handle_exit_signal(*_: object) -> None:
         server.should_exit = True
 
@@ -171,14 +172,14 @@ def main() -> None:
     try:
         server.run()
     finally:
-        # РћСЃС‚Р°РЅРѕРІ Р±РѕС‚Р° Рё РѕР¶РёРґР°РЅРёРµ РїРѕС‚РѕРєР°
+        # Останов бота и ожидание потока
         try:
             bot_thread.stop()
         except Exception:
             pass
         bot_thread.join(timeout=10)
 
-        # РћСЃС‚Р°РЅРѕРІ С„РѕРЅРѕРІРѕРіРѕ РѕС‡РёСЃС‚РёС‚РµР»СЏ
+        # Останов фонового очистителя
         try:
             cleanup_thread.stop()
         except Exception:
@@ -191,11 +192,10 @@ def main() -> None:
             pass
         survey_dispatch_thread.join(timeout=5)
 
-        # Р•СЃР»Рё РІ РїРѕС‚РѕРєРµ Р±РѕС‚Р° Р±С‹Р»Р° РѕС€РёР±РєР° вЂ” РїСЂРѕР±СЂР°СЃС‹РІР°РµРј РµС‘ РЅР°РІРµСЂС…
+        # Если в потоке бота была ошибка — пробрасываем её наверх
         if bot_thread.exception:
             raise bot_thread.exception
 
 
 if __name__ == "__main__":
     main()
-

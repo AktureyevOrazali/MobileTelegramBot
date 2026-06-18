@@ -125,6 +125,13 @@ def _onec_default_quick_replies() -> list[dict[str, str]]:
     ]
 
 
+def _onec_section_quick_replies() -> list[dict[str, str]]:
+    return [
+        {"type": "survey_answer", "label": "Договор", "value": "Договор"},
+        {"type": "survey_answer", "label": "Прочие", "value": "Прочие"},
+    ]
+
+
 def _onec_rating_quick_replies(target: str) -> list[dict[str, str]]:
     return [
         _onec_quick_reply(
@@ -154,6 +161,92 @@ def _build_onec_contract_status_text(*, has_contract: bool, year: int | str) -> 
         "Для продолжения обслуживания обратитесь в офис для оформления договора."
     )
 
+
+
+def _coerce_money(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    parsed = parse_amount(str(value))
+    return float(parsed) if parsed is not None else 0.0
+
+
+def _format_onec_money(value: Any) -> str:
+    return f"{_coerce_money(value):,.2f}".replace(",", " ")
+
+
+def _is_onec_contract_choice(text: str) -> bool:
+    normalized = (text or "").strip().lower()
+    return "договор" in normalized
+
+
+def _is_onec_other_choice(text: str) -> bool:
+    normalized = (text or "").strip().lower()
+    return "прочие" in normalized
+
+
+def _build_onec_contract_payment_text(contract_result: Dict[str, Any]) -> str:
+    if not contract_result.get("has_contract"):
+        return _build_onec_contract_status_text(
+            has_contract=False,
+            year=contract_checker.ACTIVE_CONTRACT_YEAR,
+        )
+
+    contracts = contract_result.get("contracts") or []
+    lines = ["Раздел «Договор» выбран.", "", "Информация по договорам:"]
+
+    if not contracts:
+        lines.append("Договоры за текущий год не найдены.")
+        return "\n".join(lines)
+
+    for index, contract in enumerate(contracts, start=1):
+        contract_number = contract.get("contractNumber") or "без номера"
+        fin_year = contract.get("finYear") or contract_checker.ACTIVE_CONTRACT_YEAR
+        lines.extend(
+            [
+                "",
+                f"{index}. Договор: {contract_number}",
+                f"Год: {fin_year}",
+                f"Общая сумма: {_format_onec_money(contract.get('contractSumWnds'))}",
+                f"Оплачено: {_format_onec_money(contract.get('paidAmount'))}",
+            ]
+        )
+        treasury_payments = contract.get("TreasuryPay") or []
+        if treasury_payments:
+            lines.append("Платежи:")
+            for payment in treasury_payments:
+                if not isinstance(payment, dict):
+                    continue
+                invnum = payment.get("invnum") or "без номера"
+                lines.append(f"- {invnum}: {_format_onec_money(payment.get('payAmount'))}")
+        else:
+            lines.append("Платежи: оплат пока нет")
+        lines.append(f"Осталось оплатить: {_format_onec_money(contract.get('remainingAmount'))}")
+
+    max_allowed_payment = _coerce_money(contract_result.get("max_allowed_payment"))
+    lines.extend(
+        [
+            "",
+            "Итого:",
+            f"Общая сумма: {_format_onec_money(contract_result.get('total_contract_sum'))}",
+            f"Оплачено: {_format_onec_money(contract_result.get('total_paid_amount'))}",
+            f"Осталось оплатить: {_format_onec_money(max_allowed_payment)}",
+        ]
+    )
+
+    if max_allowed_payment > 0:
+        lines.extend(
+            [
+                "",
+                f"Максимальная сумма для ввода: {_format_onec_money(max_allowed_payment)}",
+                "Пожалуйста, укажите сумму договора (только число):",
+            ]
+        )
+    else:
+        lines.extend(["", "По текущим договорам задолженность отсутствует. Опишите ваш вопрос."])
+
+    return "\n".join(lines)
 
 
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
@@ -5026,22 +5119,54 @@ def _process_onec_incoming_message(
 
         # Check section selection
         if chat_section is None:
-            normalized_choice = message_text.strip().lower()
-            if "договор" in normalized_choice:
+            if _is_onec_contract_choice(message_text):
+                contract_result = contract_checker.check_customer_contracts(chat_bin)
+                _persist_bin_contract_result(chat_bin, contract_result)
+                if not contract_result.get("has_contract"):
+                    database.set_chat_section(chat_id, None, dialog_id=dialog_id)
+                    database.set_dialog_operator_mode(dialog_id, False)
+                    _store_onec_outgoing_text_message(
+                        chat_id=chat_id,
+                        dialog_id=dialog_id,
+                        external_chat_id=external_chat_id,
+                        bin_value=chat_bin,
+                        text=(
+                            _build_onec_contract_payment_text(contract_result)
+                            + "\n\nПожалуйста, выберите раздел обращения:"
+                        ),
+                        author="System",
+                        chat_title=chat_title,
+                        section=None,
+                        quick_replies=_onec_section_quick_replies(),
+                    )
+                    return
+
                 database.set_chat_section(chat_id, "contract", dialog_id=dialog_id)
+                database.set_dialog_operator_mode(dialog_id, True)
+                max_allowed_payment = _coerce_money(contract_result.get("max_allowed_payment"))
+                if contract_result.get("has_contract") and max_allowed_payment <= 0:
+                    active_appeal_id = database.get_active_appeal_id(dialog_id)
+                    database.save_contract_amount(
+                        bin_value=chat_bin,
+                        amount=0.0,
+                        chat_id=chat_id,
+                        dialog_id=dialog_id,
+                        appeal_id=active_appeal_id,
+                    )
                 _store_onec_outgoing_text_message(
                     chat_id=chat_id,
                     dialog_id=dialog_id,
                     external_chat_id=external_chat_id,
                     bin_value=chat_bin,
-                    text="Раздел «Договор» выбран.\nПожалуйста, укажите сумму договора (только число):",
+                    text=_build_onec_contract_payment_text(contract_result),
                     author="System",
                     chat_title=chat_title,
                     section="contract",
                 )
                 return
-            elif "прочие" in normalized_choice:
+            elif _is_onec_other_choice(message_text):
                 database.set_chat_section(chat_id, "other", dialog_id=dialog_id)
+                database.set_dialog_operator_mode(dialog_id, False)
                 _store_onec_outgoing_text_message(
                     chat_id=chat_id,
                     dialog_id=dialog_id,
@@ -5055,10 +5180,6 @@ def _process_onec_incoming_message(
                 )
                 return
             else:
-                section_quick_replies = [
-                    {"type": "survey_answer", "label": "Договор", "value": "Договор"},
-                    {"type": "survey_answer", "label": "Прочие", "value": "Прочие"}
-                ]
                 _store_onec_outgoing_text_message(
                     chat_id=chat_id,
                     dialog_id=dialog_id,
@@ -5068,7 +5189,7 @@ def _process_onec_incoming_message(
                     author="System",
                     chat_title=chat_title,
                     section=None,
-                    quick_replies=section_quick_replies,
+                    quick_replies=_onec_section_quick_replies(),
                 )
                 return
 
@@ -5076,6 +5197,24 @@ def _process_onec_incoming_message(
         if chat_section == "contract" and not database.has_contract_amount(dialog_id):
             amount = parse_amount(message_text)
             if amount is not None:
+                contract_result = contract_checker.check_customer_contracts(chat_bin)
+                max_allowed_payment = _coerce_money(contract_result.get("max_allowed_payment"))
+                if amount - max_allowed_payment > 0.005:
+                    _store_onec_outgoing_text_message(
+                        chat_id=chat_id,
+                        dialog_id=dialog_id,
+                        external_chat_id=external_chat_id,
+                        bin_value=chat_bin,
+                        text=(
+                            "Сумма превышает остаток по договору. "
+                            f"Максимально доступно к оплате: {_format_onec_money(max_allowed_payment)}"
+                        ),
+                        author="System",
+                        chat_title=chat_title,
+                        section="contract",
+                    )
+                    return
+
                 active_appeal_id = database.get_active_appeal_id(dialog_id)
                 database.save_contract_amount(
                     bin_value=chat_bin,
@@ -5089,7 +5228,7 @@ def _process_onec_incoming_message(
                     dialog_id=dialog_id,
                     external_chat_id=external_chat_id,
                     bin_value=chat_bin,
-                    text=f"Сумма договора {amount} успешно сохранена. Опишите ваш вопрос.",
+                    text=f"Сумма договора {_format_onec_money(amount)} успешно сохранена. Опишите ваш вопрос.",
                     author="System",
                     chat_title=chat_title,
                     section="contract",
@@ -5278,10 +5417,7 @@ def create_onec_message(
     if section_id and not is_survey_answer:
         database.set_chat_section(chat_id, section_id, dialog_id=dialog_id)
 
-    section_quick_replies = [
-        {"type": "survey_answer", "label": "Договор", "value": "Договор"},
-        {"type": "survey_answer", "label": "Прочие", "value": "Прочие"}
-    ]
+    section_quick_replies = _onec_section_quick_replies()
 
     if dialog_resumed:
         _store_onec_outgoing_text_message(

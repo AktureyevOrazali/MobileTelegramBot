@@ -117,10 +117,43 @@ class ContractCheckerTests(unittest.TestCase):
         )
 
         self.assertIn("customerBin", payload["query"])
+        self.assertIn("contractSumWnds", payload["query"])
+        self.assertIn("TreasuryPay", payload["query"])
         self.assertEqual(
             payload["variables"],
             {"supplierBiin": "980540000496", "customerBin": "060740006232", "limit": 200},
         )
+
+    def test_fetch_contracts_enriches_paid_and_remaining_amounts(self):
+        page = {
+            "data": {
+                "Contract": [
+                    {
+                        "id": 200,
+                        "customerBin": "111111111111",
+                        "finYear": 2026,
+                        "contractSumWnds": "100000.00",
+                        "TreasuryPay": [
+                            {"invnum": "1", "payAmount": "25000.00"},
+                            {"invnum": "2", "payAmount": "10000.50"},
+                        ],
+                    }
+                ]
+            },
+            "extensions": {"pageInfo": {"hasNextPage": False, "lastId": 200}},
+        }
+
+        with patch.object(
+            contract_checker.httpx,
+            "Client",
+            return_value=_FakeClient([page], []),
+        ):
+            contracts = contract_checker._fetch_contracts_for_supplier("980540000496")
+
+        self.assertEqual(contracts[0]["supplierBiin"], "980540000496")
+        self.assertEqual(contracts[0]["paidAmount"], 35000.5)
+        self.assertEqual(contracts[0]["remainingAmount"], 64999.5)
+        self.assertEqual(contracts[0]["maxAllowedPayment"], 64999.5)
 
     def test_check_customer_contracts_fetches_only_requested_customer_bin(self):
         with (
@@ -131,7 +164,9 @@ class ContractCheckerTests(unittest.TestCase):
                 return_value=[
                     {
                         "customerBin": "060740006232",
-                        "signDate": "2026-01-10",
+                        "finYear": 2026,
+                        "contractSumWnds": 120000,
+                        "TreasuryPay": [{"payAmount": 20000}],
                         "customerLegalAddress": "Atyrau",
                         "customerBankNameRu": "Bank",
                         "Customer": {"nameRu": "Customer"},
@@ -145,6 +180,10 @@ class ContractCheckerTests(unittest.TestCase):
 
         self.assertTrue(result["has_contract"])
         self.assertEqual(result["customer_legal_address"], "Atyrau")
+        self.assertEqual(result["total_contract_sum"], 120000.0)
+        self.assertEqual(result["total_paid_amount"], 20000.0)
+        self.assertEqual(result["total_remaining_amount"], 100000.0)
+        self.assertEqual(result["max_allowed_payment"], 100000.0)
         fetch_customer.assert_called_once_with("980540000496", "060740006232")
         get_all_contracts.assert_not_called()
 

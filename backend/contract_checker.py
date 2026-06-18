@@ -5,6 +5,7 @@ import logging
 import os
 import time
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -75,6 +76,85 @@ def _get_customer_name_ru(contract: Dict[str, Any]) -> str | None:
     return customer.get("nameRu")
 
 
+def _to_decimal(value: Any) -> Decimal:
+    if value is None:
+        return Decimal("0")
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float)):
+        return Decimal(str(value))
+    text = str(value).strip().replace("\u00a0", "").replace(" ", "")
+    if not text:
+        return Decimal("0")
+    if "," in text and "." in text:
+        text = text.replace(",", "")
+    else:
+        text = text.replace(",", ".")
+    try:
+        return Decimal(text)
+    except InvalidOperation:
+        return Decimal("0")
+
+
+def _money_to_float(value: Decimal) -> float:
+    return float(value.quantize(Decimal("0.01")))
+
+
+def _contract_sum(contract: Dict[str, Any]) -> Decimal:
+    return _to_decimal(contract.get("contractSumWnds"))
+
+
+def _paid_amount(contract: Dict[str, Any]) -> Decimal:
+    total = Decimal("0")
+    treasury_payments = contract.get("TreasuryPay") or []
+    if not isinstance(treasury_payments, list):
+        return total
+    for payment in treasury_payments:
+        if isinstance(payment, dict):
+            total += _to_decimal(payment.get("payAmount"))
+    return total
+
+
+def _enrich_contract_payment_fields(contract: Dict[str, Any], supplier_bin: str | None = None) -> Dict[str, Any]:
+    total_sum = _contract_sum(contract)
+    paid_sum = _paid_amount(contract)
+    remaining_sum = total_sum - paid_sum
+    if remaining_sum < 0:
+        remaining_sum = Decimal("0")
+
+    if supplier_bin:
+        contract["supplierBiin"] = supplier_bin
+    contract["paidAmount"] = _money_to_float(paid_sum)
+    contract["remainingAmount"] = _money_to_float(remaining_sum)
+    contract["maxAllowedPayment"] = _money_to_float(remaining_sum)
+    contract["isFullyPaid"] = remaining_sum == 0
+    return contract
+
+
+def _is_active_contract_year(contract: Dict[str, Any]) -> bool:
+    fin_year = contract.get("finYear")
+    if fin_year not in (None, ""):
+        return str(fin_year) == ACTIVE_CONTRACT_YEAR_PREFIX
+    sign_date = contract.get("signDate", "")
+    return bool(sign_date and str(sign_date).startswith(ACTIVE_CONTRACT_YEAR_PREFIX))
+
+
+def _summarize_contract_payments(contracts: List[Dict[str, Any]]) -> Dict[str, float]:
+    total_sum = Decimal("0")
+    paid_sum = Decimal("0")
+    remaining_sum = Decimal("0")
+    for contract in contracts:
+        total_sum += _contract_sum(contract)
+        paid_sum += _to_decimal(contract.get("paidAmount"))
+        remaining_sum += _to_decimal(contract.get("remainingAmount"))
+    return {
+        "total_contract_sum": _money_to_float(total_sum),
+        "total_paid_amount": _money_to_float(paid_sum),
+        "total_remaining_amount": _money_to_float(remaining_sum),
+        "max_allowed_payment": _money_to_float(remaining_sum),
+    }
+
+
 def _build_contract_query_payload(
     supplier_bin: str,
     *,
@@ -94,11 +174,20 @@ def _build_contract_query_payload(
             customerLegalAddress
             customerBankNameRu
             customerBin
+            finYear
             Customer {{
                 nameRu
             }}
             contractNumber
+            contractSumWnds
             signDate
+            TreasuryPay {{
+                invnum
+                payAmount
+            }}
+            Supplier {{
+                nameRu
+            }}
         }}
     }}
     """
@@ -143,6 +232,9 @@ def _fetch_contracts(
                 raise RuntimeError(f"Goszakup GraphQL errors for supplier {supplier_bin}{scope}: {errors}")
 
             page_contracts = data.get("data", {}).get("Contract", []) or []
+            for contract in page_contracts:
+                if isinstance(contract, dict):
+                    _enrich_contract_payment_fields(contract, supplier_bin)
             contracts_data.extend(page_contracts)
 
             page_info = (data.get("extensions") or {}).get("pageInfo") or {}
@@ -238,12 +330,11 @@ def get_all_customer_bins_with_contracts() -> Dict[str, Dict[str, Any]]:
 
     for contract in all_contracts:
         customer_bin = contract.get("customerBin", "")
-        sign_date = contract.get("signDate", "")
 
         if not customer_bin:
             continue
 
-        if sign_date and sign_date.startswith(ACTIVE_CONTRACT_YEAR_PREFIX) and customer_bin not in result:
+        if _is_active_contract_year(contract) and customer_bin not in result:
             result[customer_bin] = {
                 "has_contract": True,
                 "customer_legal_address": contract.get("customerLegalAddress"),
@@ -271,6 +362,10 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
         "customer_legal_address": None,
         "customer_bank_name_ru": None,
         "customer_name_ru": None,
+        "total_contract_sum": 0.0,
+        "total_paid_amount": 0.0,
+        "total_remaining_amount": 0.0,
+        "max_allowed_payment": 0.0,
     }
 
     try:
@@ -290,17 +385,19 @@ def check_customer_contracts(customer_bin: str) -> Dict[str, Any]:
         matching_contracts: List[Dict[str, Any]] = []
         for contract in contracts_data:
             contract_customer_bin = contract.get("customerBin", "")
-            sign_date = contract.get("signDate", "")
 
             if contract_customer_bin != customer_bin:
                 continue
 
-            if sign_date and sign_date.startswith(ACTIVE_CONTRACT_YEAR_PREFIX):
+            if _is_active_contract_year(contract):
+                _enrich_contract_payment_fields(contract, contract.get("supplierBiin"))
                 matching_contracts.append(contract)
 
         if matching_contracts:
+            payment_summary = _summarize_contract_payments(matching_contracts)
             result["has_contract"] = True
             result["contracts"] = matching_contracts
+            result.update(payment_summary)
             first_contract = matching_contracts[0]
             result["customer_legal_address"] = first_contract.get("customerLegalAddress")
             result["customer_bank_name_ru"] = first_contract.get("customerBankNameRu")

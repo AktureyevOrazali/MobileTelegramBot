@@ -343,6 +343,128 @@ class OneCChatFlowTests(unittest.TestCase):
         ai_manager.generate_response.assert_not_called()
         self.assertIn("оператор", outbox_messages[0]["text"].lower())
 
+    def test_onec_contract_button_shows_payment_summary(self):
+        outbox_messages: list[dict] = []
+        contract_result = {
+            "has_contract": True,
+            "contracts": [
+                {
+                    "contractNumber": "42",
+                    "finYear": 2026,
+                    "contractSumWnds": 100000,
+                    "paidAmount": 30000,
+                    "remainingAmount": 70000,
+                    "TreasuryPay": [
+                        {"invnum": "4571276/26-00272", "payAmount": 10000},
+                        {"invnum": "4571276/26-00189", "payAmount": 20000},
+                    ],
+                }
+            ],
+            "total_contract_sum": 100000,
+            "total_paid_amount": 30000,
+            "total_remaining_amount": 70000,
+            "max_allowed_payment": 70000,
+        }
+
+        with (
+            patch.object(api.database, "get_chat", return_value={"section": None, "bin": "181818181818"}),
+            patch.object(api.database, "get_dialog_section", return_value=None),
+            patch.object(api.database, "set_chat_section") as set_chat_section,
+            patch.object(api.database, "set_dialog_operator_mode") as set_operator_mode,
+            patch.object(api.contract_checker, "check_customer_contracts", return_value=contract_result) as check_contracts,
+            patch.object(api, "_persist_bin_contract_result", return_value=True),
+            patch.object(api, "_store_onec_outgoing_text_message", side_effect=lambda **kwargs: outbox_messages.append(kwargs) or 1),
+        ):
+            api._process_onec_incoming_message(
+                chat_id=20,
+                dialog_id=30,
+                external_chat_id="onec-chat",
+                bin_value="181818181818",
+                message_text="Договор",
+                normalized_text="договор",
+                author="1С Бухгалтер",
+                chat_title="1C client",
+                section_id=None,
+            )
+
+        set_chat_section.assert_called_once_with(20, "contract", dialog_id=30)
+        set_operator_mode.assert_called_once_with(30, True)
+        check_contracts.assert_called_once_with("181818181818")
+        self.assertEqual(len(outbox_messages), 1)
+        self.assertIn("Договор: 42", outbox_messages[0]["text"])
+        self.assertIn("Оплачено: 30 000.00", outbox_messages[0]["text"])
+        self.assertIn("Платежи:", outbox_messages[0]["text"])
+        self.assertIn("- 4571276/26-00272: 10 000.00", outbox_messages[0]["text"])
+        self.assertIn("- 4571276/26-00189: 20 000.00", outbox_messages[0]["text"])
+        self.assertIn("Осталось оплатить: 70 000.00", outbox_messages[0]["text"])
+        self.assertIn("Максимальная сумма для ввода: 70 000.00", outbox_messages[0]["text"])
+
+    def test_onec_contract_button_without_contract_keeps_ai_enabled_and_reoffers_sections(self):
+        outbox_messages: list[dict] = []
+        contract_result = {"has_contract": False, "max_allowed_payment": 0}
+
+        with (
+            patch.object(api.database, "get_chat", return_value={"section": None, "bin": "181818181818"}),
+            patch.object(api.database, "get_dialog_section", return_value=None),
+            patch.object(api.database, "set_chat_section") as set_chat_section,
+            patch.object(api.database, "set_dialog_operator_mode") as set_operator_mode,
+            patch.object(api.contract_checker, "check_customer_contracts", return_value=contract_result),
+            patch.object(api, "_persist_bin_contract_result", return_value=False),
+            patch.object(api, "_store_onec_outgoing_text_message", side_effect=lambda **kwargs: outbox_messages.append(kwargs) or 1),
+        ):
+            api._process_onec_incoming_message(
+                chat_id=20,
+                dialog_id=30,
+                external_chat_id="onec-chat",
+                bin_value="181818181818",
+                message_text="Договор",
+                normalized_text="договор",
+                author="1С Бухгалтер",
+                chat_title="1C client",
+                section_id=None,
+            )
+
+        set_chat_section.assert_called_once_with(20, None, dialog_id=30)
+        set_operator_mode.assert_called_once_with(30, False)
+        self.assertEqual(outbox_messages[0]["section"], None)
+        self.assertIn("Не найден действующий договор", outbox_messages[0]["text"])
+        self.assertEqual(
+            [(reply["label"], reply["value"]) for reply in outbox_messages[0]["quick_replies"]],
+            [("Договор", "Договор"), ("Прочие", "Прочие")],
+        )
+
+    def test_onec_contract_amount_cannot_exceed_remaining_amount(self):
+        outbox_messages: list[dict] = []
+
+        with (
+            patch.object(api.database, "get_chat", return_value={"section": "contract", "bin": "181818181818"}),
+            patch.object(api.database, "get_dialog_section", return_value="contract"),
+            patch.object(api.database, "has_contract_amount", return_value=False),
+            patch.object(
+                api.contract_checker,
+                "check_customer_contracts",
+                return_value={"has_contract": True, "max_allowed_payment": 70000},
+            ),
+            patch.object(api.database, "save_contract_amount") as save_contract_amount,
+            patch.object(api, "_store_onec_outgoing_text_message", side_effect=lambda **kwargs: outbox_messages.append(kwargs) or 1),
+        ):
+            api._process_onec_incoming_message(
+                chat_id=20,
+                dialog_id=30,
+                external_chat_id="onec-chat",
+                bin_value="181818181818",
+                message_text="80000",
+                normalized_text="80000",
+                author="1С Бухгалтер",
+                chat_title="1C client",
+                section_id="contract",
+            )
+
+        save_contract_amount.assert_not_called()
+        self.assertEqual(len(outbox_messages), 1)
+        self.assertIn("Сумма превышает остаток", outbox_messages[0]["text"])
+        self.assertIn("70 000.00", outbox_messages[0]["text"])
+
     def test_survey_after_employee_csat_starts_matching_template_and_sends_question(self):
         sent_messages: list[dict] = []
         survey_service.configure_survey_runtime(

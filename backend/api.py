@@ -742,6 +742,8 @@ class OneCIncomingMessageRequest(BaseModel):
 
 class OneCMessageEntry(BaseModel):
 
+    sync_id: int | None = None
+
     message_id: int | None = None
 
     chat_id: int
@@ -775,6 +777,8 @@ class OneCMessagesResponse(BaseModel):
     chat_id: int
 
     dialog_id: int | None = None
+
+    last_sync_id: int | None = None
 
     messages: List[OneCMessageEntry] = Field(default_factory=list)
 
@@ -2416,7 +2420,9 @@ def _build_hr_statement(hr_request: dict) -> str:
     prefix = f"Я, {employee_name},"
     request_type = str(hr_request.get("type") or "")
     if request_type == "advance":
-        return _normalize_hr_statement(f"{prefix} запрашиваю аванс {reason or period}")
+        amount = str(values.get("amount") or "").strip() or "____"
+        advance_reason = str(values.get("reason") or reason or period).strip() or "_____________________"
+        return _normalize_hr_statement(f"Прошу выдать мне аванс в размере {amount} в счет заработной платы, в связи с {advance_reason}")
     if request_type == "vacation":
         return _normalize_hr_statement(f"{prefix} прошу предоставить отпуск на период {period} в связи с {reason}")
     if request_type == "businessTrip":
@@ -2428,10 +2434,34 @@ def _build_hr_statement(hr_request: dict) -> str:
     return _normalize_hr_statement(f"{prefix} прошу рассмотреть заявление на период {period} по причине {reason}")
 
 
-def _hr_document_context(hr_request: dict) -> dict[str, str]:
+def _format_hr_signature_date(signature: object) -> str:
+    if not isinstance(signature, dict):
+        return ""
+    signed_at = str(signature.get("signed_at") or "").strip()
+    if not signed_at:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(signed_at.replace("Z", "+00:00"))
+    except ValueError:
+        return signed_at[:10]
+    return parsed.strftime("%d.%m.%Y")
+
+
+def _hr_document_context(hr_request: dict) -> dict[str, object]:
     values = hr_request.get("values") if isinstance(hr_request.get("values"), dict) else {}
     organization = str(values.get("organization") or "организации").strip()
     document_date = str(values.get("document_date") or "").strip() or datetime.now(timezone.utc).strftime("%d.%m.%Y")
+    employee_signature = hr_request.get("employee_signature")
+    hr_signature = hr_request.get("hr_signature")
+    employee_signed_date = _format_hr_signature_date(employee_signature)
+    hr_signed_date = _format_hr_signature_date(hr_signature)
+    status = str(hr_request.get("status") or "")
+    hr_decision_label = ""
+    if isinstance(hr_signature, dict):
+        if status == "approved":
+            hr_decision_label = "Одобрено"
+        elif status == "rejected":
+            hr_decision_label = "Отклонено"
     return {
         "to": "Директору",
         "organization": organization,
@@ -2439,12 +2469,34 @@ def _hr_document_context(hr_request: dict) -> dict[str, str]:
         "position": str(hr_request.get("department") or ""),
         "title": "Заявление",
         "body": _build_hr_statement(hr_request),
-        "date": document_date,
+        "date": employee_signed_date or document_date,
+        "employee_signed": bool(employee_signed_date),
+        "employee_signed_date": employee_signed_date,
+        "hr_decision_label": hr_decision_label,
+        "hr_signed_date": hr_signed_date,
+        "hr_signed_by": str(hr_request.get("decided_by_name") or "HR"),
     }
 
 
 def _hr_document_html(hr_request: dict) -> str:
-    context = {key: html.escape(value) for key, value in _hr_document_context(hr_request).items()}
+    raw_context = _hr_document_context(hr_request)
+    context = {key: html.escape(str(value)) for key, value in raw_context.items()}
+    employee_signature_mark = ""
+    if raw_context.get("employee_signed"):
+        employee_signature_mark = (
+            f"<div class=\"signature-mark\"><span>{context['employee_signed_date']}</span>"
+            "<small>Подписано ЭЦП</small></div>"
+        )
+    hr_decision = ""
+    if raw_context.get("hr_decision_label") and raw_context.get("hr_signed_date"):
+        hr_decision = (
+            "<div class=\"hr-decision\">"
+            f"<strong>Решение кадровика: {context['hr_decision_label']}</strong>"
+            f"<div>________________ / {context['hr_signed_by']} /</div>"
+            f"<div class=\"signature-mark\"><span>{context['hr_signed_date']}</span>"
+            "<small>Подписано ЭЦП</small></div>"
+            "</div>"
+        )
     return f"""<!doctype html>
 <html>
 <head>
@@ -2459,6 +2511,10 @@ def _hr_document_html(hr_request: dict) -> str:
     .footer {{ display: table; width: 100%; margin-top: 38mm; font-size: 12pt; }}
     .footer > div {{ display: table-cell; width: 50%; vertical-align: top; }}
     .signature {{ text-align: right; }}
+    .signature-mark {{ margin-top: 2mm; color: #4b5563; font-size: 8pt; line-height: 1.25; }}
+    .signature-mark small {{ margin-left: 3mm; font-size: 8pt; }}
+    .hr-decision {{ margin-top: 16mm; text-align: right; font-size: 10pt; line-height: 1.45; }}
+    .hr-decision strong {{ display: block; margin-bottom: 3mm; font-size: 11pt; }}
   </style>
 </head>
 <body>
@@ -2472,8 +2528,9 @@ def _hr_document_html(hr_request: dict) -> str:
   </div>
   <div class="footer">
     <div>{context['date']}</div>
-    <div class="signature">________________ / {context['from']} /</div>
+    <div class="signature">________________ / {context['from']} /{employee_signature_mark}</div>
   </div>
+  {hr_decision}
 </body>
 </html>"""
 
@@ -2530,17 +2587,17 @@ def _hr_document_pdf(hr_request: dict) -> bytes:
 
     page.setFont(font_name, 11)
     x_right = width - 245
-    for line in [context["to"], context["organization"]]:
+    for line in [str(context["to"]), str(context["organization"])]:
         page.drawString(x_right, y, line)
         y -= 18
 
     y -= 120
     page.setFont(font_name, 16)
-    page.drawCentredString(width / 2, y, context["title"])
+    page.drawCentredString(width / 2, y, str(context["title"]))
 
     y -= 46
     page.setFont(font_name, 12)
-    for line in _wrap_pdf_text(context["body"], width - margin_x * 2, font_name, 12):
+    for line in _wrap_pdf_text(str(context["body"]), width - margin_x * 2, font_name, 12):
         if y < 110:
             page.showPage()
             page.setFont(font_name, 12)
@@ -2548,8 +2605,21 @@ def _hr_document_pdf(hr_request: dict) -> bytes:
         page.drawString(margin_x, y, line)
         y -= 19
 
-    page.drawString(margin_x, 74, context["date"])
+    page.drawString(margin_x, 74, str(context["date"]))
     page.drawRightString(width - margin_x, 74, f"________________ / {context['from']} /")
+    if context.get("employee_signed"):
+        page.setFont(font_name, 8)
+        page.drawRightString(
+            width - margin_x,
+            60,
+            f"{context['employee_signed_date']}  Подписано ЭЦП",
+        )
+    if context.get("hr_decision_label") and context.get("hr_signed_date"):
+        page.setFont(font_name, 10)
+        page.drawRightString(width - margin_x, 42, f"Решение кадровика: {context['hr_decision_label']}")
+        page.drawRightString(width - margin_x, 28, f"________________ / {context['hr_signed_by']} /")
+        page.setFont(font_name, 8)
+        page.drawRightString(width - margin_x, 16, f"{context['hr_signed_date']}  Подписано ЭЦП")
     page.save()
     return buffer.getvalue()
 
@@ -3915,7 +3985,12 @@ def _absolute_api_url(request: Request, path: str) -> str:
 
 
 
-def _attachment_response_from_record(record: Dict[str, object], request: Request, for_onec: bool = False) -> AttachmentResponse:
+def _attachment_response_from_record(
+    record: Dict[str, object],
+    request: Request,
+    for_onec: bool = False,
+    include_base64: bool = True,
+) -> AttachmentResponse:
     media_id = int(record["media_id"])
 
     url = media_service.build_signed_media_url(
@@ -3943,13 +4018,18 @@ def _attachment_response_from_record(record: Dict[str, object], request: Request
         height=int(record["height"]) if record.get("height") is not None else None,
         duration_sec=float(record["duration_sec"]) if record.get("duration_sec") is not None else None,
         caption=record.get("caption"),
-        base64_content=_get_base64_content(media_id) if for_onec and record.get("kind") == "image" else None,
+        base64_content=_get_base64_content(media_id) if for_onec and include_base64 and record.get("kind") == "image" else None,
     )
 
 
-def _message_attachment_payloads(message: Dict[str, object], request: Request, for_onec: bool = False) -> List[AttachmentResponse]:
+def _message_attachment_payloads(
+    message: Dict[str, object],
+    request: Request,
+    for_onec: bool = False,
+    include_base64: bool = True,
+) -> List[AttachmentResponse]:
     return [
-        _attachment_response_from_record(item, request, for_onec=for_onec)
+        _attachment_response_from_record(item, request, for_onec=for_onec, include_base64=include_base64)
         for item in (message.get("attachments") or [])
     ]
 
@@ -5536,6 +5616,8 @@ def _onec_history_core(
     bin_value: str | None,
     limit: int,
     request: Request,
+    after_sync_id: int | None = None,
+    include_base64: bool = True,
 ) -> OneCMessagesResponse:
     normalized_external = external_chat_id.strip()
     if not normalized_external:
@@ -5569,14 +5651,24 @@ def _onec_history_core(
     if chat and chat.get("type") not in (None, "onec"):
         raise HTTPException(status_code=403, detail="\u0427\u0430\u0442 \u043d\u0435 \u043f\u0440\u0435\u0434\u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d \u0434\u043b\u044f \u0438\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438 1\u0421")
 
-    raw_messages = database.get_messages(resolved_chat_id, limit=limit, dialog_id=resolved_dialog_id)
+    raw_messages = database.get_messages(
+        resolved_chat_id,
+        limit=limit,
+        dialog_id=resolved_dialog_id,
+        after_id=after_sync_id,
+    )
     logger.info(
         "1C history request: ext_id=%s, chat_id=%s, dialog_id=%s, messages_count=%d",
         normalized_external, resolved_chat_id, resolved_dialog_id, len(raw_messages),
     )
 
     messages: List[OneCMessageEntry] = []
+    last_sync_id = after_sync_id
     for message in reversed(raw_messages):
+        raw_sync_id = message.get("id")
+        sync_id = int(raw_sync_id) if raw_sync_id is not None else None
+        if sync_id is not None and (last_sync_id is None or sync_id > last_sync_id):
+            last_sync_id = sync_id
         stored_message_id = message.get("message_id")
         if stored_message_id is None:
             stored_message_id = message.get("id")
@@ -5584,6 +5676,7 @@ def _onec_history_core(
         created_at_iso = created_at_value.isoformat() if isinstance(created_at_value, datetime) else str(created_at_value)
         messages.append(
             OneCMessageEntry(
+                sync_id=sync_id,
                 message_id=int(stored_message_id) if stored_message_id is not None else None,
                 chat_id=int(message["chat_id"]),
                 dialog_id=message.get("dialog_id"),
@@ -5592,7 +5685,12 @@ def _onec_history_core(
                 author=message.get("author"),
                 created_at=created_at_iso,
                 section=message.get("section"),
-                attachments=_message_attachment_payloads(message, request, for_onec=True),
+                attachments=_message_attachment_payloads(
+                    message,
+                    request,
+                    for_onec=True,
+                    include_base64=include_base64,
+                ),
                 quick_replies=message.get("quick_replies") or [],
             )
         )
@@ -5604,6 +5702,7 @@ def _onec_history_core(
         external_chat_id=normalized_external,
         chat_id=resolved_chat_id,
         dialog_id=resolved_dialog_id,
+        last_sync_id=last_sync_id,
         messages=messages,
     )
 
@@ -5624,10 +5723,23 @@ def list_onec_messages(
     dialog_id: str | None = Query(default=None),
     bin: str | None = Query(default=None),
     limit: int = Query(default=200, ge=1, le=500),
+    after_sync_id: int | None = Query(default=None, ge=0),
+    after_message_id: int | None = Query(default=None, ge=0),
+    include_base64: bool = Query(default=True),
 ):
     parsed_chat_id = _parse_int_from_string(chat_id) if chat_id else None
     parsed_dialog_id = _parse_int_from_string(dialog_id) if dialog_id else None
-    return _onec_history_core(external_chat_id, parsed_chat_id, parsed_dialog_id, bin, limit, request)
+    effective_after_sync_id = after_sync_id if after_sync_id is not None else after_message_id
+    return _onec_history_core(
+        external_chat_id,
+        parsed_chat_id,
+        parsed_dialog_id,
+        bin,
+        limit,
+        request,
+        after_sync_id=effective_after_sync_id,
+        include_base64=include_base64,
+    )
 
 
 class OneCHistoryPostRequest(BaseModel):
@@ -5636,6 +5748,9 @@ class OneCHistoryPostRequest(BaseModel):
     dialog_id: str | None = None
     bin: str | None = None
     limit: int = Field(default=200, ge=1, le=500)
+    after_sync_id: int | None = Field(default=None, ge=0)
+    after_message_id: int | None = Field(default=None, ge=0)
+    include_base64: bool = True
 
 
 @app.post("/integrations/1c/messages/history", response_model=OneCMessagesResponse)
@@ -5647,7 +5762,17 @@ def list_onec_messages_post(
 ):
     parsed_chat_id = _parse_int_from_string(body.chat_id) if body.chat_id else None
     parsed_dialog_id = _parse_int_from_string(body.dialog_id) if body.dialog_id else None
-    return _onec_history_core(body.external_chat_id, parsed_chat_id, parsed_dialog_id, body.bin, body.limit, request)
+    effective_after_sync_id = body.after_sync_id if body.after_sync_id is not None else body.after_message_id
+    return _onec_history_core(
+        body.external_chat_id,
+        parsed_chat_id,
+        parsed_dialog_id,
+        body.bin,
+        body.limit,
+        request,
+        after_sync_id=effective_after_sync_id,
+        include_base64=body.include_base64,
+    )
 
 
 # ------------------ Outbox 1? ------------------

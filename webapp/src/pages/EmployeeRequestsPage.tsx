@@ -17,6 +17,12 @@ const formatInputDate = (value: string) => {
 
 const formatToday = () => new Intl.DateTimeFormat('ru-RU').format(new Date());
 const formatRequestDate = (value: Date) => new Intl.DateTimeFormat('ru-RU').format(value);
+const formatSignatureDate = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('ru-RU').format(date);
+};
 const skeletonStyle = (index: number) => ({ '--skeleton-index': index } as React.CSSProperties);
 
 const countDays = (startDate: string, endDate: string) => {
@@ -25,6 +31,52 @@ const countDays = (startDate: string, endDate: string) => {
   const end = new Date(`${endDate}T00:00:00`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return '';
   return String(Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1);
+};
+
+const numberWordsRu = [
+  'ноль',
+  'один',
+  'два',
+  'три',
+  'четыре',
+  'пять',
+  'шесть',
+  'семь',
+  'восемь',
+  'девять',
+  'десять',
+  'одиннадцать',
+  'двенадцать',
+  'тринадцать',
+  'четырнадцать',
+  'пятнадцать',
+  'шестнадцать',
+  'семнадцать',
+  'восемнадцать',
+  'девятнадцать',
+];
+
+const tensWordsRu: Record<number, string> = {
+  20: 'двадцать',
+  30: 'тридцать',
+  40: 'сорок',
+  50: 'пятьдесят',
+  60: 'шестьдесят',
+  70: 'семьдесят',
+  80: 'восемьдесят',
+  90: 'девяносто',
+};
+
+const countDaysWords = (startDate: string, endDate: string) => {
+  const days = Number(countDays(startDate, endDate));
+  if (!Number.isFinite(days) || days <= 0) return '';
+  if (days < 20) return numberWordsRu[days];
+  if (days < 100) {
+    const tens = Math.floor(days / 10) * 10;
+    const rest = days % 10;
+    return rest ? `${tensWordsRu[tens]} ${numberWordsRu[rest]}` : tensWordsRu[tens];
+  }
+  return String(days);
 };
 
 const requestTypeRequiresDates = (template: HrTemplate | null) => (
@@ -46,6 +98,7 @@ const buildAutoValues = (
   startDate: string,
   endDate: string,
   reason: string,
+  extraValues: Record<string, string>,
   organization: string,
 ): Record<string, string> => {
   const period = buildPeriodLabel(startDate, endDate);
@@ -58,21 +111,18 @@ const buildAutoValues = (
     start_date: formatInputDate(startDate),
     end_date: formatInputDate(endDate),
     days_count: countDays(startDate, endDate),
+    days_count_words: countDaysWords(startDate, endDate),
     period,
     reason,
     purpose: reason,
-    recipient: reason,
     access_reason: reason,
-    manager_name: reason,
-    payroll_month: reason,
     repayment_date: formatInputDate(endDate),
-    destination: reason,
-    city: reason,
-    system_name: reason,
-    monthly_income: reason,
   };
+  Object.entries(extraValues).forEach(([key, value]) => {
+    values[key] = value;
+  });
   template?.variables.forEach((variable) => {
-    values[variable] = values[variable] || reason || period;
+    values[variable] = values[variable] || '';
   });
   return values;
 };
@@ -88,8 +138,12 @@ const getPreviewPlaceholder = (variable: string) => {
   if (
     variable.includes('reason')
     || variable === 'purpose'
-    || variable === 'recipient'
     || variable === 'manager_name'
+  ) {
+    return previewReasonPlaceholder;
+  }
+  if (
+    variable === 'recipient'
     || variable === 'payroll_month'
     || variable === 'amount'
     || variable === 'destination'
@@ -101,6 +155,46 @@ const getPreviewPlaceholder = (variable: string) => {
   }
   return previewValuePlaceholder;
 };
+
+const reasonVariables = new Set(['reason', 'purpose', 'access_reason']);
+const autoVariables = new Set([
+  'employee_name',
+  'organization',
+  'document_date',
+  'position',
+  'department',
+  'start_date',
+  'end_date',
+  'days_count',
+  'days_count_words',
+  'period',
+  'repayment_date',
+]);
+
+const variableLabels: Record<string, string> = {
+  amount: 'Сумма аванса',
+  payroll_month: 'Месяц начисления',
+  destination: 'Место командировки',
+  city: 'Город',
+  recipient: 'Куда предоставить',
+  topic: 'Тема обращения',
+  system_name: 'Название системы',
+  monthly_income: 'Ежемесячный доход',
+  manager_name: 'Руководитель',
+};
+
+const getVariableLabel = (variable: string) => variableLabels[variable] ?? variable;
+
+const getExtraTemplateVariables = (template: HrTemplate | null) => (
+  (template?.variables ?? []).filter((variable) => (
+    !autoVariables.has(variable)
+    && !reasonVariables.has(variable)
+  ))
+);
+
+const templateNeedsReason = (template: HrTemplate | null) => (
+  (template?.variables ?? []).some((variable) => reasonVariables.has(variable))
+);
 
 const buildPreviewValues = (
   template: HrTemplate | null,
@@ -127,7 +221,7 @@ const normalizeEmployeeTemplateBody = (template: HrTemplate) => {
     template.type === 'advance'
     && template.body.trim() === 'Прошу выдать аванс сотруднику {employee_name} в размере {amount}. Причина: {reason}.'
   ) {
-    return 'Прошу выдать аванс сотруднику {employee_name}. Причина: {reason}.';
+    return 'Прошу выдать мне аванс в размере {amount} в счет заработной платы, в связи с {reason}.';
   }
   return template.body;
 };
@@ -137,8 +231,10 @@ const buildRequestStatement = (
   employeeName: string,
   period: string,
   reason: string,
+  amount = '',
 ) => {
   const cleanReason = reason.trim();
+  const cleanAmount = amount.trim() || '____';
   const prefix = `Я, ${employeeName},`;
   if (!cleanReason) {
     return `${prefix} прошу рассмотреть заявление${period ? ` на период ${period}` : ''}.`;
@@ -146,7 +242,7 @@ const buildRequestStatement = (
 
   switch (template?.type) {
     case 'advance':
-      return normalizeSentence(`${prefix} запрашиваю аванс ${cleanReason}`);
+      return normalizeSentence(`Прошу выдать мне аванс в размере ${cleanAmount} в счет заработной платы, в связи с ${cleanReason}`);
     case 'vacation':
       return normalizeSentence(`${prefix} прошу предоставить отпуск на период ${period} в связи с ${cleanReason}`);
     case 'businessTrip':
@@ -167,13 +263,36 @@ const renderTemplate = (body: string, values: Record<string, string>) => (
   )
 );
 
+const requestStatement = (request: HrRequest) => {
+  if (typeof request.values.statement === 'string' && request.values.statement.trim()) {
+    return normalizeSentence(request.values.statement);
+  }
+  if (request.renderedText.trim()) return normalizeSentence(request.renderedText);
+  return buildRequestStatement(
+    { type: request.type } as HrTemplate,
+    request.employeeName,
+    request.period,
+    request.summary,
+    typeof request.values.amount === 'string' ? request.values.amount : '',
+  );
+};
+
+const requestOrganization = (request: HrRequest, fallback: string) => (
+  typeof request.values.organization === 'string' && request.values.organization.trim()
+    ? request.values.organization.trim()
+    : fallback
+);
+
 const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, session }) => {
   const [templates, setTemplates] = useState<HrTemplate[]>([]);
   const [requests, setRequests] = useState<HrRequest[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
+  const [extraValues, setExtraValues] = useState<Record<string, string>>({});
+  const [showSignedExample, setShowSignedExample] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
@@ -214,6 +333,9 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
   const period = useMemo(() => buildPeriodLabel(startDate, endDate), [startDate, endDate]);
   const effectivePeriod = requiresDates ? period : '';
   const isDateRangeInvalid = Boolean(requiresDates && startDate && endDate && endDate < startDate);
+  const extraTemplateVariables = useMemo(() => getExtraTemplateVariables(selectedTemplate), [selectedTemplate]);
+  const needsReason = templateNeedsReason(selectedTemplate);
+  const hasRequiredExtraValues = extraTemplateVariables.every((variable) => (extraValues[variable] ?? '').trim());
   const values = useMemo(
     () => buildAutoValues(
       selectedTemplate,
@@ -221,9 +343,10 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
       requiresDates ? startDate : '',
       requiresDates ? endDate : '',
       reason,
+      extraValues,
       organization,
     ),
-    [selectedTemplate, session, requiresDates, startDate, endDate, reason, organization],
+    [selectedTemplate, session, requiresDates, startDate, endDate, reason, extraValues, organization],
   );
   const previewValues = useMemo(
     () => buildPreviewValues(selectedTemplate, values),
@@ -232,12 +355,30 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
   const renderedTemplateText = selectedTemplate
     ? normalizeSentence(renderTemplate(normalizeEmployeeTemplateBody(selectedTemplate), previewValues))
     : '';
-  const previewText = renderedTemplateText || buildRequestStatement(selectedTemplate, session.user.name, effectivePeriod, reason);
-  const canSignRequest = Boolean(selectedTemplate && (!requiresDates || effectivePeriod) && reason.trim() && !isDateRangeInvalid);
+  const previewText = renderedTemplateText || buildRequestStatement(selectedTemplate, session.user.name, effectivePeriod, reason, values.amount);
+  const canSignRequest = Boolean(
+    selectedTemplate
+    && (!requiresDates || effectivePeriod)
+    && (!needsReason || reason.trim())
+    && hasRequiredExtraValues
+    && !isDateRangeInvalid,
+  );
+  const employeeSignedDate = formatSignatureDate(employeeSignature?.signedAt);
+  const previewSignatureDate = employeeSignedDate || (showSignedExample ? formatToday() : '');
+  const showPreviewSignature = Boolean(employeeSignature || showSignedExample);
+  const selectedRequest = useMemo(
+    () => requests.find((request) => request.id === selectedRequestId) ?? null,
+    [requests, selectedRequestId],
+  );
 
   useEffect(() => {
     setEmployeeSignature(null);
-  }, [selectedTemplate?.id, startDate, endDate, reason, previewText]);
+    setShowSignedExample(false);
+  }, [selectedTemplate?.id, startDate, endDate, reason, extraValues, previewText]);
+
+  useEffect(() => {
+    setExtraValues({});
+  }, [selectedTemplate?.id]);
 
   const handleSign = async () => {
     if (!selectedTemplate || !canSignRequest) return;
@@ -265,7 +406,7 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedTemplate || (requiresDates && !effectivePeriod) || !reason.trim() || isDateRangeInvalid || !employeeSignature) return;
+    if (!selectedTemplate || (requiresDates && !effectivePeriod) || (needsReason && !reason.trim()) || !hasRequiredExtraValues || isDateRangeInvalid || !employeeSignature) return;
     setIsSubmitting(true);
     setError('');
     try {
@@ -277,7 +418,9 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
         employeeSignature,
       });
       setRequests((current) => [created, ...current]);
+      setSelectedRequestId(created.id);
       setReason('');
+      setExtraValues({});
       setStartDate('');
       setEndDate('');
     } catch (err) {
@@ -365,8 +508,17 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                         <p>{previewText}</p>
                       </div>
                       <div className="hr-document-preview__footer">
-                        <span>{formatToday()}</span>
-                        <span>________________ / {session.user.name} /</span>
+                        <span>{previewSignatureDate || formatToday()}</span>
+                        <span className="hr-document-preview__signature">
+                          <span>________________ / {session.user.name} /</span>
+                          {showPreviewSignature && (
+                            <small>
+                              {previewSignatureDate && <time dateTime={employeeSignature?.signedAt ?? new Date().toISOString()}>{previewSignatureDate}</time>}
+                              <span>Подписано ЭЦП</span>
+                              {showSignedExample && !employeeSignature && <span>пример</span>}
+                            </small>
+                          )}
+                        </span>
                       </div>
                     </article>
 
@@ -400,17 +552,38 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                     {isDateRangeInvalid && (
                       <p className="form-error" role="alert">Дата окончания не может быть раньше даты начала.</p>
                     )}
+                    {extraTemplateVariables.map((variable) => (
+                      <label className="hr-field" key={variable}>
+                        <span>{getVariableLabel(variable)}</span>
+                        <input
+                          value={extraValues[variable] ?? ''}
+                          onChange={(event) => setExtraValues((current) => ({
+                            ...current,
+                            [variable]: event.target.value,
+                          }))}
+                          required
+                        />
+                      </label>
+                    ))}
                   </div>
 
                   <div className="hr-employee-request-bottom">
                     <label className="hr-field hr-employee-request-reason">
-                      <span>Причина</span>
-                      <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} required />
+                      <span>{selectedTemplate.type === 'businessTrip' ? 'Цель / причина' : 'Причина'}</span>
+                      <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} required={needsReason} />
                     </label>
 
                     <div className="hr-template-preview__actions">
                       <button className="button secondary" type="button" disabled={isSigning || !canSignRequest} onClick={handleSign}>
                         {isSigning ? 'Подписание...' : 'Подписать ЭЦП'}
+                      </button>
+                      <button
+                        className="button secondary"
+                        type="button"
+                        disabled={Boolean(employeeSignature)}
+                        onClick={() => setShowSignedExample((current) => !current)}
+                      >
+                        {showSignedExample ? 'Скрыть пример ЭЦП' : 'Показать пример ЭЦП'}
                       </button>
                       {employeeSignature && <span className="hr-badge">ЭЦП подписано</span>}
                       <button className="button" type="submit" disabled={isSubmitting || !canSignRequest || !employeeSignature}>
@@ -445,7 +618,13 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
             </article>
           )}
           {!isLoading && requests.map((request) => (
-            <article className="hr-request-row hr-request-row--employee" key={request.id}>
+            <button
+              className={`hr-request-row hr-request-row--employee ${request.id === selectedRequest?.id ? 'hr-request-row--active' : ''}`}
+              key={request.id}
+              type="button"
+              aria-pressed={request.id === selectedRequest?.id}
+              onClick={() => setSelectedRequestId(request.id)}
+            >
               <span className="hr-request-row__body">
                 <span className="hr-request-row__summary">
                   <strong>{requestTypeLabels[request.type]}</strong>
@@ -455,8 +634,54 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                   {formatRequestDate(request.submittedAt)}
                 </time>
               </span>
-            </article>
+            </button>
           ))}
+          {!isLoading && selectedRequest && (
+            <article className="hr-sent-request-preview" aria-label="Форма отправленного заявления">
+              <div className="hr-sent-request-preview__header">
+                <strong>{selectedRequest.templateTitle || requestTypeLabels[selectedRequest.type]}</strong>
+                <span className={`hr-status hr-status--${selectedRequest.status}`}>{requestStatusLabels[selectedRequest.status]}</span>
+              </div>
+              <article className="hr-document-preview hr-document-preview--sent">
+                <div className="hr-document-preview__to">
+                  <span>Директору</span>
+                  <span>{requestOrganization(selectedRequest, organization)}</span>
+                </div>
+                <div className="hr-document-preview__body">
+                  <h3>Заявление</h3>
+                  <p>{requestStatement(selectedRequest)}</p>
+                </div>
+                <div className="hr-document-preview__footer">
+                  <span>{formatSignatureDate(selectedRequest.employeeSignature?.signedAt) || formatRequestDate(selectedRequest.submittedAt)}</span>
+                  <span className="hr-document-preview__signature">
+                    <span>________________ / {selectedRequest.employeeName} /</span>
+                    {selectedRequest.employeeSignature && (
+                      <small>
+                        <time dateTime={selectedRequest.employeeSignature.signedAt}>{formatSignatureDate(selectedRequest.employeeSignature.signedAt)}</time>
+                        <span>Подписано ЭЦП</span>
+                      </small>
+                    )}
+                  </span>
+                </div>
+                {(selectedRequest.status === 'approved' || selectedRequest.status === 'rejected') && selectedRequest.hrSignature && (
+                  <div className="hr-document-preview__decision">
+                    <strong>Решение: {requestStatusLabels[selectedRequest.status]}</strong>
+                    <span>{selectedRequest.decidedByName || 'HR'}</span>
+                    <small>
+                      <time dateTime={selectedRequest.hrSignature.signedAt}>{formatSignatureDate(selectedRequest.hrSignature.signedAt)}</time>
+                      <span>Подписано ЭЦП</span>
+                    </small>
+                  </div>
+                )}
+              </article>
+              {selectedRequest.decisionComment && (
+                <div className="hr-request-row__decision">
+                  <span>Комментарий HR</span>
+                  <p>{selectedRequest.decisionComment}</p>
+                </div>
+              )}
+            </article>
+          )}
         </section>
       </main>
     </div>

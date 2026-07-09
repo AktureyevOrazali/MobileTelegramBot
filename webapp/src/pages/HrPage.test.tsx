@@ -19,6 +19,15 @@ const hrSignature = {
   certificatePem: null,
 };
 
+const employeeSignature = {
+  signature: 'MIICMS',
+  signedPayload: '{"action":"submit"}',
+  signedAt: '2026-05-26T10:00:00.000Z',
+  certificateSubject: 'CN=Employee User',
+  certificateSerial: '123456',
+  certificatePem: null,
+};
+
 const apiTemplates: HrTemplate[] = [
   {
     id: 7,
@@ -270,11 +279,18 @@ describe('HrPage', () => {
     const approvedRequest: HrRequest = {
       ...apiRequests[0],
       status: 'approved',
+      values: {
+        statement: 'Please approve Employee User.',
+        organization: 'ТОО Азия-Сервис',
+        position: 'Operator',
+      },
       decidedAt: new Date('2026-05-19T10:20:00Z'),
       decidedBy: 10,
       decidedByName: 'HR User',
       decisionComment: 'Approved',
       updatedAt: new Date('2026-05-19T10:20:00Z'),
+      employeeSignature,
+      hrSignature,
     };
     const rejectedRequest: HrRequest = {
       ...approvedRequest,
@@ -369,11 +385,18 @@ describe('HrPage', () => {
     const approvedRequest: HrRequest = {
       ...apiRequests[0],
       status: 'approved',
+      values: {
+        statement: 'Please approve Employee User.',
+        organization: 'ТОО Азия-Сервис',
+        position: 'Operator',
+      },
       decidedAt: new Date('2026-05-19T10:20:00Z'),
       decidedBy: 10,
       decidedByName: 'HR User',
       decisionComment: 'Approved',
       updatedAt: new Date('2026-05-19T10:20:00Z'),
+      employeeSignature,
+      hrSignature,
     };
     const apiClient = {
       fetchHrTemplates: vi.fn().mockResolvedValue(apiTemplates),
@@ -392,6 +415,10 @@ describe('HrPage', () => {
 
     expect(screen.getByRole('cell', { name: 'Employee User' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'HR User' })).toBeInTheDocument();
+    const archivePreview = screen.getByLabelText('Шаблон архивного заявления');
+    expect(within(archivePreview).getByLabelText('Форма архивного заявления')).toHaveTextContent('Please approve Employee User.');
+    expect(within(archivePreview).getAllByText('Подписано ЭЦП')).toHaveLength(2);
+    expect(within(archivePreview).getByText('Решение: Одобрено')).toBeInTheDocument();
     expect(screen.queryByText('Р‘РѕС‚Р° РђР№С‚Р¶Р°РЅРѕРІР°')).not.toBeInTheDocument();
   });
 

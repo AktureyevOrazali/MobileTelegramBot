@@ -756,6 +756,14 @@ def _init_db() -> None:
         ON outbox_onec(message_id)
         """,
         """
+        CREATE INDEX IF NOT EXISTS idx_messages_chat_dialog_id
+        ON messages(chat_id, dialog_id, id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_messages_chat_id
+        ON messages(chat_id, id)
+        """,
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_media_files_object
         ON media_files(storage_provider, bucket, object_key)
         """,
@@ -2498,36 +2506,64 @@ HR_REQUEST_STATUSES: tuple[str, ...] = (
 )
 HR_REQUEST_EVENT_ACTIONS: tuple[str, ...] = ("created", "review", "needsInfo", "approved", "rejected", "archived")
 LEGACY_ADVANCE_TEMPLATE_BODY = "Прошу выдать аванс сотруднику {employee_name} в размере {amount}. Причина: {reason}."
-DEFAULT_ADVANCE_TEMPLATE_BODY = "Прошу выдать аванс сотруднику {employee_name}. Причина: {reason}."
+DEFAULT_ADVANCE_TEMPLATE_BODY = "Прошу выдать мне аванс в размере {amount} в счет заработной платы, в связи с {reason}."
 
 DEFAULT_HR_REQUEST_TEMPLATES: tuple[dict[str, Any], ...] = (
     {
-        "title": "Заявление на отпуск",
+        "title": "Ежегодный оплачиваемый отпуск",
         "type": "vacation",
-        "description": "Ежегодный оплачиваемый отпуск или отпуск за свой счет.",
-        "body": "Прошу предоставить отпуск сотруднику {employee_name} с {start_date} по {end_date}. Основание: {reason}.",
-        "variables": ["start_date", "end_date", "reason"],
+        "description": "Ежегодный оплачиваемый трудовой отпуск.",
+        "body": "Прошу предоставить мне ежегодный оплачиваемый трудовой отпуск продолжительностью {days_count} ({days_count_words}) календарных дней в период с {start_date} по {end_date}.",
+        "variables": ["start_date", "end_date", "days_count", "days_count_words"],
+    },
+    {
+        "title": "Отпуск без сохранения заработной платы",
+        "type": "vacation",
+        "description": "Отпуск за свой счет с указанием причины.",
+        "body": "В связи с {reason} прошу предоставить мне отпуск без сохранения заработной платы продолжительностью {days_count} ({days_count_words}) календарных дней в период с {start_date} по {end_date}.",
+        "variables": ["reason", "start_date", "end_date", "days_count", "days_count_words"],
+    },
+    {
+        "title": "Отпуск по беременности и родам",
+        "type": "vacation",
+        "description": "Отпуск по беременности и родам.",
+        "body": "В связи с беременностью и предстоящими родами прошу предоставить мне отпуск по беременности и родам продолжительностью {days_count} ({days_count_words}) календарных дней в период с {start_date} по {end_date}.",
+        "variables": ["start_date", "end_date", "days_count", "days_count_words"],
     },
     {
         "title": "Заявление на командировку",
         "type": "businessTrip",
-        "description": "Служебная командировка с указанием города и периода.",
-        "body": "Прошу оформить командировку для {employee_name} в город {city} на период {start_date} - {end_date}. Цель поездки: {purpose}.",
-        "variables": ["city", "start_date", "end_date", "purpose"],
+        "description": "Служебная командировка с указанием места, срока и цели.",
+        "body": "Прошу направить меня в служебную командировку в {destination} продолжительностью {days_count} ({days_count_words}) календарных дней в период с {start_date} по {end_date}. Цель командировки: {purpose}.",
+        "variables": ["destination", "start_date", "end_date", "days_count", "days_count_words", "purpose"],
     },
     {
         "title": "Заявление на аванс",
         "type": "advance",
         "description": "Запрос аванса по заработной плате.",
         "body": DEFAULT_ADVANCE_TEMPLATE_BODY,
-        "variables": ["reason"],
+        "variables": ["amount", "reason"],
+    },
+    {
+        "title": "Отсутствие по болезни",
+        "type": "sickLeave",
+        "description": "Оформление отсутствия по болезни или больничного.",
+        "body": "Прошу оформить мое отсутствие по болезни продолжительностью {days_count} ({days_count_words}) календарных дней в период с {start_date} по {end_date}. Основание: {reason}.",
+        "variables": ["start_date", "end_date", "days_count", "days_count_words", "reason"],
     },
     {
         "title": "Справка с места работы",
         "type": "certificate",
         "description": "Справка для банка, визового центра или другой организации.",
-        "body": "Прошу подготовить справку с места работы для {employee_name}. Организация-получатель: {recipient}.",
+        "body": "Прошу выдать мне справку с места работы для предоставления в {recipient}.",
         "variables": ["recipient"],
+    },
+    {
+        "title": "Служебное письмо",
+        "type": "serviceLetter",
+        "description": "Произвольное служебное обращение.",
+        "body": "Прошу рассмотреть служебное обращение по вопросу: {topic}. Основание: {reason}.",
+        "variables": ["topic", "reason"],
     },
 )
 
@@ -2555,16 +2591,23 @@ def _ensure_default_hr_request_templates() -> None:
             """,
             (
                 DEFAULT_ADVANCE_TEMPLATE_BODY,
-                json.dumps(["reason"], ensure_ascii=False),
+                json.dumps(["amount", "reason"], ensure_ascii=False),
                 now,
                 "advance",
                 LEGACY_ADVANCE_TEMPLATE_BODY,
             ),
         )
-        row = execute("SELECT COUNT(*) AS cnt FROM hr_request_templates").fetchone()
-        if row and int(row["cnt"] or 0) > 0:
-            return
         for template in DEFAULT_HR_REQUEST_TEMPLATES:
+            existing = execute(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM hr_request_templates
+                WHERE title = %s AND request_type = %s
+                """,
+                (template["title"], template["type"]),
+            ).fetchone()
+            if existing and int(existing["cnt"] or 0) > 0:
+                continue
             execute(
                 """
                 INSERT INTO hr_request_templates (
@@ -5272,6 +5315,7 @@ def get_messages(
     allowed_sections: Optional[Iterable[str]] = None,
     *,
     dialog_id: int | None = None,
+    after_id: int | None = None,
 ) -> List[dict]:
     query_parts = [
         "SELECT id, chat_id, direction, text, message_id, author, created_at, section, dialog_id, quick_replies",
@@ -5282,6 +5326,9 @@ def get_messages(
     if dialog_id is not None:
         query_parts.append("AND dialog_id = %s")
         params.append(dialog_id)
+    if after_id is not None:
+        query_parts.append("AND id > %s")
+        params.append(int(after_id))
     if allowed_sections is not None:
         allowed_list = [section for section in allowed_sections if section]
         if allowed_list:
@@ -5292,7 +5339,10 @@ def get_messages(
             params.extend(allowed_list)
         else:
             query_parts.append("AND section IS NULL")
-    query_parts.append("ORDER BY created_at DESC")
+    if after_id is not None:
+        query_parts.append("ORDER BY id ASC")
+    else:
+        query_parts.append("ORDER BY created_at DESC")
     query_parts.append("LIMIT %s")
     params.append(limit)
     sql = "\n".join(query_parts)
@@ -5306,6 +5356,8 @@ def get_messages(
         message["created_at"] = message["created_at"].isoformat()
         message["attachments"] = attachments_map.get(int(message["id"]), [])
         messages.append(message)
+    if after_id is not None:
+        return messages
     return list(reversed(messages))
 
 

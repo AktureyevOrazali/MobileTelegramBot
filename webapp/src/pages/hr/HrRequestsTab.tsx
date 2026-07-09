@@ -65,6 +65,12 @@ const formatDate = (value: Date | string) => new Intl.DateTimeFormat('ru-RU', {
 }).format(new Date(value));
 
 const formatDocumentDate = () => new Intl.DateTimeFormat('ru-RU').format(new Date());
+const formatSignatureDate = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('ru-RU').format(date);
+};
 
 const normalizeSentence = (value: string) => {
   const sentence = value.trim().replace(/\s+/g, ' ');
@@ -74,15 +80,24 @@ const normalizeSentence = (value: string) => {
 
 const requestStatement = (request: HrRequest) => {
   if (typeof request.values.statement === 'string' && request.values.statement.trim()) {
-    return normalizeSentence(request.values.statement);
+    const statement = normalizeSentence(request.values.statement);
+    if (!statement.includes('????')) return statement;
   }
   const renderedText = request.renderedText.trim();
   if (/^я,\s/i.test(renderedText)) return renderedText;
+  if (renderedText && !renderedText.includes('????')) return normalizeSentence(renderedText);
   const prefix = `Я, ${request.employeeName},`;
   const reason = request.summary.trim();
   switch (request.type) {
-    case 'advance':
-      return normalizeSentence(`${prefix} запрашиваю аванс ${reason || request.period}`);
+    case 'advance': {
+      const amount = typeof request.values.amount === 'string' && request.values.amount.trim()
+        ? request.values.amount.trim()
+        : '____';
+      const advanceReason = typeof request.values.reason === 'string' && request.values.reason.trim()
+        ? request.values.reason.trim()
+        : reason || request.period || '_____________________';
+      return normalizeSentence(`Прошу выдать мне аванс в размере ${amount} в счет заработной платы, в связи с ${advanceReason}`);
+    }
     case 'vacation':
       return normalizeSentence(`${prefix} прошу предоставить отпуск на период ${request.period} в связи с ${reason}`);
     case 'businessTrip':
@@ -134,6 +149,11 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({
     () => requests.find((request) => request.id === selectedRequestId) ?? requests[0],
     [requests, selectedRequestId],
   );
+  const employeeSignedDate = formatSignatureDate(selectedRequest?.employeeSignature?.signedAt);
+  const hrDecisionStatus = decisionSignature?.status
+    ?? (selectedRequest?.status === 'approved' || selectedRequest?.status === 'rejected' ? selectedRequest.status : null);
+  const hrDecisionSignature = decisionSignature?.signature ?? selectedRequest?.hrSignature ?? null;
+  const hrDecisionSignedDate = formatSignatureDate(hrDecisionSignature?.signedAt);
 
   useEffect(() => {
     setDecisionComment('');
@@ -222,7 +242,7 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({
           </div>
         </div>
         <div className="hr-document-preview-shell">
-          <article className="hr-document-preview" aria-label="Форма заявления">
+          <article className="hr-document-preview hr-document-preview--hr-detail" aria-label="Форма заявления">
             <div className="hr-document-preview__to">
               <span>Директору организации "{requestOrganization(selectedRequest)}"</span>
               <span>от {requestEmployeePosition(selectedRequest)} {selectedRequest.employeeName}</span>
@@ -232,9 +252,27 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({
               <p>{requestStatement(selectedRequest)}</p>
             </div>
             <div className="hr-document-preview__footer">
-              <span>{formatDocumentDate()}</span>
-              <span>________________ / {selectedRequest.employeeName} /</span>
+              <span>{employeeSignedDate || formatDocumentDate()}</span>
+              <span className="hr-document-preview__signature">
+                <span>________________ / {selectedRequest.employeeName} /</span>
+                {selectedRequest.employeeSignature && (
+                  <small>
+                    {employeeSignedDate && <time dateTime={selectedRequest.employeeSignature.signedAt}>{employeeSignedDate}</time>}
+                    <span>Подписано ЭЦП</span>
+                  </small>
+                )}
+              </span>
             </div>
+            {hrDecisionStatus && hrDecisionSignature && (
+              <div className="hr-document-preview__decision">
+                <strong>Решение: {requestStatusLabels[hrDecisionStatus]}</strong>
+                <span>{selectedRequest.decidedByName || 'HR'}</span>
+                <small>
+                  {hrDecisionSignedDate && <time dateTime={hrDecisionSignature.signedAt}>{hrDecisionSignedDate}</time>}
+                  <span>Подписано ЭЦП</span>
+                </small>
+              </div>
+            )}
           </article>
         </div>
 

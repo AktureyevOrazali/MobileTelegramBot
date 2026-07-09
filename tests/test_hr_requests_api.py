@@ -173,6 +173,41 @@ class HrRequestsApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    def test_hr_document_includes_eds_signature_marks(self):
+        request_row = {
+            "id": 31,
+            "template_id": 7,
+            "template_title": "Vacation request",
+            "type": "vacation",
+            "employee_id": 20,
+            "employee_name": "Employee User",
+            "department": "Operator",
+            "status": "approved",
+            "values": {},
+            "rendered_text": "Please approve Employee User.",
+            "summary": "Annual leave",
+            "period": "2026-06-01 - 2026-06-10",
+            "submitted_at": "2026-05-19T10:10:00+00:00",
+            "updated_at": "2026-05-19T10:20:00+00:00",
+            "decided_at": "2026-05-19T10:20:00+00:00",
+            "decided_by": 10,
+            "decided_by_name": "HR User",
+            "decision_comment": "Approved",
+            "employee_signature": _signature_payload("submit"),
+            "hr_signature": _signature_payload("approved"),
+            "events": [],
+        }
+
+        with patch.object(api.database, "get_hr_request", return_value=request_row):
+            response = self.client.get("/api/hr/requests/31/document.doc")
+
+        content = response.content.decode("utf-8")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("26.05.2026", content)
+        self.assertIn("Подписано ЭЦП", content)
+        self.assertIn("Решение кадровика: Одобрено", content)
+        self.assertIn("________________ / HR User /", content)
+
     def test_employee_cannot_download_request_documents(self):
         api.app.dependency_overrides[api.get_current_user] = _employee_user
         request_row = {

@@ -13,7 +13,7 @@ class HrDatabaseTests(unittest.TestCase):
         self.assertTrue(database.can_manage_hr(database.ROLE_HR))
         self.assertFalse(database.can_manage_hr(database.ROLE_OPERATOR))
 
-    def test_default_advance_template_uses_reason_without_amount_placeholder(self):
+    def test_default_advance_template_uses_amount_and_reason_placeholders(self):
         advance_template = next(
             template for template in database.DEFAULT_HR_REQUEST_TEMPLATES
             if template["type"] == "advance"
@@ -21,9 +21,9 @@ class HrDatabaseTests(unittest.TestCase):
 
         self.assertEqual(
             advance_template["body"],
-            "Прошу выдать аванс сотруднику {employee_name}. Причина: {reason}.",
+            "Прошу выдать мне аванс в размере {amount} в счет заработной платы, в связи с {reason}.",
         )
-        self.assertEqual(advance_template["variables"], ["reason"])
+        self.assertEqual(advance_template["variables"], ["amount", "reason"])
 
     def test_render_hr_template_replaces_known_values_and_keeps_missing_markers(self):
         rendered = database.render_hr_template(
@@ -376,9 +376,13 @@ class HrDatabaseTests(unittest.TestCase):
         finally:
             database._lock = original_lock
 
-        self.assertGreaterEqual(len(inserted_templates), 4)
+        self.assertGreaterEqual(len(inserted_templates), 8)
         titles = {params[0] for params in inserted_templates}
-        self.assertIn("Заявление на отпуск", titles)
+        self.assertIn("Ежегодный оплачиваемый отпуск", titles)
+        self.assertIn("Отпуск без сохранения заработной платы", titles)
+        self.assertIn("Отпуск по беременности и родам", titles)
+        self.assertIn("Заявление на командировку", titles)
+        self.assertIn("Заявление на аванс", titles)
         self.assertIn("Справка с места работы", titles)
 
 

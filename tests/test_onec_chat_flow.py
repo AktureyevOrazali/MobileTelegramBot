@@ -205,9 +205,71 @@ class OneCChatFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["messages"][0]["quick_replies"], quick_replies)
 
-    def test_onec_history_with_bin_does_not_reactivate_closed_dialog(self):
-        def get_messages(chat_id, *, limit, dialog_id):
+    def test_onec_history_supports_delta_without_base64_payloads(self):
+        attachment_record = {
+            "id": 701,
+            "media_id": 801,
+            "kind": "image",
+            "mime_type": "image/png",
+            "size_bytes": 1234,
+            "original_name": "scan.png",
+            "width": 640,
+            "height": 480,
+            "duration_sec": None,
+            "caption": None,
+        }
+
+        def get_messages(chat_id, *, limit, dialog_id, after_id=None):
+            self.assertEqual(chat_id, 20)
+            self.assertEqual(limit, 50)
             self.assertEqual(dialog_id, 30)
+            self.assertEqual(after_id, 500)
+            return [
+                {
+                    "id": 501,
+                    "message_id": None,
+                    "chat_id": 20,
+                    "dialog_id": 30,
+                    "direction": "outgoing",
+                    "text": "Новый ответ",
+                    "author": "Operator",
+                    "created_at": "2026-05-04T00:01:00+00:00",
+                    "section": None,
+                    "attachments": [attachment_record],
+                    "quick_replies": [],
+                }
+            ]
+
+        with (
+            patch.object(api, "_resolve_onec_chat_id", return_value=20),
+            patch.object(api.database, "get_chat", return_value={"type": "onec"}),
+            patch.object(api.database, "get_chat_dialog", return_value={"id": 30, "chat_id": 20}),
+            patch.object(api.database, "get_messages", side_effect=get_messages),
+            patch.object(api, "_get_base64_content") as get_base64,
+        ):
+            response = self.client.get(
+                "/integrations/1c/messages",
+                params={
+                    "external_chat_id": "onec-chat",
+                    "chat_id": "20",
+                    "dialog_id": "30",
+                    "after_sync_id": "500",
+                    "limit": "50",
+                    "include_base64": "false",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["last_sync_id"], 501)
+        self.assertEqual(payload["messages"][0]["sync_id"], 501)
+        self.assertIsNone(payload["messages"][0]["attachments"][0]["base64_content"])
+        get_base64.assert_not_called()
+
+    def test_onec_history_with_bin_does_not_reactivate_closed_dialog(self):
+        def get_messages(chat_id, *, limit, dialog_id, after_id=None):
+            self.assertEqual(dialog_id, 30)
+            self.assertIsNone(after_id)
             return []
 
         with (

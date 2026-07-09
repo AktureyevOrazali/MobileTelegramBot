@@ -13,27 +13,27 @@ const requestTypes: HrRequestType[] = ['vacation', 'advance', 'sickLeave', 'busi
 
 const templatePresets: Record<HrRequestType, { variables: string; body: string }> = {
   vacation: {
-    variables: 'employee_name,start_date,end_date,days_count,reason',
-    body: 'Прошу предоставить {employee_name} ежегодный оплачиваемый отпуск с {start_date} по {end_date} на {days_count} календарных дней. Причина: {reason}.',
+    variables: 'start_date,end_date,days_count,days_count_words,reason',
+    body: 'Прошу предоставить мне ежегодный оплачиваемый трудовой отпуск продолжительностью {days_count} ({days_count_words}) календарных дней в период с {start_date} по {end_date}.',
   },
   advance: {
-    variables: 'employee_name,amount,payroll_month,reason',
-    body: 'Прошу выдать {employee_name} аванс в размере {amount} за {payroll_month}. Основание: {reason}.',
+    variables: 'amount,reason',
+    body: 'Прошу выдать мне аванс в размере {amount} в счет заработной платы, в связи с {reason}.',
   },
   sickLeave: {
-    variables: 'employee_name,start_date,end_date,reason',
-    body: 'Прошу оформить отсутствие {employee_name} по болезни с {start_date} по {end_date}. Основание: {reason}.',
+    variables: 'start_date,end_date,days_count,days_count_words,reason',
+    body: 'Прошу оформить мое отсутствие по болезни продолжительностью {days_count} ({days_count_words}) календарных дней в период с {start_date} по {end_date}. Основание: {reason}.',
   },
   businessTrip: {
-    variables: 'employee_name,destination,start_date,end_date,reason',
-    body: 'Прошу направить {employee_name} в командировку в {destination} с {start_date} по {end_date}. Цель: {reason}.',
+    variables: 'destination,start_date,end_date,days_count,days_count_words,purpose',
+    body: 'Прошу направить меня в служебную командировку в {destination} продолжительностью {days_count} ({days_count_words}) календарных дней в период с {start_date} по {end_date}. Цель командировки: {purpose}.',
   },
   certificate: {
-    variables: 'employee_name,position,department,recipient',
-    body: 'Прошу подготовить справку с места работы для {employee_name}. Организация-получатель: {recipient}.',
+    variables: 'recipient',
+    body: 'Прошу выдать мне справку с места работы для предоставления в {recipient}.',
   },
   serviceLetter: {
-    variables: 'employee_name,topic,reason',
+    variables: 'topic,reason',
     body: 'Прошу рассмотреть служебное письмо по теме "{topic}" для {employee_name}. Основание: {reason}.',
   },
 };

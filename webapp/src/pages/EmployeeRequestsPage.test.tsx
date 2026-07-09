@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import EmployeeRequestsPage from './EmployeeRequestsPage';
 import type { AuthSession, HrRequest, HrTemplate } from '../types';
@@ -123,6 +123,8 @@ describe('EmployeeRequestsPage', () => {
     vi.mocked(signWithNcalayer).mockResolvedValue(signature);
     fireEvent.click(screen.getByRole('button', { name: 'Подписать ЭЦП' }));
     await screen.findByText('ЭЦП подписано');
+    expect(screen.getByText('Подписано ЭЦП')).toBeInTheDocument();
+    expect(screen.getAllByText('26.05.2026').length).toBeGreaterThanOrEqual(1);
     fireEvent.click(screen.getByRole('button', { name: 'Отправить заявление' }));
 
     await waitFor(() => {
@@ -194,16 +196,17 @@ describe('EmployeeRequestsPage', () => {
         type: 'advance',
         templateTitle: 'Заявление на аванс',
         period: '',
-        renderedText: 'Прошу выдать аванс сотруднику Employee User. Причина: Срочно.',
+        renderedText: 'Прошу выдать мне аванс в размере 120 000 ₸ в счет заработной платы, в связи с Срочно.',
       }),
     };
 
     const { container } = render(<EmployeeRequestsPage apiClient={apiClient as any} session={session} />);
 
     await screen.findByText('Заявление на аванс');
+    fireEvent.change(screen.getByLabelText('Сумма аванса'), { target: { value: '120 000 ₸' } });
     fireEvent.change(container.querySelector('textarea') as HTMLTextAreaElement, { target: { value: 'Срочно' } });
 
-    const expectedStatement = 'Прошу выдать аванс сотруднику Employee User. Причина: Срочно.';
+    const expectedStatement = 'Прошу выдать мне аванс в размере 120 000 ₸ в счет заработной платы, в связи с Срочно.';
     expect(screen.getByText(expectedStatement)).toBeInTheDocument();
 
     vi.mocked(signWithNcalayer).mockResolvedValue(signature);
@@ -215,7 +218,7 @@ describe('EmployeeRequestsPage', () => {
       expect(apiClient.createHrRequest).toHaveBeenCalledWith(expect.objectContaining({
         templateId: 7,
         period: '',
-        values: expect.objectContaining({ statement: expectedStatement }),
+        values: expect.objectContaining({ amount: '120 000 ₸', statement: expectedStatement }),
         summary: 'Срочно',
         employeeSignature: signature,
       }));
@@ -248,6 +251,29 @@ describe('EmployeeRequestsPage', () => {
     expect(editor?.querySelector('.hr-employee-request-bottom .hr-template-preview__actions')).toBeInTheDocument();
     expect(editor?.querySelector('.hr-employee-request-fields')).toBeInTheDocument();
     expect(editor?.querySelector('.hr-employee-request-date-stack')).toBeInTheDocument();
+  });
+
+  it('shows a visual signed EDS example without creating a real signature', async () => {
+    const apiClient = {
+      fetchHrTemplates: vi.fn().mockResolvedValue([template]),
+      fetchHrRequests: vi.fn().mockResolvedValue([]),
+      createHrRequest: vi.fn(),
+    };
+
+    const { container } = render(<EmployeeRequestsPage apiClient={apiClient as any} session={session} />);
+
+    await screen.findByText('Vacation request');
+    const dateInputs = container.querySelectorAll('input[type="date"]');
+    fireEvent.change(dateInputs[0], { target: { value: '2026-06-01' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2026-06-10' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать пример ЭЦП' }));
+
+    const preview = screen.getByLabelText('Предпросмотр заявления');
+    expect(within(preview).getByText('Подписано ЭЦП')).toBeInTheDocument();
+    expect(within(preview).getByText('пример')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Отправить заявление' })).toBeDisabled();
+    expect(apiClient.createHrRequest).not.toHaveBeenCalled();
   });
 
   it('shows a clear empty state when HR has not created active templates yet', async () => {
@@ -298,7 +324,7 @@ describe('EmployeeRequestsPage', () => {
     expect(await screen.findByText('Вы еще не отправляли заявления.')).toBeInTheDocument();
   });
 
-  it('shows only the request type, status, and submitted date for an employee', async () => {
+  it('lets an employee open a sent request template with EDS marks', async () => {
     const decidedRequest: HrRequest = {
       ...submittedRequest,
       id: 41,
@@ -308,6 +334,7 @@ describe('EmployeeRequestsPage', () => {
       decidedAt: new Date('2026-05-20T09:00:00Z'),
       decidedBy: 10,
       decidedByName: 'HR Manager',
+      hrSignature: { ...signature, signedPayload: '{"action":"approved"}' },
     };
     const apiClient = {
       fetchHrTemplates: vi.fn().mockResolvedValue([template]),
@@ -326,6 +353,15 @@ describe('EmployeeRequestsPage', () => {
     expect(screen.queryByText('Согласовано кадровиком.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Word' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'PDF' })).not.toBeInTheDocument();
+
+    fireEvent.click(within(sentRequests).getByRole('button', { name: /Отпуск/ }));
+
+    const sentPreview = screen.getByLabelText('Форма отправленного заявления');
+    expect(sentPreview).toHaveTextContent('Прошу предоставить отпуск с 01.06.2026 по 10.06.2026.');
+    expect(sentPreview).toHaveTextContent('26.05.2026');
+    expect(sentPreview).toHaveTextContent('Подписано ЭЦП');
+    expect(sentPreview).toHaveTextContent('Решение: Одобрено');
+    expect(sentPreview).toHaveTextContent('Согласовано кадровиком.');
     expect(apiClient.downloadHrRequestDocument).not.toHaveBeenCalled();
   });
 });

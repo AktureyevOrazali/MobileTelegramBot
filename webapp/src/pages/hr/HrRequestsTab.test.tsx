@@ -4,6 +4,15 @@ import { describe, expect, it } from 'vitest';
 import type { HrRequest } from '../../types';
 import HrRequestsTab from './HrRequestsTab';
 
+const signature = {
+  signature: 'MIICMS',
+  signedPayload: '{"action":"submit"}',
+  signedAt: '2026-05-26T10:00:00.000Z',
+  certificateSubject: 'CN=Employee User',
+  certificateSerial: '123456',
+  certificatePem: null,
+};
+
 const request: HrRequest = {
   id: 1,
   templateId: 10,
@@ -59,5 +68,23 @@ describe('HrRequestsTab', () => {
     expect(within(documentPreview).getByText('Директору организации "ТОО Ромашка"')).toBeInTheDocument();
     expect(within(documentPreview).getByText('от Финансовый аналитик Алия Садыкова')).toBeInTheDocument();
     expect(container.querySelector('.hr-meta-list')).not.toBeInTheDocument();
+  });
+
+  it('shows employee and HR EDS stamps in the document preview', () => {
+    const decidedRequest: HrRequest = {
+      ...request,
+      status: 'approved',
+      employeeSignature: signature,
+      hrSignature: { ...signature, signedPayload: '{"action":"approved"}' },
+      decidedByName: 'HR User',
+    };
+
+    render(<HrRequestsTab requests={[decidedRequest]} />);
+
+    const documentPreview = screen.getByLabelText('Форма заявления');
+    expect(within(documentPreview).getAllByText('Подписано ЭЦП')).toHaveLength(2);
+    expect(within(documentPreview).getAllByText('26.05.2026').length).toBeGreaterThanOrEqual(2);
+    expect(within(documentPreview).getByText('Решение: Одобрено')).toBeInTheDocument();
+    expect(within(documentPreview).getByText('HR User')).toBeInTheDocument();
   });
 });

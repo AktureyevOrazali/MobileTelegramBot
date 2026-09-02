@@ -17,11 +17,11 @@ const statusLabels: Record<SurveyTemplateStatus, string> = {
   archived: 'Архив',
 };
 
-type LaunchOptionId = 'schedule' | 'month_start' | 'after_appeal_closed' | 'custom_date';
+type LaunchOptionId = 'month_start' | 'quarter_end' | 'after_appeal_closed' | 'custom_date';
 
 const launchOptions: Array<{ id: LaunchOptionId; label: string; icon: string }> = [
-  { id: 'schedule', label: 'По расписанию', icon: 'calendar' },
   { id: 'month_start', label: 'Начало месяца', icon: 'trend' },
+  { id: 'quarter_end', label: 'Конец квартала', icon: 'calendar' },
   { id: 'after_appeal_closed', label: 'После обращения', icon: 'message' },
   { id: 'custom_date', label: 'Своя дата', icon: 'clock' },
 ];
@@ -38,9 +38,7 @@ interface SurveyBuilderSectionProps {
   >;
   isLoading: boolean;
   onSave: () => void;
-  onDuplicate: () => void;
   onDelete: () => void;
-  onNew: () => void;
   updateQuestion: (index: number, patch: Partial<SurveyQuestion>) => void;
   addQuestion: () => void;
   removeQuestion: (index: number) => void;
@@ -63,9 +61,7 @@ export const SurveyBuilderSection: React.FC<SurveyBuilderSectionProps> = ({
   setDraft,
   isLoading,
   onSave,
-  onDuplicate,
   onDelete,
-  onNew,
   updateQuestion,
   addQuestion,
   removeQuestion,
@@ -75,12 +71,22 @@ export const SurveyBuilderSection: React.FC<SurveyBuilderSectionProps> = ({
 }) => {
   const [expandedQuestionIndex, setExpandedQuestionIndex] = useState<number | null>(0);
   const [isLaunchOptionsOpen, setIsLaunchOptionsOpen] = useState(false);
+  const selectQuestion = (index: number) => {
+    setExpandedQuestionIndex(index);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`survey-builder-question-${index}`)?.scrollIntoView?.({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+  };
   const activeLaunchOption: LaunchOptionId = (() => {
     if (draft.triggerType === 'after_appeal_closed') return 'after_appeal_closed';
     const calendarRule = draft.launchRules.find((rule) => rule.type === 'calendar');
     if (calendarRule?.schedule === 'month_start') return 'month_start';
+    if (calendarRule?.schedule === 'quarter_end') return 'quarter_end';
     if (calendarRule?.schedule === 'custom_dates' || draft.scheduledAt) return 'custom_date';
-    return 'schedule';
+    return 'month_start';
   })();
 
   const setLaunchPreset = (option: LaunchOptionId) => {
@@ -91,6 +97,15 @@ export const SurveyBuilderSection: React.FC<SurveyBuilderSectionProps> = ({
           triggerType: 'periodic',
           scheduledAt: null,
           launchRules: [{ type: 'calendar', schedule: 'month_start', dates: [] }],
+        };
+      }
+
+      if (option === 'quarter_end') {
+        return {
+          ...current,
+          triggerType: 'periodic',
+          scheduledAt: null,
+          launchRules: [{ type: 'calendar', schedule: 'quarter_end', dates: [] }],
         };
       }
 
@@ -115,58 +130,62 @@ export const SurveyBuilderSection: React.FC<SurveyBuilderSectionProps> = ({
         };
       }
 
-      return {
-        ...current,
-        triggerType: 'periodic',
-        scheduledAt: null,
-        launchRules: [{ type: 'calendar', dates: [] }],
-      };
+      return current;
     });
   };
 
   return (
     <section className="surveys-layout surveys-layout--builder surveys-builder-shell">
       <SurveyBuilderSidebar
-        audience={audience}
         templates={templates}
         selectedTemplateId={selectedTemplateId}
-        onAudienceChange={onAudienceChange}
+        draft={draft}
+        expandedQuestionIndex={expandedQuestionIndex}
         onSelectTemplate={onSelectTemplate}
-        onNew={onNew}
+        onSelectQuestion={selectQuestion}
       />
 
       <div className="surveys-panel surveys-editor surveys-editor--builder">
         <div className="surveys-editor__head surveys-editor__head--builder">
-          <h2>Конструктор</h2>
-          <div className="surveys-actions">
-            <button
-              type="button"
-              className="surveys-button"
-              onClick={onDuplicate}
-              disabled={!selectedTemplateId || isLoading}
-            >
-              Дублировать
-            </button>
-            <button
-              type="button"
-              className="surveys-button surveys-button--danger-text"
-              onClick={onDelete}
-              disabled={!selectedTemplateId || isLoading}
-            >
-              Удалить
-            </button>
-            <button
-              type="button"
-              className="surveys-button surveys-button--primary"
-              onClick={onSave}
-              disabled={isLoading}
-            >
-              Сохранить
-            </button>
+          <h2>{draft.title || 'Конструктор опроса'}</h2>
+
+          <div className="surveys-builder-toolbar">
+            <div className="surveys-segmented surveys-segmented--builder" aria-label="Аудитория опроса">
+              {(['client', 'employee'] as SurveyTemplateAudience[]).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className={audience === item ? 'is-active' : ''}
+                  onClick={() => onAudienceChange(item)}
+                >
+                  {item === 'client' ? 'Клиенты' : 'Сотрудники'}
+                </button>
+              ))}
+            </div>
+            <div className="surveys-actions">
+              {selectedTemplateId ? (
+                <button
+                  type="button"
+                  className="surveys-button surveys-button--danger-text"
+                  onClick={onDelete}
+                  disabled={isLoading}
+                >
+                  Удалить
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="surveys-button surveys-button--primary"
+                onClick={onSave}
+                disabled={isLoading}
+              >
+                Сохранить
+              </button>
+            </div>
           </div>
         </div>
 
-        <section className="surveys-card surveys-builder-card">
+        <section className="surveys-card surveys-builder-card surveys-builder-card--settings">
           <div className="surveys-builder-card__row">
             <label className="surveys-field surveys-builder-field surveys-builder-field--grow">
               <span>Название</span>
@@ -191,7 +210,7 @@ export const SurveyBuilderSection: React.FC<SurveyBuilderSectionProps> = ({
         <section className="surveys-card surveys-builder-card surveys-builder-card--launch">
           <div className="surveys-launch-card__head">
             <div>
-              <h3>Запуск</h3>
+              <span className="surveys-builder-card__label">Запуск</span>
               <p className="surveys-builder-card__meta">{buildLaunchSummary(draft)}</p>
             </div>
             <button

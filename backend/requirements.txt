@@ -4,7 +4,6 @@ uvicorn[standard]==0.29.0
 pyTelegramBotAPI==4.16.1
 python-dotenv==1.0.1
 email-validator==2.1.1
-openai==1.56.2
 psycopg2-binary>=2.9.10
 SQLAlchemy==2.0.36
 requests==2.32.5

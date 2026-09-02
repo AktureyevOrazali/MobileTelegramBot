@@ -204,7 +204,7 @@ const HrTemplatesTab: React.FC<HrTemplatesTabProps> = ({ templates, isLoading = 
                 </div>
                 <div className="hr-document-preview__footer">
                   <span>{new Intl.DateTimeFormat('ru-RU').format(new Date())}</span>
-                  <span>________________ / {'{employee_name}'} /</span>
+                  <span>{'{employee_name}'}</span>
                 </div>
               </article>
             </div>

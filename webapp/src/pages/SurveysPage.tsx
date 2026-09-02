@@ -7,7 +7,6 @@ import DataLoadingState from '../components/DataLoadingState';
 import { SurveyBuilderSection } from '../components/surveys/SurveyBuilderSection';
 import {
   createBlankSurveyQuestion,
-  SURVEY_TOPICS,
   useSurveyData,
 } from '../hooks/useSurveyData';
 import type {
@@ -26,9 +25,7 @@ import type {
   SurveyQuestion,
   SurveyQuestionOption,
   SurveyQuestionType,
-  SurveyTemplate,
   SurveyTemplateAudience,
-  SurveyTemplateStatus,
 } from '../types';
 
 interface SurveysPageProps {
@@ -60,17 +57,6 @@ export function getSurveysPathForSection(section: SurveysSection): string {
 }
 
 const numberFormatter = new Intl.NumberFormat('ru-RU');
-
-const statusLabels: Record<SurveyTemplateStatus, string> = {
-  draft: 'Черновик',
-  active: 'Активный',
-  archived: 'Архив',
-};
-
-const audienceLabels: Record<SurveyTemplateAudience, string> = {
-  client: 'Опросы клиентов',
-  employee: 'Опросы сотрудников',
-};
 
 const questionTypeLabels: Record<SurveyQuestionType, string> = {
   scale: 'Шкала',
@@ -303,14 +289,23 @@ const createAssessmentDonutOption = (low: number, neutral: number, high: number)
   ],
 });
 
-const AssessmentBinFilter: React.FC<{ clientRatings?: Array<{ clientBin: string | null }> }> = ({ clientRatings = [] }) => {
-  const bins = Array.from(new Set(clientRatings.map((client) => client.clientBin).filter((bin): bin is string => Boolean(bin))));
+const AssessmentBinFilter: React.FC<{
+  bins: string[];
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}> = ({ bins, value, disabled = false, onChange }) => {
   return (
     <div className="surveys-assessment-filter">
       <span>БИН</span>
-      <select aria-label="БИН">
-        <option>Все БИНы</option>
-        {bins.map((bin) => <option key={bin}>БИН {bin}</option>)}
+      <select
+        aria-label="БИН"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">Все БИНы</option>
+        {bins.map((bin) => <option key={bin} value={bin}>БИН {bin}</option>)}
       </select>
     </div>
   );
@@ -326,6 +321,8 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
   const [employeeAnalytics, setEmployeeAnalytics] = useState<EmployeeClientAssessmentAnalytics | null>(null);
   const [employeeLoading, setEmployeeLoading] = useState(false);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
+  const [employeeBin, setEmployeeBin] = useState('');
+  const [employeeBins, setEmployeeBins] = useState<string[]>([]);
 
   const [ratingsSummary, setRatingsSummary] = useState<RatingsSummary | null>(null);
   const [aiRatings, setAiRatings] = useState<AiRatingsAnalytics | null>(null);
@@ -342,10 +339,10 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     () => data.templates.filter((template) => template.audience === builderAudience && template.status !== 'archived'),
     [builderAudience, data.templates],
   );
-  const selectedLedgerEntry = useMemo<RatingLedgerEntry | null>(
-    () => ledger?.items[0] ?? null,
-    [ledger],
-  );
+  const [selectedLedgerEntryId, setSelectedLedgerEntryId] = useState<number | null>(null);
+  const selectedLedgerEntry = useMemo<RatingLedgerEntry | null>(() => (
+    ledger?.items.find((item) => item.ratingId === selectedLedgerEntryId) ?? ledger?.items[0] ?? null
+  ), [ledger, selectedLedgerEntryId]);
 
   const setActiveSection = useCallback(
     (section: SurveysSection) => {
@@ -357,12 +354,21 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     [location.pathname, navigate],
   );
 
-  const loadEmployeeAnalytics = useCallback(async () => {
+  const loadEmployeeAnalytics = useCallback(async (clientBin = '') => {
     setEmployeeLoading(true);
     setEmployeeError(null);
     try {
-      const assessmentAnalytics = await apiClient.fetchEmployeeClientAssessmentAnalytics();
+      const assessmentAnalytics = await apiClient.fetchEmployeeClientAssessmentAnalytics({
+        clientBin: clientBin || null,
+      });
       setEmployeeAnalytics(assessmentAnalytics);
+      if (!clientBin) {
+        setEmployeeBins(Array.from(new Set(
+          assessmentAnalytics.clientRatings
+            .map((client) => client.clientBin)
+            .filter((bin): bin is string => Boolean(bin)),
+        )).sort());
+      }
     } catch (error) {
       setEmployeeError(error instanceof Error ? error.message : 'Не удалось загрузить аналитику опросов сотрудников.');
     } finally {
@@ -388,6 +394,11 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
       setRatingsEmployeeAssessmentAnalytics(employeeAssessment);
       setMatrix(nextMatrix);
       setLedger(nextLedger);
+      setSelectedLedgerEntryId((current) => (
+        nextLedger.items.some((item) => item.ratingId === current)
+          ? current
+          : nextLedger.items[0]?.ratingId ?? null
+      ));
     } catch (error) {
       setRatingsError(error instanceof Error ? error.message : 'Не удалось загрузить сводную аналитику.');
     } finally {
@@ -397,9 +408,9 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
 
   useEffect(() => {
     if (activeSection === 'employees') {
-      void loadEmployeeAnalytics();
+      void loadEmployeeAnalytics(employeeBin);
     }
-  }, [activeSection, loadEmployeeAnalytics]);
+  }, [activeSection, employeeBin, loadEmployeeAnalytics]);
 
   useEffect(() => {
     if (activeSection === 'ratings') {
@@ -493,18 +504,23 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
     <div className="page surveys-page surveys-page--app-sidebar">
       <header className="surveys-hero">
         <div>
-          <span className="surveys-eyebrow">Опросы и оценки</span>
           <h1>Опросы клиентов и сотрудников</h1>
-          <p>Конструктор анкет, отдельная аналитика по клиентам и сотрудникам, общий реестр движений.</p>
         </div>
         <div className="surveys-hero-actions">
-          {activeSection === 'employees' ? <AssessmentBinFilter clientRatings={employeeAnalytics?.clientRatings} /> : null}
+          {activeSection === 'employees' ? (
+            <AssessmentBinFilter
+              bins={employeeBins}
+              value={employeeBin}
+              disabled={employeeLoading}
+              onChange={setEmployeeBin}
+            />
+          ) : null}
           <button
             type="button"
             className="surveys-button surveys-button--primary"
             onClick={() => void (
               activeSection === 'employees'
-                ? loadEmployeeAnalytics()
+                ? loadEmployeeAnalytics(employeeBin)
                 : activeSection === 'ratings'
                   ? loadRatings()
                   : data.load()
@@ -550,9 +566,7 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
           setDraft={data.setDraft}
           isLoading={data.isLoading}
           onSave={() => void data.saveDraft()}
-          onDuplicate={() => void data.duplicateSelected()}
           onDelete={() => void data.deleteSelected()}
-          onNew={() => data.startNewTemplate(builderAudience)}
           updateQuestion={updateQuestion}
           addQuestion={addQuestion}
           removeQuestion={removeQuestion}
@@ -587,234 +601,10 @@ const SurveysPage: React.FC<SurveysPageProps> = ({ apiClient }) => {
           error={ratingsError}
           onRefresh={() => void loadRatings()}
           onApplyFilters={() => void loadRatings({ ...ledgerFilters, offset: 0 })}
+          onSelectLedgerEntry={setSelectedLedgerEntryId}
         />
       ) : null}
     </div>
-  );
-};
-
-interface BuilderSectionProps {
-  audience: SurveyTemplateAudience;
-  onAudienceChange: (audience: SurveyTemplateAudience) => void;
-  templates: SurveyTemplate[];
-  selectedTemplateId: number | null;
-  onSelectTemplate: (id: number | null) => void;
-  draft: Omit<SurveyTemplate, 'id' | 'createdBy' | 'createdAt' | 'updatedAt'>;
-  setDraft: React.Dispatch<React.SetStateAction<Omit<SurveyTemplate, 'id' | 'createdBy' | 'createdAt' | 'updatedAt'>>>;
-  isLoading: boolean;
-  onSave: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  onNew: () => void;
-  updateQuestion: (index: number, patch: Partial<SurveyQuestion>) => void;
-  addQuestion: () => void;
-  removeQuestion: (index: number) => void;
-  updateOption: (questionIndex: number, optionIndex: number, patch: Partial<SurveyQuestionOption>) => void;
-  addOption: (questionIndex: number) => void;
-  removeOption: (questionIndex: number, optionIndex: number) => void;
-}
-
-const BuilderSection: React.FC<BuilderSectionProps> = ({
-  audience,
-  onAudienceChange,
-  templates,
-  selectedTemplateId,
-  onSelectTemplate,
-  draft,
-  setDraft,
-  isLoading,
-  onSave,
-  onDuplicate,
-  onDelete,
-  onNew,
-  updateQuestion,
-  addQuestion,
-  removeQuestion,
-  updateOption,
-  addOption,
-  removeOption,
-}) => (
-  <section className="surveys-layout surveys-layout--builder">
-    <aside className="surveys-panel surveys-template-list">
-      <div className="surveys-segmented">
-        {(['client', 'employee'] as SurveyTemplateAudience[]).map((item) => (
-          <button
-            key={item}
-            type="button"
-            className={audience === item ? 'is-active' : ''}
-            onClick={() => onAudienceChange(item)}
-          >
-            {audienceLabels[item]}
-          </button>
-        ))}
-      </div>
-      <button type="button" className="surveys-button surveys-button--full" onClick={onNew}>
-        Новый опрос
-      </button>
-      <div className="surveys-template-list__items">
-        {templates.length === 0 ? <p className="surveys-muted">Шаблонов пока нет.</p> : null}
-        {templates.map((template) => (
-          <button
-            key={template.id}
-            type="button"
-            className={`surveys-template-card ${selectedTemplateId === template.id ? 'is-active' : ''}`}
-            onClick={() => onSelectTemplate(template.id)}
-          >
-            <strong>{template.title}</strong>
-            <span>{statusLabels[template.status]} · {template.questions.length} вопросов</span>
-          </button>
-        ))}
-      </div>
-    </aside>
-
-    <div className="surveys-panel surveys-editor">
-      <div className="surveys-editor__head">
-        <div>
-          <span className="surveys-eyebrow">{audienceLabels[draft.audience]}</span>
-          <h2>Конструктор</h2>
-        </div>
-        <div className="surveys-actions">
-          <button type="button" className="surveys-button" onClick={onDuplicate} disabled={!selectedTemplateId || isLoading}>Дублировать</button>
-          <button type="button" className="surveys-button" onClick={onDelete} disabled={!selectedTemplateId || isLoading}>Удалить</button>
-          <button type="button" className="surveys-button surveys-button--primary" onClick={onSave} disabled={isLoading}>Сохранить</button>
-        </div>
-      </div>
-
-      <div className="surveys-form-grid">
-        <label className="surveys-field">
-          <span>Название</span>
-          <input value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} />
-        </label>
-        <label className="surveys-field">
-          <span>Статус</span>
-          <select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as SurveyTemplateStatus }))}>
-            {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-        </label>
-        <label className="surveys-field surveys-field--wide">
-          <span>Описание</span>
-          <input value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} />
-        </label>
-      </div>
-
-      <div className="surveys-question-head">
-        <div>
-          <h3>Вопросы</h3>
-          <p>{draft.questions.length} в шаблоне</p>
-        </div>
-        <button type="button" className="surveys-button" onClick={addQuestion}>Добавить вопрос</button>
-      </div>
-
-      <div className="surveys-question-list">
-        {draft.questions.map((question, index) => (
-          <QuestionEditor
-            key={`${question.id ?? 'new'}-${index}`}
-            question={question}
-            index={index}
-            updateQuestion={updateQuestion}
-            removeQuestion={removeQuestion}
-            updateOption={updateOption}
-            addOption={addOption}
-            removeOption={removeOption}
-          />
-        ))}
-      </div>
-    </div>
-  </section>
-);
-
-interface QuestionEditorProps {
-  question: SurveyQuestion;
-  index: number;
-  updateQuestion: (index: number, patch: Partial<SurveyQuestion>) => void;
-  removeQuestion: (index: number) => void;
-  updateOption: (questionIndex: number, optionIndex: number, patch: Partial<SurveyQuestionOption>) => void;
-  addOption: (questionIndex: number) => void;
-  removeOption: (questionIndex: number, optionIndex: number) => void;
-}
-
-const QuestionEditor: React.FC<QuestionEditorProps> = ({
-  question,
-  index,
-  updateQuestion,
-  removeQuestion,
-  updateOption,
-  addOption,
-  removeOption,
-}) => {
-  const isChoice = question.questionType === 'single_choice' || question.questionType === 'multi_choice';
-
-  const setQuestionType = (questionType: SurveyQuestionType) => {
-    if (questionType === 'single_choice' || questionType === 'multi_choice') {
-      updateQuestion(index, {
-        questionType,
-        config: question.config.options?.length
-          ? question.config
-          : { options: [{ id: 'option_1', label: 'Да' }, { id: 'option_2', label: 'Нет' }] },
-      });
-      return;
-    }
-    updateQuestion(index, {
-      questionType,
-      config: questionType === 'scale' ? { min: 1, max: 5, presentation: 'scale' } : {},
-    });
-  };
-
-  return (
-    <article className="surveys-question">
-      <div className="surveys-question__top">
-        <strong>Вопрос {index + 1}</strong>
-        <button type="button" className="surveys-link-button" onClick={() => removeQuestion(index)}>Удалить</button>
-      </div>
-      <label className="surveys-field surveys-field--wide">
-        <span>Текст вопроса</span>
-        <input value={question.text} onChange={(event) => updateQuestion(index, { text: event.target.value })} />
-      </label>
-      <div className="surveys-form-grid">
-        <label className="surveys-field">
-          <span>Тип ответа</span>
-          <select value={question.questionType} onChange={(event) => setQuestionType(event.target.value as SurveyQuestionType)}>
-            {Object.entries(questionTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-        </label>
-        <label className="surveys-field">
-          <span>Тематика</span>
-          <select value={question.topic ?? ''} onChange={(event) => updateQuestion(index, { topic: event.target.value || null })}>
-            {SURVEY_TOPICS.map((topic) => <option key={topic.id} value={topic.id}>{topic.label}</option>)}
-          </select>
-        </label>
-        <label className="surveys-check">
-          <input type="checkbox" checked={question.required} onChange={() => updateQuestion(index, { required: !question.required })} />
-          <span>Обязательный</span>
-        </label>
-      </div>
-      {question.questionType === 'scale' ? (
-        <div className="surveys-scale-row">
-          <label className="surveys-field">
-            <span>Минимум</span>
-            <input type="number" min={1} max={9} value={question.config.min ?? 1} onChange={(event) => updateQuestion(index, { config: { ...question.config, min: Number(event.target.value) } })} />
-          </label>
-          <label className="surveys-field">
-            <span>Максимум</span>
-            <input type="number" min={2} max={10} value={question.config.max ?? 5} onChange={(event) => updateQuestion(index, { config: { ...question.config, max: Number(event.target.value) } })} />
-          </label>
-        </div>
-      ) : null}
-      {isChoice ? (
-        <div className="surveys-options">
-          <div className="surveys-options__head">
-            <span>Варианты ответа</span>
-            <button type="button" className="surveys-button surveys-button--compact" onClick={() => addOption(index)}>Добавить</button>
-          </div>
-          {(question.config.options ?? []).map((option, optionIndex) => (
-            <div key={`${option.id}-${optionIndex}`} className="surveys-option-row">
-              <input value={option.label} onChange={(event) => updateOption(index, optionIndex, { label: event.target.value })} />
-              <button type="button" className="surveys-link-button" onClick={() => removeOption(index, optionIndex)}>Удалить</button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </article>
   );
 };
 
@@ -1436,6 +1226,7 @@ const RatingsAnalytics: React.FC<{
   error: string | null;
   onRefresh: () => void;
   onApplyFilters: () => void;
+  onSelectLedgerEntry: (ratingId: number) => void;
 }> = ({
   summary,
   aiRatings,
@@ -1452,6 +1243,7 @@ const RatingsAnalytics: React.FC<{
   error,
   onRefresh,
   onApplyFilters,
+  onSelectLedgerEntry,
 }) => (
   <section className="surveys-panel surveys-analytics-panel">
     <div className="surveys-panel__head">
@@ -1568,6 +1360,7 @@ const RatingsAnalytics: React.FC<{
             filters={filters}
             onFiltersChange={onFiltersChange}
             onApplyFilters={onApplyFilters}
+            onSelectEntry={onSelectLedgerEntry}
           />
         ) : null}
       </section>
@@ -1783,7 +1576,8 @@ const LedgerSlice: React.FC<{
   filters: RatingLedgerFilters;
   onFiltersChange: React.Dispatch<React.SetStateAction<RatingLedgerFilters>>;
   onApplyFilters: () => void;
-}> = ({ ledger, matrix, selectedEntry, filters, onFiltersChange, onApplyFilters }) => (
+  onSelectEntry: (ratingId: number) => void;
+}> = ({ ledger, matrix, selectedEntry, filters, onFiltersChange, onApplyFilters, onSelectEntry }) => (
   <div className="surveys-ledger">
     <Card title="Фильтры взаимных оценок">
       <div className="surveys-filter-grid">
@@ -1850,6 +1644,12 @@ const LedgerSlice: React.FC<{
       </div>
       <DataTable
         headers={['Номер обращения', 'Дата', 'Кто поставил', 'Кому поставил', 'Балл', 'Категория', 'Регион']}
+        rowKeys={(ledger?.items ?? []).map((item) => String(item.ratingId))}
+        selectedRowKey={selectedEntry ? String(selectedEntry.ratingId) : null}
+        onRowSelect={(rowIndex) => {
+          const entry = ledger?.items[rowIndex];
+          if (entry) onSelectEntry(entry.ratingId);
+        }}
         rows={(ledger?.items ?? []).map((item) => [
           item.appealId === null ? '-' : String(item.appealId),
           formatDate(item.createdAt),
@@ -1962,7 +1762,13 @@ const ToneRow: React.FC<{ label: string; value: number; count: number; tone: 'ok
   </div>
 );
 
-const DataTable: React.FC<{ headers: string[]; rows: string[][] }> = ({ headers, rows }) => (
+const DataTable: React.FC<{
+  headers: string[];
+  rows: string[][];
+  rowKeys?: string[];
+  selectedRowKey?: string | null;
+  onRowSelect?: (rowIndex: number) => void;
+}> = ({ headers, rows, rowKeys, selectedRowKey, onRowSelect }) => (
   <div className="surveys-table-wrap">
     <table className="surveys-table">
       <thead>
@@ -1971,11 +1777,26 @@ const DataTable: React.FC<{ headers: string[]; rows: string[][] }> = ({ headers,
       <tbody>
         {rows.length === 0 ? (
           <tr><td colSpan={headers.length}>Нет данных.</td></tr>
-        ) : rows.map((row, index) => (
-          <tr key={`${row[0]}-${index}`}>
+        ) : rows.map((row, index) => {
+          const rowKey = rowKeys?.[index] ?? `${row[0]}-${index}`;
+          return (
+          <tr
+            key={rowKey}
+            className={`${onRowSelect ? 'is-selectable' : ''} ${selectedRowKey === rowKey ? 'is-selected' : ''}`.trim()}
+            onClick={onRowSelect ? () => onRowSelect(index) : undefined}
+            onKeyDown={onRowSelect ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onRowSelect(index);
+              }
+            } : undefined}
+            tabIndex={onRowSelect ? 0 : undefined}
+            aria-selected={onRowSelect ? selectedRowKey === rowKey : undefined}
+          >
             {row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`}>{cell}</td>)}
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   </div>

@@ -1,85 +1,71 @@
 import React from 'react';
-import type { SurveyTemplate, SurveyTemplateAudience } from '../../types';
-import { buildBuilderTemplateGroups, buildLaunchSummary } from './surveyBuilderModel';
+import type { SurveyTemplate } from '../../types';
+import { buildLaunchSummary, buildQuestionPreview } from './surveyBuilderModel';
+
+type SurveyDraft = Omit<SurveyTemplate, 'id' | 'createdBy' | 'createdAt' | 'updatedAt'>;
 
 interface SurveyBuilderSidebarProps {
-  audience: SurveyTemplateAudience;
   templates: SurveyTemplate[];
   selectedTemplateId: number | null;
-  onAudienceChange: (audience: SurveyTemplateAudience) => void;
-  onSelectTemplate: (id: number | null) => void;
-  onNew: () => void;
+  draft: SurveyDraft;
+  expandedQuestionIndex: number | null;
+  onSelectTemplate: (id: number) => void;
+  onSelectQuestion: (index: number) => void;
 }
 
+const statusLabels: Record<SurveyDraft['status'], string> = {
+  active: 'Активный опрос',
+  draft: 'Черновик',
+  archived: 'Архив',
+};
+
 export const SurveyBuilderSidebar: React.FC<SurveyBuilderSidebarProps> = ({
-  audience,
   templates,
   selectedTemplateId,
-  onAudienceChange,
+  draft,
+  expandedQuestionIndex,
   onSelectTemplate,
-  onNew,
-}) => {
-  const { activeTemplate, savedTemplates } = buildBuilderTemplateGroups(templates);
+  onSelectQuestion,
+}) => (
+  <aside className="surveys-panel surveys-builder-sidebar">
+    <div className="surveys-builder-sidebar__head">
+      <span className={`surveys-status-dot surveys-status-dot--${draft.status}`}>
+        {statusLabels[draft.status]}
+      </span>
+      <label className="surveys-field">
+        <select
+          aria-label="Опрос"
+          value={selectedTemplateId ?? ''}
+          disabled={templates.length === 0}
+          onChange={(event) => onSelectTemplate(Number(event.target.value))}
+        >
+          {templates.map((template) => (
+            <option key={template.id} value={template.id}>{template.title}</option>
+          ))}
+        </select>
+      </label>
+      <small>{buildLaunchSummary(draft)}</small>
+    </div>
 
-  return (
-    <aside className="surveys-panel surveys-template-list surveys-builder-sidebar">
-      <div className="surveys-segmented surveys-segmented--builder">
-        {(['client', 'employee'] as SurveyTemplateAudience[]).map((item) => (
-          <button
-            key={item}
-            type="button"
-            className={audience === item ? 'is-active' : ''}
-            onClick={() => onAudienceChange(item)}
-          >
-            {item === 'client' ? 'Клиенты' : 'Сотрудники'}
-          </button>
-        ))}
+    <nav className="surveys-question-nav" aria-label="Вопросы активного опроса">
+      <div className="surveys-question-nav__title">
+        <span>Вопросы</span>
+        <strong>{draft.questions.length}</strong>
       </div>
-
-      <button
-        type="button"
-        className="surveys-button surveys-button--full surveys-button--ghost"
-        onClick={onNew}
-      >
-        Новый опрос
-      </button>
-
-      <section className="surveys-builder-sidebar__section">
-        <div className="surveys-builder-sidebar__title">Активный опрос</div>
-        {activeTemplate ? (
-          <button
-            type="button"
-            className={`surveys-template-card ${selectedTemplateId === activeTemplate.id ? 'is-active' : ''}`}
-            onClick={() => onSelectTemplate(activeTemplate.id)}
-          >
-            <strong>{activeTemplate.title}</strong>
-            <span>{buildLaunchSummary(activeTemplate)}</span>
-          </button>
-        ) : (
-          <div className="surveys-empty">Активного опроса нет.</div>
-        )}
-      </section>
-
-      <section className="surveys-builder-sidebar__section">
-        <div className="surveys-builder-sidebar__title">Сохраненные опросы</div>
-        <div className="surveys-template-list__items">
-          {savedTemplates.length === 0 ? (
-            <div className="surveys-empty">Сохраненных опросов нет.</div>
-          ) : (
-            savedTemplates.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                className={`surveys-template-card ${selectedTemplateId === template.id ? 'is-active' : ''}`}
-                onClick={() => onSelectTemplate(template.id)}
-              >
-                <strong>{template.title}</strong>
-                <span>{buildLaunchSummary(template)}</span>
-              </button>
-            ))
-          )}
-        </div>
-      </section>
-    </aside>
-  );
-};
+      {draft.questions.map((question, index) => (
+        <button
+          key={`${question.id ?? 'new'}-${index}`}
+          type="button"
+          className={expandedQuestionIndex === index ? 'is-active' : ''}
+          onClick={() => onSelectQuestion(index)}
+        >
+          <span>{index + 1}</span>
+          <div>
+            <strong>{question.text || `Вопрос ${index + 1}`}</strong>
+            <small>{buildQuestionPreview(question)}</small>
+          </div>
+        </button>
+      ))}
+    </nav>
+  </aside>
+);

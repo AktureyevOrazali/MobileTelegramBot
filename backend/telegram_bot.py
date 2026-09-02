@@ -772,12 +772,10 @@ def _send_survey_channel_message(
             quick_replies=quick_replies,
         )
         return
-    _send_and_store_message(
+    logger.warning(
+        "Survey delivery blocked for non-1C chat %s (type=%s)",
         chat_id,
-        text,
-        dialog_id=dialog_id,
-        author=author,
-        section=section,
+        (chat or {}).get("type"),
     )
 
 

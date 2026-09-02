@@ -103,6 +103,59 @@ def normalize_options(config: Mapping[str, Any]) -> list[dict[str, Any]]:
     return options
 
 
+def validate_survey_questions(questions: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    if not isinstance(questions, Sequence) or isinstance(questions, (str, bytes)) or not questions:
+        raise ValueError("Добавьте хотя бы один вопрос")
+
+    validated: list[dict[str, Any]] = []
+    for index, raw_question in enumerate(questions, start=1):
+        if not isinstance(raw_question, Mapping):
+            raise ValueError(f"Вопрос {index} заполнен некорректно")
+
+        question = dict(raw_question)
+        text = str(question.get("text") or "").strip()
+        if not text:
+            raise ValueError(f"Введите текст вопроса {index}")
+
+        question_type = normalize_question_type(question.get("question_type"))
+        config = question.get("config")
+        if not isinstance(config, Mapping):
+            config = {}
+        normalized_config = dict(config)
+
+        if question_type == QUESTION_TYPE_SCALE:
+            try:
+                minimum = int(config.get("min", 1))
+                maximum = int(config.get("max", 5))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Шкала вопроса {index} должна содержать целые числа") from exc
+            if minimum < 1 or maximum > 10 or minimum >= maximum:
+                raise ValueError(f"Шкала вопроса {index} должна быть в диапазоне от 1 до 10")
+            normalized_config.update({"min": minimum, "max": maximum})
+
+        if question_type in {QUESTION_TYPE_SINGLE_CHOICE, QUESTION_TYPE_MULTI_CHOICE}:
+            options = normalize_options(config)
+            if len(options) < 2:
+                raise ValueError(f"Добавьте минимум два варианта ответа для вопроса {index}")
+            option_ids = [str(option["id"]).casefold() for option in options]
+            if len(option_ids) != len(set(option_ids)):
+                raise ValueError(f"Варианты ответа вопроса {index} должны иметь уникальные идентификаторы")
+            normalized_config["options"] = options
+
+        question.update(
+            {
+                "sort_order": index,
+                "question_type": question_type,
+                "text": text,
+                "anonymity_mode": normalize_question_anonymity_mode(question.get("anonymity_mode")),
+                "config": normalized_config,
+            }
+        )
+        validated.append(question)
+
+    return validated
+
+
 def effective_question_anonymity(
     question: Mapping[str, Any] | None,
     *,

@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -149,6 +150,7 @@ function renderEmployeeAnalyticsPage() {
 
 describe('SurveysPage employee analytics', () => {
   it('renders employee survey analytics from submitted employee assessment forms', async () => {
+    const user = userEvent.setup();
     const { container, apiClient } = renderEmployeeAnalyticsPage();
 
     expect(await screen.findByText('Аналитика опроса сотрудников')).toBeInTheDocument();
@@ -157,7 +159,12 @@ describe('SurveysPage employee analytics', () => {
     expect(container.querySelector('.surveys-hero .surveys-assessment-filter')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(apiClient.fetchEmployeeClientAssessmentAnalytics).toHaveBeenCalled();
+      expect(apiClient.fetchEmployeeClientAssessmentAnalytics).toHaveBeenCalledWith({ clientBin: null });
+    });
+
+    await user.selectOptions(screen.getByLabelText('БИН'), '131313131313');
+    await waitFor(() => {
+      expect(apiClient.fetchEmployeeClientAssessmentAnalytics).toHaveBeenLastCalledWith({ clientBin: '131313131313' });
     });
   });
 });

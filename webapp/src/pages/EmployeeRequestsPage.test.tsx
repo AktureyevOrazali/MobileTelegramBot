@@ -324,17 +324,17 @@ describe('EmployeeRequestsPage', () => {
     expect(await screen.findByText('Вы еще не отправляли заявления.')).toBeInTheDocument();
   });
 
-  it('lets an employee open a sent request template with EDS marks', async () => {
+  it('shows an employee the reason for a rejected request with EDS marks', async () => {
     const decidedRequest: HrRequest = {
       ...submittedRequest,
       id: 41,
-      status: 'approved',
+      status: 'rejected',
       renderedText: 'Прошу предоставить отпуск с 01.06.2026 по 10.06.2026.',
-      decisionComment: 'Согласовано кадровиком.',
+      decisionComment: 'Не хватает подтверждающего документа.',
       decidedAt: new Date('2026-05-20T09:00:00Z'),
       decidedBy: 10,
       decidedByName: 'HR Manager',
-      hrSignature: { ...signature, signedPayload: '{"action":"approved"}' },
+      hrSignature: { ...signature, signedPayload: '{"action":"rejected"}' },
     };
     const apiClient = {
       fetchHrTemplates: vi.fn().mockResolvedValue([template]),
@@ -347,10 +347,10 @@ describe('EmployeeRequestsPage', () => {
 
     const sentRequests = screen.getByLabelText('Мои отправленные заявления');
     await waitFor(() => expect(sentRequests).toHaveTextContent('Отпуск'));
-    expect(sentRequests).toHaveTextContent('Одобрено');
+    expect(sentRequests).toHaveTextContent('Отклонено');
     expect(sentRequests).toHaveTextContent('19.05.2026');
     expect(screen.queryByText('Прошу предоставить отпуск с 01.06.2026 по 10.06.2026.')).not.toBeInTheDocument();
-    expect(screen.queryByText('Согласовано кадровиком.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Не хватает подтверждающего документа.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Word' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'PDF' })).not.toBeInTheDocument();
 
@@ -360,8 +360,8 @@ describe('EmployeeRequestsPage', () => {
     expect(sentPreview).toHaveTextContent('Прошу предоставить отпуск с 01.06.2026 по 10.06.2026.');
     expect(sentPreview).toHaveTextContent('26.05.2026');
     expect(sentPreview).toHaveTextContent('Подписано ЭЦП');
-    expect(sentPreview).toHaveTextContent('Решение: Одобрено');
-    expect(sentPreview).toHaveTextContent('Согласовано кадровиком.');
+    expect(sentPreview).toHaveTextContent('Решение: Отклонено');
+    expect(sentPreview).toHaveTextContent('Не хватает подтверждающего документа.');
     expect(apiClient.downloadHrRequestDocument).not.toHaveBeenCalled();
   });
 });

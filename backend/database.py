@@ -8787,6 +8787,20 @@ def get_hr_request(request_id: int) -> dict | None:
     return request
 
 
+def clear_hr_archive() -> int:
+    """Permanently remove only requests already shown in the HR archive."""
+    with _lock:
+        rows = execute(
+            """
+            DELETE FROM hr_requests
+            WHERE status IN (%s, %s, %s)
+            RETURNING id
+            """,
+            ("approved", "rejected", "archived"),
+        ).fetchall()
+    return len(rows)
+
+
 def decide_hr_request(
     request_id: int,
     *,
@@ -9136,6 +9150,9 @@ def create_survey_template(
     normalized_audience = customer_surveys.normalize_survey_audience(audience)
     if not normalized_title:
         raise ValueError("Название опроса обязательно")
+    if status not in customer_surveys.SURVEY_STATUSES:
+        raise ValueError("Некорректный статус опроса")
+    validated_questions = customer_surveys.validate_survey_questions(questions)
     launch_rules, trigger_type, periodic_interval, scheduled_at = _normalize_survey_launch_rules(
         launch_rules,
         trigger_type,
@@ -9170,7 +9187,7 @@ def create_survey_template(
         if row is None:
             raise RuntimeError("Failed to create survey template")
         template_id = int(row["id"])
-        _insert_survey_questions(template_id, questions or [], now)
+        _insert_survey_questions(template_id, validated_questions, now)
     return get_survey_template(template_id) or {}
 
 
@@ -9193,6 +9210,9 @@ def update_survey_template(
     normalized_audience = customer_surveys.normalize_survey_audience(audience)
     if not normalized_title:
         raise ValueError("Название опроса обязательно")
+    if status not in customer_surveys.SURVEY_STATUSES:
+        raise ValueError("Некорректный статус опроса")
+    validated_questions = customer_surveys.validate_survey_questions(questions)
     launch_rules, trigger_type, periodic_interval, scheduled_at = _normalize_survey_launch_rules(
         launch_rules,
         trigger_type,
@@ -9201,7 +9221,7 @@ def update_survey_template(
     )
     with _lock:
         has_sessions = _has_survey_sessions(int(template_id))
-        if has_sessions and _survey_questions_changed(int(template_id), questions):
+        if has_sessions and _survey_questions_changed(int(template_id), validated_questions):
             raise ValueError("Нельзя менять вопросы шаблона после запуска. Создайте копию шаблона и измените её.")
         row = execute(
             """
@@ -9229,7 +9249,7 @@ def update_survey_template(
             raise ValueError("Опрос не найден")
         if not has_sessions:
             execute("DELETE FROM survey_questions WHERE template_id = %s", (int(template_id),))
-            _insert_survey_questions(int(template_id), questions or [], now)
+            _insert_survey_questions(int(template_id), validated_questions, now)
     return get_survey_template(int(template_id)) or {}
 
 def duplicate_survey_template(template_id: int, *, created_by: int | None = None) -> Dict[str, Any]:
@@ -9413,6 +9433,25 @@ def survey_session_exists(template_id: int, dialog_id: int | None, appeal_id: in
             return False
     return row is not None
 
+
+def periodic_survey_session_exists_for_chat(chat_id: int, trigger_source: str) -> bool:
+    with _lock:
+        row = execute(
+            """
+            SELECT 1
+            FROM survey_sessions
+            WHERE chat_id = %s AND trigger_source = %s
+            LIMIT 1
+            """,
+            (int(chat_id), str(trigger_source)),
+        ).fetchone()
+    return row is not None
+
+
+def _survey_start_advisory_lock_key(chat_id: int) -> int:
+    digest = hashlib.blake2b(f"survey-start:{int(chat_id)}".encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="big", signed=True)
+
 def start_survey_session(
     *,
     template_id: int,
@@ -9424,52 +9463,81 @@ def start_survey_session(
     template = get_survey_template(int(template_id))
     if not template or template.get("status") != customer_surveys.SURVEY_STATUS_ACTIVE:
         return None
+    chat = get_chat(int(chat_id))
+    if not chat or str(chat.get("type") or "").strip().lower() != "onec":
+        return None
     questions = template.get("questions") or []
     periodic_trigger = trigger_source if str(trigger_source).startswith(f"{customer_surveys.SURVEY_TRIGGER_PERIODIC}:") else None
-    if not questions or survey_session_exists(int(template_id), dialog_id, appeal_id, trigger_source=periodic_trigger):
+    if not questions:
         return None
-    chat = get_chat(int(chat_id))
     dialog = get_chat_dialog(int(dialog_id)) if dialog_id is not None else None
     bin_value = (dialog or {}).get("bin") or (chat or {}).get("bin")
     now = datetime.now(timezone.utc).isoformat()
     first_question_id = int(questions[0]["id"])
+    advisory_lock_key = _survey_start_advisory_lock_key(int(chat_id))
     with _lock:
-        row = execute(
-            """
-            INSERT INTO survey_sessions (
-                template_id, chat_id, dialog_id, appeal_id, bin, status,
-                trigger_source, current_question_id, is_anonymous,
-                started_at, completed_at, updated_at
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s)
-            RETURNING id
-            """,
-            (
-                int(template_id), int(chat_id), int(dialog_id) if dialog_id is not None else None,
-                int(appeal_id) if appeal_id is not None else None, bin_value,
-                customer_surveys.SESSION_STATUS_CURRENT, trigger_source, first_question_id,
-                bool(template.get("is_anonymous", False)), now, now,
-            ),
-        ).fetchone()
-        if row is None:
-            return None
-        session_id = int(row["id"])
-        operators = list_operator_rating_targets(int(dialog_id), appeal_id) if dialog_id is not None else []
-        if not operators and bin_value:
-            operators = get_bin_interacted_employees(str(bin_value))
-        seen: set[str] = set()
-        for operator in operators:
-            operator_name = str(operator.get("operator_name") or "").strip()
-            if not operator_name or operator_name.lower() in seen:
-                continue
-            seen.add(operator_name.lower())
-            execute(
+        execute("SELECT pg_advisory_lock(%s)", (advisory_lock_key,))
+        try:
+            active_row = execute(
                 """
-                INSERT INTO survey_session_operators (session_id, operator_name, operator_stat_id, created_at)
-                VALUES (%s, %s, %s, %s)
+                SELECT 1
+                FROM survey_sessions
+                WHERE chat_id = %s AND status IN (%s, %s, %s)
+                LIMIT 1
                 """,
-                (session_id, operator_name, int(operator["id"]) if operator.get("id") is not None else None, now),
-            )
+                (
+                    int(chat_id),
+                    customer_surveys.SESSION_STATUS_STARTED,
+                    customer_surveys.SESSION_STATUS_CURRENT,
+                    customer_surveys.SESSION_STATUS_ANSWER_SAVED,
+                ),
+            ).fetchone()
+            if active_row:
+                return None
+            if periodic_trigger:
+                if periodic_survey_session_exists_for_chat(int(chat_id), periodic_trigger):
+                    return None
+            elif survey_session_exists(int(template_id), dialog_id, appeal_id):
+                return None
+
+            row = execute(
+                """
+                INSERT INTO survey_sessions (
+                    template_id, chat_id, dialog_id, appeal_id, bin, status,
+                    trigger_source, current_question_id, is_anonymous,
+                    started_at, completed_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s)
+                RETURNING id
+                """,
+                (
+                    int(template_id), int(chat_id), int(dialog_id) if dialog_id is not None else None,
+                    int(appeal_id) if appeal_id is not None else None, bin_value,
+                    customer_surveys.SESSION_STATUS_CURRENT, trigger_source, first_question_id,
+                    bool(template.get("is_anonymous", False)), now, now,
+                ),
+            ).fetchone()
+            if row is None:
+                return None
+            session_id = int(row["id"])
+            operators = list_operator_rating_targets(int(dialog_id), appeal_id) if dialog_id is not None else []
+            if not operators and bin_value:
+                operators = get_bin_interacted_employees(str(bin_value))
+            seen: set[str] = set()
+            for operator in operators:
+                operator_name = str(operator.get("operator_name") or "").strip()
+                if not operator_name or operator_name.lower() in seen:
+                    continue
+                seen.add(operator_name.lower())
+                execute(
+                    """
+                    INSERT INTO survey_session_operators (session_id, operator_name, operator_stat_id, created_at)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (session_id, operator_name, int(operator["id"]) if operator.get("id") is not None else None, now),
+                )
+        finally:
+            execute("SELECT pg_advisory_unlock(%s)", (advisory_lock_key,))
     return get_survey_session(session_id)
 
 
@@ -9601,6 +9669,102 @@ def complete_survey_session(session_id: int) -> None:
         )
 
 
+def normalize_active_survey_delivery_sessions() -> Dict[str, int]:
+    """Disable legacy Telegram sessions and collapse duplicate active 1C sessions."""
+    now = datetime.now(timezone.utc).isoformat()
+    active_statuses = (
+        customer_surveys.SESSION_STATUS_STARTED,
+        customer_surveys.SESSION_STATUS_CURRENT,
+        customer_surveys.SESSION_STATUS_ANSWER_SAVED,
+    )
+    with _lock:
+        disabled_telegram = execute(
+            """
+            UPDATE survey_sessions ss
+            SET status = %s,
+                current_question_id = NULL,
+                completed_at = COALESCE(completed_at, %s),
+                updated_at = %s
+            FROM chats c
+            WHERE c.chat_id = ss.chat_id
+              AND LOWER(TRIM(c.type)) <> 'onec'
+              AND ss.status IN (%s, %s, %s)
+            RETURNING ss.id
+            """,
+            (
+                customer_surveys.SESSION_STATUS_UNAVAILABLE,
+                now,
+                now,
+                *active_statuses,
+            ),
+        ).fetchall()
+        collapsed_duplicates = execute(
+            """
+            WITH ranked AS (
+                SELECT ss.id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY ss.chat_id
+                           ORDER BY ss.updated_at DESC, ss.id DESC
+                       ) AS active_rank
+                FROM survey_sessions ss
+                JOIN chats c ON c.chat_id = ss.chat_id
+                WHERE LOWER(TRIM(c.type)) = 'onec'
+                  AND ss.status IN (%s, %s, %s)
+            )
+            UPDATE survey_sessions ss
+            SET status = %s,
+                current_question_id = NULL,
+                completed_at = COALESCE(ss.completed_at, %s),
+                updated_at = %s
+            FROM ranked
+            WHERE ranked.id = ss.id AND ranked.active_rank > 1
+            RETURNING ss.id
+            """,
+            (
+                *active_statuses,
+                customer_surveys.SESSION_STATUS_UNAVAILABLE,
+                now,
+                now,
+            ),
+        ).fetchall()
+        cancelled_outbox_duplicates = execute(
+            """
+            WITH ranked AS (
+                SELECT o.id,
+                       ROW_NUMBER() OVER (PARTITION BY o.chat_id ORDER BY o.id DESC) AS message_rank,
+                       EXISTS (
+                           SELECT 1
+                           FROM survey_sessions ss
+                           WHERE ss.chat_id = o.chat_id
+                             AND ss.status IN (%s, %s, %s)
+                       ) AS has_active_survey
+                FROM outbox_onec o
+                WHERE o.status = 'pending'
+                  AND (o.payload::jsonb ->> 'text') LIKE %s
+            )
+            UPDATE outbox_onec o
+            SET status = 'failed',
+                error = %s,
+                updated_at = %s
+            FROM ranked
+            WHERE ranked.id = o.id
+              AND (NOT ranked.has_active_survey OR ranked.message_rank > 1)
+            RETURNING o.id
+            """,
+            (
+                *active_statuses,
+                "Опрос, вопрос %",
+                "Duplicate survey delivery cancelled",
+                now,
+            ),
+        ).fetchall()
+    return {
+        "disabled_telegram_count": len(disabled_telegram),
+        "collapsed_duplicate_count": len(collapsed_duplicates),
+        "cancelled_outbox_count": len(cancelled_outbox_duplicates),
+    }
+
+
 def resolve_survey_manual_targets(
     *,
     bin_values: Sequence[str] | None = None,
@@ -9619,6 +9783,7 @@ def resolve_survey_manual_targets(
                     f"""
                     SELECT cd.id AS dialog_id, cd.chat_id, cd.bin, a.id AS appeal_id
                     FROM chat_dialogs cd
+                    JOIN chats c ON c.chat_id = cd.chat_id AND LOWER(TRIM(c.type)) = 'onec'
                     LEFT JOIN LATERAL (
                         SELECT id FROM appeals a WHERE a.dialog_id = cd.id
                         ORDER BY COALESCE(a.ended_at, a.started_at) DESC, a.id DESC LIMIT 1
@@ -9641,6 +9806,7 @@ def resolve_survey_manual_targets(
                 f"""
                 SELECT DISTINCT ON (cd.bin) cd.id AS dialog_id, cd.chat_id, cd.bin, a.id AS appeal_id
                 FROM chat_dialogs cd
+                JOIN chats c ON c.chat_id = cd.chat_id AND LOWER(TRIM(c.type)) = 'onec'
                 LEFT JOIN LATERAL (
                     SELECT id FROM appeals a WHERE a.dialog_id = cd.id
                     ORDER BY COALESCE(a.ended_at, a.started_at) DESC, a.id DESC LIMIT 1
@@ -9656,6 +9822,7 @@ def resolve_survey_manual_targets(
                 """
                 SELECT DISTINCT ON (cd.chat_id, cd.bin) cd.id AS dialog_id, cd.chat_id, cd.bin, a.id AS appeal_id
                 FROM chat_dialogs cd
+                JOIN chats c ON c.chat_id = cd.chat_id AND LOWER(TRIM(c.type)) = 'onec'
                 LEFT JOIN LATERAL (
                     SELECT id FROM appeals a WHERE a.dialog_id = cd.id
                     ORDER BY COALESCE(a.ended_at, a.started_at) DESC, a.id DESC LIMIT 1
@@ -9712,15 +9879,10 @@ def _current_survey_question_keys_for_analytics(
             """
             SELECT sq.id AS question_id, sq.text AS question_text, sq.question_type, sq.topic
             FROM survey_questions sq
-            WHERE sq.template_id = (
-                SELECT st.id
-                FROM survey_templates st
-                WHERE st.audience = %s
-                ORDER BY st.updated_at DESC, st.id DESC
-                LIMIT 1
-            )
+            JOIN survey_templates st ON st.id = sq.template_id
+            WHERE st.audience = %s AND st.status <> %s
             """,
-            (audience,),
+            (audience, customer_surveys.SURVEY_STATUS_ARCHIVED),
         ).fetchall()
     return {survey_analytics.question_group_key(row) for row in rows or []}
 
@@ -9837,16 +9999,16 @@ def get_survey_analytics(
                 if survey_analytics.is_completed_session_status(row.get("session_status")):
                     completed_session_ids.add(int(row["session_id"]))
                 score = float(row["numeric_score"]) if row.get("numeric_score") is not None else None
+                config = _json_loads(row.get("question_config"), {})
                 if score is not None:
                     score_rows.append(
                         {
                             "session_id": int(row["session_id"]),
                             "session_status": row.get("session_status"),
-                            "numeric_score": score,
+                            "numeric_score": survey_analytics.normalize_score_to_five_point_scale(score, config),
                             "created_at": row.get("created_at"),
                         }
                     )
-                config = _json_loads(row.get("question_config"), {})
                 options = customer_surveys.normalize_options(config if isinstance(config, Mapping) else {})
                 by_id = {str(option["id"]): str(option["label"]) for option in options}
                 selected_options = _json_loads(row.get("selected_options"), [])

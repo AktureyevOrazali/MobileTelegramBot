@@ -510,7 +510,7 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                       <div className="hr-document-preview__footer">
                         <span>{previewSignatureDate || formatToday()}</span>
                         <span className="hr-document-preview__signature">
-                          <span>________________ / {session.user.name} /</span>
+                          <span>{session.user.name}</span>
                           {showPreviewSignature && (
                             <small>
                               {previewSignatureDate && <time dateTime={employeeSignature?.signedAt ?? new Date().toISOString()}>{previewSignatureDate}</time>}
@@ -654,7 +654,7 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                 <div className="hr-document-preview__footer">
                   <span>{formatSignatureDate(selectedRequest.employeeSignature?.signedAt) || formatRequestDate(selectedRequest.submittedAt)}</span>
                   <span className="hr-document-preview__signature">
-                    <span>________________ / {selectedRequest.employeeName} /</span>
+                    <span>{selectedRequest.employeeName}</span>
                     {selectedRequest.employeeSignature && (
                       <small>
                         <time dateTime={selectedRequest.employeeSignature.signedAt}>{formatSignatureDate(selectedRequest.employeeSignature.signedAt)}</time>
@@ -674,7 +674,7 @@ const EmployeeRequestsPage: React.FC<EmployeeRequestsPageProps> = ({ apiClient, 
                   </div>
                 )}
               </article>
-              {selectedRequest.decisionComment && (
+              {selectedRequest.status === 'rejected' && selectedRequest.decisionComment && (
                 <div className="hr-request-row__decision">
                   <span>Комментарий HR</span>
                   <p>{selectedRequest.decisionComment}</p>

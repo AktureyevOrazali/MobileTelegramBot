@@ -39,6 +39,20 @@ def _score_label(value: float) -> str:
     return str(value).rstrip("0").rstrip(".")
 
 
+def normalize_score_to_five_point_scale(score: float, config: object) -> float:
+    if not isinstance(config, Mapping):
+        return float(score)
+    try:
+        minimum = float(config.get("min", 1))
+        maximum = float(config.get("max", 5))
+    except (TypeError, ValueError):
+        return float(score)
+    if maximum <= minimum:
+        return float(score)
+    normalized = 1.0 + ((float(score) - minimum) * 4.0 / (maximum - minimum))
+    return max(1.0, min(5.0, normalized))
+
+
 def _score_distribution_items(source: Mapping[str, int]) -> list[dict[str, Any]]:
     def sort_key(item: tuple[str, int]) -> tuple[float, str]:
         label, _count = item

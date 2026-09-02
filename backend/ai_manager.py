@@ -1,13 +1,11 @@
-"""AI manager powered by DeepSeek chat completions."""
+"""AI manager powered by Ollama."""
 from __future__ import annotations
 
 import logging
 import os
 from typing import Dict, List, Optional
 
-from openai import OpenAI
-
-from . import require_env
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +35,23 @@ OPERATOR_FOOTER_PREFIXES = (
 )
 
 
-class DeepSeekAIManager:
+class OllamaAIManager:
     def __init__(self) -> None:
-        self.model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-        api_key = require_env("DEEPSEEK_API_KEY")
-        base_url = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+        self.provider = os.getenv("AI_PROVIDER", "ollama").strip().lower()
+        if self.provider != "ollama":
+            raise RuntimeError("AI_PROVIDER must be 'ollama'")
+        self.model = os.getenv("AI_MODEL", "gemma3:12b")
+        self.api_key = os.getenv("AI_API_KEY", "")
+        self.base_url = os.getenv("AI_BASE_URL", "http://localhost:11434")
+        self.timeout_seconds = float(os.getenv("AI_TIMEOUT_SECONDS", "60"))
         self.reference_year = os.getenv("AI_REFERENCE_YEAR", "2026")
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.system_prompt = self._create_kazakhstan_prompt()
-        logger.info("DeepSeek AI manager initialized. model=%s base_url=%s", self.model, base_url)
+        logger.info(
+            "Ollama AI manager initialized. provider=%s model=%s base_url=%s",
+            self.provider,
+            self.model,
+            self.base_url,
+        )
 
     def _create_kazakhstan_prompt(self) -> str:
         return f"""
@@ -102,6 +108,56 @@ class DeepSeekAIManager:
             return response
         return f"{response}\n\n{footer}".strip()
 
+    def _build_ollama_prompt(self, user_message: str, chat_history: Optional[List[Dict]]) -> str:
+        lines: List[str] = []
+        if chat_history:
+            for msg in chat_history[-4:]:
+                text = str(msg.get("text", "")).strip()
+                if not text:
+                    continue
+                speaker = "User" if msg.get("direction") == "incoming" else "Assistant"
+                lines.append(f"{speaker}: {text}")
+        lines.append(f"User: {user_message}")
+        lines.append("Assistant:")
+        return "\n".join(lines)
+
+    def _ollama_generate_url(self) -> str:
+        base_url = self.base_url.rstrip("/")
+        if base_url.endswith("/api/generate"):
+            return base_url
+        if base_url.endswith("/api"):
+            return f"{base_url}/generate"
+        return f"{base_url}/api/generate"
+
+    def _generate_ollama_response(
+        self,
+        user_message: str,
+        chat_history: Optional[List[Dict]],
+    ) -> str:
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        payload = {
+            "model": self.model,
+            "system": self.system_prompt,
+            "prompt": self._build_ollama_prompt(user_message, chat_history),
+            "stream": False,
+            "options": {
+                "temperature": 0.3,
+                "top_p": 0.9,
+                "num_predict": 400,
+            },
+        }
+        response = requests.post(
+            self._ollama_generate_url(),
+            json=payload,
+            headers=headers or None,
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return str(data.get("response", "")).strip()
+
     def generate_response(
         self,
         user_message: str,
@@ -111,24 +167,10 @@ class DeepSeekAIManager:
     ) -> str:
         """Generate an AI response for the user message."""
         try:
-            messages = [{"role": "system", "content": self.system_prompt}]
-            if chat_history:
-                for msg in chat_history[-4:]:
-                    role = "user" if msg.get("direction") == "incoming" else "assistant"
-                    messages.append({"role": role, "content": msg.get("text", "")})
-            messages.append({"role": "user", "content": user_message})
-
             logger.info("Generating AI response for message prefix=%s", user_message[:50])
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.3,
-                top_p=0.9,
-                max_tokens=400,
-            )
-            choice = response.choices[0]
+            response_text = self._generate_ollama_response(user_message, chat_history)
             ai_response = self._finalize_response(
-                (choice.message.content or "").strip(),
+                response_text,
                 operator_hint,
             )
             logger.info("AI response generated prefix=%s", ai_response[:100])
@@ -138,8 +180,8 @@ class DeepSeekAIManager:
             return self._finalize_response("", operator_hint)
 
 
-def _init_ai_manager() -> DeepSeekAIManager:
-    return DeepSeekAIManager()
+def _init_ai_manager() -> OllamaAIManager:
+    return OllamaAIManager()
 
 
 ai_manager = _init_ai_manager()

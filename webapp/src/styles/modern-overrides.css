@@ -5303,7 +5303,7 @@
   --surveys-tabs-height: 54px;
   --surveys-tabs-gap: 14px;
   --surveys-builder-sticky-top: calc(var(--surveys-tabs-height) + var(--surveys-tabs-gap));
-  --surveys-template-card-height: calc(100vh - 28px - var(--surveys-hero-height) - 12px - var(--surveys-builder-sticky-top));
+  --surveys-template-card-height: calc(100dvh - 28px - var(--surveys-hero-height) - 12px - var(--surveys-builder-sticky-top));
   flex: 1 1 auto;
   min-height: 0 !important;
   height: 100% !important;
@@ -5374,7 +5374,7 @@
 
 .app-shell--surveys .surveys-page--app-sidebar {
   height: auto !important;
-  min-height: calc(100vh - 28px) !important;
+  min-height: calc(100dvh - 28px) !important;
   overflow: visible !important;
   grid-template-rows: auto auto minmax(0, 1fr) !important;
 }
@@ -5943,7 +5943,7 @@
 .app-shell--surveys .surveys-page--app-sidebar {
   width: 100% !important;
   max-width: none !important;
-  min-height: calc(100vh - 28px) !important;
+  min-height: calc(100dvh - 28px) !important;
   height: auto !important;
   display: flex !important;
   flex-direction: column !important;
@@ -6060,12 +6060,13 @@
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-layout--builder {
-  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   align-items: stretch;
+  width: 100%;
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-editor {
-  min-height: calc(100vh - 206px);
+  min-height: calc(100dvh - 206px);
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-question {
@@ -6096,35 +6097,37 @@
 
 /* Survey builder reference layout. */
 .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-shell {
-  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) !important;
+  grid-template-columns: 260px minmax(0, 1fr) !important;
   align-items: stretch !important;
   flex: 1 1 auto;
   gap: 14px !important;
-  height: calc(100vh - 218px);
-  min-height: 0;
-  max-height: calc(100vh - 218px);
-  overflow: hidden;
+  width: 100%;
+  min-height: calc(100dvh - 220px);
+  max-height: none;
+  overflow: visible;
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-sidebar {
   display: flex !important;
   position: sticky !important;
-  top: 204px !important;
+  top: 68px !important;
   align-self: stretch !important;
-  height: 100% !important;
-  min-height: 0 !important;
-  max-height: 100% !important;
-  overflow: hidden !important;
-  padding: 14px !important;
-  border-radius: 22px !important;
-  box-shadow: none !important;
+  height: calc(100dvh - 220px) !important;
+  min-height: 560px !important;
+  max-height: calc(100dvh - 220px) !important;
+  overflow: auto !important;
+  padding: 16px !important;
+  border-radius: 14px !important;
+  box-shadow: 0 12px 30px rgba(20, 33, 61, 0.06) !important;
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-segmented--builder {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
-  width: 100%;
+  width: auto;
+  gap: 4px;
+  padding: 4px;
   flex-wrap: nowrap;
 }
 
@@ -6133,6 +6136,7 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
+  min-height: 34px;
   width: 100%;
   text-align: center;
   white-space: nowrap;
@@ -6140,25 +6144,58 @@
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-editor--builder {
   gap: 13px;
-  height: 100%;
+  height: auto;
   min-height: 0 !important;
-  overflow-y: auto;
+  overflow-y: visible;
   overflow-x: hidden;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
+  width: 100%;
+  max-width: none;
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head--builder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  min-height: 76px;
   padding: 14px 18px 11px;
   border-bottom: 1px solid #dfe7f1;
 }
 
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-heading,
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-toolbar {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head--builder .surveys-actions {
+  flex-wrap: nowrap;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-toolbar button {
+  white-space: nowrap;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-template-select {
+  width: min(300px, 34vw);
+}
+
 .app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head--builder h2 {
+  min-width: 0;
+  overflow: hidden;
   font-size: 1rem;
   font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head--builder .surveys-actions {
@@ -6167,7 +6204,7 @@
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card {
   gap: 13px;
-  margin: 0 18px;
+  margin: 0;
   padding: 15px 16px;
   border-radius: 10px !important;
   box-shadow: none !important;
@@ -6176,6 +6213,11 @@
 .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card__row {
   grid-template-columns: minmax(0, 1fr) minmax(128px, 128px);
   gap: 12px;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card--settings {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: end;
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-field .pill,
@@ -6284,7 +6326,7 @@
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-question-head--builder {
-  margin: 6px 18px -1px;
+  margin: 6px 0 -1px;
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-question-head--builder h3 {
@@ -6293,7 +6335,7 @@
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-question-list--builder {
   gap: 9px;
-  margin: 0 18px 18px;
+  margin: 0 0 18px;
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card {
@@ -6380,6 +6422,17 @@
   gap: 10px;
 }
 
+.app-shell--surveys .surveys-page--app-sidebar .surveys-question-card .surveys-form-grid--question {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-scale-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(84px, 120px));
+  gap: 10px;
+}
+
 .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card .surveys-check {
   min-height: 0;
   justify-content: flex-start;
@@ -6391,9 +6444,9 @@
 }
 
 .app-shell--surveys .surveys-page--app-sidebar .surveys-scale-config {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 140px));
+  align-items: end;
   gap: 10px;
 }
 
@@ -6464,17 +6517,47 @@
   resize: vertical;
 }
 
+@media (max-width: 1180px) {
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-shell {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-sidebar {
+    position: static !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+}
+
 @media (max-width: 760px) {
   .app-shell--surveys .surveys-page--app-sidebar .surveys-editor__head--builder {
     align-items: stretch;
+    grid-template-columns: 1fr;
     flex-direction: column;
   }
 
   .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card__row,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-card--settings,
   .app-shell--surveys .surveys-page--app-sidebar .surveys-launch-options,
   .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-shell,
   .app-shell--surveys .surveys-page--app-sidebar .surveys-question-card .surveys-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-heading,
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-template-select {
+    width: 100%;
+  }
+
+  .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-sidebar {
+    position: static !important;
+    max-height: none !important;
   }
 
   .app-shell--surveys .surveys-page--app-sidebar .surveys-builder-shell,
@@ -6502,9 +6585,9 @@
 }
 
 .app-shell--surveys .surveys-page--app-sidebar {
-  height: calc(100vh - 28px) !important;
+  height: calc(100dvh - 28px) !important;
   min-height: 0 !important;
-  max-height: calc(100vh - 28px) !important;
+  max-height: calc(100dvh - 28px) !important;
   display: grid !important;
   grid-template-rows: auto auto minmax(0, 1fr) !important;
   overflow: hidden !important;
@@ -6751,6 +6834,36 @@
 
 [data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-table tr:hover td {
   background: var(--surface-raised-color) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-table tr.is-selectable:hover,
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-table tr.is-selectable:focus-visible {
+  background: var(--surface-raised-color) !important;
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-table tr.is-selected {
+  background: color-mix(in srgb, var(--brand-color) 22%, var(--surface-color)) !important;
+  box-shadow: inset 3px 0 0 var(--brand-color);
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-score-slider strong {
+  border-color: var(--border-color);
+  background: var(--surface-raised-color);
+  color: var(--text-color);
+}
+
+[data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-field-help {
+  color: var(--text-muted);
+}
+
+.app-shell--surveys .surveys-page--app-sidebar .surveys-score-slider input {
+  width: 100% !important;
+  min-height: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 [data-theme='dark'] .app-shell--surveys .surveys-page--app-sidebar .surveys-assessment-criteria__row div,

@@ -641,6 +641,28 @@ class OneCChatFlowTests(unittest.TestCase):
 
         self.assertEqual(display_text, survey_service.SKIP_OPTION_LABEL)
 
+    def test_optional_scale_and_choice_questions_can_be_skipped(self):
+        questions = [
+            {
+                "question_type": customer_surveys.QUESTION_TYPE_SCALE,
+                "required": False,
+                "config": {"min": 1, "max": 5},
+            },
+            {
+                "question_type": customer_surveys.QUESTION_TYPE_SINGLE_CHOICE,
+                "required": False,
+                "config": {"options": [{"id": "yes", "label": "Да"}, {"id": "no", "label": "Нет"}]},
+            },
+        ]
+
+        for question in questions:
+            with self.subTest(question_type=question["question_type"]):
+                replies = survey_service._answer_quick_replies(question)
+                self.assertEqual(replies[-1]["value"], survey_service.SKIP_OPTION_LABEL)
+                answer = survey_service._parse_answer(question, survey_service.SKIP_OPTION_LABEL)
+                self.assertIsNotNone(answer)
+                self.assertEqual(answer.raw_text, "")
+
     def test_default_after_csat_survey_ends_with_employee_list_and_optional_comment(self):
         questions = customer_surveys.default_after_csat_questions()
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { HrRequest, HrSignature } from '../../types';
+import ConfirmModal from '../../components/ConfirmModal';
 import { requestStatusLabels, requestTypeLabels } from './hrMockData';
 import { signWithNcalayer } from '../../services/ncalayer';
 
@@ -12,6 +13,7 @@ interface HrArchiveTabProps {
     comment?: string,
     hrSignature?: HrSignature | null,
   ) => Promise<void> | void;
+  onClearArchive?: () => Promise<number> | number | void;
 }
 
 const archiveStatuses = new Set<HrRequest['status']>(['approved', 'rejected', 'archived']);
@@ -66,8 +68,10 @@ const requestEmployeePosition = (request: HrRequest) => {
   return typeof position === 'string' && position.trim() ? position.trim() : 'сотрудника';
 };
 
-const HrArchiveTab: React.FC<HrArchiveTabProps> = ({ requests, isLoading = false, onDecide }) => {
+const HrArchiveTab: React.FC<HrArchiveTabProps> = ({ requests, isLoading = false, onDecide, onClearArchive }) => {
   const [decidingRequestId, setDecidingRequestId] = React.useState<number | null>(null);
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = React.useState(false);
+  const [isClearing, setIsClearing] = React.useState(false);
   const archiveRequests = React.useMemo(
     () => requests.filter((request) => archiveStatuses.has(request.status)),
     [requests],
@@ -106,9 +110,33 @@ const HrArchiveTab: React.FC<HrArchiveTabProps> = ({ requests, isLoading = false
     }
   };
 
+  const handleClearArchive = async () => {
+    if (!onClearArchive || isClearing) return;
+    setIsClearing(true);
+    try {
+      await onClearArchive();
+      setIsClearConfirmOpen(false);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   return (
     <div className="hr-archive-layout">
       <div className="hr-archive-table-wrap">
+        <div className="hr-archive-toolbar">
+          <span>{archiveRequests.length} в архиве</span>
+          {onClearArchive && (
+            <button
+              className="button secondary hr-archive-clear"
+              disabled={isLoading || archiveRequests.length === 0 || isClearing}
+              type="button"
+              onClick={() => setIsClearConfirmOpen(true)}
+            >
+              Очистить архив
+            </button>
+          )}
+        </div>
         <table className="hr-archive-table">
           <thead>
             <tr>
@@ -206,7 +234,7 @@ const HrArchiveTab: React.FC<HrArchiveTabProps> = ({ requests, isLoading = false
               <div className="hr-document-preview__footer">
                 <span>{formatSignatureDate(selectedRequest.employeeSignature?.signedAt) || formatArchiveDate(selectedRequest.submittedAt)}</span>
                 <span className="hr-document-preview__signature">
-                  <span>________________ / {selectedRequest.employeeName} /</span>
+                  <span>{selectedRequest.employeeName}</span>
                   {selectedRequest.employeeSignature && (
                     <small>
                       <time dateTime={selectedRequest.employeeSignature.signedAt}>{formatSignatureDate(selectedRequest.employeeSignature.signedAt)}</time>
@@ -237,6 +265,17 @@ const HrArchiveTab: React.FC<HrArchiveTabProps> = ({ requests, isLoading = false
           <p>Выберите архивное заявление.</p>
         )}
       </article>
+
+      <ConfirmModal
+        open={isClearConfirmOpen}
+        title="Очистить архив заявлений?"
+        description={<>Будут безвозвратно удалены все {archiveRequests.length} завершённых заявлений и их история.</>}
+        confirmLabel="Очистить архив"
+        loading={isClearing}
+        tone="danger"
+        onCancel={() => setIsClearConfirmOpen(false)}
+        onConfirm={() => void handleClearArchive()}
+      />
     </div>
   );
 };

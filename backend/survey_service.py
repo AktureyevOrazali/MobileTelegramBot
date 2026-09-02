@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import calendar
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
 from . import customer_surveys, database
@@ -21,15 +23,10 @@ def configure_survey_runtime(
 
 
 def handle_telegram_survey_text_answer(message: Any) -> bool:
-    chat = getattr(message, "chat", None)
-    chat_id = getattr(chat, "id", None)
-    text = getattr(message, "text", None)
-    if chat_id is None or text is None:
-        return False
-    handled = handle_channel_survey_text_answer(int(chat_id), str(text))
-    if handled and _persist_telegram_message is not None:
-        _persist_telegram_message(message, direction="incoming")
-    return handled
+    # Customer surveys are delivered and answered only through the 1C channel.
+    # Keeping this handler as an explicit no-op prevents old Telegram survey
+    # messages from reactivating a survey after the delivery policy changed.
+    return False
 
 
 def _template_has_trigger(template: Mapping[str, Any], trigger_type: str) -> bool:
@@ -44,6 +41,18 @@ def _template_has_trigger(template: Mapping[str, Any], trigger_type: str) -> boo
 
 def _is_optional_question(question: Mapping[str, Any]) -> bool:
     return question.get("required") is False
+
+
+def _with_optional_skip(
+    question: Mapping[str, Any],
+    replies: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    if not _is_optional_question(question):
+        return replies
+    return [
+        *replies,
+        {"id": "survey_skip", "label": SKIP_OPTION_LABEL, "value": SKIP_OPTION_LABEL, "type": "survey_answer"},
+    ]
 
 
 def _employee_options_from_session(session: Mapping[str, Any] | None) -> list[dict[str, Any]]:
@@ -105,17 +114,15 @@ def _answer_quick_replies(
             minimum, maximum = 1, 5
         minimum = max(1, minimum)
         maximum = min(10, max(minimum, maximum))
-        return [
+        return _with_optional_skip(question, [
             {"id": f"survey_{value}", "label": str(value), "value": str(value), "type": "survey_answer"}
             for value in range(minimum, maximum + 1)
-        ]
+        ])
     if question_type == customer_surveys.QUESTION_TYPE_TEXT_COMMENT:
-        if _is_optional_question(question):
-            return [{"id": "survey_skip", "label": SKIP_OPTION_LABEL, "value": SKIP_OPTION_LABEL, "type": "survey_answer"}]
-        return []
+        return _with_optional_skip(question, [])
     options = _question_options(question, session)
     if options:
-        return [
+        return _with_optional_skip(question, [
             {
                 "id": f"survey_{option['id']}",
                 "label": str(option["label"]),
@@ -123,8 +130,8 @@ def _answer_quick_replies(
                 "type": "survey_answer",
             }
             for option in options
-        ]
-    return []
+        ])
+    return _with_optional_skip(question, [])
 
 
 def _question_text(session: Mapping[str, Any]) -> str:
@@ -161,6 +168,8 @@ def _parse_answer(
         if question_type == customer_surveys.QUESTION_TYPE_TEXT_COMMENT and _is_optional_question(question):
             return customer_surveys.SurveyAnswerParseResult(raw_text="")
         return None
+    if _is_optional_question(question) and text.casefold() == SKIP_OPTION_LABEL.casefold():
+        return customer_surveys.SurveyAnswerParseResult(raw_text="")
     config = question.get("config") or {}
     if question_type == customer_surveys.QUESTION_TYPE_SCALE:
         try:
@@ -173,8 +182,6 @@ def _parse_answer(
             return None
         return customer_surveys.SurveyAnswerParseResult(numeric_score=value, raw_text=text)
     if question_type == customer_surveys.QUESTION_TYPE_TEXT_COMMENT:
-        if _is_optional_question(question) and text.casefold() == SKIP_OPTION_LABEL.casefold():
-            return customer_surveys.SurveyAnswerParseResult(raw_text="")
         return customer_surveys.SurveyAnswerParseResult(raw_text=text)
     if question_type == customer_surveys.QUESTION_TYPE_EMPLOYEE_EXCLUSION:
         if text.casefold() == EMPLOYEE_EXCLUSION_NONE_LABEL.casefold():
@@ -234,9 +241,20 @@ def handle_channel_survey_text_answer(chat_id: int, text: str) -> bool:
     answer = _parse_answer(question, text, session=session)
     if answer is None:
         if _send_channel_message is not None:
+            config = question.get("config") or {}
+            try:
+                minimum = int(config.get("min", 1)) if isinstance(config, Mapping) else 1
+                maximum = int(config.get("max", 5)) if isinstance(config, Mapping) else 5
+            except (TypeError, ValueError):
+                minimum, maximum = 1, 5
+            answer_hint = (
+                f"от {minimum} до {maximum}"
+                if customer_surveys.normalize_question_type(question.get("question_type")) == customer_surveys.QUESTION_TYPE_SCALE
+                else "из предложенных вариантов"
+            )
             _send_channel_message(
                 int(chat_id),
-                "Не удалось распознать ответ. Пожалуйста, выберите вариант кнопкой или отправьте число от 1 до 5.",
+                f"Не удалось распознать ответ. Пожалуйста, выберите ответ кнопкой или укажите значение {answer_hint}.",
                 dialog_id=session.get("dialog_id"),
                 author="System",
                 quick_replies=_answer_quick_replies(question, session=session),
@@ -319,12 +337,100 @@ def maybe_start_survey_after_employee_csat(dialog_id: int, appeal_id: int | None
     )
 
 
-def start_periodic_surveys() -> dict[str, Any]:
-    # Restored minimal implementation. Periodic dispatch should not break
-    # backend startup even if scheduling rules are incomplete.
+def start_survey_for_context(
+    *,
+    template_id: int,
+    chat_id: int,
+    dialog_id: int | None,
+    appeal_id: int | None = None,
+    trigger_source: str = customer_surveys.SURVEY_TRIGGER_MANUAL,
+) -> dict[str, Any] | None:
+    session = database.start_survey_session(
+        template_id=int(template_id),
+        chat_id=int(chat_id),
+        dialog_id=int(dialog_id) if dialog_id is not None else None,
+        appeal_id=int(appeal_id) if appeal_id is not None else None,
+        trigger_source=trigger_source,
+    )
+    if session:
+        _send_current_survey_question(session)
+    return session
+
+
+def _calendar_dispatch_keys(rule: Mapping[str, Any], current_time: datetime) -> list[str]:
+    schedule = str(rule.get("schedule") or customer_surveys.SURVEY_PERIOD_MONTHLY).strip()
+    current_date = current_time.date()
+    if schedule == customer_surveys.SURVEY_PERIOD_MONTHLY:
+        return [current_time.strftime("%Y-%m")] if current_date.day == 1 else []
+    if schedule == customer_surveys.SURVEY_PERIOD_QUARTERLY:
+        is_quarter_end_month = current_date.month in {3, 6, 9, 12}
+        last_day = calendar.monthrange(current_date.year, current_date.month)[1]
+        if is_quarter_end_month and current_date.day == last_day:
+            quarter = ((current_date.month - 1) // 3) + 1
+            return [f"{current_date.year}-Q{quarter}"]
+        return []
+    if schedule == customer_surveys.SURVEY_PERIOD_CUSTOM:
+        due_dates = {
+            str(value).strip()[:10]
+            for value in (rule.get("dates") or [])
+            if str(value).strip()
+        }
+        today = current_date.isoformat()
+        return [today] if today in due_dates else []
+    return []
+
+
+def start_periodic_surveys(now: datetime | None = None) -> dict[str, Any]:
+    current_time = now or datetime.now(timezone.utc).astimezone()
+    templates = database.list_survey_templates(
+        status=customer_surveys.SURVEY_STATUS_ACTIVE,
+        audience=customer_surveys.SURVEY_AUDIENCE_CLIENT,
+    )
+    raw_targets = database.resolve_survey_manual_targets()
+    # A client can have several historical dialogs or BIN mappings attached to
+    # the same 1C chat. A calendar run must still send only one survey to that
+    # visible recipient channel.
+    targets_by_chat: dict[int, dict[str, Any]] = {}
+    for target in raw_targets:
+        try:
+            chat_id = int(target["chat_id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        previous = targets_by_chat.get(chat_id)
+        previous_dialog_id = int(previous.get("dialog_id") or 0) if previous else -1
+        current_dialog_id = int(target.get("dialog_id") or 0)
+        if previous is None or current_dialog_id > previous_dialog_id:
+            targets_by_chat[chat_id] = dict(target)
+    targets = list(targets_by_chat.values())
+    started: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for template in templates:
+        period_keys = {
+            key
+            for rule in (template.get("launch_rules") or [])
+            if isinstance(rule, Mapping) and str(rule.get("type") or "").strip() == "calendar"
+            for key in _calendar_dispatch_keys(rule, current_time)
+        }
+        for period_key in sorted(period_keys):
+            trigger_source = f"{customer_surveys.SURVEY_TRIGGER_PERIODIC}:{period_key}"
+            for target in targets:
+                session = start_survey_for_context(
+                    template_id=int(template["id"]),
+                    chat_id=int(target["chat_id"]),
+                    dialog_id=int(target["dialog_id"]) if target.get("dialog_id") is not None else None,
+                    appeal_id=None,
+                    trigger_source=trigger_source,
+                )
+                payload = {"template_id": int(template["id"]), "period": period_key, **target}
+                if session:
+                    started.append({"session_id": int(session["id"]), **payload})
+                else:
+                    skipped.append(payload)
+
     return {
-        "started": [],
-        "skipped": [],
-        "started_count": 0,
-        "skipped_count": 0,
+        "started": started,
+        "skipped": skipped,
+        "started_count": len(started),
+        "skipped_count": len(skipped),
     }

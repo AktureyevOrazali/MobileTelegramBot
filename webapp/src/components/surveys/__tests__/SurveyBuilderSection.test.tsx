@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { SurveyQuestion, SurveyQuestionOption, SurveyTemplate } from '../../../types';
 import { SurveyBuilderSection } from '../SurveyBuilderSection';
@@ -13,7 +13,7 @@ const draftQuestion: SurveyQuestion = {
   topic: 'consultation_quality',
   required: true,
   anonymityMode: 'inherit',
-  config: { min: 1, max: 10, presentation: 'scale' },
+  config: { min: 1, max: 5, presentation: 'scale' },
 };
 
 const makeTemplate = (
@@ -121,9 +121,7 @@ function renderBuilderSection(question: SurveyQuestion = draftQuestion) {
         setDraft={setDraft}
         isLoading={false}
         onSave={vi.fn()}
-        onDuplicate={vi.fn()}
         onDelete={vi.fn()}
-        onNew={vi.fn()}
         updateQuestion={updateQuestion}
         addQuestion={vi.fn()}
         removeQuestion={vi.fn()}
@@ -152,9 +150,7 @@ function renderBuilderSectionWithDraft(initialDraft: SurveyDraft) {
         setDraft={setDraft}
         isLoading={false}
         onSave={vi.fn()}
-        onDuplicate={vi.fn()}
         onDelete={vi.fn()}
-        onNew={vi.fn()}
         updateQuestion={vi.fn()}
         addQuestion={vi.fn()}
         removeQuestion={vi.fn()}
@@ -172,9 +168,9 @@ describe('SurveyBuilderSection', () => {
   it('keeps launch presets hidden until configure is clicked', () => {
     const { container } = renderBuilderSection();
 
-    expect(container.querySelector('.surveys-builder-sidebar')).toBeInTheDocument();
     expect(container.querySelector('.surveys-editor--builder')).toBeInTheDocument();
     expect(container.querySelector('.surveys-editor__head--builder .surveys-actions')).toBeInTheDocument();
+    expect(container.querySelector('.surveys-builder-card--launch')).toBeInTheDocument();
     expect(container.querySelector('.surveys-builder-card .surveys-actions')).not.toBeInTheDocument();
     expect(container.querySelectorAll('.surveys-launch-option')).toHaveLength(0);
 
@@ -184,13 +180,16 @@ describe('SurveyBuilderSection', () => {
     expect(container.querySelector('.surveys-launch-option.is-active')).toBeInTheDocument();
   });
 
-  it('renders the html-reference shell with compact sidebar sections and cards', () => {
-    renderBuilderSection();
+  it('renders a compact builder without saved survey cards', () => {
+    const { container } = renderBuilderSection();
 
-    expect(screen.getByRole('heading', { name: 'Конструктор' })).toBeInTheDocument();
-    expect(screen.getByText('Активный опрос', { selector: '.surveys-builder-sidebar__title' })).toBeInTheDocument();
-    expect(screen.getByText('Сохраненные опросы', { selector: '.surveys-builder-sidebar__title' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Новый опрос' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Активный опрос' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Опрос' })).toHaveValue('1');
+    expect(within(container.querySelector('.surveys-builder-sidebar') as HTMLElement).queryByText('Опрос')).not.toBeInTheDocument();
+    expect(screen.getByText('Активный опрос', { selector: '.surveys-status-dot' })).toBeInTheDocument();
+    expect(screen.queryByText('Сохраненные опросы')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Новый' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Копия' })).not.toBeInTheDocument();
     expect(screen.getByText('Название')).toBeInTheDocument();
     expect(screen.getByText('Статус')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Настроить запуск' })).toBeInTheDocument();
@@ -198,25 +197,34 @@ describe('SurveyBuilderSection', () => {
     expect(screen.queryByText(/в шаблоне/i)).not.toBeInTheDocument();
   });
 
-  it('renders the audience slider, active survey card, and saved surveys section', () => {
+  it('keeps audience and survey selection in the builder toolbar', () => {
     const { container } = renderBuilderSection();
 
     expect(container.querySelector('.surveys-builder-sidebar')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Конструктор' })).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Активный опрос')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Активный опрос' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Название' })).toHaveValue('Активный опрос');
     expect(screen.getByRole('button', { name: 'Клиенты' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Сотрудники' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Вопросы активного опроса' })).toHaveTextContent('Как прошла консультация?');
   });
 
-  it('opens the first question in expanded mode and allows collapsing it', () => {
+  it('opens the first question in expanded mode and allows collapsing it', async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
     renderBuilderSection();
 
     expect(screen.getByDisplayValue('Как прошла консультация?')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Свернуть вопрос 1' }));
+    fireEvent.click(screen.getByRole('button', { name: /Свернуть вопрос 1/ }));
     expect(screen.queryByDisplayValue('Как прошла консультация?')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Как прошла консультация/i }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Вопросы активного опроса' })).getByRole('button'));
     expect(screen.getByDisplayValue('Как прошла консультация?')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    });
   });
 
   it('opens inline launch choices and applies a custom date summary', () => {
@@ -227,7 +235,7 @@ describe('SurveyBuilderSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Своя дата' }));
     fireEvent.change(screen.getByLabelText('Дата запуска'), { target: { value: '2026-05-15' } });
-    expect(screen.getByText('Своя дата: 15.05.2026')).toBeInTheDocument();
+    expect(screen.getAllByText('Своя дата: 15.05.2026')).toHaveLength(2);
   });
 
   it('keeps after-appeal launch active when legacy calendar data is still present', () => {
@@ -244,20 +252,38 @@ describe('SurveyBuilderSection', () => {
     expect(container.querySelector('.surveys-launch-option.is-active')).toHaveTextContent('После обращения');
   });
 
-  it('renders scale questions with selectable marks capped at five', () => {
+  it('renders one aligned 1-5 scale preview slider', () => {
     renderBuilderSection({
       ...draftQuestion,
-      config: { min: 1, max: 10, presentation: 'scale' },
+      config: { min: 2, max: 4, presentation: 'scale' },
     });
 
-    expect(screen.getByRole('button', { name: 'Оценка 5' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Оценка 6' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Максимальный балл/i })).not.toBeInTheDocument();
+    const slider = screen.getByRole('slider', { name: 'Предпросмотр оценки' });
+    expect(slider).toHaveAttribute('min', '1');
+    expect(slider).toHaveAttribute('max', '5');
+    expect(slider).toHaveValue('3');
+    expect(screen.getAllByRole('slider')).toHaveLength(1);
+    expect(screen.getAllByText('Шкала 1-5')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /Оценка \d+/ })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Оценка 4' }));
+  it('switches answer types and shows only relevant controls', () => {
+    renderBuilderSection();
 
-    expect(screen.getByText('Шкала 1-5')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Оценка 5' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Шкала оценки', { selector: '.value' }));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Один выбор'));
+    expect(screen.getByRole('radio', { name: 'Да' })).toBeInTheDocument();
+    expect(screen.queryByRole('slider', { name: 'Предпросмотр оценки' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Один выбор', { selector: '.value' }));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Комментарий'));
+    expect(screen.getByLabelText('Комментарий')).toBeInTheDocument();
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Комментарий', { selector: '.value' }));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Выбор сотрудника'));
+    expect(screen.getByRole('combobox', { name: 'Выбор сотрудника' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Список сотрудников' })).toBeInTheDocument();
   });
 
   it('renders single choice options as radio rows', () => {
@@ -302,9 +328,9 @@ describe('SurveyBuilderSection', () => {
       config: { options: [{ id: '1', label: 'Да' }, { id: '2', label: 'Нет' }, { id: '3', label: 'Не знаю' }] },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Свернуть вопрос 1' }));
+    fireEvent.click(screen.getByRole('button', { name: /Свернуть вопрос 1/ }));
     expect(screen.getByText('Один выбор')).toBeInTheDocument();
-    expect(screen.getByText('Да, Нет +1')).toBeInTheDocument();
+    expect(screen.getAllByText('Да, Нет +1')).toHaveLength(2);
     expect(screen.queryByLabelText('Текст вопроса')).not.toBeInTheDocument();
   });
 
@@ -315,14 +341,14 @@ describe('SurveyBuilderSection', () => {
       config: { options: [{ id: '1', label: 'Да' }, { id: '2', label: 'Нет' }, { id: '3', label: 'Не знаю' }] },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Свернуть вопрос 1' }));
+    fireEvent.click(screen.getByRole('button', { name: /Свернуть вопрос 1/ }));
 
     const card = screen.getByText('1', { selector: '.surveys-question-card__number' }).closest('.surveys-question-card');
 
     expect(screen.getByText('1', { selector: '.surveys-question-card__number' })).toBeInTheDocument();
     expect(screen.getByText('Один выбор')).toBeInTheDocument();
-    expect(screen.getByText('Да, Нет +1')).toBeInTheDocument();
     expect(card).not.toBeNull();
+    expect(within(card as HTMLElement).getByText('Да, Нет +1')).toBeInTheDocument();
     expect(within(card as HTMLElement).queryByRole('button', { name: 'Изменить' })).not.toBeInTheDocument();
     expect(within(card as HTMLElement).queryByRole('button', { name: 'Удалить' })).not.toBeInTheDocument();
   });

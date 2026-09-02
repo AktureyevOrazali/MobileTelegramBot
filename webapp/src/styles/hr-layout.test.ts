@@ -20,7 +20,7 @@ describe('HR layout CSS', () => {
     expect(css).toContain('grid-template-columns: 1fr;');
     expect(css).toContain('grid-auto-rows: minmax(58px, auto);');
     expect(css).toContain('.hr-employee-card {\n  min-height: 58px;');
-    expect(css).toContain('grid-template-columns: 34px minmax(180px, 1fr) minmax(130px, 0.55fr) minmax(96px, auto);');
+    expect(css).toContain('grid-template-columns: 34px minmax(0, 1fr) minmax(78px, 0.45fr) auto;');
     expect(css).toContain('box-shadow: none;');
   });
 
@@ -62,6 +62,9 @@ describe('HR layout CSS', () => {
     expect(css).toContain('.hr-employee-request-reason {\n  grid-column: 1 / -1;');
     expect(css).toContain('.hr-page--employee .hr-document-preview {\n  width: min(100%, 410px, 44dvh);');
     expect(css).toContain('aspect-ratio: 210 / 297;');
+    expect(css).toContain('.hr-document-preview--hr-detail {\n  grid-template-rows: auto minmax(0, auto) auto auto;\n  gap: 14px;\n  width: min(100%, 300px, 32dvh);');
+    expect(css).toContain('.hr-requests-grid > .hr-detail-card {\n  align-self: stretch;\n  height: 100%;');
+    expect(css).toContain('.hr-requests-grid > .hr-detail-card .hr-detail-card__actions {\n  margin-top: auto;');
     expect(css).toContain('.hr-request-row--employee {\n  grid-template-columns: minmax(0, 1fr);');
     expect(css).toContain('min-height: 62px;');
     expect(css).toContain('overflow: hidden;');
@@ -72,8 +75,8 @@ describe('HR layout CSS', () => {
     expect(css).toContain('.app-shell--hr .hr-page,\n.app-shell--hr .hr-page * {\n  font-family: var(--font-sans) !important;');
     expect(css).toContain('.hr-panel:not(.hr-panel--employees) {\n  overflow: hidden;');
     expect(css).toContain('.hr-requests-grid,\n.hr-template-layout,\n.hr-calendar-shell,\n.hr-archive-table-wrap {\n  height: 100%;');
-    expect(css).toContain('.hr-detail-card {\n  gap: 8px;\n  padding: 12px;\n  overflow: hidden;');
-    expect(css).toContain('.hr-document-preview-shell {\n  flex: 1 1 auto;\n  display: flex;\n  min-height: 0;\n  align-items: center;');
+    expect(css).toContain('.hr-detail-card {\n  gap: 10px;\n  padding: 14px;\n  overflow-x: hidden;\n  overflow-y: auto;');
+    expect(css).toContain('.hr-document-preview-shell {\n  flex: 0 0 auto;\n  display: flex;\n  min-height: 250px;\n  align-items: center;');
     expect(css).toContain('.hr-document-preview {\n  display: grid;\n  grid-template-rows: auto minmax(0, 1fr) auto;');
     expect(css).toContain('width: min(100%, clamp(260px, 40dvh, 420px));');
     expect(css).toContain('aspect-ratio: 210 / 297;');
@@ -81,11 +84,12 @@ describe('HR layout CSS', () => {
     expect(css).toContain('.hr-document-preview__to {\n  display: grid;\n  gap: 8px;\n  justify-self: end;\n  width: 46%;');
     expect(css).toContain('font-size: 0.82rem;');
     expect(css).toContain('.hr-document-preview__body {\n  align-self: center;');
-    expect(css).toContain('.hr-detail-card__actions {\n  display: flex;');
+    expect(css).toContain('.hr-detail-card__actions {\n  display: flex;\n  flex-wrap: wrap;');
     expect(css).toContain('.hr-decision-comment {\n  display: grid;\n  gap: 6px;\n  width: 100%;');
-    expect(css).toContain('.hr-detail-card__actions {\n  display: flex;\n  flex: 0 0 auto;\n  flex-wrap: wrap;\n  gap: 8px;\n  width: 100%;');
-    expect(css).toContain('margin-top: 0;');
-    expect(css).toContain('.hr-decision-comment textarea {\n  min-height: 58px;');
+    expect(css).toContain('gap: 9px;');
+    expect(css).toContain('border-top: 1px solid var(--border-color);');
+    expect(css).toContain('.hr-decision-actions__group {\n  display: flex;');
+    expect(css).toContain('.hr-decision-comment textarea {\n  min-height: 54px;');
     expect(css).toContain('.hr-calendar-month {\n  display: grid;\n  grid-template-columns: repeat(7, minmax(96px, 1fr));');
     expect(css).toContain('grid-template-rows: 30px repeat(6, minmax(62px, 1fr));');
     expect(css).toContain('.hr-calendar-day {\n  display: grid;\n  align-content: start;');

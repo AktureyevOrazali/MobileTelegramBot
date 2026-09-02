@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import SelectPill from '../SelectPill';
 import { SURVEY_QUESTION_TYPES, SURVEY_TOPICS } from '../../hooks/useSurveyData';
 import type {
@@ -6,7 +5,7 @@ import type {
   SurveyQuestionOption,
   SurveyQuestionType,
 } from '../../types';
-import { buildQuestionPreview, buildScaleMarks } from './surveyBuilderModel';
+import { buildQuestionPreview } from './surveyBuilderModel';
 
 const questionTypeLabels: Record<SurveyQuestionType, string> = {
   scale: 'Шкала оценки',
@@ -45,8 +44,6 @@ export function SurveyQuestionCard({
 }: SurveyQuestionCardProps) {
   const preview = buildQuestionPreview(question);
   const isChoice = question.questionType === 'single_choice' || question.questionType === 'multi_choice';
-  const scaleMax = Math.min(question.config.max ?? 5, 5);
-  const [selectedScaleValue, setSelectedScaleValue] = useState(scaleMax);
 
   const setQuestionType = (questionType: SurveyQuestionType) => {
     if (questionType === 'single_choice' || questionType === 'multi_choice') {
@@ -66,7 +63,10 @@ export function SurveyQuestionCard({
   };
 
   return (
-    <article className={`surveys-question surveys-question-card${expanded ? ' is-expanded' : ''}`}>
+    <article
+      id={`survey-builder-question-${index}`}
+      className={`surveys-question surveys-question-card${expanded ? ' is-expanded' : ''}`}
+    >
       <div className="surveys-question__top surveys-question-card__summary">
         <button
           type="button"
@@ -86,15 +86,6 @@ export function SurveyQuestionCard({
         </button>
 
         <div className="surveys-actions surveys-question-card__actions">
-          <button
-            type="button"
-            className="surveys-icon-button"
-            onClick={onToggle}
-            aria-label={expanded ? `Свернуть вопрос ${index + 1}` : `Открыть вопрос ${index + 1}`}
-            title={expanded ? `Свернуть вопрос ${index + 1}` : `Открыть вопрос ${index + 1}`}
-          >
-            <span aria-hidden="true">{expanded ? '−' : '+'}</span>
-          </button>
           <button
             type="button"
             className="surveys-icon-button surveys-icon-button--danger"
@@ -118,7 +109,7 @@ export function SurveyQuestionCard({
             />
           </label>
 
-          <div className="surveys-form-grid">
+          <div className="surveys-form-grid surveys-form-grid--question">
             <div className="surveys-field">
               <span>Тип ответа</span>
               <SelectPill
@@ -138,43 +129,37 @@ export function SurveyQuestionCard({
             </div>
 
             <div className="surveys-field">
-              <span>Тематика</span>
+              <span>Категория аналитики</span>
               <SelectPill
-                label="Тематика"
+                label="Категория аналитики"
                 value={question.topic ?? ''}
                 showLabelInside={false}
                 options={SURVEY_TOPICS.map((topic) => ({ value: topic.id, label: topic.label }))}
                 onChange={(value) => updateQuestion(index, { topic: value || null })}
               />
             </div>
+            <label className="surveys-check">
+              <input
+                type="checkbox"
+                checked={question.required}
+                onChange={() => updateQuestion(index, { required: !question.required })}
+              />
+              <span>Обязательный</span>
+            </label>
           </div>
-
-          <label className="surveys-check">
-            <input
-              type="checkbox"
-              checked={question.required}
-              onChange={() => updateQuestion(index, { required: !question.required })}
-            />
-            <span>Обязательный вопрос</span>
-          </label>
 
           {question.questionType === 'scale' ? (
             <div className="surveys-scale-preview">
-              <div className="surveys-scale-config">
-                <span>Максимальный балл</span>
-              </div>
-              <div className="surveys-scale-strip">
-                {buildScaleMarks(question).map((mark) => (
-                  <button
-                    key={mark}
-                    type="button"
-                    className={`surveys-scale-strip__chip ${mark === selectedScaleValue ? 'is-active' : ''}`}
-                    aria-label={`Оценка ${mark}`}
-                    onClick={() => setSelectedScaleValue(mark)}
-                  >
-                    {mark}
-                  </button>
-                ))}
+              <div className="surveys-score-slider">
+                <strong>1</strong>
+                <input
+                  aria-label="Предпросмотр оценки"
+                  type="range"
+                  min={1}
+                  max={5}
+                  defaultValue={3}
+                />
+                <strong>5</strong>
               </div>
               <div className="surveys-scale-preview__legend">
                 <span>Очень плохо</span>
@@ -202,8 +187,7 @@ export function SurveyQuestionCard({
                     type={question.questionType === 'single_choice' ? 'radio' : 'checkbox'}
                     name={`survey-question-${index}`}
                     aria-label={option.label || `Вариант ${optionIndex + 1}`}
-                    checked={question.questionType === 'single_choice' ? optionIndex === 0 : optionIndex < 2}
-                    readOnly
+                    disabled
                   />
                   <input
                     className="surveys-option-input"
@@ -231,6 +215,15 @@ export function SurveyQuestionCard({
                 aria-label="Комментарий"
                 placeholder="Введите ваш ответ..."
               />
+            </label>
+          ) : null}
+
+          {question.questionType === 'employee_exclusion' ? (
+            <label className="surveys-field surveys-field--wide">
+              <span>Ответ респондента</span>
+              <select aria-label="Выбор сотрудника" disabled>
+                <option>Список сотрудников</option>
+              </select>
             </label>
           ) : null}
         </div>

@@ -1114,6 +1114,11 @@ export class ApiClient {
     return response.map((request) => this.mapHrRequest(request));
   }
 
+  async clearHrArchive(): Promise<number> {
+    const response = await this.request<{ deleted: number }>('hr/requests/archive', { method: 'DELETE' });
+    return response.deleted;
+  }
+
   async createHrRequest(data: {
     templateId: number;
     values: Record<string, unknown>;

@@ -8,7 +8,7 @@ interface HrRequestsTabProps {
   isLoading?: boolean;
   onDecide?: (
     requestId: number,
-    status: Extract<HrRequestStatus, 'approved' | 'rejected' | 'needsInfo'>,
+    status: Extract<HrRequestStatus, 'approved' | 'rejected'>,
     comment?: string,
     hrSignature?: HrSignature | null,
   ) => Promise<void> | void;
@@ -47,7 +47,6 @@ const HrRequestsLoadingSkeleton: React.FC = () => (
           data-testid="hr-document-preview-skeleton"
         />
       </div>
-      <span className="skeleton-unit hr-decision-comment-skeleton" />
       <div className="hr-detail-card__actions">
         <span className="skeleton-unit hr-detail-card__button-skeleton hr-detail-card__button-skeleton--primary" />
         <span className="skeleton-unit hr-detail-card__button-skeleton" />
@@ -122,11 +121,6 @@ const requestEmployeePosition = (request: HrRequest) => {
   return typeof position === 'string' && position.trim() ? position.trim() : 'сотрудника';
 };
 
-const eventActionLabel = (action: HrRequest['events'][number]['action']) => {
-  if (action === 'created') return 'Создано';
-  return requestStatusLabels[action];
-};
-
 const HrRequestsTab: React.FC<HrRequestsTabProps> = ({
   requests,
   isLoading = false,
@@ -135,9 +129,10 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({
 }) => {
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(requests[0]?.id ?? null);
   const [decisionComment, setDecisionComment] = useState('');
+  const [decisionIntent, setDecisionIntent] = useState<'rejected' | null>(null);
   const [isDeciding, setIsDeciding] = useState(false);
-  const [isSigningDecision, setIsSigningDecision] = useState<'approved' | 'rejected' | null>(null);
-  const [decisionSignature, setDecisionSignature] = useState<{ status: 'approved' | 'rejected'; signature: HrSignature } | null>(null);
+  const [isSigningDecision, setIsSigningDecision] = useState(false);
+  const [decisionSignature, setDecisionSignature] = useState<HrSignature | null>(null);
 
   useEffect(() => {
     if (selectedRequestId === null || !requests.some((request) => request.id === selectedRequestId)) {
@@ -150,47 +145,50 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({
     [requests, selectedRequestId],
   );
   const employeeSignedDate = formatSignatureDate(selectedRequest?.employeeSignature?.signedAt);
-  const hrDecisionStatus = decisionSignature?.status
-    ?? (selectedRequest?.status === 'approved' || selectedRequest?.status === 'rejected' ? selectedRequest.status : null);
-  const hrDecisionSignature = decisionSignature?.signature ?? selectedRequest?.hrSignature ?? null;
+  const hrDecisionStatus = selectedRequest?.status === 'approved' || selectedRequest?.status === 'rejected' ? selectedRequest.status : null;
+  const hrDecisionSignature = selectedRequest?.hrSignature ?? null;
   const hrDecisionSignedDate = formatSignatureDate(hrDecisionSignature?.signedAt);
 
   useEffect(() => {
     setDecisionComment('');
+    setDecisionIntent(null);
   }, [selectedRequest?.id]);
 
   useEffect(() => {
     setDecisionSignature(null);
-  }, [selectedRequest?.id, decisionComment]);
+  }, [selectedRequest?.id]);
 
-  const handleSignDecision = async (status: 'approved' | 'rejected') => {
+  const handleSignDecision = async () => {
     if (!selectedRequest || isSigningDecision) return;
-    setIsSigningDecision(status);
+    setIsSigningDecision(true);
     try {
       const signature = await signWithNcalayer({
-        action: status,
+        action: 'decision',
         requestId: selectedRequest.id,
         employeeId: selectedRequest.employeeId,
         employeeName: selectedRequest.employeeName,
         requestStatus: selectedRequest.status,
         statement: requestStatement(selectedRequest),
-        comment: decisionComment.trim(),
+        comment: '',
       });
-      setDecisionSignature({ status, signature });
+      setDecisionSignature(signature);
     } finally {
-      setIsSigningDecision(null);
+      setIsSigningDecision(false);
     }
   };
 
-  const handleDecision = async (status: 'approved' | 'rejected' | 'needsInfo') => {
+  const handleDecision = async (status: 'approved' | 'rejected') => {
     if (!onDecide || !selectedRequest || isDeciding) return;
-    const finalDecision = status === 'approved' || status === 'rejected';
-    const matchingSignature = finalDecision && decisionSignature?.status === status ? decisionSignature.signature : null;
-    if (finalDecision && !matchingSignature) return;
+    if (status === 'rejected' && !decisionComment.trim()) {
+      setDecisionIntent('rejected');
+      return;
+    }
+    if (!decisionSignature) return;
     setIsDeciding(true);
     try {
-      await onDecide(selectedRequest.id, status, decisionComment.trim(), matchingSignature);
+      await onDecide(selectedRequest.id, status, status === 'rejected' ? decisionComment.trim() : '', decisionSignature);
       setDecisionComment('');
+      setDecisionIntent(null);
       setDecisionSignature(null);
     } finally {
       setIsDeciding(false);
@@ -254,7 +252,7 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({
             <div className="hr-document-preview__footer">
               <span>{employeeSignedDate || formatDocumentDate()}</span>
               <span className="hr-document-preview__signature">
-                <span>________________ / {selectedRequest.employeeName} /</span>
+                <span>{selectedRequest.employeeName}</span>
                 {selectedRequest.employeeSignature && (
                   <small>
                     {employeeSignedDate && <time dateTime={selectedRequest.employeeSignature.signedAt}>{employeeSignedDate}</time>}
@@ -282,49 +280,31 @@ const HrRequestsTab: React.FC<HrRequestsTabProps> = ({
           </div>
         )}
 
-        {selectedRequest.events.length > 0 && (
-          <section className="hr-request-history" aria-label="HR request history">
-            <h4>История</h4>
-            <ol>
-              {selectedRequest.events.map((event) => (
-                <li key={event.id}>
-                  <span className="hr-request-history__marker" aria-hidden="true" />
-                  <div>
-                    <div className="hr-request-history__header">
-                      <strong>{event.actorName || 'HR'}</strong>
-                      <span>{eventActionLabel(event.action)}</span>
-                    </div>
-                    {event.comment && <p>{event.comment}</p>}
-                    <time dateTime={event.createdAt.toISOString()}>{formatDate(event.createdAt)}</time>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </section>
+        {decisionIntent === 'rejected' && (
+          <label className="hr-field hr-decision-comment">
+            <span>Причина отклонения</span>
+            <textarea
+              aria-label="HR rejection reason"
+              aria-required="true"
+              rows={3}
+              value={decisionComment}
+              onChange={(event) => setDecisionComment(event.target.value)}
+              placeholder="Укажите причину, которую увидит сотрудник"
+            />
+          </label>
         )}
 
-        <label className="hr-field hr-decision-comment">
-          <span>Комментарий HR</span>
-          <textarea
-            aria-label="HR comment"
-            rows={3}
-            value={decisionComment}
-            onChange={(event) => setDecisionComment(event.target.value)}
-            placeholder="Например: приложите справку или уточните период"
-          />
-        </label>
-
         <div className="hr-detail-card__actions">
-          <button className="button secondary" type="button" disabled={isDeciding || Boolean(isSigningDecision)} onClick={() => handleSignDecision('approved')}>
-            {isSigningDecision === 'approved' ? 'Подписание...' : 'Подписать одобрение ЭЦП'}
-          </button>
-          <button className="button secondary" type="button" disabled={isDeciding || Boolean(isSigningDecision)} onClick={() => handleSignDecision('rejected')}>
-            {isSigningDecision === 'rejected' ? 'Подписание...' : 'Подписать отклонение ЭЦП'}
-          </button>
-          {decisionSignature && <span className="hr-badge">Решение подписано ЭЦП</span>}
-          <button className="button" type="button" data-testid="hr-approve-request" disabled={isDeciding || decisionSignature?.status !== 'approved'} onClick={() => handleDecision('approved')}>Одобрить</button>
-          <button className="button secondary" type="button" disabled={isDeciding || decisionSignature?.status !== 'rejected'} onClick={() => handleDecision('rejected')}>Отклонить</button>
-          <button className="button secondary" type="button" disabled={isDeciding} onClick={() => handleDecision('needsInfo')}>Запросить данные</button>
+          <div className="hr-decision-actions__group hr-decision-actions__group--signing">
+            <button className="button secondary" type="button" disabled={isDeciding || isSigningDecision} onClick={handleSignDecision}>
+              {isSigningDecision ? 'Подписание...' : 'Подписать ЭЦП'}
+            </button>
+            {decisionSignature && <span className="hr-badge">Решение подписано ЭЦП</span>}
+          </div>
+          <div className="hr-decision-actions__group hr-decision-actions__group--outcome">
+            <button className="button" type="button" data-testid="hr-approve-request" disabled={isDeciding || !decisionSignature} onClick={() => handleDecision('approved')}>Одобрить</button>
+          </div>
+          <button className="button secondary hr-decision-actions__reject" type="button" disabled={isDeciding || !decisionSignature} onClick={() => handleDecision('rejected')}>Отклонить</button>
         </div>
       </article>
     </div>

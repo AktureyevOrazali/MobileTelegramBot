@@ -305,6 +305,15 @@ const ledger: RatingLedgerResponse = {
   offset: 0,
   updatedAt: new Date('2026-04-21T00:00:00Z'),
 };
+ledger.items.push({
+  ...ledger.items[0],
+  ratingId: 102,
+  appealId: 5002,
+  finalScore: 2.5,
+  comment: 'Нужна дополнительная консультация',
+  aiInvolved: false,
+});
+ledger.total = 2;
 
 function renderRatingsPage() {
   const apiClient = {
@@ -369,5 +378,9 @@ describe('SurveysPage ratings analytics', () => {
     expect(screen.getByText('Участвовал ли ИИ')).toBeInTheDocument();
     expect(screen.getByText('Да')).toBeInTheDocument();
     expect(screen.getByText('Итоговый статус обращения')).toBeInTheDocument();
+
+    await user.click(screen.getByText('5002'));
+    expect(screen.getByText('Нужна дополнительная консультация')).toBeInTheDocument();
+    expect(screen.getByText('Нет')).toBeInTheDocument();
   });
 });

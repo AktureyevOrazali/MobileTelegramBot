@@ -11,13 +11,20 @@ const normalizedCss = css.replace(/\r\n/g, '\n');
 const normalizedSurveysCss = surveysCss.replace(/\r\n/g, '\n');
 
 describe('surveys app-sidebar layout', () => {
+  it('uses the full builder workspace without a capped editor column', () => {
+    expect(normalizedCss).toContain('grid-template-columns: 260px minmax(0, 1fr) !important;');
+    expect(normalizedCss).toContain('max-width: none;');
+    expect(normalizedCss).toContain('grid-template-columns: minmax(0, 1fr) auto;');
+    expect(normalizedCss).toContain('flex-wrap: nowrap;');
+  });
+
   it('keeps tabs and analytics content in separate grid rows', () => {
     expect(normalizedCss).toContain('grid-template-rows: auto auto minmax(0, 1fr) !important;');
   });
 
   it('locks the survey shell while only the analytics body scrolls', () => {
     expect(normalizedCss).toContain('.app-shell--surveys .app-main--sidebar .app-page-transition {\n  display: flex !important;');
-    expect(normalizedCss).toContain('.app-shell--surveys .surveys-page--app-sidebar {\n  height: calc(100vh - 28px) !important;');
+    expect(normalizedCss).toContain('.app-shell--surveys .surveys-page--app-sidebar {\n  height: calc(100dvh - 28px) !important;');
     expect(normalizedCss).toContain('.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-panel {\n  min-height: 0 !important;');
     expect(normalizedCss).toContain('.app-shell--surveys .surveys-page--app-sidebar .surveys-analytics-panel > .surveys-panel__body {\n  min-height: 0 !important;\n  overflow-y: auto !important;');
     expect(normalizedCss).toContain('.app-shell--surveys .surveys-page--app-sidebar > .surveys-assessment {\n  min-height: 0 !important;\n  overflow-y: auto !important;');

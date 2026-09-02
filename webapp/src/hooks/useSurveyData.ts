@@ -11,11 +11,15 @@ import type {
 export const SURVEY_TOPICS = [
   { id: 'consultation_quality', label: 'Качество консультаций' },
   { id: 'response_speed', label: 'Скорость ответа' },
+  { id: 'answer_clarity', label: 'Понятность ответа' },
+  { id: 'resolution_quality', label: 'Полнота решения' },
+  { id: 'communication_quality', label: 'Качество общения' },
   { id: 'system_usability', label: 'Удобство работы с системой' },
   { id: 'seminars', label: 'Потребность в семинарах' },
   { id: 'webinars', label: 'Потребность в вебинарах' },
   { id: 'instructions', label: 'Инструкции, памятки, видеоуроки' },
   { id: 'employee_remarks', label: 'Замечания по сотрудникам' },
+  { id: 'employee_exclusion', label: 'Выбор сотрудника' },
   { id: 'support_improvements', label: 'Предложения по улучшению' },
 ];
 
@@ -272,7 +276,11 @@ export function useSurveyData(apiClient: ApiClient) {
       scheduledAt: selectedTemplate.scheduledAt,
       launchRules: selectedTemplate.launchRules,
       isAnonymous: selectedTemplate.isAnonymous,
-      questions: selectedTemplate.questions,
+      questions: selectedTemplate.questions.map((question) => (
+        question.questionType === 'scale'
+          ? { ...question, config: { ...question.config, min: 1, max: 5, presentation: 'scale' } }
+          : question
+      )),
     });
   }, [selectedTemplate]);
 

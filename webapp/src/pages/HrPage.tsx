@@ -16,6 +16,7 @@ interface HrPageProps {
 }
 
 const activeRequestStatuses = new Set<HrRequest['status']>(['new', 'review', 'needsInfo']);
+const archiveRequestStatuses = new Set<HrRequest['status']>(['approved', 'rejected', 'archived']);
 
 const tabs: { id: HrTab; label: string }[] = [
   { id: 'requests', label: 'Заявления' },
@@ -146,7 +147,7 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
 
   const handleDecision = async (
     requestId: number,
-    status: 'approved' | 'rejected' | 'needsInfo',
+    status: 'approved' | 'rejected',
     comment = '',
     hrSignature?: HrSignature | null,
   ) => {
@@ -189,14 +190,22 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
     }
   };
 
+  const handleClearArchive = async () => {
+    if (!apiClient) return 0;
+    const deleted = await apiClient.clearHrArchive();
+    setRequests((current) => current.filter((request) => !archiveRequestStatuses.has(request.status)));
+    return deleted;
+  };
+
   return (
     <div className="hr-page" data-testid="hr-page-shell">
       <header className={`hr-header ${isHrDataLoading ? 'hr-header--loading' : ''}`}>
         <div className="hr-header__top">
-          <h2 className="hr-header__title">Кадры</h2>
-          <div className="hr-header__actions" aria-label="Действия кадровика">
-            <button className="button secondary" type="button">Добавить сотрудника</button>
-            <button className="button" type="button" onClick={() => setActiveTab('templates')}>Создать шаблон</button>
+          <div className="hr-header__title-group">
+            <div>
+              <h2 className="hr-header__title">Кадры</h2>
+              <p className="hr-subtitle">Сотрудники, документы и текущие заявления</p>
+            </div>
           </div>
         </div>
         <div className="hr-stat-grid">
@@ -243,7 +252,14 @@ const HrPage: React.FC<HrPageProps> = ({ apiClient }) => {
                 onUpdateTemplate={apiClient ? handleUpdateTemplate : undefined}
               />
             )}
-            {activeTab === 'archive' && <HrArchiveTab requests={requests} isLoading={isHrDataLoading} onDecide={handleDecision} />}
+            {activeTab === 'archive' && (
+              <HrArchiveTab
+                requests={requests}
+                isLoading={isHrDataLoading}
+                onDecide={handleDecision}
+                onClearArchive={apiClient ? handleClearArchive : undefined}
+              />
+            )}
         </>
       </section>
     </div>

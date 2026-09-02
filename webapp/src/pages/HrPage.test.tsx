@@ -162,9 +162,10 @@ describe('HrPage', () => {
     render(<HrPage />);
 
     expect(screen.getByText((text) => text.includes(hrRequests[0].summary))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Подписать ЭЦП' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Одобрить' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Отклонить' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Запросить данные' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Запросить данные' })).not.toBeInTheDocument();
   });
 
   it('shows minimal employee cards on the employees tab', () => {
@@ -262,9 +263,9 @@ describe('HrPage', () => {
 
     render(<HrPage apiClient={apiClient as any} />);
 
-    expect((await screen.findAllByText((text) => text.includes('Annual leave'))).length).toBeGreaterThanOrEqual(1);
+    await screen.findByRole('button', { name: 'Подписать ЭЦП' });
     vi.mocked(signWithNcalayer).mockResolvedValue(hrSignature);
-    fireEvent.click(screen.getByRole('button', { name: 'Подписать одобрение ЭЦП' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Подписать ЭЦП' }));
     await screen.findByText('Решение подписано ЭЦП');
     fireEvent.click(screen.getByTestId('hr-approve-request'));
 
@@ -339,15 +340,16 @@ describe('HrPage', () => {
     expect(screen.getByRole('cell', { name: 'Employee User' })).toBeInTheDocument();
   });
 
-  it('sends an HR comment when requesting additional data', async () => {
+  it('requires a rejection reason after a single HR signature and sends the rejection decision', async () => {
     const apiClient = {
       fetchHrTemplates: vi.fn().mockResolvedValue(apiTemplates),
       fetchHrRequests: vi.fn().mockResolvedValue(apiRequests),
       fetchHrEmployees: vi.fn().mockResolvedValue([]),
       decideHrRequest: vi.fn().mockResolvedValue({
         ...apiRequests[0],
-        status: 'needsInfo',
-        decisionComment: 'Attach certificate',
+        status: 'rejected',
+        decisionComment: 'Не хватает подтверждающего документа.',
+        hrSignature,
       }),
       createHrTemplate: vi.fn(),
       updateHrTemplate: vi.fn(),
@@ -355,16 +357,28 @@ describe('HrPage', () => {
 
     render(<HrPage apiClient={apiClient as any} />);
 
-    expect((await screen.findAllByText((text) => text.includes('Annual leave'))).length).toBeGreaterThanOrEqual(1);
-    fireEvent.change(screen.getByLabelText('HR comment'), { target: { value: 'Attach certificate' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Запросить данные' }));
+    const signButton = await screen.findByRole('button', { name: 'Подписать ЭЦП' });
+    expect(screen.queryByLabelText('HR rejection reason')).not.toBeInTheDocument();
+    vi.mocked(signWithNcalayer).mockResolvedValue(hrSignature);
+    fireEvent.click(signButton);
+
+    await screen.findByText('Решение подписано ЭЦП');
+    fireEvent.click(screen.getByRole('button', { name: 'Отклонить' }));
+
+    const reasonField = await screen.findByLabelText('HR rejection reason');
+    fireEvent.change(reasonField, { target: { value: 'Не хватает подтверждающего документа.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Отклонить' }));
 
     await waitFor(() => {
-      expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, { status: 'needsInfo', comment: 'Attach certificate', hrSignature: null });
+      expect(apiClient.decideHrRequest).toHaveBeenCalledWith(31, {
+        status: 'rejected',
+        comment: 'Не хватает подтверждающего документа.',
+        hrSignature,
+      });
     });
   });
 
-  it('shows the HR request event history in the detail panel', async () => {
+  it('does not show technical HR request history in the detail panel', async () => {
     const apiClient = {
       fetchHrTemplates: vi.fn().mockResolvedValue(apiTemplates),
       fetchHrRequests: vi.fn().mockResolvedValue(apiRequests),
@@ -376,9 +390,8 @@ describe('HrPage', () => {
 
     render(<HrPage apiClient={apiClient as any} />);
 
-    const history = await screen.findByLabelText('HR request history');
-    expect(within(history).getByText('Employee User')).toBeInTheDocument();
-    expect(within(history).getByText('Annual leave')).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Подписать ЭЦП' });
+    expect(screen.queryByLabelText('HR request history')).not.toBeInTheDocument();
   });
 
   it('renders archive rows from loaded HR requests instead of demo archive items', async () => {
@@ -403,6 +416,7 @@ describe('HrPage', () => {
       fetchHrRequests: vi.fn().mockResolvedValue([approvedRequest]),
       fetchHrEmployees: vi.fn().mockResolvedValue([]),
       decideHrRequest: vi.fn(),
+      clearHrArchive: vi.fn().mockResolvedValue(1),
       createHrTemplate: vi.fn(),
       updateHrTemplate: vi.fn(),
     };
@@ -420,6 +434,14 @@ describe('HrPage', () => {
     expect(within(archivePreview).getAllByText('Подписано ЭЦП')).toHaveLength(2);
     expect(within(archivePreview).getByText('Решение: Одобрено')).toBeInTheDocument();
     expect(screen.queryByText('Р‘РѕС‚Р° РђР№С‚Р¶Р°РЅРѕРІР°')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Очистить архив' }));
+    const clearDialog = screen.getByRole('dialog');
+    expect(within(clearDialog).getByText('Будут безвозвратно удалены все 1 завершённых заявлений и их история.')).toBeInTheDocument();
+    fireEvent.click(within(clearDialog).getByRole('button', { name: 'Очистить архив' }));
+
+    await waitFor(() => expect(apiClient.clearHrArchive).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('cell', { name: 'Employee User' })).not.toBeInTheDocument();
   });
 
   it('updates an existing HR template from the templates tab', async () => {

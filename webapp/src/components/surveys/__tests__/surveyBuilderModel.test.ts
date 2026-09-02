@@ -32,7 +32,7 @@ const question = (patch: Partial<SurveyQuestion> = {}): SurveyQuestion => ({
   topic: 'consultation_quality',
   required: true,
   anonymityMode: 'inherit',
-  config: { min: 1, max: 10, presentation: 'scale' },
+  config: { min: 1, max: 5, presentation: 'scale' },
   ...patch,
 });
 
@@ -49,12 +49,14 @@ describe('surveyBuilderModel', () => {
   });
 
   it('builds compact previews for every approved question type', () => {
-    expect(buildQuestionPreview(question())).toBe('Шкала 1-10');
+    expect(buildQuestionPreview(question())).toBe('Шкала 1-5');
+    expect(buildQuestionPreview(question({ config: { min: 2, max: 4 } }))).toBe('Шкала 1-5');
     expect(buildQuestionPreview(question({
       questionType: 'single_choice',
       config: { options: [{ id: '1', label: 'Да' }, { id: '2', label: 'Нет' }, { id: '3', label: 'Не знаю' }] },
     }))).toBe('Да, Нет +1');
     expect(buildQuestionPreview(question({ questionType: 'text_comment', config: {} }))).toBe('Текстовый ответ');
+    expect(buildQuestionPreview(question({ questionType: 'employee_exclusion', config: {} }))).toBe('Список сотрудников');
   });
 
   it('builds a short launch summary for calendar and appeal triggers', () => {
@@ -65,12 +67,16 @@ describe('surveyBuilderModel', () => {
     }))).toBe('Начало месяца');
     expect(buildLaunchSummary(template({
       triggerType: 'periodic',
+      launchRules: [{ type: 'calendar', schedule: 'quarter_end', dates: [] }],
+    }))).toBe('Конец квартала');
+    expect(buildLaunchSummary(template({
+      triggerType: 'periodic',
       launchRules: [{ type: 'calendar', schedule: 'custom_dates', dates: ['2026-05-15'] }],
       scheduledAt: '2026-05-15',
     }))).toBe('Своя дата: 15.05.2026');
   });
 
-  it('returns a visible 1..10 mark row for new scale questions', () => {
-    expect(buildScaleMarks(question())).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  it('returns a visible 1..5 mark row for new scale questions', () => {
+    expect(buildScaleMarks(question())).toEqual([1, 2, 3, 4, 5]);
   });
 });

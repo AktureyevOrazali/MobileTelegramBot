@@ -38,18 +38,24 @@ export function buildLaunchSummary(template: Pick<SurveyTemplate, 'triggerType' 
     return 'Начало месяца';
   }
 
+  if (calendarRule?.schedule === 'quarter_end') {
+    return 'Конец квартала';
+  }
+
   return launchLabels[template.triggerType] ?? 'Не настроено';
 }
 
 export function buildQuestionPreview(question: SurveyQuestion): string {
   if (question.questionType === 'scale') {
-    const min = question.config.min ?? 1;
-    const max = Math.min(question.config.max ?? 5, 5);
-    return `Шкала ${min}-${max}`;
+    return 'Шкала 1-5';
   }
 
   if (question.questionType === 'text_comment') {
     return 'Текстовый ответ';
+  }
+
+  if (question.questionType === 'employee_exclusion') {
+    return 'Список сотрудников';
   }
 
   const optionLabels = (question.config.options ?? []).map((item) => item.label).filter(Boolean);
@@ -60,7 +66,5 @@ export function buildQuestionPreview(question: SurveyQuestion): string {
 }
 
 export function buildScaleMarks(question: SurveyQuestion): number[] {
-  const min = question.config.min ?? 1;
-  const max = Math.min(question.config.max ?? 5, 5);
-  return Array.from({ length: max - min + 1 }, (_, index) => min + index);
+  return question.questionType === 'scale' ? [1, 2, 3, 4, 5] : [];
 }

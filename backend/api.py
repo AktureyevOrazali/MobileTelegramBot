@@ -331,6 +331,15 @@ event_bus = EventBus()
 @app.on_event("startup")
 async def _register_event_bus_loop() -> None:
     event_bus.loop = asyncio.get_running_loop()
+    normalized_surveys = database.normalize_active_survey_delivery_sessions()
+    if any(normalized_surveys.values()):
+        logger.warning(
+            "Normalized active survey sessions: disabled Telegram=%s, collapsed 1C duplicates=%s, "
+            "cancelled 1C outbox duplicates=%s",
+            normalized_surveys["disabled_telegram_count"],
+            normalized_surveys["collapsed_duplicate_count"],
+            normalized_surveys["cancelled_outbox_count"],
+        )
     logger.info("SSE event bus loop registered")
 
 
@@ -2702,6 +2711,12 @@ def list_hr_requests(current_user: Dict[str, object] = Depends(get_current_user)
     employee_id = None if database.can_manage_hr(str(current_user.get("role", ""))) else int(current_user["id"])
     requests = database.list_hr_requests(employee_id=employee_id)
     return [HrRequestResponse(**request) for request in requests]
+
+
+@router.delete("/hr/requests/archive")
+def clear_hr_archive(current_user: Dict[str, object] = Depends(require_hr_access)):
+    deleted = database.clear_hr_archive()
+    return {"deleted": deleted}
 
 
 @router.get("/hr/requests/{request_id}/document.doc")
@@ -6570,7 +6585,7 @@ def launch_survey_endpoint(
     started: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     for target in targets:
-        session = database.start_survey_session(
+        session = survey_service.start_survey_for_context(
             template_id=int(body.template_id),
             chat_id=int(target["chat_id"]),
             dialog_id=int(target["dialog_id"]) if target.get("dialog_id") is not None else None,

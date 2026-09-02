@@ -4,6 +4,11 @@ from backend import survey_analytics
 
 
 class SurveyAnalyticsTests(unittest.TestCase):
+    def test_normalize_score_to_five_point_scale_supports_custom_ranges(self):
+        self.assertEqual(survey_analytics.normalize_score_to_five_point_scale(1, {"min": 1, "max": 10}), 1.0)
+        self.assertEqual(survey_analytics.normalize_score_to_five_point_scale(5.5, {"min": 1, "max": 10}), 3.0)
+        self.assertEqual(survey_analytics.normalize_score_to_five_point_scale(10, {"min": 1, "max": 10}), 5.0)
+
     def test_summarize_question_analytics_covers_all_question_types(self):
         summary = survey_analytics.summarize_question_analytics(
             [
